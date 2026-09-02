@@ -20,7 +20,11 @@ export default function ConfirmEmail() {
     <div>
       <PageHeader title="Email confirmation" />
       <Alert type={ok ? 'success' : 'error'} message={message} />
-      <Link to="/login">Go to login</Link>
+      {ok ? (
+        <Link to="/login">Go to login</Link>
+      ) : (
+        <p><Link to="/resend-verification">Request a new verification link</Link></p>
+      )}
     </div>
   );
 }

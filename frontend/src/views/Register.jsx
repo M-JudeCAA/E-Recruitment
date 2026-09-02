@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import client from '../models/apiClient';
 import PageHeader from '../components/PageHeader';
 import TextField from '../components/TextField';
@@ -9,13 +10,15 @@ export default function Register() {
   const [form, setForm] = useState({ fullName: '', email: '', password: '', phone: '', nationalId: '' });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [registeredType, setRegisteredType] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage(''); setError('');
+    setMessage(''); setError(''); setRegisteredType(null);
     try {
       const res = await client.post('/api/candidates/auth/register', form);
       setMessage(`${res.data.message} (Account type: ${res.data.candidateType})`);
+      setRegisteredType(res.data.candidateType);
     } catch (err) {
       setError(err.response?.data?.error || 'Something went wrong');
     }
@@ -42,6 +45,12 @@ export default function Register() {
       </form>
       <Alert type="success" message={message} />
       <Alert type="error" message={error} />
+      {registeredType === 'Internal' && (
+        <p><Link to={`/verify-code?email=${encodeURIComponent(form.email)}`}>Enter your verification code</Link></p>
+      )}
+      {registeredType && (
+        <p>Didn't get it? <Link to={`/resend-verification?email=${encodeURIComponent(form.email)}`}>Resend verification email</Link></p>
+      )}
     </div>
   );
 }

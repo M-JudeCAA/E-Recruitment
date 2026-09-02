@@ -5,6 +5,8 @@ const router = express.Router();
 
 router.post('/register', controller.register);
 router.get('/confirm-email', controller.confirmEmail);
+router.post('/confirm-code', controller.confirmCode);
+router.post('/resend-verification', controller.resendVerification);
 router.post('/login', controller.login);
 router.post('/forgot-password', controller.forgotPassword);
 router.post('/reset-password', controller.resetPassword);

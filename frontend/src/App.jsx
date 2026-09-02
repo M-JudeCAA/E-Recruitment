@@ -5,6 +5,8 @@ import Navbar from './components/Navbar';
 import Home from './views/Home';
 import Register from './views/Register';
 import ConfirmEmail from './views/ConfirmEmail';
+import ResendVerification from './views/ResendVerification';
+import VerifyCode from './views/VerifyCode';
 import CandidateLogin from './views/CandidateLogin';
 import ForgotPassword from './views/ForgotPassword';
 import ResetPassword from './views/ResetPassword';
@@ -27,6 +29,8 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/register" element={<Register />} />
         <Route path="/confirm-email" element={<ConfirmEmail />} />
+        <Route path="/resend-verification" element={<ResendVerification />} />
+        <Route path="/verify-code" element={<VerifyCode />} />
         <Route path="/login" element={<CandidateLogin />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />

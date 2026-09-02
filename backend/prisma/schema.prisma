@@ -240,6 +240,22 @@ model Offer {
   approvedDate     DateTime?
 }
 
+model PendingCandidateRegistration {
+  id            Int           @id @default(autoincrement())
+  fullName      String
+  email         String        @unique
+  phone         String?
+  nationalId    String?
+  candidateType CandidateType
+  passwordHash  String
+  token         String?       @unique
+  verificationCode String?
+  codeAttempts  Int           @default(0)
+  expiresAt     DateTime
+  lastSentAt    DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+}
+
 model VerificationToken {
   id          Int       @id @default(autoincrement())
   token       String    @unique

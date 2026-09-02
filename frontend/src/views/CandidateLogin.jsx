@@ -38,6 +38,7 @@ export default function CandidateLogin() {
       <Alert type="error" message={error} />
       <p><Link to="/register">Create an account</Link></p>
       <p><Link to="/forgot-password">Forgot password?</Link></p>
+      <p><Link to="/resend-verification">Didn't verify your email yet?</Link></p>
     </div>
   );
 }

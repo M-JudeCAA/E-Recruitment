@@ -2,7 +2,6 @@ const crypto = require('crypto');
 const prisma = require('../config/db');
 
 const TOKEN_TTL_MS = {
-  EmailConfirmation: 1000 * 60 * 60 * 24,   // 24 hours
   PasswordReset: 1000 * 60 * 30             // 30 minutes
 };
 
