@@ -1,0 +1,266 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum CandidateType {
+  Internal
+  External
+}
+
+enum PostingType {
+  Internal
+  External
+  Open
+}
+
+enum VacancyStatus {
+  Open
+  PartiallyFilled
+  Filled
+  Closed
+}
+
+enum ApplicationStatus {
+  Draft
+  Submitted
+  UnderReview
+  Shortlisted
+  InterviewScheduled
+  Interviewed
+  Offered
+  Rejected
+  Withdrawn
+}
+
+enum ListStatus {
+  Primary
+  Reserve
+}
+
+enum OfferStatus {
+  Recommended
+  Approved
+  Extended
+  Accepted
+  Declined
+  Withdrawn
+}
+
+enum StaffRole {
+  HR_Officer
+  Principal_HR_Officer
+  DHRA_Manager_HR
+}
+
+enum VerificationStatus {
+  Pending
+  HR_Verified
+  Discrepancy_Flagged
+}
+
+enum VerificationEvidenceType {
+  Comments
+  ManagerRecommendationLetter
+}
+
+model StaffUser {
+  id          Int       @id @default(autoincrement())
+  name        String
+  email       String    @unique
+  passwordHash String
+  role        StaffRole
+  department  String
+  actingAsId  Int?
+  actingAs    StaffUser? @relation("Delegation", fields: [actingAsId], references: [id])
+  delegates   StaffUser[] @relation("Delegation")
+  createdAt   DateTime  @default(now())
+
+  vacanciesCreated Vacancy[]        @relation("VacancyCreatedBy")
+  interviewsRun    InterviewRound[] @relation("InterviewConductedBy")
+  panelLinks       PanelMember[]    @relation("PanelStaffLink")
+  panelScoresRecorded PanelMember[] @relation("PanelRecordedBy")
+  offersRecommended Offer[]         @relation("OfferRecommendedBy")
+  offersApproved    Offer[]         @relation("OfferApprovedBy")
+  verifications     InternalProfile[] @relation("VerifiedBy")
+  auditLogs         AuditLog[]
+  verificationTokens VerificationToken[]
+}
+
+model Vacancy {
+  id                 Int           @id @default(autoincrement())
+  title              String
+  department         String
+  positionsRequired  Int           @default(1)
+  status             VacancyStatus @default(Open)
+  postingType        PostingType   @default(Open)
+  deadline           DateTime?
+  regulatoryDriver   String?
+  category           String?
+  priority           String?
+  createdById        Int
+  createdBy          StaffUser     @relation("VacancyCreatedBy", fields: [createdById], references: [id])
+  createdAt          DateTime      @default(now())
+  applications       Application[]
+
+  // computed in application logic, not stored: positionsAccepted, derived status
+}
+
+model Candidate {
+  id                 Int            @id @default(autoincrement())
+  fullName           String
+  email              String         @unique
+  phone              String?
+  candidateType      CandidateType
+  nationalId         String?
+  emailConfirmed     Boolean        @default(false)
+  passwordHash       String
+  createdAt          DateTime       @default(now())
+
+  workExperience     WorkExperience[]
+  education          Education[]
+  applications       Application[]
+  internalProfile    InternalProfile?
+  verificationTokens VerificationToken[]
+}
+
+model WorkExperience {
+  id           Int       @id @default(autoincrement())
+  candidateId  Int
+  candidate    Candidate @relation(fields: [candidateId], references: [id])
+  employer     String
+  jobTitle     String
+  startDate    DateTime
+  endDate      DateTime?
+}
+
+model Education {
+  id                 Int       @id @default(autoincrement())
+  candidateId        Int
+  candidate          Candidate @relation(fields: [candidateId], references: [id])
+  institution        String
+  qualificationLevel String
+  fieldOfStudy       String
+  yearCompleted      Int?
+}
+
+model InternalProfile {
+  id                        Int                       @id @default(autoincrement())
+  candidateId               Int                       @unique
+  candidate                 Candidate                 @relation(fields: [candidateId], references: [id])
+  employeeId                String?
+  department                String?
+  position                  String?
+  dateJoined                DateTime?
+  supervisorName            String?
+  supervisorEmail           String?
+  verificationStatus        VerificationStatus        @default(Pending)
+  verificationEvidenceType  VerificationEvidenceType?
+  verificationComments      String?                   @db.Text
+  supportingDocumentUrl     String?
+  verifiedById              Int?
+  verifiedBy                StaffUser?                @relation("VerifiedBy", fields: [verifiedById], references: [id])
+  verifiedDate              DateTime?
+}
+
+model Application {
+  id               Int               @id @default(autoincrement())
+  vacancyId        Int
+  vacancy          Vacancy           @relation(fields: [vacancyId], references: [id])
+  candidateId      Int
+  candidate        Candidate         @relation(fields: [candidateId], references: [id])
+  status           ApplicationStatus @default(Draft)
+  submittedDate    DateTime?
+  shortlistScore   Float?
+  rank             Int?
+  listStatus       ListStatus?
+  cvUrl            String?
+  coverLetterUrl   String?
+  createdAt        DateTime          @default(now())
+
+  interviewRounds  InterviewRound[]
+  offer            Offer?
+}
+
+model PanelMember {
+  id               Int            @id @default(autoincrement())
+  interviewRoundId Int
+  interviewRound   InterviewRound @relation(fields: [interviewRoundId], references: [id])
+  name             String
+  trade            String?        // e.g. "AVSEC Officer", "ARFF Chief", "External Technical Assessor"
+  email            String?
+  staffUserId      Int?           // optional - only set if this panelist happens to have a system account
+  staffUser        StaffUser?     @relation("PanelStaffLink", fields: [staffUserId], references: [id])
+  score            Float?
+  comments         String?        @db.Text
+  selfSubmitted    Boolean        @default(false) // true if entered via their own access link, not proxied by HR
+  recordedById     Int?           // the HR Officer who transcribed this score, if proxied
+  recordedBy       StaffUser?     @relation("PanelRecordedBy", fields: [recordedById], references: [id])
+  submittedAt      DateTime?
+  accessTokens     PanelAccessToken[]
+}
+
+model PanelAccessToken {
+  id            Int         @id @default(autoincrement())
+  token         String      @unique
+  panelMemberId Int
+  panelMember   PanelMember @relation(fields: [panelMemberId], references: [id])
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime    @default(now())
+}
+
+model InterviewRound {
+  id             Int         @id @default(autoincrement())
+  applicationId  Int
+  application    Application @relation(fields: [applicationId], references: [id])
+  roundNumber    Int
+  scheduledDate  DateTime?
+  mode           String?
+  score          Float?      // computed: average of this round's PanelMember scores
+  recommendation String?     // Shortlist / Hold / Reject - a deliberate HR judgment, not an average
+  conductedById  Int?
+  conductedBy    StaffUser?  @relation("InterviewConductedBy", fields: [conductedById], references: [id])
+  panelMembers   PanelMember[]
+}
+
+model Offer {
+  id               Int         @id @default(autoincrement())
+  applicationId    Int         @unique
+  application      Application @relation(fields: [applicationId], references: [id])
+  status           OfferStatus @default(Recommended)
+  recommendedById  Int?
+  recommendedBy    StaffUser?  @relation("OfferRecommendedBy", fields: [recommendedById], references: [id])
+  approvedById     Int?
+  approvedBy       StaffUser?  @relation("OfferApprovedBy", fields: [approvedById], references: [id])
+  approvedDate     DateTime?
+}
+
+model VerificationToken {
+  id          Int       @id @default(autoincrement())
+  token       String    @unique
+  type        String    // "EmailConfirmation" | "PasswordReset"
+  candidateId Int?
+  candidate   Candidate? @relation(fields: [candidateId], references: [id])
+  staffId     Int?
+  staff       StaffUser? @relation(fields: [staffId], references: [id])
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model AuditLog {
+  id            Int       @id @default(autoincrement())
+  entityType    String
+  entityId      Int
+  action        String
+  performedById Int?
+  performedBy   StaffUser? @relation(fields: [performedById], references: [id])
+  actingAsId    Int?
+  timestamp     DateTime  @default(now())
+  payload       Json?
+}

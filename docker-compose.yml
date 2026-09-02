@@ -1,0 +1,46 @@
+version: "3.9"
+
+# This file is intentionally hosting-agnostic:
+# - On-prem: run `docker compose up` directly on a UCAA server.
+# - Cloud: deploy the same images to Azure App Service / ECS / a cloud VM.
+# - Hybrid: point DATABASE_URL at an on-prem MySQL instance over VPN
+#   while running the api/frontend services in the cloud, or vice versa -
+#   no code changes needed, only the DATABASE_URL and env values differ.
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: erecruitment
+      MYSQL_USER: erec_user
+      MYSQL_PASSWORD: erec_password
+      MYSQL_ROOT_PASSWORD: root_change_me
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      - mysql
+    env_file:
+      - ./backend/.env
+    ports:
+      - "4000:4000"
+    volumes:
+      - uploads_data:/app/uploads
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "5173:80"
+
+volumes:
+  mysql_data:
+  uploads_data:

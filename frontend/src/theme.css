@@ -1,0 +1,39 @@
+:root {
+  /* Brand colors - replace these with UCAA's actual brand palette */
+  --color-primary: #1d4e73;
+  --color-primary-dark: #143a56;
+  --color-primary-light: #eaf1f6;
+  --color-accent: #2f8f6e;
+  --color-danger: #b3261e;
+  --color-warning: #a66a00;
+
+  /* Neutrals */
+  --color-text: #23262b;
+  --color-text-muted: #5a5f66;
+  --color-border: #d8dbe0;
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f6f7f9;
+
+  /* Typography */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-size-base: 15px;
+
+  /* Spacing / shape */
+  --radius: 6px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-family);
+  font-size: var(--font-size-base);
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+a { color: var(--color-primary); }
