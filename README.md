@@ -158,24 +158,13 @@ erecruitment/
 
 ## Running locally
 
-```bash
-docker compose up --build
-```
+`docker-compose.yml` exists but isn't wired up for local dev yet - **see
+[SETUP.md](SETUP.md) for how to run the API and frontend directly with
+Node**, including database and Gmail SMTP setup.
 
-A working `backend/.env` with generated secrets is already included for local dev -
-only the `SMTP_*` values need replacing to send real email (registration
-confirmation, password reset, and supervisor notifications all depend on this).
-
+Once running:
 - API: http://localhost:4000
 - Frontend: http://localhost:5173
-- MySQL: localhost:3306
-
-Run the first migration and seed staff accounts once MySQL is up:
-
-```bash
-docker compose exec api npx prisma migrate dev --name init
-docker compose exec api npx prisma db seed
-```
 
 Seeded staff accounts (password for all: `ChangeMe123!`):
 - hro@caa.co.ug — HR Officer
