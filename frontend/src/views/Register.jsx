@@ -28,12 +28,12 @@ export default function Register() {
     <div style={{ maxWidth: 420 }}>
       <PageHeader
         title="Create account"
-        subtitle="Registering with a @caa.co.ug email creates an internal-staff account automatically."
+        subtitle="Please fill in the form below to create your account. Fields marked with * are required."
       />
       <form onSubmit={handleSubmit}>
-        <TextField label="Full name" value={form.fullName}
+        <TextField label="Full name *" value={form.fullName}
           onChange={(e) => setForm({ ...form, fullName: e.target.value })} required />
-        <TextField label="Email" type="email" value={form.email}
+        <TextField label="Email *" type="email" value={form.email}
           onChange={(e) => setForm({ ...form, email: e.target.value })} required />
         <TextField label="Phone" value={form.phone}
           onChange={(e) => setForm({ ...form, phone: e.target.value })} />
