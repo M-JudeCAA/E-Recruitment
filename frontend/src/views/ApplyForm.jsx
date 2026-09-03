@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import client from '../models/apiClient';
 import PageHeader from '../components/PageHeader';
@@ -7,11 +7,16 @@ import Alert from '../components/Alert';
 
 export default function ApplyForm() {
   const { vacancyId } = useParams();
+  const [vacancy, setVacancy] = useState(null);
   const [cv, setCv] = useState(null);
   const [coverLetter, setCoverLetter] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+
+  useEffect(() => {
+    client.get(`/api/vacancies/${vacancyId}`).then((res) => setVacancy(res.data));
+  }, [vacancyId]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -36,7 +41,14 @@ export default function ApplyForm() {
 
   return (
     <div style={{ maxWidth: 420 }}>
-      <PageHeader title="Apply" />
+      <PageHeader title={vacancy ? vacancy.title : 'Apply'} subtitle={vacancy ? vacancy.department : undefined} />
+      {vacancy?.description && (
+        <div
+          className="rich-text-content"
+          dangerouslySetInnerHTML={{ __html: vacancy.description }}
+          style={{ marginBottom: 'var(--spacing-md)' }}
+        />
+      )}
       <form onSubmit={handleSubmit}>
         <label style={{ display: 'block', marginBottom: 4, fontSize: 13, color: 'var(--color-text-muted)' }}>CV (PDF or Word) *</label>
         <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setCv(e.target.files[0])} style={{ display: 'block', marginBottom: 16 }} required />

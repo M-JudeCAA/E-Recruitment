@@ -71,6 +71,9 @@ export default function Navbar() {
             <Link to="/hr" style={linkStyle}>
               HR dashboard
             </Link>
+            <Link to="/hr/departments" style={linkStyle}>
+              Departments & positions
+            </Link>
             <button onClick={logoutStaff} style={buttonStyle}>
               Staff log out
             </button>

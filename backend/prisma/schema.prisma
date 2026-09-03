@@ -53,8 +53,10 @@ enum OfferStatus {
 
 enum StaffRole {
   HR_Officer
+  Senior_HR_Officer
   Principal_HR_Officer
-  DHRA_Manager_HR
+  Manager
+  Director
 }
 
 enum VerificationStatus {
@@ -68,6 +70,12 @@ enum VerificationEvidenceType {
   ManagerRecommendationLetter
 }
 
+enum DepartmentStatus {
+  Pending
+  Approved
+  Rejected
+}
+
 model StaffUser {
   id          Int       @id @default(autoincrement())
   name        String
@@ -75,6 +83,14 @@ model StaffUser {
   passwordHash String
   role        StaffRole
   department  String
+  // Authoritative department scoping for admin vacancy visibility, replacing
+  // the free-text `department` string above for that purpose - matching by
+  // name alone would be ambiguous for a department like "CWG" that exists
+  // under five different directorates. Nullable because existing staff
+  // predate this field; a null value means "not yet assigned" and is
+  // treated as seeing nothing in admin listings, never everything.
+  departmentId Int?
+  departmentRef Department? @relation("StaffDepartment", fields: [departmentId], references: [id])
   actingAsId  Int?
   actingAs    StaffUser? @relation("Delegation", fields: [actingAsId], references: [id])
   delegates   StaffUser[] @relation("Delegation")
@@ -89,23 +105,100 @@ model StaffUser {
   verifications     InternalProfile[] @relation("VerifiedBy")
   auditLogs         AuditLog[]
   verificationTokens VerificationToken[]
+  directoratesCreated Directorate[] @relation("DirectorateCreatedBy")
+  departmentsCreated  Department[]  @relation("DepartmentCreatedBy")
+  departmentsApproved Department[]  @relation("DepartmentApprovedBy")
+  positionsCreated    Position[]    @relation("PositionCreatedBy")
+}
+
+model Directorate {
+  id            Int          @id @default(autoincrement())
+  name          String       @unique
+  directorName  String?
+  directorEmail String?
+  createdById   Int
+  createdBy     StaffUser    @relation("DirectorateCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime     @default(now())
+  departments   Department[]
+}
+
+model Department {
+  id             Int              @id @default(autoincrement())
+  name           String
+  directorateId  Int
+  directorate    Directorate      @relation(fields: [directorateId], references: [id])
+  status         DepartmentStatus @default(Pending)
+  createdById    Int
+  createdBy      StaffUser        @relation("DepartmentCreatedBy", fields: [createdById], references: [id])
+  approvedById   Int?
+  approvedBy     StaffUser?       @relation("DepartmentApprovedBy", fields: [approvedById], references: [id])
+  approvedAt     DateTime?
+  rejectionReason String?
+  createdAt      DateTime         @default(now())
+
+  positions      Position[]
+  vacancies      Vacancy[]
+  staff          StaffUser[]      @relation("StaffDepartment")
+
+  // The same department name can recur under different directorates (e.g.
+  // "CWG" under CORP, DANS, DAAS, DSSER, DF) - each is a distinct row.
+  // Uniqueness only within one directorate.
+  @@unique([name, directorateId])
+}
+
+model Position {
+  id          Int    @id @default(autoincrement())
+  name        String
+  departmentId Int
+  department  Department @relation(fields: [departmentId], references: [id])
+  // Higher = more senior. Comparisons only ever happen within the same
+  // department - level 3 in one department carries no meaning relative
+  // to level 3 in another. A plain integer, not a fixed enum, since
+  // different departments' ladders don't all have the same number of rungs.
+  level       Int
+  createdById Int
+  createdBy   StaffUser @relation("PositionCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+
+  vacancies              Vacancy[] @relation("VacancyPosition")
+  vacanciesReportingHere Vacancy[] @relation("VacancyReportsToPosition")
+
+  // The same title can exist in more than one department (confirmed) -
+  // uniqueness is per-department, not organisation-wide.
+  @@unique([name, departmentId])
 }
 
 model Vacancy {
-  id                 Int           @id @default(autoincrement())
-  title              String
-  department         String
-  positionsRequired  Int           @default(1)
-  status             VacancyStatus @default(Open)
-  postingType        PostingType   @default(Open)
-  deadline           DateTime?
-  regulatoryDriver   String?
-  category           String?
-  priority           String?
-  createdById        Int
-  createdBy          StaffUser     @relation("VacancyCreatedBy", fields: [createdById], references: [id])
-  createdAt          DateTime      @default(now())
-  applications       Application[]
+  id                   Int           @id @default(autoincrement())
+  jobRef               String        @unique
+  title                String        // snapshot of Position.name at creation time - see note below
+  positionId           Int
+  position             Position      @relation("VacancyPosition", fields: [positionId], references: [id])
+  departmentId         Int           // derived from position.departmentId at creation - never independently settable
+  department           Department    @relation(fields: [departmentId], references: [id])
+  reportsToPositionId  Int?
+  reportsToPosition    Position?     @relation("VacancyReportsToPosition", fields: [reportsToPositionId], references: [id])
+  salaryScale          String?
+  description          String?       @db.Text
+  positionsRequired    Int           @default(1)
+  status               VacancyStatus @default(Open)
+  postingType          PostingType   @default(Open)
+  deadline             DateTime?
+  regulatoryDriver     String?
+  category             String?
+  priority             String?
+  createdById          Int
+  createdBy            StaffUser     @relation("VacancyCreatedBy", fields: [createdById], references: [id])
+  createdAt            DateTime      @default(now())
+  applications         Application[]
+
+  // Why `title` is kept as a denormalized snapshot rather than always
+  // reading through `position.name`: if a Position is later renamed, past
+  // vacancies should still show what they were actually advertised as at
+  // the time - the same audit-trail principle already used for candidate
+  // qualification snapshots elsewhere in this system. `positionId` remains
+  // the authoritative link for all matching/reporting logic; `title` is
+  // purely a historical record of what was true at creation.
 
   // computed in application logic, not stored: positionsAccepted, derived status
 }
@@ -184,6 +277,8 @@ model Application {
 
   interviewRounds  InterviewRound[]
   offer            Offer?
+
+  @@unique([vacancyId, candidateId])
 }
 
 model PanelMember {

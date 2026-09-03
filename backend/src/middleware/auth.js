@@ -13,12 +13,14 @@ function authenticate(req, res, next) {
   }
 }
 
-// Cumulative role hierarchy, matching the RBAC model:
-// HR_Officer < Principal_HR_Officer < DHRA_Manager_HR
+// Cumulative role hierarchy, matching the 5-tier RBAC model:
+// HR Officer < Senior HR Officer < Principal HR Officer < Manager < Director
 const ROLE_RANK = {
   HR_Officer: 1,
-  Principal_HR_Officer: 2,
-  DHRA_Manager_HR: 3
+  Senior_HR_Officer: 2,
+  Principal_HR_Officer: 3,
+  Manager: 4,
+  Director: 5
 };
 
 function requireStaffRole(minRole) {
@@ -42,4 +44,18 @@ function requireCandidate(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, requireStaffRole, requireCandidate, ROLE_RANK };
+function optionalAuthenticate(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return next(); // proceed anonymously - this endpoint is public
+
+  try {
+    req.user = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    // Invalid/expired token on a public browsing endpoint - fail open to
+    // anonymous rather than blocking the request entirely.
+  }
+  next();
+}
+
+module.exports = { authenticate, optionalAuthenticate, requireStaffRole, requireCandidate, ROLE_RANK };

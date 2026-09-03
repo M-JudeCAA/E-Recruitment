@@ -11,6 +11,9 @@ const interviewRoutes = require('./routes/interviews');
 const candidateRoutes = require('./routes/candidates');
 const fileRoutes = require('./routes/files');
 const panelAccessRoutes = require('./routes/panelAccess');
+const departmentRoutes = require('./routes/departments');
+const positionRoutes = require('./routes/positions');
+const directorateRoutes = require('./routes/directorates');
 
 const app = express();
 
@@ -31,6 +34,9 @@ app.use('/api/candidates', candidateRoutes);
 app.use('/api/files', fileRoutes);
 // Public, unauthenticated - a panelist's scoped access link, not a JWT session.
 app.use('/api/panel-access', panelAccessRoutes);
+app.use('/api/departments', departmentRoutes);
+app.use('/api/positions', positionRoutes);
+app.use('/api/directorates', directorateRoutes);
 
 // Basic error handler - catches Multer file-validation errors etc.
 app.use((err, req, res, next) => {

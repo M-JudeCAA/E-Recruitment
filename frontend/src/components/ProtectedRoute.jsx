@@ -2,7 +2,7 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../models/AuthContext';
 
-const ROLE_RANK = { HR_Officer: 1, Principal_HR_Officer: 2, DHRA_Manager_HR: 3 };
+const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 
 export function RequireStaff({ minRole = 'HR_Officer', children }) {
   const { staff } = useAuth();
