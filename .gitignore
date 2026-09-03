@@ -42,3 +42,4 @@ Thumbs.db
 # Coverage / test artifacts
 coverage/
 .nyc_output/
+SPEC_BUGS_AND_CAVEATS.md
