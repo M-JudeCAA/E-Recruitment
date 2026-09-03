@@ -19,10 +19,12 @@ enum PostingType {
 }
 
 enum VacancyStatus {
+  PendingApproval
   Open
   PartiallyFilled
   Filled
   Closed
+  Rejected
 }
 
 enum ApplicationStatus {
@@ -81,6 +83,7 @@ model StaffUser {
   createdAt   DateTime  @default(now())
 
   vacanciesCreated Vacancy[]        @relation("VacancyCreatedBy")
+  vacanciesApproved Vacancy[]       @relation("VacancyApprovedBy")
   interviewsRun    InterviewRound[] @relation("InterviewConductedBy")
   panelLinks       PanelMember[]    @relation("PanelStaffLink")
   panelScoresRecorded PanelMember[] @relation("PanelRecordedBy")
@@ -96,7 +99,7 @@ model Vacancy {
   title              String
   department         String
   positionsRequired  Int           @default(1)
-  status             VacancyStatus @default(Open)
+  status             VacancyStatus @default(PendingApproval)
   postingType        PostingType   @default(Open)
   deadline           DateTime?
   regulatoryDriver   String?
@@ -105,6 +108,10 @@ model Vacancy {
   createdById        Int
   createdBy          StaffUser     @relation("VacancyCreatedBy", fields: [createdById], references: [id])
   createdAt          DateTime      @default(now())
+  approvedById       Int?
+  approvedBy         StaffUser?    @relation("VacancyApprovedBy", fields: [approvedById], references: [id])
+  approvedAt         DateTime?
+  rejectionReason    String?
   applications       Application[]
 
   // computed in application logic, not stored: positionsAccepted, derived status

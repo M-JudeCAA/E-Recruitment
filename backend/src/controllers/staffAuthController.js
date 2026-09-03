@@ -16,7 +16,7 @@ async function login(req, res) {
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN }
   );
-  res.json({ token, role: staff.role, department: staff.department, name: staff.name });
+  res.json({ token, id: staff.id, role: staff.role, department: staff.department, name: staff.name });
 }
 
 async function forgotPassword(req, res) {

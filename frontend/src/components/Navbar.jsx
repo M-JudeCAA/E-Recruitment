@@ -2,6 +2,8 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../models/AuthContext';
 
+const ROLE_RANK = { HR_Officer: 1, Principal_HR_Officer: 2, DHRA_Manager_HR: 3 };
+
 export default function Navbar() {
   const { candidate, staff, logoutCandidate, logoutStaff } = useAuth();
 
@@ -20,6 +22,9 @@ export default function Navbar() {
       {staff ? (
         <>
           <Link to="/hr">HR dashboard</Link>
+          {ROLE_RANK[staff.role] >= ROLE_RANK.Principal_HR_Officer && (
+            <Link to="/hr/approvals">Approvals</Link>
+          )}
           <button onClick={logoutStaff}>Staff log out</button>
         </>
       ) : (

@@ -6,8 +6,10 @@ const router = express.Router();
 
 router.post('/', authenticate, requireStaffRole('HR_Officer'), controller.create);
 router.patch('/:id/approve', authenticate, requireStaffRole('Principal_HR_Officer'), controller.approve);
+router.patch('/:id/reject', authenticate, requireStaffRole('Principal_HR_Officer'), controller.reject);
 router.get('/', controller.listPublic);
 router.get('/admin', authenticate, requireStaffRole('HR_Officer'), controller.listForAdmin);
+router.get('/pending-approvals', authenticate, requireStaffRole('Principal_HR_Officer'), controller.listPendingApprovals);
 router.get('/:id', controller.getOne);
 router.get('/:id/applications', authenticate, requireStaffRole('HR_Officer'), controller.listApplications);
 router.post('/:id/rank', authenticate, requireStaffRole('HR_Officer'), controller.saveRanking);

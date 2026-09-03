@@ -16,6 +16,7 @@ import StaffLogin from './views/StaffLogin';
 import StaffForgotPassword from './views/StaffForgotPassword';
 import StaffResetPassword from './views/StaffResetPassword';
 import HRDashboard from './views/HRDashboard';
+import ApprovalsQueue from './views/ApprovalsQueue';
 import VacancyDetail from './views/VacancyDetail';
 import PanelScoreAccess from './views/PanelScoreAccess';
 import { RequireCandidate, RequireStaff } from './components/ProtectedRoute';
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/staff/forgot-password" element={<StaffForgotPassword />} />
         <Route path="/staff/reset-password" element={<StaffResetPassword />} />
         <Route path="/hr" element={<RequireStaff minRole="HR_Officer"><HRDashboard /></RequireStaff>} />
+        <Route path="/hr/approvals" element={<RequireStaff minRole="Principal_HR_Officer"><ApprovalsQueue /></RequireStaff>} />
         <Route path="/hr/vacancy/:id" element={<RequireStaff minRole="HR_Officer"><VacancyDetail /></RequireStaff>} />
         {/* Public - reached via a panelist's emailed/shared link, no login */}
         <Route path="/panel-score/:token" element={<PanelScoreAccess />} />

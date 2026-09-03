@@ -17,12 +17,43 @@ async function create(req, res) {
 
 async function approve(req, res) {
   const vacancyId = Number(req.params.id);
+  const existing = await vacancyModel.findById(vacancyId);
+  if (!existing) return res.status(404).json({ error: 'Vacancy not found' });
+  if (existing.status !== 'PendingApproval') {
+    return res.status(422).json({ error: `Vacancy is not pending approval (current status: ${existing.status})` });
+  }
   try {
     await workflow.assertNotSelfApproval(vacancyId, req.user.id);
   } catch (err) {
     return res.status(422).json({ error: err.message });
   }
-  const vacancy = await vacancyModel.update(vacancyId, { status: 'Open' });
+  const vacancy = await vacancyModel.update(vacancyId, {
+    status: 'Open',
+    approvedById: req.user.id,
+    approvedAt: new Date()
+  });
+  res.json(vacancy);
+}
+
+async function reject(req, res) {
+  const vacancyId = Number(req.params.id);
+  const { reason } = req.body;
+  const existing = await vacancyModel.findById(vacancyId);
+  if (!existing) return res.status(404).json({ error: 'Vacancy not found' });
+  if (existing.status !== 'PendingApproval') {
+    return res.status(422).json({ error: `Vacancy is not pending approval (current status: ${existing.status})` });
+  }
+  try {
+    await workflow.assertNotSelfApproval(vacancyId, req.user.id);
+  } catch (err) {
+    return res.status(422).json({ error: err.message });
+  }
+  const vacancy = await vacancyModel.update(vacancyId, {
+    status: 'Rejected',
+    approvedById: req.user.id,
+    approvedAt: new Date(),
+    rejectionReason: reason || null
+  });
   res.json(vacancy);
 }
 
@@ -37,8 +68,17 @@ async function listPublic(req, res) {
 }
 
 async function listForAdmin(req, res) {
-  const where = req.user.role === 'DHRA_Manager_HR' ? {} : { department: req.user.department };
-  const vacancies = await vacancyModel.findManyForAdmin(where);
+  // HR_Officer, Principal_HR_Officer and DHRA_Manager_HR are all one directorate
+  // (DHRA) administering recruitment org-wide, not scoped to the vacancy's own
+  // hiring department - so every staff role sees every vacancy here.
+  const vacancies = await vacancyModel.findManyForAdmin({});
+  res.json(vacancies);
+}
+
+async function listPendingApprovals(req, res) {
+  // Approval authority is rank-based, not department-scoped, so a Principal HR
+  // Officer+ must see every pending vacancy, not just ones in their own department.
+  const vacancies = await vacancyModel.findManyForAdmin({ status: 'PendingApproval' });
   res.json(vacancies);
 }
 
@@ -76,4 +116,4 @@ async function saveRanking(req, res) {
   res.json(results);
 }
 
-module.exports = { create, approve, listPublic, listForAdmin, getOne, listApplications, saveRanking };
+module.exports = { create, approve, reject, listPublic, listForAdmin, listPendingApprovals, getOne, listApplications, saveRanking };

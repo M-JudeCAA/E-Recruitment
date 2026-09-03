@@ -18,7 +18,7 @@ export default function StaffLogin() {
     setError('');
     try {
       const res = await client.post('/api/staff/auth/login', form);
-      loginStaff(res.data.token, res.data.role, res.data.name);
+      loginStaff(res.data.token, res.data.role, res.data.name, res.data.id);
       navigate('/hr');
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed');

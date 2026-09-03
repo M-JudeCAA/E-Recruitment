@@ -25,7 +25,7 @@ export default function HRDashboard() {
     setMessage(''); setError('');
     try {
       await staffClient.post('/api/vacancies', form);
-      setMessage('Vacancy created. It needs Principal HR Officer approval to open.');
+      setMessage('Vacancy created and awaiting Principal HR Officer approval before it is published.');
       setForm({ title: '', department: '', positionsRequired: 1, postingType: 'Open', deadline: '' });
       load();
     } catch (err) {
@@ -33,14 +33,7 @@ export default function HRDashboard() {
     }
   };
 
-  const approve = async (id) => {
-    try {
-      await staffClient.patch(`/api/vacancies/${id}/approve`);
-      load();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Approval failed');
-    }
-  };
+  const myVacancies = vacancies.filter((v) => v.createdById === staff?.id);
 
   return (
     <div>
@@ -68,16 +61,25 @@ export default function HRDashboard() {
         <Alert type="error" message={error} />
       </Card>
 
-      <h3>Vacancies</h3>
-      {vacancies.map((v) => (
+      <h3>My requisitions</h3>
+      {myVacancies.length === 0 && <p style={{ color: 'var(--color-text-muted)' }}>You haven't submitted any vacancies yet.</p>}
+      {myVacancies.map((v) => (
         <Card key={v.id}>
           <strong>{v.title}</strong> &mdash; <StatusBadge status={v.status} /> &middot; {v._count?.applications ?? 0} application(s)
           <div style={{ marginTop: 8 }}>
             <Link to={`/hr/vacancy/${v.id}`}>View applications</Link>
-            {v.status === 'Open' && staff?.role !== 'HR_Officer' && (
-              <Button variant="secondary" style={{ marginLeft: 12, padding: '2px 10px' }} onClick={() => approve(v.id)}>Re-approve</Button>
-            )}
           </div>
+          {v.status === 'PendingApproval' && (
+            <div style={{ marginTop: 4, fontSize: 13, color: 'var(--color-text-muted)' }}>Awaiting Principal HR Officer approval.</div>
+          )}
+          {v.status === 'Rejected' && (
+            <div style={{ marginTop: 4, fontSize: 13, color: 'var(--color-text-muted)' }}>
+              Rejected{v.approvedBy?.name ? ` by ${v.approvedBy.name}` : ''}{v.rejectionReason ? ` — ${v.rejectionReason}` : ''}
+            </div>
+          )}
+          {v.status === 'Open' && v.approvedBy?.name && (
+            <div style={{ marginTop: 4, fontSize: 13, color: 'var(--color-text-muted)' }}>Approved by {v.approvedBy.name}</div>
+          )}
         </Card>
       ))}
     </div>

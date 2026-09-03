@@ -10,7 +10,8 @@ export function AuthProvider({ children }) {
   const [staff, setStaff] = useState(() => {
     const role = localStorage.getItem('staffRole');
     const name = localStorage.getItem('staffName');
-    return localStorage.getItem('staffToken') ? { role, name } : null;
+    const id = Number(localStorage.getItem('staffId'));
+    return localStorage.getItem('staffToken') ? { id, role, name } : null;
   });
 
   function loginCandidate(token, candidateType) {
@@ -24,16 +25,18 @@ export function AuthProvider({ children }) {
     setCandidate(null);
   }
 
-  function loginStaff(token, role, name) {
+  function loginStaff(token, role, name, id) {
     localStorage.setItem('staffToken', token);
     localStorage.setItem('staffRole', role);
     localStorage.setItem('staffName', name);
-    setStaff({ role, name });
+    localStorage.setItem('staffId', id);
+    setStaff({ id, role, name });
   }
   function logoutStaff() {
     localStorage.removeItem('staffToken');
     localStorage.removeItem('staffRole');
     localStorage.removeItem('staffName');
+    localStorage.removeItem('staffId');
     setStaff(null);
   }
 
