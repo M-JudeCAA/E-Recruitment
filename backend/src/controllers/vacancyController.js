@@ -140,25 +140,17 @@ async function listPublic(req, res) {
   res.json(vacancies);
 }
 
-// Scoped by the staff member's departmentId (a real Department row), not
-// a free-text/relation-name match. Matching on Department.name alone
-// (as an earlier draft of this did) is exactly the ambiguity this whole
-// Position/Department model exists to eliminate: "CWG" is a real
-// department name shared by five different directorates, so a name-only
-// filter would show an HR Officer vacancies from all five. A staff
-// account with no departmentId assigned yet sees nothing here rather
-// than everything - the safer default during the transition.
+// Not scoped by department. Every account that can reach this route (any
+// staff role, gated at HR_Officer+ in routes/vacancies.js) is a member of
+// the same DHRA HR team - they aren't department-specific business
+// partners siloed to one department's hiring, they're the ones who
+// create and manage vacancies across the whole organisation. An earlier
+// version scoped this by req.user.departmentId, which was wrong for that
+// reason (and, before that, by Department.name string-matching, which
+// was wrong for a different reason - "CWG" recurs under five different
+// directorates). Both are gone; every staff member sees every vacancy.
 async function listForAdmin(req, res) {
-  const topTierRoles = ['Manager', 'Director'];
-  let where;
-  if (topTierRoles.includes(req.user.role)) {
-    where = {};
-  } else if (req.user.departmentId) {
-    where = { departmentId: req.user.departmentId };
-  } else {
-    where = { departmentId: -1 };
-  }
-  const vacancies = await vacancyModel.findManyForAdmin(where);
+  const vacancies = await vacancyModel.findManyForAdmin({});
   res.json(vacancies);
 }
 

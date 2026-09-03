@@ -283,31 +283,22 @@ describe('listPublic', () => {
 });
 
 describe('listForAdmin', () => {
-  test.each(['Manager', 'Director'])('%s sees every department', async (role) => {
-    prisma.vacancy.findMany.mockResolvedValue([]);
-    const req = { user: { role } };
-    await vacancyController.listForAdmin(req, mockRes());
-    expect(prisma.vacancy.findMany.mock.calls[0][0].where).toEqual({});
-  });
+  // Every staff role that can reach this route is the same DHRA HR team -
+  // not department-specific business partners siloed to their own
+  // department's hiring - so nobody is scoped, regardless of role or
+  // whether departmentId happens to be set.
+  test.each(['HR_Officer', 'Senior_HR_Officer', 'Principal_HR_Officer', 'Manager', 'Director'])(
+    '%s sees every vacancy, regardless of department', async (role) => {
+      prisma.vacancy.findMany.mockResolvedValue([]);
+      const req = { user: { role, departmentId: 10 } };
+      await vacancyController.listForAdmin(req, mockRes());
+      expect(prisma.vacancy.findMany.mock.calls[0][0].where).toEqual({});
+    });
 
-  test('an HR Officer with a departmentId only sees their own department', async () => {
-    prisma.vacancy.findMany.mockResolvedValue([]);
-    const req = { user: { role: 'HR_Officer', departmentId: 1 } };
-    await vacancyController.listForAdmin(req, mockRes());
-    expect(prisma.vacancy.findMany.mock.calls[0][0].where).toEqual({ departmentId: 1 });
-  });
-
-  test('a Principal HR Officer with a departmentId only sees their own department (not everything)', async () => {
-    prisma.vacancy.findMany.mockResolvedValue([]);
-    const req = { user: { role: 'Principal_HR_Officer', departmentId: 1 } };
-    await vacancyController.listForAdmin(req, mockRes());
-    expect(prisma.vacancy.findMany.mock.calls[0][0].where).toEqual({ departmentId: 1 });
-  });
-
-  test('an HR Officer with no departmentId assigned sees nothing (fails closed, not open)', async () => {
+  test('sees everything even with no departmentId assigned at all', async () => {
     prisma.vacancy.findMany.mockResolvedValue([]);
     const req = { user: { role: 'HR_Officer', departmentId: null } };
     await vacancyController.listForAdmin(req, mockRes());
-    expect(prisma.vacancy.findMany.mock.calls[0][0].where).toEqual({ departmentId: -1 });
+    expect(prisma.vacancy.findMany.mock.calls[0][0].where).toEqual({});
   });
 });

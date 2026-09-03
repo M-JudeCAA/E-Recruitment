@@ -59,6 +59,28 @@ async function main() {
   console.log('\nNo Position rows are seeded - the source list only contains staff names, not job');
   console.log('titles or seniority levels. Positions need to be entered separately, once real');
   console.log('position/level data is available, via the new Position admin screen.');
+
+  // Backfill departmentId (the real FK admin vacancy scoping actually
+  // uses) onto every staff account whose legacy department string
+  // unambiguously matches one just-seeded department name. Run after
+  // department creation, since it needs those rows to exist - this is
+  // what makes prisma/seed.js's DHRA HR team accounts (all department:
+  // 'HR') actually resolve to the real HR/DHRA department row rather
+  // than sitting with departmentId left null.
+  const staff = await prisma.staffUser.findMany();
+  let backfilled = 0;
+  for (const s of staff) {
+    if (s.departmentId) continue; // already assigned, leave it alone
+    const matches = await prisma.department.findMany({ where: { name: s.department, status: 'Approved' } });
+    if (matches.length === 1) {
+      await prisma.staffUser.update({ where: { id: s.id }, data: { departmentId: matches[0].id } });
+      backfilled++;
+    }
+    // matches.length === 0 (no such department) or > 1 (ambiguous, e.g.
+    // "CWG") is left unassigned deliberately - listForAdmin treats a
+    // missing departmentId as "sees nothing", never "sees everything".
+  }
+  console.log(`\nBackfilled departmentId for ${backfilled} staff account(s) from an unambiguous department-name match.`);
 }
 
 main()
