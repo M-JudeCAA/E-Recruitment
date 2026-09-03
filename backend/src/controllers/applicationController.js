@@ -108,7 +108,11 @@ async function recommendOffer(req, res) {
 }
 
 async function approveOffer(req, res) {
-  const offer = await offerModel.update(Number(req.params.offerId), {
+  const offerId = Number(req.params.offerId);
+  const existing = await offerModel.findById(offerId);
+  if (!existing) return res.status(404).json({ error: 'Offer not found' });
+
+  const offer = await offerModel.update(offerId, {
     status: 'Approved', approvedById: req.user.id, approvedDate: new Date()
   });
   res.json(offer);

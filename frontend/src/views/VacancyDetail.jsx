@@ -14,6 +14,13 @@ import Select from '../components/Select';
 
 const emptyPanelist = { name: '', trade: '', email: '' };
 
+// Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK - used here so
+// "Recommend for offer" (Principal HR Officer+) and "Approve offer"
+// (Manager+) are gated by rank rather than an exact-role string match,
+// which would otherwise wrongly exclude Manager/Director from both and
+// Senior HR Officer would wrongly qualify for the former.
+const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
+
 export default function VacancyDetail() {
   const { id } = useParams();
   const { staff } = useAuth();
@@ -304,10 +311,10 @@ export default function VacancyDetail() {
                 {app.interviewRounds.length === 0 ? 'Schedule interview' : 'Schedule another round'}
               </Button>
             )}
-            {app.status === 'Interviewed' && !app.offer && staff?.role !== 'HR_Officer' && (
+            {app.status === 'Interviewed' && !app.offer && (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Principal_HR_Officer && (
               <Button style={{ marginLeft: 8 }} onClick={() => recommendOffer(app.id)}>Recommend for offer</Button>
             )}
-            {app.offer && staff?.role === 'DHRA_Manager_HR' && app.offer.status === 'Recommended' && (
+            {app.offer && (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Manager && app.offer.status === 'Recommended' && (
               <Button onClick={() => approveOffer(app.offer.id)}>Approve offer</Button>
             )}
             {app.offer && <span style={{ marginLeft: 8 }}>Offer: <StatusBadge status={app.offer.status} /></span>}

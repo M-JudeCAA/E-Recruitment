@@ -12,11 +12,11 @@ async function login(req, res) {
   if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
   const token = jwt.sign(
-    { type: 'staff', id: staff.id, role: staff.role, department: staff.department, name: staff.name },
+    { type: 'staff', id: staff.id, role: staff.role, department: staff.department, departmentId: staff.departmentId, name: staff.name },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN }
   );
-  res.json({ token, role: staff.role, department: staff.department, name: staff.name });
+  res.json({ token, role: staff.role, department: staff.department, departmentId: staff.departmentId, name: staff.name });
 }
 
 async function forgotPassword(req, res) {

@@ -12,6 +12,9 @@ router.get('/', optionalAuthenticate, controller.listPublic);
 router.get('/admin', authenticate, requireStaffRole('HR_Officer'), controller.listForAdmin);
 router.get('/:id', controller.getOne);
 router.get('/:id/applications', authenticate, requireStaffRole('HR_Officer'), controller.listApplications);
-router.post('/:id/rank', authenticate, requireStaffRole('HR_Officer'), controller.saveRanking);
+// Saving a shortlist ranking is the actual "review & shortlist candidates"
+// action, so it requires Senior HR Officer+, same as shortlist/interview
+// routes - unlike listApplications just above, which is a read-only view.
+router.post('/:id/rank', authenticate, requireStaffRole('Senior_HR_Officer'), controller.saveRanking);
 
 module.exports = router;

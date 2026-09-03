@@ -140,6 +140,34 @@ describe('recommendOffer', () => {
   });
 });
 
+describe('approveOffer', () => {
+  test('returns 404 rather than crashing when the offer does not exist', async () => {
+    prisma.offer.findUnique.mockResolvedValue(null);
+    const req = { params: { offerId: '999' }, user: { id: 2 } };
+    const res = mockRes();
+
+    await applicationController.approveOffer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(prisma.offer.update).not.toHaveBeenCalled();
+  });
+
+  test('approves an existing offer', async () => {
+    prisma.offer.findUnique.mockResolvedValue({ id: 20, status: 'Recommended', application: { candidateId: 7, vacancyId: 3 } });
+    prisma.offer.update.mockResolvedValue({ id: 20, status: 'Approved' });
+    const req = { params: { offerId: '20' }, user: { id: 2 } };
+    const res = mockRes();
+
+    await applicationController.approveOffer(req, res);
+
+    expect(prisma.offer.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 20 },
+      data: expect.objectContaining({ status: 'Approved', approvedById: 2 })
+    }));
+    expect(res.json).toHaveBeenCalledWith({ id: 20, status: 'Approved' });
+  });
+});
+
 describe('acceptOffer / declineOffer ownership check', () => {
   test('acceptOffer rejects a candidate who does not own the offer', async () => {
     prisma.offer.findUnique.mockResolvedValue({

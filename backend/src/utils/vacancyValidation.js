@@ -4,22 +4,15 @@ const VALID_POSTING_TYPES = ['Internal', 'External', 'Open'];
  * Validates vacancy input. When partial=true (used for edits), a field is
  * only checked if it's actually present in the payload - required-ness
  * only applies to full creation.
+ *
+ * Title and department are no longer free-text fields here - since the
+ * Position table, they're derived from the selected Position (see
+ * vacancyController.create/update) and validated there via positionModel
+ * lookups instead.
  */
-function validateVacancyInput(data, { partial = false } = {}) {
+function validateVacancyEditableFields(data, { partial = false } = {}) {
   const errors = [];
-  const { title, department, positionsRequired, postingType, deadline } = data;
-
-  if (!partial || title !== undefined) {
-    if (!title || typeof title !== 'string' || !title.trim()) {
-      errors.push('Title is required');
-    }
-  }
-
-  if (!partial || department !== undefined) {
-    if (!department || typeof department !== 'string' || !department.trim()) {
-      errors.push('Department is required');
-    }
-  }
+  const { positionsRequired, postingType, deadline } = data;
 
   if (positionsRequired !== undefined) {
     const n = Number(positionsRequired);
@@ -47,4 +40,4 @@ function validateVacancyInput(data, { partial = false } = {}) {
   return errors;
 }
 
-module.exports = { validateVacancyInput, VALID_POSTING_TYPES };
+module.exports = { validateVacancyEditableFields, VALID_POSTING_TYPES };

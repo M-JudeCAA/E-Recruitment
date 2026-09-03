@@ -13,12 +13,14 @@ function authenticate(req, res, next) {
   }
 }
 
-// Cumulative role hierarchy, matching the RBAC model:
-// HR_Officer < Principal_HR_Officer < DHRA_Manager_HR
+// Cumulative role hierarchy, matching the 5-tier RBAC model:
+// HR Officer < Senior HR Officer < Principal HR Officer < Manager < Director
 const ROLE_RANK = {
   HR_Officer: 1,
-  Principal_HR_Officer: 2,
-  DHRA_Manager_HR: 3
+  Senior_HR_Officer: 2,
+  Principal_HR_Officer: 3,
+  Manager: 4,
+  Director: 5
 };
 
 function requireStaffRole(minRole) {

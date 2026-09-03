@@ -20,6 +20,7 @@ export default function Navbar() {
       {staff ? (
         <>
           <Link to="/hr">HR dashboard</Link>
+          <Link to="/hr/departments">Departments & positions</Link>
           <button onClick={logoutStaff}>Staff log out</button>
         </>
       ) : (

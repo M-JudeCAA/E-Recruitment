@@ -7,8 +7,10 @@ async function main() {
 
   const staff = [
     { name: 'Alice HR', email: 'hro@caa.co.ug', role: 'HR_Officer', department: 'AVSEC' },
+    { name: 'Sam Senior', email: 'shro@caa.co.ug', role: 'Senior_HR_Officer', department: 'AVSEC' },
     { name: 'Brian Principal', email: 'phro@caa.co.ug', role: 'Principal_HR_Officer', department: 'AVSEC' },
-    { name: 'Carol Director', email: 'dhra@caa.co.ug', role: 'DHRA_Manager_HR', department: 'HRM' }
+    { name: 'Mary Manager', email: 'manager@caa.co.ug', role: 'Manager', department: 'HRM' },
+    { name: 'Carol Director', email: 'dhra@caa.co.ug', role: 'Director', department: 'HRM' }
   ];
 
   for (const s of staff) {
