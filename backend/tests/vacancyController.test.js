@@ -67,6 +67,22 @@ describe('create', () => {
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
+  // Regression test for the actual bug this fix exists for: status was
+  // never set at all, so every vacancy silently defaulted to 'Open' and
+  // was immediately visible to candidates, bypassing PHRO approval.
+  test('always creates a vacancy as PendingApproval, never defaulting to Open', async () => {
+    prisma.position.findUnique.mockResolvedValue(officerCorp);
+    prisma.vacancy.create.mockResolvedValue({ id: 1 });
+    const req = { body: { positionId: '100' }, user: { id: 1 } };
+    const res = mockRes();
+
+    await vacancyController.create(req, res);
+
+    expect(prisma.vacancy.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'PendingApproval' })
+    }));
+  });
+
   test('appends a distinguishing suffix on a same-type, same-month jobRef collision', async () => {
     prisma.position.findUnique.mockResolvedValue(officerCorp);
     prisma.vacancy.count.mockResolvedValue(1); // one already exists with this prefix
@@ -257,6 +273,119 @@ describe('close', () => {
     expect(prisma.vacancy.update.mock.calls[0][0]).toEqual(expect.objectContaining({
       where: { id: 1 }, data: { status: 'Closed' }
     }));
+  });
+});
+
+describe('approve', () => {
+  test('returns 404 when the vacancy does not exist', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue(null);
+    const res = mockRes();
+    await vacancyController.approve({ params: { id: '99' }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+  });
+
+  test.each(['Open', 'PartiallyFilled', 'Filled'])(
+    'refuses to approve a vacancy already %s - it does not need approval right now', async (status) => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status, createdById: 5 });
+      const res = mockRes();
+      await vacancyController.approve({ params: { id: '1' }, user: { id: 2 } }, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(prisma.vacancy.update).not.toHaveBeenCalled();
+    });
+
+  test.each(['PendingApproval', 'Closed'])(
+    'allows approving an already-reviewed %s vacancy through', async (status) => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status, createdById: 5, reviewedAt: new Date('2026-01-01') });
+      prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open' });
+      const res = mockRes();
+      await vacancyController.approve({ params: { id: '1' }, user: { id: 2 } }, res);
+      expect(res.status).not.toHaveBeenCalledWith(422);
+      expect(prisma.vacancy.update).toHaveBeenCalled();
+    });
+
+  // The review/check-by gate: a Principal HR Officer cannot approve
+  // something a Senior HR Officer has never checked, regardless of who
+  // is asking or what status it's in.
+  test('refuses to approve a vacancy that has not been reviewed yet', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5, reviewedAt: null });
+    const res = mockRes();
+    await vacancyController.approve({ params: { id: '1' }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+  });
+
+  test('blocks self-approval - the creator cannot approve their own vacancy', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 2, reviewedAt: new Date('2026-01-01') });
+    const res = mockRes();
+    await vacancyController.approve({ params: { id: '1' }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+  });
+
+  test('approving sets approvedAt/approvedById and resolves any active VacancyApproval escalation', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5, reviewedAt: new Date('2026-01-01') });
+    prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open' });
+    const res = mockRes();
+
+    await vacancyController.approve({ params: { id: '1' }, user: { id: 2 } }, res);
+
+    expect(prisma.vacancy.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 1 },
+      data: expect.objectContaining({ status: 'Open', approvedById: 2, approvedAt: expect.any(Date) })
+    }));
+    expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith({
+      where: { taskType: 'VacancyApproval', taskId: 1, resolvedAt: null },
+      data: { resolvedAt: expect.any(Date) }
+    });
+    expect(res.json).toHaveBeenCalledWith({ id: 1, status: 'Open' });
+  });
+});
+
+describe('review', () => {
+  test('returns 404 when the vacancy does not exist', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue(null);
+    const res = mockRes();
+    await vacancyController.review({ params: { id: '99' }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+  });
+
+  test.each(['Open', 'PartiallyFilled', 'Filled'])(
+    'refuses to review a vacancy already %s - it does not need review right now', async (status) => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status, createdById: 5, reviewedAt: null });
+      const res = mockRes();
+      await vacancyController.review({ params: { id: '1' }, user: { id: 2 } }, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(prisma.vacancy.update).not.toHaveBeenCalled();
+    });
+
+  test.each(['PendingApproval', 'Closed'])('allows reviewing a %s vacancy', async (status) => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status, createdById: 5, reviewedAt: null });
+    prisma.vacancy.update.mockResolvedValue({ id: 1, status, reviewedAt: new Date(), reviewedById: 2 });
+    const res = mockRes();
+    await vacancyController.review({ params: { id: '1' }, user: { id: 2 } }, res);
+    expect(res.status).not.toHaveBeenCalledWith(422);
+    expect(prisma.vacancy.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 1 },
+      data: expect.objectContaining({ reviewedById: 2, reviewedAt: expect.any(Date) })
+    }));
+  });
+
+  test('refuses to review a vacancy that has already been reviewed', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5, reviewedAt: new Date('2026-01-01') });
+    const res = mockRes();
+    await vacancyController.review({ params: { id: '1' }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+  });
+
+  test('blocks self-review - the creator cannot review their own vacancy either', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 2, reviewedAt: null });
+    const res = mockRes();
+    await vacancyController.review({ params: { id: '1' }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
   });
 });
 

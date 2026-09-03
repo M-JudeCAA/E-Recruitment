@@ -7,6 +7,10 @@ const router = express.Router();
 router.post('/', authenticate, requireStaffRole('HR_Officer'), controller.create);
 router.patch('/:id', authenticate, requireStaffRole('HR_Officer'), controller.update);
 router.patch('/:id/close', authenticate, requireStaffRole('Principal_HR_Officer'), controller.close);
+// Check-by stage ahead of approval - Senior HR Officer+ (cumulative, so
+// Principal HR Officer/Manager/Director can also review, same convention
+// as every other minRole gate in this app).
+router.patch('/:id/review', authenticate, requireStaffRole('Senior_HR_Officer'), controller.review);
 router.patch('/:id/approve', authenticate, requireStaffRole('Principal_HR_Officer'), controller.approve);
 router.get('/', optionalAuthenticate, controller.listPublic);
 router.get('/admin', authenticate, requireStaffRole('HR_Officer'), controller.listForAdmin);

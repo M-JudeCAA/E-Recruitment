@@ -6,6 +6,7 @@ const STATUS_COLORS = {
   // Panel/interview recommendation
   Shortlist: 'var(--color-accent)', Hold: 'var(--color-warning)', Reject: 'var(--color-danger)',
   // Vacancy
+  PendingApproval: 'var(--color-warning)',
   Open: 'var(--color-accent)', PartiallyFilled: 'var(--color-warning)',
   Filled: 'var(--color-primary)', Closed: 'var(--color-text-muted)',
   // Application

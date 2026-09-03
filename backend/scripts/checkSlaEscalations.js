@@ -6,29 +6,45 @@
 const prisma = require('../src/config/db');
 const slaModel = require('../src/models/slaModel');
 const { notifyAllWithRole } = require('../src/services/notificationService');
-const { tierAbove } = require('../src/controllers/delegationController'); // reuses the same tier-above logic as delegation
+const { ROLE_RANK } = require('../src/middleware/auth');
+
+// The role exactly one rank above the given one, or null at the top of
+// the hierarchy. NOT reused from delegationController - that module's
+// tierBelow() answers a different question (self-service delegation:
+// who can I delegate DOWN to) since the delegation redesign removed its
+// third-party "tier above authorizes" concept entirely. Escalation
+// still genuinely needs "who is ABOVE the current tier", so it gets its
+// own small copy here rather than depending on a controller whose
+// tier-direction no longer matches.
+function tierAbove(role) {
+  const targetRank = ROLE_RANK[role] + 1;
+  return Object.keys(ROLE_RANK).find((r) => ROLE_RANK[r] === targetRank) || null;
+}
 
 // The tier a task is FIRST assigned to, before any escalation - matches
-// the role permission table exactly (Decision #10: PHRO can recommend
-// an offer but never approve it, so OfferApproval starts at Manager).
+// the role permission table exactly (PHRO can recommend an offer but
+// never approve it, so OfferApproval starts at Manager).
 const INITIAL_TIER = {
   VacancyApproval: 'Principal_HR_Officer',
   DepartmentApproval: 'Principal_HR_Officer',
   OfferApproval: 'Manager'
 };
 
-// LIMITATION, stated plainly: Department and Offer both have an
-// unambiguous "awaiting decision" state (status 'Pending' / 'Recommended'
-// respectively) to check against. Vacancy does not - a separate bug,
-// found while building this script, means every vacancy currently
-// defaults to status 'Open' at creation rather than a distinct
-// pre-approval state, so there is no clean signal here to check "is this
-// vacancy still awaiting its first approval". VacancyApproval escalation
-// is therefore NOT implemented in this pass - only DepartmentApproval and
-// OfferApproval are live. Wiring in VacancyApproval is straightforward
-// once that separate bug is fixed (see the accompanying document), and
-// should reuse this same pattern.
+// VacancyApproval is now live, unblocked by the fix to
+// Vacancy.create()/approve() - approvedAt gives this a clean, unambiguous
+// "awaiting approval" signal for the first time: a vacancy is pending
+// exactly when approvedAt is still null and it has not been manually
+// withdrawn (status !== 'Closed'). A vacancy Rejected outright would also
+// have a null approvedAt, but nothing in this codebase currently sets
+// that status on a Vacancy (see the schema comment on VacancyStatus), so
+// there is no live path that would wrongly keep escalating a rejected one.
 async function getPendingTasks(taskType) {
+  if (taskType === 'VacancyApproval') {
+    const rows = await prisma.vacancy.findMany({
+      where: { approvedAt: null, status: { not: 'Closed' } }
+    });
+    return rows.map((v) => ({ id: v.id, since: v.createdAt }));
+  }
   if (taskType === 'DepartmentApproval') {
     const rows = await prisma.department.findMany({ where: { status: 'Pending' } });
     return rows.map((d) => ({ id: d.id, since: d.createdAt }));
@@ -44,7 +60,7 @@ async function main() {
   const now = new Date();
   let totalEscalated = 0;
 
-  for (const taskType of ['DepartmentApproval', 'OfferApproval']) {
+  for (const taskType of ['VacancyApproval', 'DepartmentApproval', 'OfferApproval']) {
     const pending = await getPendingTasks(taskType);
 
     for (const task of pending) {

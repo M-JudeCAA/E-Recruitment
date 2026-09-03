@@ -19,10 +19,19 @@ enum PostingType {
 }
 
 enum VacancyStatus {
+  PendingApproval
   Open
   PartiallyFilled
   Filled
   Closed
+  // Declared to match the live column (enum('PendingApproval','Open',
+  // 'PartiallyFilled','Filled','Closed','Rejected')) - see the note on
+  // Vacancy.rejectionReason below. Nothing in this codebase currently
+  // sets a Vacancy to Rejected; only Department and Application have a
+  // real reject workflow. Left unused rather than removed, since
+  // removing an enum value a live column can already hold would be the
+  // riskier change.
+  Rejected
 }
 
 enum ApplicationStatus {
@@ -96,7 +105,9 @@ model StaffUser {
   delegates   StaffUser[] @relation("Delegation")
   createdAt   DateTime  @default(now())
 
-  vacanciesCreated Vacancy[]        @relation("VacancyCreatedBy")
+  vacanciesCreated  Vacancy[]        @relation("VacancyCreatedBy")
+  vacanciesApproved Vacancy[]        @relation("VacancyApprovedBy")
+  vacanciesReviewed Vacancy[]        @relation("VacancyReviewedBy")
   interviewsRun    InterviewRound[] @relation("InterviewConductedBy")
   panelLinks       PanelMember[]    @relation("PanelStaffLink")
   panelScoresRecorded PanelMember[] @relation("PanelRecordedBy")
@@ -190,7 +201,7 @@ model Vacancy {
   salaryScale          String?
   description          String?       @db.Text
   positionsRequired    Int           @default(1)
-  status               VacancyStatus @default(Open)
+  status               VacancyStatus @default(PendingApproval)
   postingType          PostingType   @default(Open)
   deadline             DateTime?
   regulatoryDriver     String?
@@ -200,6 +211,26 @@ model Vacancy {
   createdBy            StaffUser     @relation("VacancyCreatedBy", fields: [createdById], references: [id])
   createdAt            DateTime      @default(now())
   applications         Application[]
+
+  // Declaring pre-existing drift, not adding new columns: approvedAt,
+  // approvedById (with its FK already live), and rejectionReason already
+  // exist on the live table, untracked by any migration in this repo -
+  // same situation this project already hit once with Department's
+  // equivalent columns, except those were later given a real migration
+  // and these never were. No migration accompanies this schema change;
+  // see prisma/migrations/README_vacancy_approval_gate.md.
+  approvedAt       DateTime?
+  approvedById     Int?
+  approvedBy       StaffUser? @relation("VacancyApprovedBy", fields: [approvedById], references: [id])
+  rejectionReason  String?
+
+  // Review/check-by gate: a Senior HR Officer+ must check a vacancy
+  // before a Principal HR Officer can give final approval - genuinely
+  // new columns (unlike approvedAt/approvedById/rejectionReason above),
+  // added by a real migration this time.
+  reviewedAt       DateTime?
+  reviewedById     Int?
+  reviewedBy       StaffUser? @relation("VacancyReviewedBy", fields: [reviewedById], references: [id])
 
   // Why `title` is kept as a denormalized snapshot rather than always
   // reading through `position.name`: if a Position is later renamed, past

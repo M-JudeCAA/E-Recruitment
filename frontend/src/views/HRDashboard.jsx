@@ -27,6 +27,9 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 export default function HRDashboard() {
   const { staff } = useAuth();
   const canApprove = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Principal_HR_Officer;
+  // The review/check-by stage - Senior HR Officer+, ahead of PHRO's own
+  // (higher-ranked) final approval.
+  const canReview = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
 
   const [vacancies, setVacancies] = useState([]);
   const [approvedDepartments, setApprovedDepartments] = useState([]);
@@ -95,7 +98,18 @@ export default function HRDashboard() {
     }
   };
 
+  const review = async (id) => {
+    setError('');
+    try {
+      await staffClient.patch(`/api/vacancies/${id}/review`);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Review failed');
+    }
+  };
+
   const approve = async (id) => {
+    setError('');
     try {
       await staffClient.patch(`/api/vacancies/${id}/approve`);
       load();
@@ -221,11 +235,33 @@ export default function HRDashboard() {
           {v.deadline && <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
             Deadline: {new Date(v.deadline).toLocaleDateString()}
           </span>}
+          {['PendingApproval', 'Closed'].includes(v.status) && (
+            <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
+              {v.reviewedAt
+                ? `Reviewed by ${v.reviewedBy?.name || 'a Senior HR Officer'}`
+                : 'Awaiting Senior HR Officer review'}
+            </div>
+          )}
           <div style={{ marginTop: 8 }}>
             <Link to={`/hr/vacancy/${v.id}`}>View applications</Link>
             <Button variant="ghost" style={{ marginLeft: 12, padding: '2px 10px' }} onClick={() => openEdit(v)}>Edit</Button>
-            {v.status === 'Open' && canApprove && (
-              <Button variant="secondary" style={{ marginLeft: 8, padding: '2px 10px' }} onClick={() => approve(v.id)}>Re-approve</Button>
+            {/* Check-by stage: a Senior HR Officer+ must review before a
+                Principal HR Officer can approve - the backend refuses
+                approve() with no reviewedAt, so Approve/Re-open are only
+                ever shown once that's already true. */}
+            {['PendingApproval', 'Closed'].includes(v.status) && !v.reviewedAt && canReview && (
+              <Button variant="secondary" style={{ marginLeft: 8, padding: '2px 10px' }} onClick={() => review(v.id)}>Review</Button>
+            )}
+            {/* FIXED - this used to check status === 'Open', which only ever
+                showed "Re-approve" on a vacancy that was already approved and
+                needed no action at all. Now correctly split: Approve for a
+                fresh vacancy still awaiting its first decision, Re-open for
+                one that was previously withdrawn. */}
+            {v.status === 'PendingApproval' && v.reviewedAt && canApprove && (
+              <Button variant="secondary" style={{ marginLeft: 8, padding: '2px 10px' }} onClick={() => approve(v.id)}>Approve</Button>
+            )}
+            {v.status === 'Closed' && v.reviewedAt && canApprove && (
+              <Button variant="secondary" style={{ marginLeft: 8, padding: '2px 10px' }} onClick={() => approve(v.id)}>Re-open</Button>
             )}
             {v.status !== 'Closed' && canApprove && (
               <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 10px', color: 'var(--color-danger)' }}

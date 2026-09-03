@@ -6,6 +6,8 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 const DEFAULTS = [
+  { taskType: 'VacancyApproval', tier: 'Principal_HR_Officer', durationHours: 48 },
+  { taskType: 'VacancyApproval', tier: 'Manager', durationHours: 48 },
   { taskType: 'DepartmentApproval', tier: 'Principal_HR_Officer', durationHours: 48 },
   { taskType: 'DepartmentApproval', tier: 'Manager', durationHours: 48 },
   { taskType: 'OfferApproval', tier: 'Manager', durationHours: 24 },

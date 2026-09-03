@@ -37,7 +37,8 @@ module.exports = {
     where,
     include: {
       _count: { select: { applications: true } },
-      department: { include: { directorate: true } }
+      department: { include: { directorate: true } },
+      reviewedBy: { select: { name: true } }
     },
     orderBy: { createdAt: 'desc' }
   })

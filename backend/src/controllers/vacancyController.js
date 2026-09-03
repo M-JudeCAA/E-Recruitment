@@ -3,6 +3,7 @@ const applicationModel = require('../models/applicationModel');
 const positionModel = require('../models/positionModel');
 const offerModel = require('../models/offerModel');
 const workflow = require('../services/workflowService');
+const slaModel = require('../models/slaModel');
 const { generateJobRef } = require('../utils/jobRefGenerator');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
 const { validateVacancyEditableFields } = require('../utils/vacancyValidation');
@@ -53,6 +54,13 @@ async function create(req, res) {
     salaryScale: salaryScale || null,
     description: sanitizeJobDescription(description), // server-side sanitization - the layer that actually matters
     positionsRequired: positionsRequired !== undefined ? Number(positionsRequired) : 1,
+    // FIXED - this was never set at all, so every vacancy defaulted to
+    // the schema default (previously 'Open') and was immediately visible
+    // to candidates, bypassing Principal HR Officer approval entirely.
+    // The schema default is now also 'PendingApproval' as a second,
+    // independent line of defense - this explicit value doesn't rely on
+    // that default alone.
+    status: 'PendingApproval',
     postingType: postingType || 'Open',
     deadline: deadline ? new Date(deadline) : null,
     regulatoryDriver, category, priority,
@@ -113,15 +121,80 @@ async function close(req, res) {
   res.json(updated);
 }
 
+// A Senior HR Officer+ check-by stage ahead of Principal HR Officer's
+// final approval - a genuinely independent second set of eyes, not just
+// a second click by the same PHRO. Allowed from the same states approve()
+// itself accepts (PendingApproval, or Closed for the re-open-before-ever-
+// reviewed case) so the two guards stay in lockstep; refuses re-reviewing
+// something already reviewed rather than silently overwriting who/when.
+async function review(req, res) {
+  const vacancyId = Number(req.params.id);
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+
+  if (['Open', 'PartiallyFilled', 'Filled'].includes(vacancy.status)) {
+    return res.status(422).json({ error: 'This vacancy does not need review right now' });
+  }
+  if (vacancy.reviewedAt) {
+    return res.status(422).json({ error: 'This vacancy has already been reviewed' });
+  }
+
+  try {
+    // Same underlying rule as approve() (creator !== actor) - reused
+    // rather than duplicated, but its error message is approval-specific,
+    // so it's rewritten here to actually say "review".
+    await workflow.assertNotSelfApproval(vacancyId, req.user.id);
+  } catch (err) {
+    return res.status(422).json({ error: 'Self-review blocked: route this review to DHRA / Manager HR instead' });
+  }
+
+  const updated = await vacancyModel.update(vacancyId, {
+    reviewedAt: new Date(), reviewedById: req.user.id
+  });
+  res.json(updated);
+}
+
 async function approve(req, res) {
   const vacancyId = Number(req.params.id);
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+
+  // FIXED - previously no guard at all existed against approving a
+  // vacancy already in an open-ish state, which made no sense once
+  // PendingApproval exists as a real, distinct state to transition from.
+  // Re-opening a previously Closed vacancy is still allowed - that is
+  // the one legitimate reuse of this endpoint beyond first approval.
+  if (['Open', 'PartiallyFilled', 'Filled'].includes(vacancy.status)) {
+    return res.status(422).json({ error: 'This vacancy does not need approval right now' });
+  }
+
+  // NEW - the review/check-by gate: a Principal HR Officer cannot give
+  // final approval until a Senior HR Officer+ has reviewed it first. A
+  // vacancy that was reviewed, approved, then later closed still has
+  // reviewedAt set from before, so re-opening it does not force a second
+  // review - only a vacancy that has genuinely never been checked does.
+  if (!vacancy.reviewedAt) {
+    return res.status(422).json({ error: 'This vacancy must be reviewed by a Senior HR Officer before it can be approved' });
+  }
+
   try {
     await workflow.assertNotSelfApproval(vacancyId, req.user.id);
   } catch (err) {
     return res.status(422).json({ error: err.message });
   }
-  const vacancy = await vacancyModel.update(vacancyId, { status: 'Open' });
-  res.json(vacancy);
+
+  const updated = await vacancyModel.update(vacancyId, {
+    status: 'Open', approvedAt: new Date(), approvedById: req.user.id // now actually set - previously declared nowhere and never populated
+  });
+
+  // NEW - VacancyApproval can now be tracked and escalated by the SLA
+  // checker, since approvedAt finally gives it a clean "resolved" signal.
+  // Not possible before this fix (see the same resolveEscalations note
+  // already left in applicationController.approveOffer and
+  // departmentController.approve/reject).
+  await slaModel.resolveEscalations('VacancyApproval', vacancyId);
+
+  res.json(updated);
 }
 
 // candidateType comes from a verified JWT (req.user, set only by
@@ -188,4 +261,4 @@ async function saveRanking(req, res) {
   res.json(results);
 }
 
-module.exports = { create, update, close, approve, listPublic, listForAdmin, getOne, listApplications, saveRanking };
+module.exports = { create, update, close, review, approve, listPublic, listForAdmin, getOne, listApplications, saveRanking };
