@@ -15,6 +15,8 @@ import StaffForgotPassword from "./views/StaffForgotPassword";
 import StaffResetPassword from "./views/StaffResetPassword";
 import HRDashboard from "./views/HRDashboard";
 import DepartmentAdmin from "./views/DepartmentAdmin";
+import StaffAdmin from "./views/StaffAdmin";
+import DelegationAdmin from "./views/DelegationAdmin";
 import VacancyDetail from "./views/VacancyDetail";
 import PanelScoreAccess from "./views/PanelScoreAccess";
 import { RequireCandidate, RequireStaff } from "./components/ProtectedRoute";
@@ -77,6 +79,22 @@ export default function App() {
           element={
             <RequireStaff minRole="HR_Officer">
               <DepartmentAdmin />
+            </RequireStaff>
+          }
+        />
+        <Route
+          path="/hr/staff"
+          element={
+            <RequireStaff minRole="Principal_HR_Officer">
+              <StaffAdmin />
+            </RequireStaff>
+          }
+        />
+        <Route
+          path="/hr/delegations"
+          element={
+            <RequireStaff minRole="Senior_HR_Officer">
+              <DelegationAdmin />
             </RequireStaff>
           }
         />

@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../models/AuthContext";
+import NotificationBell from "./NotificationBell";
 
 // Uganda Civil Aviation Authority brand palette
 const ucaa = {
@@ -26,8 +27,16 @@ const buttonStyle = {
   cursor: "pointer",
 };
 
+// Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK. Delegation
+// is self-service (you delegate your own authority to a subordinate) -
+// an HR Officer has nobody below them, so the link is hidden rather
+// than shown and immediately 403'd.
+const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
+
 export default function Navbar() {
   const { candidate, staff, logoutCandidate, logoutStaff } = useAuth();
+  const canDelegate = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
+  const canManageStaff = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Principal_HR_Officer;
 
   return (
     <nav
@@ -74,6 +83,17 @@ export default function Navbar() {
             <Link to="/hr/departments" style={linkStyle}>
               Departments & positions
             </Link>
+            {canManageStaff && (
+              <Link to="/hr/staff" style={linkStyle}>
+                Staff accounts
+              </Link>
+            )}
+            {canDelegate && (
+              <Link to="/hr/delegations" style={linkStyle}>
+                Delegations
+              </Link>
+            )}
+            <NotificationBell />
             <button onClick={logoutStaff} style={buttonStyle}>
               Staff log out
             </button>
