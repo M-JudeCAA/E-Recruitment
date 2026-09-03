@@ -10,8 +10,9 @@ import Button from '../components/Button';
 import Alert from '../components/Alert';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
+import RichTextField from '../components/RichTextField';
 
-const emptyForm = { title: '', department: '', positionsRequired: 1, postingType: 'Open', deadline: '' };
+const emptyForm = { title: '', department: '', positionsRequired: 1, postingType: 'Open', deadline: '', description: '' };
 
 export default function HRDashboard() {
   const { staff } = useAuth();
@@ -66,7 +67,8 @@ export default function HRDashboard() {
     setError('');
     setEditForm({
       title: v.title, department: v.department, positionsRequired: v.positionsRequired,
-      postingType: v.postingType, deadline: v.deadline ? v.deadline.slice(0, 10) : ''
+      postingType: v.postingType, deadline: v.deadline ? v.deadline.slice(0, 10) : '',
+      description: v.description || ''
     });
     setEditModal(v);
   };
@@ -102,6 +104,12 @@ export default function HRDashboard() {
           </Select>
           <TextField label="Deadline" type="date" value={form.deadline}
             onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+          <RichTextField
+            label="Job description"
+            placeholder="Paste a formatted job description, or type one directly"
+            value={form.description}
+            onChange={(html) => setForm({ ...form, description: html })}
+          />
           <Button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create'}</Button>
         </form>
         <Alert type="success" message={message} />
@@ -151,6 +159,12 @@ export default function HRDashboard() {
           </Select>
           <TextField label="Deadline" type="date" value={editForm.deadline}
             onChange={(e) => setEditForm({ ...editForm, deadline: e.target.value })} />
+          <RichTextField
+            label="Job description"
+            placeholder="Paste a formatted job description, or type one directly"
+            value={editForm.description}
+            onChange={(html) => setEditForm({ ...editForm, description: html })}
+          />
         </Modal>
       )}
     </div>

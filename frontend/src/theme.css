@@ -37,3 +37,45 @@ body {
 }
 
 a { color: var(--color-primary); }
+
+/* Guarantees pasted job-description content always renders in the
+   system font AND at a consistent size, even if a font declaration
+   somehow survives sanitization. This is defense-in-depth on top of the
+   sanitizer, not a replacement for it. */
+.rich-text-content,
+.rich-text-content * {
+  font-family: var(--font-family) !important;
+}
+
+/* Font size needs its own rule, separate from font-family above. Heading
+   tags (h1-h4, allowed in the whitelist so a pasted "Heading 1" style
+   still reads as visually distinct via boldness/spacing) carry a large
+   size from the BROWSER'S OWN default stylesheet, not from any inline
+   style - so nothing in the sanitizer, which only strips inline styles,
+   can touch it. Forcing every descendant to inherit the container's own
+   font-size is the only reliable fix, and belongs at the CSS layer, not
+   the sanitizer. */
+.rich-text-content * {
+  font-size: inherit !important;
+}
+
+.rich-text-content[contenteditable]:empty:before {
+  content: attr(data-placeholder);
+  color: var(--color-text-muted);
+}
+
+.rich-text-content ul, .rich-text-content ol {
+  padding-left: 1.5em;
+}
+
+/* Sensible default table styling. Because this is a plain (non-!important)
+   rule, an inline border/spacing style preserved from the paste still
+   takes precedence - this only fills in when the pasted table had no
+   visible border style of its own. */
+.rich-text-content table {
+  border-collapse: collapse;
+}
+.rich-text-content td, .rich-text-content th {
+  border: 1px solid var(--color-border);
+  padding: 4px 8px;
+}

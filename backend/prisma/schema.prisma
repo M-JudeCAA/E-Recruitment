@@ -99,6 +99,7 @@ model Vacancy {
   status             VacancyStatus @default(Open)
   postingType        PostingType   @default(Open)
   deadline           DateTime?
+  description        String?       @db.Text
   regulatoryDriver   String?
   category           String?
   priority           String?

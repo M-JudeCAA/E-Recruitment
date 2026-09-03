@@ -3,6 +3,7 @@ const applicationModel = require('../models/applicationModel');
 const offerModel = require('../models/offerModel');
 const workflow = require('../services/workflowService');
 const { validateVacancyInput } = require('../utils/vacancyValidation');
+const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
 
 async function create(req, res) {
   const errors = validateVacancyInput(req.body);
@@ -15,6 +16,7 @@ async function create(req, res) {
     positionsRequired: positionsRequired !== undefined ? Number(positionsRequired) : 1,
     postingType: postingType || 'Open',
     deadline: deadline ? new Date(deadline) : null,
+    description: sanitizeJobDescription(req.body.description),
     regulatoryDriver, category, priority,
     createdById: req.user.id
   });
@@ -40,6 +42,7 @@ async function update(req, res) {
   if (regulatoryDriver !== undefined) data.regulatoryDriver = regulatoryDriver;
   if (category !== undefined) data.category = category;
   if (priority !== undefined) data.priority = priority;
+  if (req.body.description !== undefined) data.description = sanitizeJobDescription(req.body.description);
 
   if (positionsRequired !== undefined) {
     const n = Number(positionsRequired);
