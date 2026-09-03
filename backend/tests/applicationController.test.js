@@ -116,7 +116,7 @@ describe('recommendOffer', () => {
     await applicationController.recommendOffer(req, res);
 
     expect(prisma.offer.create).toHaveBeenCalledWith({
-      data: { applicationId: 1, status: 'Recommended', recommendedById: 5 }
+      data: { applicationId: 1, status: 'Recommended', recommendedById: 5, recommendedDate: expect.any(Date) }
     });
     expect(prisma.application.update).toHaveBeenCalledWith({
       where: { id: 1 }, data: { status: 'Offered' }
@@ -165,6 +165,12 @@ describe('approveOffer', () => {
       data: expect.objectContaining({ status: 'Approved', approvedById: 2 })
     }));
     expect(res.json).toHaveBeenCalledWith({ id: 20, status: 'Approved' });
+    // Approving is a resolution - any active OfferApproval escalation for
+    // this offer should clear, not sit "active" forever.
+    expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith({
+      where: { taskType: 'OfferApproval', taskId: 20, resolvedAt: null },
+      data: { resolvedAt: expect.any(Date) }
+    });
   });
 });
 

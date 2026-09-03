@@ -109,6 +109,15 @@ model StaffUser {
   departmentsCreated  Department[]  @relation("DepartmentCreatedBy")
   departmentsApproved Department[]  @relation("DepartmentApprovedBy")
   positionsCreated    Position[]    @relation("PositionCreatedBy")
+
+  // Real, time-bounded, audited delegation - distinct from the older
+  // static `actingAsId` field above, which predates this and is left
+  // untouched here (relation name "Delegation" vs these three, so no
+  // naming collision, just two coexisting mechanisms).
+  delegationsGiven      Delegation[]      @relation("DelegationFrom")
+  delegationsReceived   Delegation[]      @relation("DelegationTo")
+  delegationsAuthorized Delegation[]      @relation("DelegationAuthorizedBy")
+  notifications         Notification[]
 }
 
 model Directorate {
@@ -333,6 +342,11 @@ model Offer {
   approvedById     Int?
   approvedBy       StaffUser?  @relation("OfferApprovedBy", fields: [approvedById], references: [id])
   approvedDate     DateTime?
+  // Required for SLA timing to work at all - without a timestamp marking
+  // when an offer entered the Recommended state, there is no clean signal
+  // for "how long has this been awaiting approval". Set in
+  // recommendOffer() alongside recommendedById.
+  recommendedDate  DateTime?
 }
 
 model VerificationToken {
@@ -358,4 +372,77 @@ model AuditLog {
   actingAsId    Int?
   timestamp     DateTime  @default(now())
   payload       Json?
+}
+
+// ============================================================
+// Delegation and SLA/Notification models
+// ============================================================
+
+model Delegation {
+  id             Int       @id @default(autoincrement())
+  delegatorId    Int
+  delegator      StaffUser @relation("DelegationFrom", fields: [delegatorId], references: [id])
+  delegateId     Int
+  delegate       StaffUser @relation("DelegationTo", fields: [delegateId], references: [id])
+  startDate      DateTime
+  endDate        DateTime
+  reason         String
+  authorizedById Int
+  authorizedBy   StaffUser @relation("DelegationAuthorizedBy", fields: [authorizedById], references: [id])
+  createdAt      DateTime  @default(now())
+
+  // Every action taken while this delegation was active and actually
+  // used (not just present) gets a row here - the audit trail
+  // distinguishing "the delegate did this on their own authority" from
+  // "the delegate did this while standing in for someone senior".
+  usageLogs      DelegationUsage[]
+}
+
+model DelegationUsage {
+  id           Int        @id @default(autoincrement())
+  delegationId Int
+  delegation   Delegation @relation(fields: [delegationId], references: [id])
+  action       String     // e.g. "PATCH /api/vacancies/12/approve"
+  usedAt       DateTime   @default(now())
+}
+
+enum SlaTaskType {
+  VacancyApproval
+  DepartmentApproval
+  OfferApproval
+}
+
+model SlaPolicy {
+  id            Int         @id @default(autoincrement())
+  taskType      SlaTaskType
+  tier          StaffRole
+  durationHours Int
+
+  @@unique([taskType, tier])
+}
+
+model TaskEscalation {
+  id          Int         @id @default(autoincrement())
+  taskType    SlaTaskType
+  taskId      Int         // the Vacancy/Department/Offer id, depending on taskType
+  currentTier StaffRole
+  escalatedAt DateTime    @default(now())
+  resolvedAt  DateTime?
+}
+
+enum NotificationChannel {
+  InApp
+  Email
+}
+
+model Notification {
+  id          Int                 @id @default(autoincrement())
+  recipientId Int
+  recipient   StaffUser           @relation(fields: [recipientId], references: [id])
+  channel     NotificationChannel
+  taskType    SlaTaskType
+  taskId      Int
+  message     String
+  sentAt      DateTime            @default(now())
+  readAt      DateTime?
 }

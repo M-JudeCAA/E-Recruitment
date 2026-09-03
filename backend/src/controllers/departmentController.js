@@ -1,5 +1,6 @@
 const departmentModel = require('../models/departmentModel');
 const directorateModel = require('../models/directorateModel');
+const slaModel = require('../models/slaModel');
 
 // Departments are structural (unlike Positions, which any HR Officer can
 // add freely) - a new department affects reporting lines and vacancy
@@ -50,6 +51,10 @@ async function approve(req, res) {
   const updated = await departmentModel.update(department.id, {
     status: 'Approved', approvedById: req.user.id, approvedAt: new Date(), rejectionReason: null
   });
+  // See the same note in applicationController.approveOffer: the spec
+  // defines slaModel.resolveEscalations but never invokes it anywhere -
+  // without this, an escalated DepartmentApproval task never clears.
+  await slaModel.resolveEscalations('DepartmentApproval', department.id);
   res.json(updated);
 }
 
@@ -68,6 +73,7 @@ async function reject(req, res) {
   const updated = await departmentModel.update(department.id, {
     status: 'Rejected', approvedById: req.user.id, approvedAt: new Date(), rejectionReason: reason
   });
+  await slaModel.resolveEscalations('DepartmentApproval', department.id);
   res.json(updated);
 }
 

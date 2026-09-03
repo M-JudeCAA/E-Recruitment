@@ -1,6 +1,7 @@
 const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
 const offerModel = require('../models/offerModel');
+const slaModel = require('../models/slaModel');
 const workflow = require('../services/workflowService');
 const { fileUrl } = require('../middleware/upload');
 
@@ -95,7 +96,8 @@ async function recommendOffer(req, res) {
     offer = await offerModel.create({
       applicationId,
       status: 'Recommended',
-      recommendedById: req.user.id
+      recommendedById: req.user.id,
+      recommendedDate: new Date() // needed for SLA timing - see checkSlaEscalations.js
     });
   } catch (err) {
     // Offer.applicationId is unique - a second recommendation attempt
@@ -115,6 +117,10 @@ async function approveOffer(req, res) {
   const offer = await offerModel.update(offerId, {
     status: 'Approved', approvedById: req.user.id, approvedDate: new Date()
   });
+  // The spec defines slaModel.resolveEscalations but never calls it
+  // anywhere - without this, an escalated OfferApproval task would stay
+  // "active" (resolvedAt: null) forever even after being decided.
+  await slaModel.resolveEscalations('OfferApproval', offerId);
   res.json(offer);
 }
 

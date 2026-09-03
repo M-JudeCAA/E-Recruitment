@@ -87,6 +87,10 @@ describe('approve / reject', () => {
       where: { id: 1 },
       data: expect.objectContaining({ status: 'Approved', approvedById: 2, rejectionReason: null })
     }));
+    expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith({
+      where: { taskType: 'DepartmentApproval', taskId: 1, resolvedAt: null },
+      data: { resolvedAt: expect.any(Date) }
+    });
   });
 
   test('reject requires a reason - rejects with 400 when missing', async () => {
@@ -110,5 +114,9 @@ describe('approve / reject', () => {
       where: { id: 1 },
       data: expect.objectContaining({ status: 'Rejected', approvedById: 2, rejectionReason: 'Duplicate of an existing department' })
     }));
+    expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith({
+      where: { taskType: 'DepartmentApproval', taskId: 1, resolvedAt: null },
+      data: { resolvedAt: expect.any(Date) }
+    });
   });
 });

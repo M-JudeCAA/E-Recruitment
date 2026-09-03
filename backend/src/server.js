@@ -14,6 +14,9 @@ const panelAccessRoutes = require('./routes/panelAccess');
 const departmentRoutes = require('./routes/departments');
 const positionRoutes = require('./routes/positions');
 const directorateRoutes = require('./routes/directorates');
+const staffUsersRoutes = require('./routes/staffUsers');
+const delegationRoutes = require('./routes/delegations');
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 
@@ -37,6 +40,9 @@ app.use('/api/panel-access', panelAccessRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/positions', positionRoutes);
 app.use('/api/directorates', directorateRoutes);
+app.use('/api/staff-users', staffUsersRoutes);
+app.use('/api/delegations', delegationRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Basic error handler - catches Multer file-validation errors etc.
 app.use((err, req, res, next) => {

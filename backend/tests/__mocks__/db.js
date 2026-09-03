@@ -11,5 +11,11 @@ module.exports = {
   panelAccessToken: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   position: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
   department: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn() },
-  directorate: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() }
+  directorate: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
+  staffUser: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
+  delegation: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
+  delegationUsage: { create: jest.fn() },
+  slaPolicy: { findUnique: jest.fn(), upsert: jest.fn() },
+  taskEscalation: { create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
+  notification: { create: jest.fn(), findMany: jest.fn(), update: jest.fn() }
 };

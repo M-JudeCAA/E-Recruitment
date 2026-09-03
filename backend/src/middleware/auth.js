@@ -23,17 +23,39 @@ const ROLE_RANK = {
   Director: 5
 };
 
+// While a delegation is active, the delegate gains the delegator's
+// permissions IN ADDITION to their own - the delegator does not lose
+// access, in case they remain reachable despite being on leave. This
+// checks for an active delegation only when the user's own role
+// wouldn't otherwise pass, to avoid an extra database query on every
+// single request for staff who were never delegated to.
 function requireStaffRole(minRole) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (req.user.type !== 'staff') {
       return res.status(403).json({ error: 'Staff access required' });
     }
-    const userRank = ROLE_RANK[req.user.role] || 0;
+
+    const ownRank = ROLE_RANK[req.user.role] || 0;
     const minRank = ROLE_RANK[minRole] || 0;
-    if (userRank < minRank) {
-      return res.status(403).json({ error: 'Insufficient role for this action' });
+    if (ownRank >= minRank) return next();
+
+    // Own role doesn't qualify - check for an active delegation before
+    // refusing outright.
+    const delegationModel = require('../models/delegationModel');
+    const delegation = await delegationModel.findActiveForDelegate(req.user.id, new Date());
+    if (delegation) {
+      const delegatedRank = ROLE_RANK[delegation.delegator.role] || 0;
+      if (delegatedRank >= minRank) {
+        // Log that this specific request relied on the delegation, not
+        // just that a delegation exists - the audit trail should show
+        // exactly when it was actually used, not merely when it was active.
+        await delegationModel.logUsage(delegation.id, `${req.method} ${req.originalUrl}`);
+        req.actingAsDelegateFor = delegation.delegatorId; // available to controllers/audit logging downstream
+        return next();
+      }
     }
-    next();
+
+    return res.status(403).json({ error: 'Insufficient role for this action' });
   };
 }
 
