@@ -184,6 +184,8 @@ model Application {
 
   interviewRounds  InterviewRound[]
   offer            Offer?
+
+  @@unique([vacancyId, candidateId])
 }
 
 model PanelMember {

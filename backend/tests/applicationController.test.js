@@ -14,6 +14,66 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+describe('submit', () => {
+  test('returns 404 when the vacancy does not exist', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue(null);
+    const req = { body: { vacancyId: '99' }, user: { id: 5, candidateType: 'External' }, files: {} };
+    const res = mockRes();
+
+    await applicationController.submit(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(prisma.application.create).not.toHaveBeenCalled();
+  });
+
+  test('returns 422 when the vacancy is Closed', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Closed', postingType: 'Open', deadline: null });
+    const req = { body: { vacancyId: '1' }, user: { id: 5, candidateType: 'External' }, files: {} };
+    const res = mockRes();
+
+    await applicationController.submit(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.application.create).not.toHaveBeenCalled();
+  });
+
+  test('returns 422 when the vacancy is Filled', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Filled', postingType: 'Open', deadline: null });
+    const req = { body: { vacancyId: '1' }, user: { id: 5, candidateType: 'External' }, files: {} };
+    const res = mockRes();
+
+    await applicationController.submit(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.application.create).not.toHaveBeenCalled();
+  });
+
+  test('returns 422 when the application deadline has passed', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({
+      id: 1, status: 'Open', postingType: 'Open', deadline: new Date('2000-01-01')
+    });
+    const req = { body: { vacancyId: '1' }, user: { id: 5, candidateType: 'External' }, files: {} };
+    const res = mockRes();
+
+    await applicationController.submit(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.application.create).not.toHaveBeenCalled();
+  });
+
+  test('returns 409 when the candidate has already applied to this vacancy', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open', postingType: 'Open', deadline: null });
+    prisma.application.findFirst.mockResolvedValue({ id: 10, vacancyId: 1, candidateId: 5 });
+    const req = { body: { vacancyId: '1' }, user: { id: 5, candidateType: 'External' }, files: {} };
+    const res = mockRes();
+
+    await applicationController.submit(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(prisma.application.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('recommendOffer', () => {
   test('rejects when the application has no scored interview yet', async () => {
     prisma.application.findUnique.mockResolvedValue({

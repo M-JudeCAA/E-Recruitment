@@ -1,6 +1,6 @@
 module.exports = {
-  application: { findUnique: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
-  vacancy: { findUnique: jest.fn(), update: jest.fn() },
+  application: { findUnique: jest.fn(), update: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
+  vacancy: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), findMany: jest.fn() },
   offer: { update: jest.fn(), count: jest.fn(), create: jest.fn(), findUnique: jest.fn() },
   workExperience: { findMany: jest.fn() },
   education: { findMany: jest.fn() },
