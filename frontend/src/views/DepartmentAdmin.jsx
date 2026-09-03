@@ -35,9 +35,15 @@ export default function DepartmentAdmin() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const loadDirectorates = () => staffClient.get('/api/directorates').then((res) => setDirectorates(res.data));
-  const loadApprovedDepartments = () => staffClient.get('/api/departments/approved').then((res) => setApprovedDepartments(res.data));
-  const loadPending = () => staffClient.get('/api/departments/pending').then((res) => setPendingDepartments(res.data));
+  const loadDirectorates = () => staffClient.get('/api/directorates')
+    .then((res) => setDirectorates(res.data))
+    .catch((err) => setError(err.response?.data?.error || 'Could not load directorates'));
+  const loadApprovedDepartments = () => staffClient.get('/api/departments/approved')
+    .then((res) => setApprovedDepartments(res.data))
+    .catch((err) => setError(err.response?.data?.error || 'Could not load departments'));
+  const loadPending = () => staffClient.get('/api/departments/pending')
+    .then((res) => setPendingDepartments(res.data))
+    .catch((err) => setError(err.response?.data?.error || 'Could not load pending departments'));
 
   useEffect(() => {
     loadDirectorates();

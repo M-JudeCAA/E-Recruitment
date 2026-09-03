@@ -44,7 +44,9 @@ export default function HRDashboard() {
   const load = () => staffClient.get('/api/vacancies/admin').then((res) => setVacancies(res.data));
   useEffect(() => {
     load();
-    staffClient.get('/api/departments/approved').then((res) => setApprovedDepartments(res.data));
+    staffClient.get('/api/departments/approved')
+      .then((res) => setApprovedDepartments(res.data))
+      .catch((err) => setError(err.response?.data?.error || 'Could not load departments'));
   }, []);
 
   function groupDepartmentsByDirectorate(departments) {
