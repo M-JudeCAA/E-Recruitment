@@ -5,25 +5,31 @@ import { useAuth } from '../models/AuthContext';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
+import LoadingState from '../components/LoadingState';
 
 export default function Home() {
   const [vacancies, setVacancies] = useState([]);
+  const [loading, setLoading] = useState(true);
   const { candidate } = useAuth();
 
   useEffect(() => {
+    setLoading(true);
     const params = candidate ? { candidateType: candidate.candidateType } : {};
-    client.get('/api/vacancies', { params }).then((res) => setVacancies(res.data));
+    client.get('/api/vacancies', { params })
+      .then((res) => setVacancies(res.data))
+      .finally(() => setLoading(false));
   }, [candidate]);
 
   return (
     <div>
       <PageHeader title="Open vacancies" />
-      {vacancies.length === 0 && <p style={{ color: 'var(--color-text-muted)' }}>No open vacancies at the moment.</p>}
+      {loading && <LoadingState label="Loading open vacancies..." />}
+      {!loading && vacancies.length === 0 && <p style={{ color: 'var(--color-text-muted)' }}>No open vacancies at the moment.</p>}
       {vacancies.map((v) => (
         <Card key={v.id}>
           <h3 style={{ margin: '0 0 4px' }}>{v.title}</h3>
           <p style={{ margin: '0 0 8px', color: 'var(--color-text-muted)' }}>
-            {v.department} &middot; {v.positionsRequired} position(s) &middot; <StatusBadge status={v.status} />
+            {v.department?.name} &middot; {v.positionsRequired} position(s) &middot; <StatusBadge status={v.status} />
           </p>
           {v.deadline && <p style={{ margin: '0 0 8px', fontSize: 13, color: 'var(--color-text-muted)' }}>
             Deadline: {new Date(v.deadline).toLocaleDateString()}

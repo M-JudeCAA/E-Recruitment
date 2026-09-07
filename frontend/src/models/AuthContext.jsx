@@ -5,7 +5,8 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [candidate, setCandidate] = useState(() => {
     const type = localStorage.getItem('candidateType');
-    return localStorage.getItem('candidateToken') ? { candidateType: type } : null;
+    const fullName = localStorage.getItem('candidateName');
+    return localStorage.getItem('candidateToken') ? { candidateType: type, fullName } : null;
   });
   const [staff, setStaff] = useState(() => {
     const role = localStorage.getItem('staffRole');
@@ -13,14 +14,16 @@ export function AuthProvider({ children }) {
     return localStorage.getItem('staffToken') ? { role, name } : null;
   });
 
-  function loginCandidate(token, candidateType) {
+  function loginCandidate(token, candidateType, fullName) {
     localStorage.setItem('candidateToken', token);
     localStorage.setItem('candidateType', candidateType);
-    setCandidate({ candidateType });
+    if (fullName) localStorage.setItem('candidateName', fullName);
+    setCandidate({ candidateType, fullName });
   }
   function logoutCandidate() {
     localStorage.removeItem('candidateToken');
     localStorage.removeItem('candidateType');
+    localStorage.removeItem('candidateName');
     setCandidate(null);
   }
 

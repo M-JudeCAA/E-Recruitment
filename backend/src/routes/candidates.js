@@ -5,6 +5,7 @@ const { authenticate, requireCandidate } = require('../middleware/auth');
 const router = express.Router();
 
 router.get('/me', authenticate, requireCandidate, controller.me);
+router.put('/me', authenticate, requireCandidate, controller.updateProfile);
 router.post('/me/work-experience', authenticate, requireCandidate, controller.addWorkExperience);
 router.post('/me/education', authenticate, requireCandidate, controller.addEducation);
 router.put('/me/internal-profile', authenticate, requireCandidate, controller.updateInternalProfile);

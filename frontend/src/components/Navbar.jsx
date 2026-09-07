@@ -1,12 +1,17 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
+import { Briefcase, ChevronDown } from "lucide-react";
 import { useAuth } from "../models/AuthContext";
+import client from "../models/apiClient";
 import NotificationBell from "./NotificationBell";
 
-// Uganda Civil Aviation Authority brand palette
+// CHANGED - was a separate, hardcoded palette disconnected from
+// theme.css (and from CandidateLogin.jsx's own separate hardcoded
+// palette). Both now read the same shared CSS variables, closing a real
+// visual-drift gap found while adopting the new design direction.
 const ucaa = {
-  navy: "#204D74", // Bay of Many
-  blue: "#0C7ABF", // Denim
+  navy: "var(--color-primary-dark)",
+  blue: "var(--color-primary)",
   line: "rgba(255,255,255,0.15)",
 };
 
@@ -38,6 +43,18 @@ export default function Navbar() {
   const canDelegate = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
   const canManageStaff = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Principal_HR_Officer;
 
+  // NEW - adapted from the wizard prototype's Navbar. Folded into this
+  // existing, single global Navbar rather than kept as a separate
+  // component, which would have stacked a redundant second navbar on
+  // every apply page.
+  const [jobsOpen, setJobsOpen] = useState(false);
+  const [openJobs, setOpenJobs] = useState([]);
+  useEffect(() => {
+    if (candidate) {
+      client.get('/api/vacancies').then((res) => setOpenJobs(res.data)).catch(() => {});
+    }
+  }, [candidate]);
+
   return (
     <nav
       style={{
@@ -63,6 +80,32 @@ export default function Navbar() {
         <span style={{ flex: 1 }} />
         {candidate ? (
           <>
+            {candidate.fullName && (
+              <span style={{ ...linkStyle, fontWeight: 400, opacity: 0.85 }}>{candidate.fullName}</span>
+            )}
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setJobsOpen((v) => !v)} style={{ ...linkStyle, display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer' }}>
+                <Briefcase size={14} /> Available jobs <ChevronDown size={13} style={{ opacity: 0.7 }} />
+              </button>
+              {jobsOpen && (
+                <div style={{
+                  position: 'absolute', right: 0, marginTop: 8, width: 300,
+                  background: 'var(--color-bg)', border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius)', boxShadow: '0 6px 16px rgba(8,70,111,0.18)', zIndex: 10
+                }}>
+                  {openJobs.length === 0 && (
+                    <div style={{ padding: 12, fontSize: 13, color: 'var(--color-text-muted)' }}>No open vacancies right now.</div>
+                  )}
+                  {openJobs.map((job) => (
+                    <Link key={job.id} to={`/apply/${job.id}`} onClick={() => setJobsOpen(false)}
+                      style={{ display: 'block', padding: '10px 12px', borderBottom: '1px solid var(--color-border)', textDecoration: 'none' }}>
+                      <span style={{ display: 'block', fontSize: 13, color: 'var(--color-text)', fontWeight: 500 }}>{job.title}</span>
+                      <span style={{ display: 'block', fontSize: 11, color: 'var(--color-text-muted)' }}>{job.jobRef}</span>
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
             <Link to="/dashboard" style={linkStyle}>
               My dashboard
             </Link>

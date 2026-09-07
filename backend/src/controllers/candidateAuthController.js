@@ -103,11 +103,11 @@ async function login(req, res) {
   if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
   const token = jwt.sign(
-    { type: 'candidate', id: candidate.id, candidateType: candidate.candidateType },
+    { type: 'candidate', id: candidate.id, candidateType: candidate.candidateType, fullName: candidate.fullName },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN }
   );
-  res.json({ token, candidateType: candidate.candidateType });
+  res.json({ token, candidateType: candidate.candidateType, fullName: candidate.fullName });
 }
 
 async function forgotPassword(req, res) {

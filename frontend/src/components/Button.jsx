@@ -15,7 +15,7 @@ export default function Button({ variant = 'primary', children, style, disabled,
       style={{
         ...VARIANTS[variant],
         padding: '8px 16px',
-        borderRadius: 'var(--radius)',
+        borderRadius: 'var(--radius-sm)',
         fontSize: 'inherit',
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,

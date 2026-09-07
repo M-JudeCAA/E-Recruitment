@@ -7,12 +7,15 @@ import TextField from "../components/TextField";
 import Button from "../components/Button";
 import Alert from "../components/Alert";
 
-// Uganda Civil Aviation Authority brand palette
+// CHANGED - was a separate, hardcoded palette disconnected from
+// theme.css. Now reads the same shared CSS variables as the rest of the
+// app, closing a real visual-drift gap found while adopting the new
+// design direction.
 const ucaa = {
-  navy: "#204D74", // Bay of Many
-  blue: "#0C7ABF", // Denim
-  tint: "#A6B1FF", // Melrose
-  card: "#FFFFFF",
+  navy: "var(--color-primary-dark)",
+  blue: "var(--color-primary)",
+  tint: "var(--color-primary-light)",
+  card: "var(--color-bg)",
 };
 
 function validate(values) {
@@ -54,7 +57,7 @@ export default function CandidateLogin() {
     setSubmitting(true);
     try {
       const res = await client.post("/api/candidates/auth/login", form);
-      loginCandidate(res.data.token, res.data.candidateType);
+      loginCandidate(res.data.token, res.data.candidateType, res.data.fullName);
       navigate("/dashboard");
     } catch (err) {
       setError(err.response?.data?.error || "Login failed");

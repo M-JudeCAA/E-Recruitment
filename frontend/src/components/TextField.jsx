@@ -1,11 +1,18 @@
 import React from 'react';
 
-export default function TextField({ label, style, ...inputProps }) {
+// ADDED: optional hint and required props, backward-compatible - every
+// existing caller that doesn't pass them behaves exactly as before.
+//
+// Spacing/radius/background here match the application-wizard prototype's
+// form-field styling (Field/inputStyle in its theme.js) - adopted app-wide
+// since every form in the system already renders through this component.
+export default function TextField({ label, hint, required, style, ...inputProps }) {
   return (
-    <label style={{ display: 'block', marginBottom: 'var(--spacing-md)' }}>
+    <label style={{ display: 'block', marginBottom: 20, maxWidth: 640 }}>
       {label && (
-        <span style={{ display: 'block', fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>
+        <span style={{ display: 'block', fontSize: 14, color: 'var(--color-text-muted)', marginBottom: 6 }}>
           {label}
+          {required && <span style={{ color: 'var(--color-primary)', marginLeft: 4 }}>*</span>}
         </span>
       )}
       <input
@@ -13,14 +20,18 @@ export default function TextField({ label, style, ...inputProps }) {
         style={{
           display: 'block',
           width: '100%',
-          padding: 8,
+          padding: '10px 12px',
           border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius)',
+          borderRadius: 'var(--radius-sm)',
           fontSize: 'inherit',
           fontFamily: 'inherit',
+          background: 'var(--color-bg-input)',
           ...style
         }}
       />
+      {hint && (
+        <span style={{ display: 'block', fontSize: 12, color: 'var(--color-text-muted)', marginTop: 6 }}>{hint}</span>
+      )}
     </label>
   );
 }

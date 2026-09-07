@@ -45,6 +45,18 @@ async function saveDraft(req, res) {
   const cvFile = req.files?.cv?.[0];
   const coverLetterFile = req.files?.coverLetter?.[0];
 
+  // The wizard's Questions step - application-level (unlike the
+  // candidate-level profile fields on Candidate, these vary per
+  // application) - sent alongside the multipart draft-save request so a
+  // single "Save as draft" persists everything the candidate has entered
+  // so far, matching how cv/coverLetter already work.
+  const { desiredSalary, openToRelocate, earliestStartDate, whyThisRole } = req.body;
+  const questionsData = {};
+  if (desiredSalary !== undefined) questionsData.desiredSalary = desiredSalary || null;
+  if (openToRelocate !== undefined) questionsData.openToRelocate = openToRelocate || null;
+  if (earliestStartDate !== undefined) questionsData.earliestStartDate = earliestStartDate ? new Date(earliestStartDate) : null;
+  if (whyThisRole !== undefined) questionsData.whyThisRole = whyThisRole || null;
+
   const existing = await applicationModel.findFirst({ vacancyId, candidateId: req.user.id });
 
   if (existing) {
@@ -54,7 +66,7 @@ async function saveDraft(req, res) {
         : 'You have already applied to this vacancy';
       return res.status(409).json({ error: message });
     }
-    const data = {};
+    const data = { ...questionsData };
     if (cvFile) data.cvUrl = fileUrl(cvFile);
     if (coverLetterFile) data.coverLetterUrl = fileUrl(coverLetterFile);
     const updated = await applicationModel.update(existing.id, data);
@@ -66,7 +78,8 @@ async function saveDraft(req, res) {
     candidateId: req.user.id,
     cvUrl: fileUrl(cvFile),
     coverLetterUrl: fileUrl(coverLetterFile),
-    status: 'Draft'
+    status: 'Draft',
+    ...questionsData
   });
   res.status(201).json(application);
 }

@@ -1,18 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
-  /* Brand colors - replace these with UCAA's actual brand palette */
-  --color-primary: #1d4e73;
-  --color-primary-dark: #143a56;
-  --color-primary-light: #eaf1f6;
-  --color-accent: #2f8f6e;
+  /* UCAA brand palette - adopted from the application-wizard design
+     direction. Same variable NAMES as before, only the values changed -
+     every existing component that already references var(--color-*)
+     picks up the new look automatically, with zero code changes needed
+     anywhere else. This is deliberately a values-only change. */
+  --color-primary: #0B5FA5;       /* was #1d4e73 */
+  --color-primary-dark: #08466F;  /* was #143a56 */
+  --color-primary-light: #EAF3FA; /* was #eaf1f6 */
+  --color-accent: #1E7A46;        /* was #2f8f6e - aligned to the wizard's own success green */
+  --color-success: #1E7A46;       /* ADDED - referenced by VacancyDetail.jsx and others
+                                      but never actually declared anywhere in this file. Any
+                                      status relying on var(--color-success) was silently
+                                      falling back to an invalid/inherited value before this. */
   --color-danger: #b3261e;
   --color-warning: #a66a00;
 
   /* Neutrals */
-  --color-text: #23262b;
-  --color-text-muted: #5a5f66;
-  --color-border: #d8dbe0;
+  --color-text: #14181C;      /* was #23262b */
+  --color-text-muted: #51606B; /* was #5a5f66 */
+  --color-border: #C9DCE8;    /* was #d8dbe0 */
   --color-bg: #ffffff;
-  --color-bg-subtle: #f6f7f9;
+  --color-bg-subtle: #E4EFF8; /* was #f6f7f9 */
 
   /* Typography */
   --font-family:
@@ -20,7 +32,13 @@
   --font-size-base: 15px;
 
   /* Spacing / shape */
-  --radius: 6px;
+  --radius: 6px;         /* containers/cards - unchanged */
+  --radius-sm: 3px;      /* ADDED - inputs, selects, buttons. Matches the
+                             application-wizard prototype's crisper control
+                             radius, distinct from the softer card radius. */
+  --color-bg-input: #FCFDFE; /* ADDED - subtle off-white input fill, matching
+                                 the prototype's form-field background instead
+                                 of plain white blending into the card. */
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 16px;

@@ -1,6 +1,7 @@
 import React from "react";
 import { Routes, Route } from "react-router-dom";
 import Navbar from "./components/Navbar";
+import Footer from "./components/Footer";
 
 import Home from "./views/Home";
 import Register from "./views/Register";
@@ -109,6 +110,8 @@ export default function App() {
         {/* Public - reached via a panelist's emailed/shared link, no login */}
         <Route path="/panel-score/:token" element={<PanelScoreAccess />} />
       </Routes>
+
+      <Footer />
     </div>
   );
 }

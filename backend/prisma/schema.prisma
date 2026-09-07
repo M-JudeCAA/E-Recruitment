@@ -272,6 +272,15 @@ model Candidate {
   passwordHash       String
   createdAt          DateTime       @default(now())
 
+  // Candidate-level profile fields (persist across every application this
+  // candidate ever submits, same principle as education/workExperience) -
+  // added to back the application wizard's Profile step with real
+  // persistence instead of fields that silently discard on submit.
+  location           String?
+  linkedinUrl        String?
+  portfolioUrl       String?
+  workAuthorization  String?        // 'Yes' | 'No' | 'Sponsorship'
+
   workExperience     WorkExperience[]
   education          Education[]
   applications       Application[]
@@ -338,6 +347,14 @@ model Application {
   screeningReasons String?           @db.Text // JSON array of human-readable strings
   screenedAt       DateTime?
   createdAt        DateTime          @default(now())
+
+  // Application-level answers (vary per application, unlike the
+  // candidate-level profile fields on Candidate) - the wizard's Questions
+  // step, persisted for real rather than kept as local-only state.
+  desiredSalary    String?
+  openToRelocate   String?           // 'Yes' | 'No' | 'Depends'
+  earliestStartDate DateTime?
+  whyThisRole      String?           @db.Text
 
   interviewRounds  InterviewRound[]
   offer            Offer?
