@@ -7,6 +7,7 @@ import Button from '../components/Button';
 import Alert from '../components/Alert';
 import LoadingState from '../components/LoadingState';
 import StepperRail from './apply-wizard/StepperRail';
+import JobDetailsStep from './apply-wizard/JobDetailsStep';
 import ProfileStep from './apply-wizard/ProfileStep';
 import DocumentsStep from './apply-wizard/DocumentsStep';
 import QuestionsStep from './apply-wizard/QuestionsStep';
@@ -72,6 +73,7 @@ export default function ApplyForm() {
   }, [vacancyId]);
 
   const steps = [
+    { key: 'jobDetails', label: 'Job Details', note: 'About this role' },
     { key: 'profile', label: 'Profile', note: 'Who you are' },
     { key: 'documents', label: 'Documents', note: 'CV & links' },
     { key: 'questions', label: 'Questions', note: 'A few specifics' },
@@ -149,25 +151,11 @@ export default function ApplyForm() {
     <div style={{ background: 'var(--color-primary-light)', minHeight: '100%', width: '100%' }}>
       <div className="p-4 md:p-8">
         <div className="max-w-3xl mx-auto" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
-          <div className="px-6 md:px-8 py-5 flex items-baseline justify-between flex-wrap gap-y-1" style={{ borderBottom: '1px solid var(--color-border)' }}>
-            <div>
-              <div style={{ fontSize: 19, color: 'var(--color-primary-dark)', fontWeight: 600 }}>{vacancy.title}</div>
-              <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-                {vacancy.department?.name || ''}{vacancy.department?.directorate?.name ? ', ' + vacancy.department.directorate.name : ''} · Ref: {vacancy.jobRef}
-              </div>
-            </div>
-          </div>
-
-          {vacancy.description && (
-            <div className="px-6 md:px-8 pt-4">
-              <div className="rich-text-content" dangerouslySetInnerHTML={{ __html: vacancy.description }} />
-            </div>
-          )}
-
           <div className="flex flex-col md:flex-row">
             <StepperRail steps={steps} stepIndex={stepIndex} isComplete={isComplete} visited={visited} goTo={goTo} />
 
             <div className="flex-1 px-6 md:px-8 py-6 md:py-8">
+              {steps[stepIndex].key === 'jobDetails' && <JobDetailsStep vacancy={vacancy} />}
               {steps[stepIndex].key === 'profile' && (
                 <ProfileStep profile={profile} onProfileChange={loadProfile}
                   profileDetails={profileDetailsForm}
@@ -213,7 +201,7 @@ export default function ApplyForm() {
                   </button>
                   {steps[stepIndex].key !== 'submit' && (
                     <div style={{ display: 'flex', gap: 12 }}>
-                      {!alreadyDecided && (
+                      {!alreadyDecided && steps[stepIndex].key !== 'jobDetails' && (
                         <Button type="button" variant="ghost" onClick={saveDraft} disabled={saving}>
                           {saving ? 'Saving...' : 'Save as draft'}
                         </Button>
