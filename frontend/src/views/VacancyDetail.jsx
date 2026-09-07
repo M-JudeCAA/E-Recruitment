@@ -24,6 +24,7 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 export default function VacancyDetail() {
   const { id } = useParams();
   const { staff } = useAuth();
+  const canBeginReview = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
   const [vacancy, setVacancy] = useState(null);
   const [applications, setApplications] = useState([]);
   const [shortlistOrder, setShortlistOrder] = useState([]);
@@ -76,6 +77,21 @@ export default function VacancyDetail() {
       next.splice(toIndex, 0, moved);
       return next;
     });
+  };
+
+  // Explicit, idempotent staff action - screens every currently-Submitted
+  // application against the vacancy's minimums and basic completeness,
+  // then moves them to UnderReview with a visible pass/fail result.
+  // Nothing is ever hidden or auto-rejected; a flagged candidate still
+  // appears in this same list exactly like every other one.
+  const beginReview = async () => {
+    setError('');
+    try {
+      await staffClient.patch(`/api/vacancies/${id}/begin-review`);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not begin review');
+    }
   };
 
   const saveRanking = async () => {
@@ -215,6 +231,13 @@ export default function VacancyDetail() {
       <Alert type="error" message={error} />
       <Alert type="info" message={linkMessage} />
 
+      {canBeginReview && applications.some((a) => a.status === 'Submitted') && (
+        <Card accent="var(--color-warning)">
+          <strong>{applications.filter((a) => a.status === 'Submitted').length}</strong> application(s) awaiting review.
+          <Button style={{ marginLeft: 12 }} onClick={beginReview}>Begin Review</Button>
+        </Card>
+      )}
+
       <h3>Shortlist ranking</h3>
       <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
         Drag to reorder. The top {vacancy.positionsRequired} become Primary; the rest become Reserve automatically.
@@ -243,6 +266,15 @@ export default function VacancyDetail() {
         <Card key={app.id}>
           <strong>{app.candidate.fullName}</strong> ({app.candidate.candidateType}) &mdash; <StatusBadge status={app.status} />
           {app.rank && <span> &middot; Rank {app.rank} ({app.listStatus})</span>}
+          {app.screeningPassed === false && (
+            <span title={JSON.parse(app.screeningReasons || '[]').join('; ')}
+              style={{ color: 'var(--color-warning)', marginLeft: 8, fontSize: 13 }}>
+              &#9888; {JSON.parse(app.screeningReasons || '[]').length} flag(s)
+            </span>
+          )}
+          {app.screeningPassed === true && (
+            <span style={{ color: 'var(--color-success)', marginLeft: 8, fontSize: 13 }}>&#10003; Meets criteria</span>
+          )}
           <div style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '6px 0' }}>
             CV: {app.cvUrl ? <a href={fileLink(app.cvUrl)} target="_blank" rel="noreferrer">view</a> : 'none'}
           </div>

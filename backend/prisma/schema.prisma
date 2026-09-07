@@ -12,6 +12,14 @@ enum CandidateType {
   External
 }
 
+enum EducationLevel {
+  Certificate
+  Diploma
+  Bachelors
+  Masters
+  PhD
+}
+
 enum PostingType {
   Internal
   External
@@ -232,6 +240,16 @@ model Vacancy {
   reviewedById     Int?
   reviewedBy       StaffUser? @relation("VacancyReviewedBy", fields: [reviewedById], references: [id])
 
+  // Screening criteria - optional; a vacancy with no minimum set imposes
+  // none. preferredFieldOfStudy is informational only, shown to HR, never
+  // machine-checked (field-of-study matching is too fuzzy to automate
+  // reliably). reviewStartedAt is set once, the first time Begin Review
+  // fires for this vacancy.
+  minimumExperienceYears Int?
+  minimumEducationLevel  EducationLevel?
+  preferredFieldOfStudy  String?
+  reviewStartedAt        DateTime?
+
   // Why `title` is kept as a denormalized snapshot rather than always
   // reading through `position.name`: if a Position is later renamed, past
   // vacancies should still show what they were actually advertised as at
@@ -272,13 +290,15 @@ model WorkExperience {
 }
 
 model Education {
-  id                 Int       @id @default(autoincrement())
-  candidateId        Int
-  candidate          Candidate @relation(fields: [candidateId], references: [id])
-  institution        String
-  qualificationLevel String
-  fieldOfStudy       String
-  yearCompleted      Int?
+  id                     Int             @id @default(autoincrement())
+  candidateId            Int
+  candidate              Candidate       @relation(fields: [candidateId], references: [id])
+  institution            String
+  qualificationLevelText String          // original free text - kept readable until every
+                                          // unmapped row has been manually corrected
+  qualificationLevel     EducationLevel? // the controlled, ordered value screening actually reads
+  fieldOfStudy           String
+  yearCompleted          Int?
 }
 
 model InternalProfile {
@@ -313,6 +333,10 @@ model Application {
   listStatus       ListStatus?
   cvUrl            String?
   coverLetterUrl   String?
+  withdrawalReason String?           // optional - candidate's prerogative, useful for HR reporting
+  screeningPassed  Boolean?          // null until screened
+  screeningReasons String?           @db.Text // JSON array of human-readable strings
+  screenedAt       DateTime?
   createdAt        DateTime          @default(now())
 
   interviewRounds  InterviewRound[]
@@ -388,9 +412,42 @@ model VerificationToken {
   candidate   Candidate? @relation(fields: [candidateId], references: [id])
   staffId     Int?
   staff       StaffUser? @relation(fields: [staffId], references: [id])
+  // An EmailConfirmation token issued at registration time has no
+  // Candidate yet to point at - candidateId stays null and this points
+  // at the pending row instead. onDelete: Cascade so that cleaning up a
+  // PendingCandidateRegistration (on confirm, or once its token expires -
+  // see scripts/cleanupPendingRegistrations.js) takes its token(s) with
+  // it, rather than leaving orphaned rows behind.
+  pendingRegistrationId Int?
+  pendingRegistration   PendingCandidateRegistration? @relation(fields: [pendingRegistrationId], references: [id], onDelete: Cascade)
   expiresAt   DateTime
   usedAt      DateTime?
   createdAt   DateTime  @default(now())
+}
+
+// Holds a registration's details only until its email is confirmed - no
+// Candidate row (and no claim on the unique Candidate.email) is created
+// until then. Rebuilt here after being found live but undeclared in this
+// schema (see backend/prisma/migrations/README_vacancy_approval_gate.md);
+// this time with a real purpose wired to it: register() writes here
+// first, confirmEmail() promotes it to a real Candidate and deletes this
+// row, and any row whose token expires unconfirmed is swept up by
+// scripts/cleanupPendingRegistrations.js. This also fixes a real bug the
+// old direct-to-Candidate design had: an abandoned, never-confirmed
+// signup used to hold its email hostage forever, since Candidate.email
+// is unique regardless of emailConfirmed - here, an expired pending
+// registration is simply deleted, freeing the email for a fresh attempt.
+model PendingCandidateRegistration {
+  id            Int           @id @default(autoincrement())
+  fullName      String
+  email         String        @unique
+  phone         String?
+  nationalId    String?
+  candidateType CandidateType
+  passwordHash  String
+  createdAt     DateTime      @default(now())
+
+  verificationTokens VerificationToken[]
 }
 
 model AuditLog {

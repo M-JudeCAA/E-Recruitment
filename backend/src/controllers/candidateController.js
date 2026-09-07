@@ -20,10 +20,25 @@ async function addWorkExperience(req, res) {
   res.status(201).json(entry);
 }
 
+const EDUCATION_LEVELS = ['Certificate', 'Diploma', 'Bachelors', 'Masters', 'PhD'];
+
+// qualificationLevel is now a controlled, ordered dropdown (Decision #13
+// in the candidate application workflow spec) rather than free text -
+// required for any "meets minimum education" screening comparison to
+// mean anything reliable. qualificationLevelText is kept alongside it,
+// set to the same value at entry time, since it's still what older,
+// unmapped rows are readable from (see scripts/migrateEducationLevels.js).
 async function addEducation(req, res) {
   const { institution, qualificationLevel, fieldOfStudy, yearCompleted } = req.body;
+  if (!EDUCATION_LEVELS.includes(qualificationLevel)) {
+    return res.status(400).json({ error: `Qualification level must be one of: ${EDUCATION_LEVELS.join(', ')}` });
+  }
   const entry = await profileEntriesModel.createEducation({
-    candidateId: req.user.id, institution, qualificationLevel, fieldOfStudy, yearCompleted
+    candidateId: req.user.id, institution,
+    qualificationLevelText: qualificationLevel,
+    qualificationLevel,
+    fieldOfStudy,
+    yearCompleted: yearCompleted ? Number(yearCompleted) : null
   });
   res.status(201).json(entry);
 }

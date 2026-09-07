@@ -6,7 +6,7 @@ const TOKEN_TTL_MS = {
   PasswordReset: 1000 * 60 * 30             // 30 minutes
 };
 
-async function createToken({ type, candidateId = null, staffId = null }) {
+async function createToken({ type, candidateId = null, staffId = null, pendingRegistrationId = null }) {
   const token = crypto.randomBytes(32).toString('hex');
   await prisma.verificationToken.create({
     data: {
@@ -14,6 +14,7 @@ async function createToken({ type, candidateId = null, staffId = null }) {
       type,
       candidateId,
       staffId,
+      pendingRegistrationId,
       expiresAt: new Date(Date.now() + TOKEN_TTL_MS[type])
     }
   });

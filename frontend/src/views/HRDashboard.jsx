@@ -15,7 +15,8 @@ import Modal from '../components/Modal';
 const emptyForm = {
   departmentId: '', positionId: '', reportsToPositionId: '',
   positionsRequired: 1, postingType: 'Open', deadline: '',
-  salaryScale: '', description: ''
+  salaryScale: '', description: '',
+  minimumExperienceYears: '', minimumEducationLevel: '', preferredFieldOfStudy: ''
 };
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK - "Approve a
@@ -135,7 +136,10 @@ export default function HRDashboard() {
     setEditForm({
       positionsRequired: v.positionsRequired, postingType: v.postingType,
       deadline: v.deadline ? v.deadline.slice(0, 10) : '',
-      salaryScale: v.salaryScale || '', description: v.description || ''
+      salaryScale: v.salaryScale || '', description: v.description || '',
+      minimumExperienceYears: v.minimumExperienceYears ?? '',
+      minimumEducationLevel: v.minimumEducationLevel || '',
+      preferredFieldOfStudy: v.preferredFieldOfStudy || ''
     });
     setEditModal(v);
   };
@@ -217,6 +221,25 @@ export default function HRDashboard() {
             value={form.description}
             onChange={(html) => setForm({ ...form, description: html })}
           />
+          <TextField label="Minimum experience (years, optional)" type="number" min="0"
+            value={form.minimumExperienceYears}
+            onChange={(e) => setForm({ ...form, minimumExperienceYears: e.target.value })} />
+          <Select label="Minimum education level (optional)" value={form.minimumEducationLevel}
+            onChange={(e) => setForm({ ...form, minimumEducationLevel: e.target.value })}>
+            <option value="">No minimum</option>
+            <option value="Certificate">Certificate</option>
+            <option value="Diploma">Diploma</option>
+            <option value="Bachelors">Bachelor's</option>
+            <option value="Masters">Master's</option>
+            <option value="PhD">PhD</option>
+          </Select>
+          <TextField label="Preferred field of study (optional, informational only)"
+            placeholder="e.g. Aviation Management or related field"
+            value={form.preferredFieldOfStudy}
+            onChange={(e) => setForm({ ...form, preferredFieldOfStudy: e.target.value })} />
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+            This is shown to HR as a note only - it is never automatically checked against a candidate&rsquo;s records.
+          </p>
           <Button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create'}</Button>
         </form>
         <Alert type="success" message={message} />
@@ -296,6 +319,21 @@ export default function HRDashboard() {
             onChange={(e) => setEditForm({ ...editForm, salaryScale: e.target.value })} />
           <RichTextField label="Job description" value={editForm.description}
             onChange={(html) => setEditForm({ ...editForm, description: html })} />
+          <TextField label="Minimum experience (years, optional)" type="number" min="0"
+            value={editForm.minimumExperienceYears}
+            onChange={(e) => setEditForm({ ...editForm, minimumExperienceYears: e.target.value })} />
+          <Select label="Minimum education level (optional)" value={editForm.minimumEducationLevel}
+            onChange={(e) => setEditForm({ ...editForm, minimumEducationLevel: e.target.value })}>
+            <option value="">No minimum</option>
+            <option value="Certificate">Certificate</option>
+            <option value="Diploma">Diploma</option>
+            <option value="Bachelors">Bachelor's</option>
+            <option value="Masters">Master's</option>
+            <option value="PhD">PhD</option>
+          </Select>
+          <TextField label="Preferred field of study (optional, informational only)"
+            value={editForm.preferredFieldOfStudy}
+            onChange={(e) => setEditForm({ ...editForm, preferredFieldOfStudy: e.target.value })} />
         </Modal>
       )}
     </div>

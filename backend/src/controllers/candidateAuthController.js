@@ -2,17 +2,36 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const candidateModel = require('../models/candidateModel');
 const internalProfileModel = require('../models/internalProfileModel');
+const pendingRegistrationModel = require('../models/pendingRegistrationModel');
 const { sendMail } = require('../utils/mailer');
 const { createToken, consumeToken } = require('../services/tokenService');
 
+// No Candidate row (and no claim on the unique Candidate.email) is
+// created until the confirmation link is actually used - the registration
+// details live in PendingCandidateRegistration until then. This is what
+// lets an abandoned signup be retried: a previous direct-to-Candidate
+// design held the email hostage forever, since Candidate.email is unique
+// regardless of emailConfirmed.
 async function register(req, res) {
   const { fullName, email, password, phone, nationalId } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'fullName, email and password are required' });
   }
 
-  const existing = await candidateModel.findByEmail(email);
-  if (existing) return res.status(409).json({ error: 'An account with this email already exists' });
+  const existingCandidate = await candidateModel.findByEmail(email);
+  if (existingCandidate) return res.status(409).json({ error: 'An account with this email already exists' });
+
+  const existingPending = await pendingRegistrationModel.findByEmail(email);
+  if (existingPending) {
+    if (await pendingRegistrationModel.hasLiveToken(existingPending.id)) {
+      return res.status(409).json({
+        error: 'A confirmation email was already sent to this address. Check your inbox, including spam.'
+      });
+    }
+    // Its confirmation link expired and was never used - clear it out so
+    // this email can be registered again rather than staying stuck.
+    await pendingRegistrationModel.remove(existingPending.id);
+  }
 
   const domain = email.split('@')[1]?.toLowerCase();
   const candidateType = domain === (process.env.INTERNAL_EMAIL_DOMAIN || '').toLowerCase()
@@ -20,15 +39,11 @@ async function register(req, res) {
     : 'External';
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const candidate = await candidateModel.create({
-    fullName, email, phone, nationalId, candidateType, passwordHash, emailConfirmed: false
+  const pending = await pendingRegistrationModel.create({
+    fullName, email, phone, nationalId, candidateType, passwordHash
   });
 
-  if (candidateType === 'Internal') {
-    await internalProfileModel.create({ candidateId: candidate.id });
-  }
-
-  const token = await createToken({ type: 'EmailConfirmation', candidateId: candidate.id });
+  const token = await createToken({ type: 'EmailConfirmation', pendingRegistrationId: pending.id });
   const confirmUrl = `${process.env.FRONTEND_URL}/confirm-email?token=${token}`;
   await sendMail({
     to: email,
@@ -42,10 +57,35 @@ async function register(req, res) {
   });
 }
 
+// The real Candidate row is created here, on confirmation - never
+// earlier. The pending row is deleted immediately once used, since it
+// has no further purpose (the "delete after the token is used" half of
+// this table's lifecycle; the "delete after the token expires" half is
+// handled by scripts/cleanupPendingRegistrations.js for links that are
+// never used at all).
 async function confirmEmail(req, res) {
   try {
     const record = await consumeToken(req.query.token, 'EmailConfirmation');
-    await candidateModel.update(record.candidateId, { emailConfirmed: true });
+    if (!record.pendingRegistrationId) {
+      throw new Error('Invalid or unknown token');
+    }
+    const pending = await pendingRegistrationModel.findById(record.pendingRegistrationId);
+    if (!pending) {
+      throw new Error('This registration is no longer available - please sign up again');
+    }
+
+    const candidate = await candidateModel.create({
+      fullName: pending.fullName, email: pending.email, phone: pending.phone,
+      nationalId: pending.nationalId, candidateType: pending.candidateType,
+      passwordHash: pending.passwordHash, emailConfirmed: true
+    });
+
+    if (pending.candidateType === 'Internal') {
+      await internalProfileModel.create({ candidateId: candidate.id });
+    }
+
+    await pendingRegistrationModel.remove(pending.id);
+
     res.json({ message: 'Email confirmed. You can now log in.' });
   } catch (err) {
     res.status(400).json({ error: err.message });

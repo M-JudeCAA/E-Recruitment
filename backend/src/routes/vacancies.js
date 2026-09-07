@@ -1,5 +1,6 @@
 const express = require('express');
 const controller = require('../controllers/vacancyController');
+const batchController = require('../controllers/vacancyReviewBatchController');
 const { authenticate, optionalAuthenticate, requireStaffRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -11,6 +12,10 @@ router.patch('/:id/close', authenticate, requireStaffRole('Principal_HR_Officer'
 // Principal HR Officer/Manager/Director can also review, same convention
 // as every other minRole gate in this app).
 router.patch('/:id/review', authenticate, requireStaffRole('Senior_HR_Officer'), controller.review);
+// Same tier as the vacancy-review gate already established (Senior HR
+// Officer+) - this is the queue-opening action, not a judgment call, so
+// it sits at the same level as reviewing the vacancy posting itself.
+router.patch('/:id/begin-review', authenticate, requireStaffRole('Senior_HR_Officer'), batchController.beginReview);
 router.patch('/:id/approve', authenticate, requireStaffRole('Principal_HR_Officer'), controller.approve);
 router.get('/', optionalAuthenticate, controller.listPublic);
 router.get('/admin', authenticate, requireStaffRole('HR_Officer'), controller.listForAdmin);

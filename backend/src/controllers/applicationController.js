@@ -1,58 +1,11 @@
-const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
 const offerModel = require('../models/offerModel');
 const slaModel = require('../models/slaModel');
 const workflow = require('../services/workflowService');
-const { fileUrl } = require('../middleware/upload');
 
-async function submit(req, res) {
-  const vacancyId = Number(req.body.vacancyId);
-  const vacancy = await vacancyModel.findById(vacancyId);
-  if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
-
-  // NEW - previously a Closed or Filled vacancy, or one past its deadline,
-  // would still silently accept new applications.
-  if (vacancy.status === 'Closed' || vacancy.status === 'Filled') {
-    return res.status(422).json({ error: 'This vacancy is no longer accepting applications' });
-  }
-  if (vacancy.deadline && vacancy.deadline < new Date()) {
-    return res.status(422).json({ error: 'The application deadline for this vacancy has passed' });
-  }
-
-  if (req.user.candidateType === 'External' && vacancy.postingType === 'Internal') {
-    return res.status(403).json({ error: 'This vacancy is open to internal candidates only' });
-  }
-
-  // NEW - previously nothing stopped the same candidate applying twice.
-  // Matching @@unique([vacancyId, candidateId]) in the schema backstops
-  // this against race conditions (e.g. a double-submitted request).
-  const existing = await applicationModel.findFirst({ vacancyId, candidateId: req.user.id });
-  if (existing) {
-    return res.status(409).json({ error: 'You have already applied to this vacancy' });
-  }
-
-  const cvFile = req.files?.cv?.[0];
-  if (!cvFile) return res.status(400).json({ error: 'A CV upload is required' });
-  const coverLetterFile = req.files?.coverLetter?.[0];
-
-  const application = await applicationModel.create({
-    vacancyId,
-    candidateId: req.user.id,
-    cvUrl: fileUrl(cvFile),
-    coverLetterUrl: fileUrl(coverLetterFile),
-    status: 'Submitted',
-    submittedDate: new Date()
-  });
-
-  await workflow.captureSnapshot({
-    entityType: 'ApplicationSnapshot',
-    entityId: application.id,
-    candidateId: req.user.id
-  });
-  await workflow.notifySupervisor(application.id);
-
-  res.status(201).json(application);
-}
+// NOTE: application creation/submission lives in applicationDraftController
+// now (saveDraft/submit/withdraw) - see routes/applications.js. This file
+// keeps everything downstream of a Submitted application.
 
 async function shortlist(req, res) {
   const applicationId = Number(req.params.id);
@@ -158,4 +111,4 @@ async function declineOffer(req, res) {
   res.json(result);
 }
 
-module.exports = { submit, shortlist, approveShortlist, recommendOffer, approveOffer, acceptOffer, declineOffer };
+module.exports = { shortlist, approveShortlist, recommendOffer, approveOffer, acceptOffer, declineOffer };

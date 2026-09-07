@@ -14,7 +14,8 @@ const { validateVacancyEditableFields } = require('../utils/vacancyValidation');
 // edge-case review required.
 async function create(req, res) {
   const { positionId, reportsToPositionId, positionsRequired, postingType, deadline, salaryScale,
-    description, regulatoryDriver, category, priority } = req.body;
+    description, regulatoryDriver, category, priority,
+    minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy } = req.body;
 
   const position = await positionModel.findById(Number(positionId));
   if (!position) {
@@ -53,6 +54,16 @@ async function create(req, res) {
     reportsToPositionId: validatedReportsToId,
     salaryScale: salaryScale || null,
     description: sanitizeJobDescription(description), // server-side sanitization - the layer that actually matters
+    // FIXED - a real gap found by re-checking the screening specification
+    // against itself: screeningService.js reads vacancy.minimumEducationLevel
+    // and vacancy.minimumExperienceYears, the schema declares them, and the
+    // vacancy form collects them - but nothing here ever saved them. Every
+    // vacancy's minimums would have silently stayed null regardless of what
+    // HR entered, and the structured-criteria half of screening would never
+    // have actually run.
+    minimumExperienceYears: minimumExperienceYears ? Number(minimumExperienceYears) : null,
+    minimumEducationLevel: minimumEducationLevel || null,
+    preferredFieldOfStudy: preferredFieldOfStudy || null,
     positionsRequired: positionsRequired !== undefined ? Number(positionsRequired) : 1,
     // FIXED - this was never set at all, so every vacancy defaulted to
     // the schema default (previously 'Open') and was immediately visible
@@ -80,7 +91,8 @@ async function update(req, res) {
   const vacancy = await vacancyModel.findById(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
 
-  const { positionsRequired, postingType, deadline, salaryScale, description, regulatoryDriver, category, priority } = req.body;
+  const { positionsRequired, postingType, deadline, salaryScale, description, regulatoryDriver, category, priority,
+    minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy } = req.body;
   const fieldErrors = validateVacancyEditableFields({ positionsRequired, postingType, deadline }, { partial: true });
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
@@ -92,6 +104,12 @@ async function update(req, res) {
   if (regulatoryDriver !== undefined) data.regulatoryDriver = regulatoryDriver;
   if (category !== undefined) data.category = category;
   if (priority !== undefined) data.priority = priority;
+  // FIXED - same gap as create(): these three were never editable either.
+  // Worth being able to adjust before Begin Review fires, since screening
+  // only runs at that point, not at vacancy creation.
+  if (minimumExperienceYears !== undefined) data.minimumExperienceYears = minimumExperienceYears ? Number(minimumExperienceYears) : null;
+  if (minimumEducationLevel !== undefined) data.minimumEducationLevel = minimumEducationLevel || null;
+  if (preferredFieldOfStudy !== undefined) data.preferredFieldOfStudy = preferredFieldOfStudy || null;
 
   if (positionsRequired !== undefined) {
     const n = Number(positionsRequired);
