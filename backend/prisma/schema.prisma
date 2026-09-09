@@ -23,7 +23,10 @@ enum EducationLevel {
 enum PostingType {
   Internal
   External
-  Open
+  // Open REMOVED - a vacancy is now strictly Internal or External, never
+  // both. Closes the bidirectional account/vacancy matching gap: a staff
+  // (Internal) account can no longer use its work account to apply to an
+  // External vacancy either (see applicationEligibility.js).
 }
 
 enum VacancyStatus {
@@ -115,7 +118,7 @@ model StaffUser {
 
   vacanciesCreated  Vacancy[]        @relation("VacancyCreatedBy")
   vacanciesApproved Vacancy[]        @relation("VacancyApprovedBy")
-  vacanciesReviewed Vacancy[]        @relation("VacancyReviewedBy")
+  vacanciesPostingTypeChanged Vacancy[] @relation("VacancyPostingTypeChangedBy")
   interviewsRun    InterviewRound[] @relation("InterviewConductedBy")
   panelLinks       PanelMember[]    @relation("PanelStaffLink")
   panelScoresRecorded PanelMember[] @relation("PanelRecordedBy")
@@ -210,7 +213,10 @@ model Vacancy {
   description          String?       @db.Text
   positionsRequired    Int           @default(1)
   status               VacancyStatus @default(PendingApproval)
-  postingType          PostingType   @default(Open)
+  // No default - PostingType.Open is gone, so there is no longer a safe
+  // "both" fallback. HR must choose Internal or External explicitly at
+  // creation (enforced in vacancyController.create).
+  postingType          PostingType
   deadline             DateTime?
   regulatoryDriver     String?
   category             String?
@@ -230,15 +236,29 @@ model Vacancy {
   approvedAt       DateTime?
   approvedById     Int?
   approvedBy       StaffUser? @relation("VacancyApprovedBy", fields: [approvedById], references: [id])
+  // Snapshots which of the two (Manager or Director) actually approved,
+  // at the moment they did - if that person is later promoted, this
+  // historical record must still show what they held when they acted,
+  // the same principle already used for Vacancy.title and
+  // ApplicationSnapshot.
+  approvedByRole   StaffRole?
   rejectionReason  String?
 
-  // Review/check-by gate: a Senior HR Officer+ must check a vacancy
-  // before a Principal HR Officer can give final approval - genuinely
-  // new columns (unlike approvedAt/approvedById/rejectionReason above),
-  // added by a real migration this time.
-  reviewedAt       DateTime?
-  reviewedById     Int?
-  reviewedBy       StaffUser? @relation("VacancyReviewedBy", fields: [reviewedById], references: [id])
+  // The 5-tier flow's Senior HR Officer review/check-by gate is removed
+  // entirely (2-tier now: HR Officer creates, Manager or Director
+  // approves directly) - reviewedAt/reviewedById dropped outright, not
+  // deprecated, since every existing vacancy is confirmed test data.
+
+  // Internal <-> External transition - bidirectional, gated at the same
+  // Manager/Director tier as approval. Every transition is audited via
+  // AuditLog plus this same-principle role snapshot and the previous
+  // value, so a vacancy that transitions more than once still has a
+  // readable history.
+  postingTypeChangedAt          DateTime?
+  postingTypeChangedById        Int?
+  postingTypeChangedBy          StaffUser?   @relation("VacancyPostingTypeChangedBy", fields: [postingTypeChangedById], references: [id])
+  postingTypeChangedByRole      StaffRole?
+  postingTypePreviousValue      PostingType?
 
   // Screening criteria - optional; a vacancy with no minimum set imposes
   // none. preferredFieldOfStudy is informational only, shown to HR, never

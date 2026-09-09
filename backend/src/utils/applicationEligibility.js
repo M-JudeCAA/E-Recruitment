@@ -9,9 +9,19 @@
 // exactly which checks are and aren't being applied, rather than one
 // endpoint quietly inheriting an all-or-nothing bundle.
 
+// CHANGED - strict bidirectional match, not a one-way block. Previously
+// only External candidates were blocked from Internal vacancies; an
+// Internal (staff) account could still apply to an External vacancy
+// using their work account, since nothing checked that direction at all.
+// Now that PostingType.Open is gone, a vacancy is always exactly one or
+// the other - so a mismatch in either direction is blocked. A staff
+// member wanting to apply to an External vacancy now needs their own,
+// separate External account, matching policy exactly.
 function assertPostingTypeEligible(vacancy, candidateType) {
-  if (candidateType === 'External' && vacancy.postingType === 'Internal') {
-    throw new Error('This vacancy is open to internal candidates only');
+  if (vacancy.postingType !== candidateType) {
+    throw new Error(candidateType === 'Internal'
+      ? 'This vacancy is open to external candidates only'
+      : 'This vacancy is open to internal candidates only');
   }
 }
 

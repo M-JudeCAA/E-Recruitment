@@ -1,4 +1,4 @@
-const VALID_POSTING_TYPES = ['Internal', 'External', 'Open'];
+const VALID_POSTING_TYPES = ['Internal', 'External']; // 'Open' REMOVED - a vacancy is always exactly one or the other now
 
 /**
  * Validates vacancy input. When partial=true (used for edits), a field is

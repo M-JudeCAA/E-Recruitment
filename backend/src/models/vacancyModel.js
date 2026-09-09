@@ -38,7 +38,8 @@ module.exports = {
     include: {
       _count: { select: { applications: true } },
       department: { include: { directorate: true } },
-      reviewedBy: { select: { name: true } }
+      approvedBy: { select: { name: true } },
+      postingTypeChangedBy: { select: { name: true } }
     },
     orderBy: { createdAt: 'desc' }
   })

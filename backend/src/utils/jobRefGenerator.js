@@ -1,8 +1,4 @@
 // Generates: UCAA/ADV/{INT|EXT}/{MM}/{YYYY}
-// - "Open" postings (visible to both internal and external candidates)
-// default to EXT, since the image only defines two codes and an openly
-// advertised role is, at minimum, externally visible. FLAG: confirm this
-// with UCAA - if "Open" should get its own code, this is the one line to change.
 //
 // Uniqueness: the format shown has no running number, so two vacancies of
 // the same type opened in the same month would otherwise collide. This
@@ -11,8 +7,9 @@
 // so the common case matches the image exactly, and collisions are still
 // distinguishable rather than silently duplicated.
 function typeCodeFor(postingType) {
-  if (postingType === 'Internal') return 'INT';
-  return 'EXT'; // External or Open
+  // SIMPLIFIED - PostingType.Open no longer exists, so this is now a
+  // clean two-value match rather than a fallback covering three values.
+  return postingType === 'Internal' ? 'INT' : 'EXT';
 }
 
 async function generateJobRef(postingType, date, countExistingWithPrefix) {

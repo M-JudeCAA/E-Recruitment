@@ -158,11 +158,29 @@ async function notifySupervisor(applicationId) {
   });
 }
 
+/**
+ * Audits an Internal <-> External posting-type transition. Reuses the
+ * existing AuditLog table rather than inventing a new dedicated one -
+ * the same pattern already used for ApplicationSnapshot/HireSnapshot.
+ */
+async function logVacancyPostingTypeTransition(vacancyId, fromType, toType, performedById) {
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'Vacancy',
+      entityId: vacancyId,
+      action: 'PostingTypeTransition',
+      performedById,
+      payload: { from: fromType, to: toType }
+    }
+  });
+}
+
 module.exports = {
   assertCanShortlist,
   assertNotSelfApproval,
   recomputeVacancyStatus,
   handleOfferDeclined,
   captureSnapshot,
-  notifySupervisor
+  notifySupervisor,
+  logVacancyPostingTypeTransition
 };

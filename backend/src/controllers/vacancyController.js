@@ -22,6 +22,14 @@ async function create(req, res) {
     return res.status(400).json({ error: 'Select a valid position' });
   }
 
+  // postingType is now required, no silent default. Removing
+  // PostingType.Open means there is no longer a safe "both" fallback to
+  // reach for; HR must explicitly choose Internal or External, since that
+  // choice now determines the entire eligible audience with no overlap.
+  if (!postingType) {
+    return res.status(400).json({ error: 'Posting type (Internal or External) is required' });
+  }
+
   const fieldErrors = validateVacancyEditableFields({ positionsRequired, postingType, deadline });
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
@@ -41,7 +49,7 @@ async function create(req, res) {
   }
 
   const jobRef = await generateJobRef(
-    postingType || 'Open',
+    postingType, // no fallback needed - already validated as required above
     new Date(),
     (prefix) => vacancyModel.countByJobRefPrefix(prefix)
   );
@@ -67,12 +75,11 @@ async function create(req, res) {
     positionsRequired: positionsRequired !== undefined ? Number(positionsRequired) : 1,
     // FIXED - this was never set at all, so every vacancy defaulted to
     // the schema default (previously 'Open') and was immediately visible
-    // to candidates, bypassing Principal HR Officer approval entirely.
-    // The schema default is now also 'PendingApproval' as a second,
-    // independent line of defense - this explicit value doesn't rely on
-    // that default alone.
+    // to candidates, bypassing approval entirely. The schema default is
+    // now also 'PendingApproval' as a second, independent line of
+    // defense - this explicit value doesn't rely on that default alone.
     status: 'PendingApproval',
-    postingType: postingType || 'Open',
+    postingType, // required, validated above - no more Open fallback
     deadline: deadline ? new Date(deadline) : null,
     regulatoryDriver, category, priority,
     createdById: req.user.id
@@ -139,60 +146,24 @@ async function close(req, res) {
   res.json(updated);
 }
 
-// A Senior HR Officer+ check-by stage ahead of Principal HR Officer's
-// final approval - a genuinely independent second set of eyes, not just
-// a second click by the same PHRO. Allowed from the same states approve()
-// itself accepts (PendingApproval, or Closed for the re-open-before-ever-
-// reviewed case) so the two guards stay in lockstep; refuses re-reviewing
-// something already reviewed rather than silently overwriting who/when.
-async function review(req, res) {
-  const vacancyId = Number(req.params.id);
-  const vacancy = await vacancyModel.findById(vacancyId);
-  if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
-
-  if (['Open', 'PartiallyFilled', 'Filled'].includes(vacancy.status)) {
-    return res.status(422).json({ error: 'This vacancy does not need review right now' });
-  }
-  if (vacancy.reviewedAt) {
-    return res.status(422).json({ error: 'This vacancy has already been reviewed' });
-  }
-
-  try {
-    // Same underlying rule as approve() (creator !== actor) - reused
-    // rather than duplicated, but its error message is approval-specific,
-    // so it's rewritten here to actually say "review".
-    await workflow.assertNotSelfApproval(vacancyId, req.user.id);
-  } catch (err) {
-    return res.status(422).json({ error: 'Self-review blocked: route this review to DHRA / Manager HR instead' });
-  }
-
-  const updated = await vacancyModel.update(vacancyId, {
-    reviewedAt: new Date(), reviewedById: req.user.id
-  });
-  res.json(updated);
-}
-
+// SIMPLIFIED from the 5-tier flow (create -> Senior HR Officer review ->
+// Principal HR Officer approve) to 2-tier: HR Officer creates, then
+// either the Manager or Director role approves directly - no review step
+// exists in this flow at all. Both can approve (matching real-world "MHRA
+// or DHRA" practice); approvedByRole records which one specifically
+// acted, so the audit trail is unambiguous even if that person's role
+// changes later (the same principle already used for Vacancy.title and
+// ApplicationSnapshot - a historical fact must reflect what was true at
+// the time, not what is true now).
 async function approve(req, res) {
   const vacancyId = Number(req.params.id);
   const vacancy = await vacancyModel.findById(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
 
-  // FIXED - previously no guard at all existed against approving a
-  // vacancy already in an open-ish state, which made no sense once
-  // PendingApproval exists as a real, distinct state to transition from.
-  // Re-opening a previously Closed vacancy is still allowed - that is
-  // the one legitimate reuse of this endpoint beyond first approval.
+  // Re-opening a previously Closed vacancy is still allowed - the one
+  // legitimate reuse of this endpoint beyond first approval.
   if (['Open', 'PartiallyFilled', 'Filled'].includes(vacancy.status)) {
     return res.status(422).json({ error: 'This vacancy does not need approval right now' });
-  }
-
-  // NEW - the review/check-by gate: a Principal HR Officer cannot give
-  // final approval until a Senior HR Officer+ has reviewed it first. A
-  // vacancy that was reviewed, approved, then later closed still has
-  // reviewedAt set from before, so re-opening it does not force a second
-  // review - only a vacancy that has genuinely never been checked does.
-  if (!vacancy.reviewedAt) {
-    return res.status(422).json({ error: 'This vacancy must be reviewed by a Senior HR Officer before it can be approved' });
   }
 
   try {
@@ -202,15 +173,62 @@ async function approve(req, res) {
   }
 
   const updated = await vacancyModel.update(vacancyId, {
-    status: 'Open', approvedAt: new Date(), approvedById: req.user.id // now actually set - previously declared nowhere and never populated
+    status: 'Open', approvedAt: new Date(), approvedById: req.user.id,
+    approvedByRole: req.user.role // the role snapshot itself
   });
 
-  // NEW - VacancyApproval can now be tracked and escalated by the SLA
-  // checker, since approvedAt finally gives it a clean "resolved" signal.
-  // Not possible before this fix (see the same resolveEscalations note
-  // already left in applicationController.approveOffer and
-  // departmentController.approve/reject).
+  // VacancyApproval can now be tracked and escalated by the SLA checker,
+  // since approvedAt finally gives it a clean "resolved" signal.
   await slaModel.resolveEscalations('VacancyApproval', vacancyId);
+
+  res.json(updated);
+}
+
+// Internal <-> External transition, bidirectional. Restricted to
+// Manager/Director at the route level (the same tier as approve() -
+// their being the only ones who can call this at all IS the required
+// approval, the same way a single Manager/Director action already
+// constitutes approval elsewhere; there is no separate propose-then-
+// approve chain for this). Every transition is audited: who, when, what
+// role they held, and what the value was immediately before - paired
+// with an AuditLog entry (workflow.logVacancyPostingTypeTransition) for a
+// full history if a vacancy transitions more than once.
+async function transitionPostingType(req, res) {
+  const vacancyId = Number(req.params.id);
+  const { postingType } = req.body;
+
+  if (!['Internal', 'External'].includes(postingType)) {
+    return res.status(400).json({ error: 'Posting type must be Internal or External' });
+  }
+
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+
+  if (!['Open', 'PartiallyFilled'].includes(vacancy.status)) {
+    return res.status(422).json({ error: 'Only an actively open vacancy can transition posting type' });
+  }
+  if (vacancy.postingType === postingType) {
+    return res.status(422).json({ error: `This vacancy is already ${postingType}` });
+  }
+
+  // Deliberately NOT regenerating jobRef's INT/EXT segment - jobRef is
+  // generated once at creation and never changes, an existing hard rule
+  // kept consistent here rather than carved out as a special case.
+  //
+  // Deliberately NOT touching existing Application rows either - a
+  // candidate who already applied under the old posting type remains a
+  // valid applicant in the same pool. Nothing in the shortlisting or
+  // ranking path re-checks posting-type eligibility after submission;
+  // that check only ever runs once, at the moment of submission itself.
+  const updated = await vacancyModel.update(vacancyId, {
+    postingType,
+    postingTypePreviousValue: vacancy.postingType,
+    postingTypeChangedAt: new Date(),
+    postingTypeChangedById: req.user.id,
+    postingTypeChangedByRole: req.user.role
+  });
+
+  await workflow.logVacancyPostingTypeTransition(vacancyId, vacancy.postingType, postingType, req.user.id);
 
   res.json(updated);
 }
@@ -220,14 +238,21 @@ async function approve(req, res) {
 // client-supplied query string - closes the access-control gap found
 // during the original edge-case review. Default is the safe (External)
 // filter unless a genuinely verified Internal candidate says otherwise.
+// CHANGED - strict bidirectional match, not just a one-way block.
+// PostingType.Open no longer exists, so a vacancy is now always exactly
+// Internal or External, never both - an Internal (staff) account only
+// ever sees Internal vacancies; an External account only ever sees
+// External ones. This is the same rule submit()/saveDraft() enforce at
+// application time (see applicationEligibility.js) - a candidate can
+// never even see a vacancy they wouldn't be allowed to apply to.
 async function listPublic(req, res) {
   const candidateType = req.user?.type === 'candidate' ? req.user.candidateType : 'External';
+  const postingType = candidateType === 'Internal' ? 'Internal' : 'External';
 
-  let where = { status: { in: ['Open', 'PartiallyFilled'] } };
-  if (candidateType !== 'Internal') {
-    where.postingType = { in: ['External', 'Open'] };
-  }
-  const vacancies = await vacancyModel.findManyWithDetails(where);
+  const vacancies = await vacancyModel.findManyWithDetails({
+    status: { in: ['Open', 'PartiallyFilled'] },
+    postingType
+  });
   res.json(vacancies);
 }
 
@@ -279,4 +304,4 @@ async function saveRanking(req, res) {
   res.json(results);
 }
 
-module.exports = { create, update, close, review, approve, listPublic, listForAdmin, getOne, listApplications, saveRanking };
+module.exports = { create, update, close, approve, transitionPostingType, listPublic, listForAdmin, getOne, listApplications, saveRanking };
