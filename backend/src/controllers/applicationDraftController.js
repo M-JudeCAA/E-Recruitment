@@ -50,12 +50,34 @@ async function saveDraft(req, res) {
   // application) - sent alongside the multipart draft-save request so a
   // single "Save as draft" persists everything the candidate has entered
   // so far, matching how cv/coverLetter already work.
-  const { desiredSalary, openToRelocate, earliestStartDate, whyThisRole } = req.body;
+  const { desiredSalary, openToRelocate, earliestStartDate, whyThisRole, desirableResponses } = req.body;
   const questionsData = {};
   if (desiredSalary !== undefined) questionsData.desiredSalary = desiredSalary || null;
   if (openToRelocate !== undefined) questionsData.openToRelocate = openToRelocate || null;
   if (earliestStartDate !== undefined) questionsData.earliestStartDate = earliestStartDate ? new Date(earliestStartDate) : null;
   if (whyThisRole !== undefined) questionsData.whyThisRole = whyThisRole || null;
+  // Answers to the vacancy's Desirable Requirements Yes/No questions -
+  // arrives as a JSON string (multipart form fields are always strings)
+  // of [{ id, answer }]. Re-derived and snapshotted against the
+  // vacancy's current desirableRequirements here, server-side, rather
+  // than trusting whatever `text` the client sent alongside each answer -
+  // matches the historical-snapshot principle (see the schema comment on
+  // Application.desirableResponses) while still not letting the client
+  // put words in the vacancy's mouth. Unmatched/malformed rows are
+  // dropped rather than rejected, same tolerance as the rest of this
+  // form-save endpoint.
+  if (desirableResponses !== undefined) {
+    let parsed = [];
+    try {
+      parsed = JSON.parse(desirableResponses);
+    } catch {
+      parsed = [];
+    }
+    const requirementsById = new Map((vacancy.desirableRequirements || []).map((r) => [r.id, r.text]));
+    questionsData.desirableResponses = (Array.isArray(parsed) ? parsed : [])
+      .filter((r) => r && requirementsById.has(r.id) && typeof r.answer === 'boolean')
+      .map((r) => ({ id: r.id, text: requirementsById.get(r.id), answer: r.answer }));
+  }
 
   const existing = await applicationModel.findFirst({ vacancyId, candidateId: req.user.id });
 

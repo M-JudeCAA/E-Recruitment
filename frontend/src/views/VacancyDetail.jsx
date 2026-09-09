@@ -279,6 +279,27 @@ export default function VacancyDetail() {
             CV: {app.cvUrl ? <a href={fileLink(app.cvUrl)} target="_blank" rel="noreferrer">view</a> : 'none'}
           </div>
 
+          {/* Desirable Requirements answers - informational only, never
+              part of screeningPassed (a "No" here doesn't fail
+              screening), so shown independently of the essential-criteria
+              flag above rather than folded into it. */}
+          {app.desirableResponses?.length > 0 && (
+            <div style={{ fontSize: 13, margin: '6px 0' }}>
+              {app.desirableResponses.filter((r) => r.answer === false).length > 0 ? (
+                <span style={{ color: 'var(--color-warning)' }}>
+                  &#9888; {app.desirableResponses.filter((r) => r.answer === false).length} desirable requirement(s) answered "No":
+                  <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                    {app.desirableResponses.filter((r) => r.answer === false).map((r) => (
+                      <li key={r.id}>{r.text}</li>
+                    ))}
+                  </ul>
+                </span>
+              ) : (
+                <span style={{ color: 'var(--color-success)' }}>&#10003; Answered "Yes" to all desirable requirements</span>
+              )}
+            </div>
+          )}
+
           {app.candidate.candidateType === 'Internal' && app.candidate.internalProfile && (
             <Card accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)', marginBottom: 8 }}>
               <strong>Internal verification:</strong> <StatusBadge status={app.candidate.internalProfile.verificationStatus} />

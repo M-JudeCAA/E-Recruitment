@@ -69,11 +69,11 @@ describe('create', () => {
 
   // Regression test for the actual bug this fix exists for: status was
   // never set at all, so every vacancy silently defaulted to 'Open' and
-  // was immediately visible to candidates, bypassing PHRO approval.
+  // was immediately visible to candidates, bypassing approval.
   test('always creates a vacancy as PendingApproval, never defaulting to Open', async () => {
     prisma.position.findUnique.mockResolvedValue(officerCorp);
     prisma.vacancy.create.mockResolvedValue({ id: 1 });
-    const req = { body: { positionId: '100' }, user: { id: 1 } };
+    const req = { body: { positionId: '100', postingType: 'External' }, user: { id: 1 } };
     const res = mockRes();
 
     await vacancyController.create(req, res);
@@ -81,6 +81,19 @@ describe('create', () => {
     expect(prisma.vacancy.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: 'PendingApproval' })
     }));
+  });
+
+  // postingType is now required, with no 'Open' fallback to reach for -
+  // HR must choose Internal or External explicitly.
+  test('rejects creation with no postingType', async () => {
+    prisma.position.findUnique.mockResolvedValue(officerCorp);
+    const req = { body: { positionId: '100' }, user: { id: 1 } };
+    const res = mockRes();
+
+    await vacancyController.create(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.vacancy.create).not.toHaveBeenCalled();
   });
 
   test('appends a distinguishing suffix on a same-type, same-month jobRef collision', async () => {
@@ -96,16 +109,16 @@ describe('create', () => {
     expect(data.jobRef).toMatch(/^UCAA\/ADV\/EXT\/\d{2}\/\d{4}-2$/);
   });
 
-  test('sanitizes the description on create', async () => {
+  test('sanitizes the jobPurpose on create', async () => {
     prisma.position.findUnique.mockResolvedValue(officerCorp);
     prisma.vacancy.create.mockResolvedValue({ id: 1 });
-    const req = { body: { positionId: '100', description: '<p>ok</p><script>alert(1)</script>' }, user: { id: 1 } };
+    const req = { body: { positionId: '100', postingType: 'External', jobPurpose: '<p>ok</p><script>alert(1)</script>' }, user: { id: 1 } };
     const res = mockRes();
 
     await vacancyController.create(req, res);
 
     const data = prisma.vacancy.create.mock.calls[0][0].data;
-    expect(data.description).toBe('<p>ok</p>');
+    expect(data.jobPurpose).toBe('<p>ok</p>');
   });
 
   test('rejects a Reports To position in a different department, even with an identical department name (the CWG case)', async () => {
@@ -114,7 +127,7 @@ describe('create', () => {
       if (id === 200) return Promise.resolve(seniorDans);
       return Promise.resolve(null);
     });
-    const req = { body: { positionId: '100', reportsToPositionId: '200' }, user: { id: 1 } };
+    const req = { body: { positionId: '100', postingType: 'External', reportsToPositionId: '200' }, user: { id: 1 } };
     const res = mockRes();
 
     await vacancyController.create(req, res);
@@ -131,7 +144,7 @@ describe('create', () => {
       return Promise.resolve(null);
     });
     prisma.vacancy.create.mockResolvedValue({ id: 1 });
-    const req = { body: { positionId: '100', reportsToPositionId: '101' }, user: { id: 1 } };
+    const req = { body: { positionId: '100', postingType: 'External', reportsToPositionId: '101' }, user: { id: 1 } };
     const res = mockRes();
 
     await vacancyController.create(req, res);
@@ -148,7 +161,7 @@ describe('create', () => {
       if (id === 102) return Promise.resolve(equalCorp);
       return Promise.resolve(null);
     });
-    const req = { body: { positionId: '100', reportsToPositionId: '102' }, user: { id: 1 } };
+    const req = { body: { positionId: '100', postingType: 'External', reportsToPositionId: '102' }, user: { id: 1 } };
     const res = mockRes();
 
     await vacancyController.create(req, res);
@@ -163,7 +176,7 @@ describe('create', () => {
       if (id === 103) return Promise.resolve(juniorCorp);
       return Promise.resolve(null);
     });
-    const req = { body: { positionId: '100', reportsToPositionId: '103' }, user: { id: 1 } };
+    const req = { body: { positionId: '100', postingType: 'External', reportsToPositionId: '103' }, user: { id: 1 } };
     const res = mockRes();
 
     await vacancyController.create(req, res);
@@ -239,16 +252,16 @@ describe('update', () => {
     }));
   });
 
-  test('sanitizes the description on update', async () => {
+  test('sanitizes the jobPurpose on update', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionId: 100, positionsRequired: 1 });
     prisma.vacancy.update.mockResolvedValue({ id: 1 });
-    const req = { params: { id: '1' }, body: { description: '<b>ok</b><script>x()</script>' } };
+    const req = { params: { id: '1' }, body: { jobPurpose: '<b>ok</b><script>x()</script>' } };
     const res = mockRes();
 
     await vacancyController.update(req, res);
 
     const data = prisma.vacancy.update.mock.calls[0][0].data;
-    expect(data.description).toBe('<b>ok</b>');
+    expect(data.jobPurpose).toBe('<b>ok</b>');
   });
 });
 
@@ -295,118 +308,152 @@ describe('approve', () => {
     });
 
   test.each(['PendingApproval', 'Closed'])(
-    'allows approving an already-reviewed %s vacancy through', async (status) => {
-      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status, createdById: 5, reviewedAt: new Date('2026-01-01') });
+    'allows a Manager/Director to approve a %s vacancy directly - no review step in the 2-tier flow', async (status) => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status, createdById: 5 });
       prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open' });
       const res = mockRes();
-      await vacancyController.approve({ params: { id: '1' }, user: { id: 2 } }, res);
+      await vacancyController.approve({ params: { id: '1' }, user: { id: 2, role: 'Manager' } }, res);
       expect(res.status).not.toHaveBeenCalledWith(422);
       expect(prisma.vacancy.update).toHaveBeenCalled();
     });
 
-  // The review/check-by gate: a Principal HR Officer cannot approve
-  // something a Senior HR Officer has never checked, regardless of who
-  // is asking or what status it's in.
-  test('refuses to approve a vacancy that has not been reviewed yet', async () => {
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5, reviewedAt: null });
-    const res = mockRes();
-    await vacancyController.approve({ params: { id: '1' }, user: { id: 2 } }, res);
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.vacancy.update).not.toHaveBeenCalled();
-  });
-
   test('blocks self-approval - the creator cannot approve their own vacancy', async () => {
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 2, reviewedAt: new Date('2026-01-01') });
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 2 });
     const res = mockRes();
-    await vacancyController.approve({ params: { id: '1' }, user: { id: 2 } }, res);
+    await vacancyController.approve({ params: { id: '1' }, user: { id: 2, role: 'Manager' } }, res);
     expect(res.status).toHaveBeenCalledWith(422);
     expect(prisma.vacancy.update).not.toHaveBeenCalled();
   });
 
-  test('approving sets approvedAt/approvedById and resolves any active VacancyApproval escalation', async () => {
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5, reviewedAt: new Date('2026-01-01') });
-    prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open' });
-    const res = mockRes();
+  // approvedByRole snapshots which of the two (Manager or Director)
+  // actually approved, at the moment they did - unaffected by a later
+  // promotion.
+  test.each(['Manager', 'Director'])(
+    'approving as %s sets approvedAt/approvedById/approvedByRole and resolves any active VacancyApproval escalation', async (role) => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5 });
+      prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open' });
+      const res = mockRes();
 
-    await vacancyController.approve({ params: { id: '1' }, user: { id: 2 } }, res);
+      await vacancyController.approve({ params: { id: '1' }, user: { id: 2, role } }, res);
 
-    expect(prisma.vacancy.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 1 },
-      data: expect.objectContaining({ status: 'Open', approvedById: 2, approvedAt: expect.any(Date) })
-    }));
-    expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith({
-      where: { taskType: 'VacancyApproval', taskId: 1, resolvedAt: null },
-      data: { resolvedAt: expect.any(Date) }
+      expect(prisma.vacancy.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 1 },
+        data: expect.objectContaining({ status: 'Open', approvedById: 2, approvedByRole: role, approvedAt: expect.any(Date) })
+      }));
+      expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith({
+        where: { taskType: 'VacancyApproval', taskId: 1, resolvedAt: null },
+        data: { resolvedAt: expect.any(Date) }
+      });
+      expect(res.json).toHaveBeenCalledWith({ id: 1, status: 'Open' });
     });
-    expect(res.json).toHaveBeenCalledWith({ id: 1, status: 'Open' });
-  });
 });
 
-describe('review', () => {
+describe('transitionPostingType', () => {
   test('returns 404 when the vacancy does not exist', async () => {
     prisma.vacancy.findUnique.mockResolvedValue(null);
     const res = mockRes();
-    await vacancyController.review({ params: { id: '99' }, user: { id: 2 } }, res);
+    await vacancyController.transitionPostingType({ params: { id: '99' }, body: { postingType: 'External' }, user: { id: 2, role: 'Manager' } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
     expect(prisma.vacancy.update).not.toHaveBeenCalled();
   });
 
-  test.each(['Open', 'PartiallyFilled', 'Filled'])(
-    'refuses to review a vacancy already %s - it does not need review right now', async (status) => {
-      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status, createdById: 5, reviewedAt: null });
+  test('rejects a postingType that is not Internal or External', async () => {
+    const res = mockRes();
+    await vacancyController.transitionPostingType({ params: { id: '1' }, body: { postingType: 'Bogus' }, user: { id: 2, role: 'Manager' } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.vacancy.findUnique).not.toHaveBeenCalled();
+  });
+
+  test.each(['PendingApproval', 'Closed'])(
+    'refuses to transition a %s vacancy - only an actively open vacancy can transition', async (status) => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status, postingType: 'Internal' });
       const res = mockRes();
-      await vacancyController.review({ params: { id: '1' }, user: { id: 2 } }, res);
+      await vacancyController.transitionPostingType({ params: { id: '1' }, body: { postingType: 'External' }, user: { id: 2, role: 'Manager' } }, res);
       expect(res.status).toHaveBeenCalledWith(422);
       expect(prisma.vacancy.update).not.toHaveBeenCalled();
     });
 
-  test.each(['PendingApproval', 'Closed'])('allows reviewing a %s vacancy', async (status) => {
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status, createdById: 5, reviewedAt: null });
-    prisma.vacancy.update.mockResolvedValue({ id: 1, status, reviewedAt: new Date(), reviewedById: 2 });
+  test('refuses a same-value no-op transition', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open', postingType: 'Internal' });
     const res = mockRes();
-    await vacancyController.review({ params: { id: '1' }, user: { id: 2 } }, res);
-    expect(res.status).not.toHaveBeenCalledWith(422);
-    expect(prisma.vacancy.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 1 },
-      data: expect.objectContaining({ reviewedById: 2, reviewedAt: expect.any(Date) })
-    }));
-  });
-
-  test('refuses to review a vacancy that has already been reviewed', async () => {
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5, reviewedAt: new Date('2026-01-01') });
-    const res = mockRes();
-    await vacancyController.review({ params: { id: '1' }, user: { id: 2 } }, res);
+    await vacancyController.transitionPostingType({ params: { id: '1' }, body: { postingType: 'Internal' }, user: { id: 2, role: 'Manager' } }, res);
     expect(res.status).toHaveBeenCalledWith(422);
     expect(prisma.vacancy.update).not.toHaveBeenCalled();
   });
 
-  test('blocks self-review - the creator cannot review their own vacancy either', async () => {
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 2, reviewedAt: null });
+  test.each([['Internal', 'External'], ['External', 'Internal']])(
+    'transitions a %s vacancy to %s, snapshotting the previous value, actor, and role, and audits it', async (from, to) => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open', postingType: from });
+      prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open', postingType: to });
+      const res = mockRes();
+
+      await vacancyController.transitionPostingType({ params: { id: '1' }, body: { postingType: to }, user: { id: 2, role: 'Director' } }, res);
+
+      expect(prisma.vacancy.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 1 },
+        data: expect.objectContaining({
+          postingType: to, postingTypePreviousValue: from,
+          postingTypeChangedById: 2, postingTypeChangedByRole: 'Director', postingTypeChangedAt: expect.any(Date)
+        })
+      }));
+      expect(prisma.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          entityType: 'Vacancy', entityId: 1, action: 'PostingTypeTransition', performedById: 2,
+          payload: { from, to }
+        })
+      }));
+      expect(res.json).toHaveBeenCalledWith({ id: 1, status: 'Open', postingType: to });
+    });
+
+  // jobRef and existing Application rows are deliberately untouched by a
+  // transition - a candidate who already applied under the old posting
+  // type remains a valid applicant in the same pool.
+  test('does not touch jobRef or reach into Application rows', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open', postingType: 'Internal', jobRef: 'UCAA/ADV/INT/01/2026' });
+    prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open', postingType: 'External' });
     const res = mockRes();
-    await vacancyController.review({ params: { id: '1' }, user: { id: 2 } }, res);
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+
+    await vacancyController.transitionPostingType({ params: { id: '1' }, body: { postingType: 'External' }, user: { id: 2, role: 'Manager' } }, res);
+
+    const data = prisma.vacancy.update.mock.calls[0][0].data;
+    expect(data.jobRef).toBeUndefined();
+    expect(prisma.application.update).not.toHaveBeenCalled();
   });
 });
 
 describe('listPublic', () => {
-  test('shows Internal-only postings to a verified Internal candidate token', async () => {
+  // Strict bidirectional visibility - PostingType.Open no longer exists,
+  // so a verified Internal candidate sees ONLY Internal postings, never
+  // External ones too.
+  test('shows only Internal postings to a verified Internal candidate token', async () => {
     prisma.vacancy.findMany.mockResolvedValue([]);
     const req = { user: { type: 'candidate', candidateType: 'Internal' } };
     await vacancyController.listPublic(req, mockRes());
 
     expect(prisma.vacancy.findMany.mock.calls[0][0].where).toEqual({
-      status: { in: ['Open', 'PartiallyFilled'] }
+      status: { in: ['Open', 'PartiallyFilled'] },
+      postingType: 'Internal'
     });
   });
 
-  test('hides Internal-only postings from an anonymous request (no token)', async () => {
+  test('shows only External postings to a verified External candidate token', async () => {
+    prisma.vacancy.findMany.mockResolvedValue([]);
+    const req = { user: { type: 'candidate', candidateType: 'External' } };
+    await vacancyController.listPublic(req, mockRes());
+
+    expect(prisma.vacancy.findMany.mock.calls[0][0].where).toEqual({
+      status: { in: ['Open', 'PartiallyFilled'] },
+      postingType: 'External'
+    });
+  });
+
+  test('defaults to the safe External filter for an anonymous request (no token)', async () => {
     prisma.vacancy.findMany.mockResolvedValue([]);
     await vacancyController.listPublic({ user: undefined }, mockRes());
 
     expect(prisma.vacancy.findMany.mock.calls[0][0].where).toEqual({
       status: { in: ['Open', 'PartiallyFilled'] },
-      postingType: { in: ['External', 'Open'] }
+      postingType: 'External'
     });
   });
 });

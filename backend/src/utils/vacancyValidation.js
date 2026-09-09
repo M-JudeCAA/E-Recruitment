@@ -1,4 +1,37 @@
-const VALID_POSTING_TYPES = ['Internal', 'External', 'Open'];
+const crypto = require('crypto');
+
+const VALID_POSTING_TYPES = ['Internal', 'External']; // 'Open' REMOVED - a vacancy is always exactly one or the other now
+
+// Normalizers for the structured advert fields (Job Purpose / Person
+// Specification). Deliberately lenient rather than error-throwing - a
+// stray blank row from the list editor UI is dropped rather than
+// rejected, the same tolerance already given to other optional fields
+// elsewhere in this file. Each returns `undefined` when the field wasn't
+// present in the payload at all, so a partial update (edit) never wipes
+// a section the caller didn't touch, and an empty array `[]` when the
+// caller explicitly sent one, so a section can still be deliberately
+// cleared.
+function normalizeStringList(value) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return [];
+  return value.map((v) => String(v ?? '').trim()).filter(Boolean);
+}
+
+// [{ id, text }] - `id` is generated once and kept stable across edits so
+// a candidate's already-submitted Yes/No answer (which snapshots this id
+// alongside the text at answer time) stays attributable even if the
+// vacancy's wording is later tweaked. A row missing an id (a brand-new
+// one from the "add requirement" button) gets one assigned here.
+function normalizeDesirableRequirements(value) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((row) => ({
+      id: row?.id ? String(row.id) : crypto.randomUUID(),
+      text: String(row?.text ?? '').trim()
+    }))
+    .filter((row) => row.text);
+}
 
 /**
  * Validates vacancy input. When partial=true (used for edits), a field is
@@ -40,4 +73,7 @@ function validateVacancyEditableFields(data, { partial = false } = {}) {
   return errors;
 }
 
-module.exports = { validateVacancyEditableFields, VALID_POSTING_TYPES };
+module.exports = {
+  validateVacancyEditableFields, VALID_POSTING_TYPES,
+  normalizeStringList, normalizeDesirableRequirements
+};

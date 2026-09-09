@@ -5,32 +5,43 @@ import { useAuth } from '../models/AuthContext';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import TextField from '../components/TextField';
-import RichTextField from '../components/RichTextField';
 import Select from '../components/Select';
 import Button from '../components/Button';
 import Alert from '../components/Alert';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
+import VacancyAdvertFields from '../components/VacancyAdvertFields';
+import VacancyAdvert from '../components/VacancyAdvert';
 
 const emptyForm = {
   departmentId: '', positionId: '', reportsToPositionId: '',
-  positionsRequired: 1, postingType: 'Open', deadline: '',
-  salaryScale: '', description: '',
-  minimumExperienceYears: '', minimumEducationLevel: '', preferredFieldOfStudy: ''
+  positionsRequired: 1, postingType: '', deadline: '', // postingType is now required with no default, so this starts blank to force an explicit choice
+  salaryScale: '',
+  // Structured advert content (Job Purpose / Person Specification) - see
+  // backend/prisma/schema.prisma's comment on Vacancy.jobPurpose. There is
+  // no separate "description" field any more - it and jobPurpose were
+  // doing the same job, so this is the only one now. Rendered together by
+  // VacancyAdvertFields, below, in both this form and the edit modal.
+  minimumExperienceYears: '', minimumEducationLevel: '', preferredFieldOfStudy: '',
+  jobPurpose: '', essentialRequirements: [],
+  desirableRequirements: [], generalKnowledge: [], specialSkills: []
 };
 
-// Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK - "Approve a
-// vacancy" and "Close a vacancy" are Principal HR Officer+ capabilities,
-// so gating on rank (not just "not HR_Officer") keeps a Senior HR Officer
-// from seeing a button the backend would 403 on.
+// Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK. "Close a
+// vacancy" remains Principal HR Officer+, unchanged - the vacancy
+// approval simplification was scoped narrowly to approval itself.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 
 export default function HRDashboard() {
   const { staff } = useAuth();
-  const canApprove = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Principal_HR_Officer;
-  // The review/check-by stage - Senior HR Officer+, ahead of PHRO's own
-  // (higher-ranked) final approval.
-  const canReview = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
+  // CHANGED - was Principal_HR_Officer. The vacancy workflow simplified
+  // from 5-tier (create -> Senior HR Officer review -> Principal HR
+  // Officer approve) to 2-tier: HR Officer creates, Manager or Director
+  // approves directly - matching "MHRA or DHRA" exactly. The review step
+  // is removed, not just hidden - there is no review stage in the new
+  // flow at all.
+  const canApprove = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Manager;
+  const canTransition = canApprove; // same tier - their call to it IS the required approval
 
   const [vacancies, setVacancies] = useState([]);
   const [approvedDepartments, setApprovedDepartments] = useState([]);
@@ -44,6 +55,12 @@ export default function HRDashboard() {
 
   const [editModal, setEditModal] = useState(null);
   const [editForm, setEditForm] = useState({});
+
+  // Shared preview modal - built from the create form or the edit form,
+  // whichever is open, so HR can see exactly what candidates will see
+  // (the same VacancyAdvert component the candidate-facing apply wizard
+  // uses) before ever submitting for approval.
+  const [previewData, setPreviewData] = useState(null);
 
   const load = () => staffClient.get('/api/vacancies/admin').then((res) => setVacancies(res.data));
   useEffect(() => {
@@ -80,13 +97,50 @@ export default function HRDashboard() {
     setReportsToOptions(res.data);
   };
 
+  // Resolves the currently-selected department/position/reports-to ids
+  // into display names for the preview - the create form only holds ids,
+  // so this is the one place that needs the lookup lists already loaded
+  // for the cascading selects above.
+  const previewCreateForm = () => {
+    const dept = approvedDepartments.find((d) => String(d.id) === String(form.departmentId));
+    const position = departmentPositions.find((p) => String(p.id) === String(form.positionId));
+    const reportsTo = reportsToOptions.find((p) => String(p.id) === String(form.reportsToPositionId));
+    setPreviewData({
+      jobRef: null,
+      title: position?.name || '(select a title)',
+      departmentLabel: dept ? `${dept.name}${dept.directorate?.name ? ', ' + dept.directorate.name : ''}` : null,
+      reportsToName: reportsTo?.name,
+      salaryScale: form.salaryScale, positionsRequired: form.positionsRequired, deadline: form.deadline,
+      jobPurpose: form.jobPurpose, essentialRequirements: form.essentialRequirements,
+      minimumEducationLevel: form.minimumEducationLevel, minimumExperienceYears: form.minimumExperienceYears,
+      preferredFieldOfStudy: form.preferredFieldOfStudy, desirableRequirements: form.desirableRequirements,
+      generalKnowledge: form.generalKnowledge, specialSkills: form.specialSkills
+    });
+  };
+
+  const previewEditForm = () => {
+    setPreviewData({
+      jobRef: editModal.jobRef,
+      title: editModal.title,
+      departmentLabel: editModal.department?.name
+        ? `${editModal.department.name}${editModal.department.directorate?.name ? ', ' + editModal.department.directorate.name : ''}`
+        : null,
+      reportsToName: editModal.reportsToPosition?.name,
+      salaryScale: editForm.salaryScale, positionsRequired: editForm.positionsRequired, deadline: editForm.deadline,
+      jobPurpose: editForm.jobPurpose, essentialRequirements: editForm.essentialRequirements,
+      minimumEducationLevel: editForm.minimumEducationLevel, minimumExperienceYears: editForm.minimumExperienceYears,
+      preferredFieldOfStudy: editForm.preferredFieldOfStudy, desirableRequirements: editForm.desirableRequirements,
+      generalKnowledge: editForm.generalKnowledge, specialSkills: editForm.specialSkills
+    });
+  };
+
   const createVacancy = async (e) => {
     e.preventDefault();
     if (creating) return; // a double-click or slow-network retry must not create two vacancies
     setMessage(''); setError(''); setCreating(true);
     try {
       const res = await staffClient.post('/api/vacancies', form);
-      setMessage(`Vacancy created (Ref: ${res.data.jobRef}). It needs Principal HR Officer approval to open.`);
+      setMessage(`Vacancy created (Ref: ${res.data.jobRef}). It needs Manager or Director approval to open.`);
       setForm(emptyForm);
       setDepartmentPositions([]);
       setReportsToOptions([]);
@@ -99,16 +153,6 @@ export default function HRDashboard() {
     }
   };
 
-  const review = async (id) => {
-    setError('');
-    try {
-      await staffClient.patch(`/api/vacancies/${id}/review`);
-      load();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Review failed');
-    }
-  };
-
   const approve = async (id) => {
     setError('');
     try {
@@ -116,6 +160,17 @@ export default function HRDashboard() {
       load();
     } catch (err) {
       setError(err.response?.data?.error || 'Approval failed');
+    }
+  };
+
+  const transitionPostingType = async (id, target) => {
+    if (!window.confirm(`Transition this vacancy to ${target}? This is audited and cannot be undone directly - you would need a second transition back.`)) return;
+    setError('');
+    try {
+      await staffClient.patch(`/api/vacancies/${id}/transition-posting-type`, { postingType: target });
+      load();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Transition failed');
     }
   };
 
@@ -136,10 +191,15 @@ export default function HRDashboard() {
     setEditForm({
       positionsRequired: v.positionsRequired, postingType: v.postingType,
       deadline: v.deadline ? v.deadline.slice(0, 10) : '',
-      salaryScale: v.salaryScale || '', description: v.description || '',
+      salaryScale: v.salaryScale || '',
       minimumExperienceYears: v.minimumExperienceYears ?? '',
       minimumEducationLevel: v.minimumEducationLevel || '',
-      preferredFieldOfStudy: v.preferredFieldOfStudy || ''
+      preferredFieldOfStudy: v.preferredFieldOfStudy || '',
+      jobPurpose: v.jobPurpose || '',
+      essentialRequirements: v.essentialRequirements || [],
+      desirableRequirements: v.desirableRequirements || [],
+      generalKnowledge: v.generalKnowledge || [],
+      specialSkills: v.specialSkills || []
     });
     setEditModal(v);
   };
@@ -206,8 +266,11 @@ export default function HRDashboard() {
 
           <TextField label="Positions required" type="number" min="1" value={form.positionsRequired}
             onChange={(e) => setForm({ ...form, positionsRequired: Number(e.target.value) })} />
-          <Select label="Posting type" value={form.postingType} onChange={(e) => setForm({ ...form, postingType: e.target.value })}>
-            <option value="Open">Open (internal + external)</option>
+          <Select label="Posting type" value={form.postingType} onChange={(e) => setForm({ ...form, postingType: e.target.value })} required>
+            <option value="">Select one</option>
+            {/* "Open (internal + external)" REMOVED - a vacancy is now
+                always exactly one or the other; there is no longer a
+                "both" option, and this choice is required. */}
             <option value="Internal">Internal only</option>
             <option value="External">External only</option>
           </Select>
@@ -215,32 +278,12 @@ export default function HRDashboard() {
             onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
           <TextField label="Salary level / scale" placeholder="e.g. Scale 5" value={form.salaryScale}
             onChange={(e) => setForm({ ...form, salaryScale: e.target.value })} />
-          <RichTextField
-            label="Job description"
-            placeholder="Paste a formatted job description, or type one directly"
-            value={form.description}
-            onChange={(html) => setForm({ ...form, description: html })}
-          />
-          <TextField label="Minimum experience (years, optional)" type="number" min="0"
-            value={form.minimumExperienceYears}
-            onChange={(e) => setForm({ ...form, minimumExperienceYears: e.target.value })} />
-          <Select label="Minimum education level (optional)" value={form.minimumEducationLevel}
-            onChange={(e) => setForm({ ...form, minimumEducationLevel: e.target.value })}>
-            <option value="">No minimum</option>
-            <option value="Certificate">Certificate</option>
-            <option value="Diploma">Diploma</option>
-            <option value="Bachelors">Bachelor's</option>
-            <option value="Masters">Master's</option>
-            <option value="PhD">PhD</option>
-          </Select>
-          <TextField label="Preferred field of study (optional, informational only)"
-            placeholder="e.g. Aviation Management or related field"
-            value={form.preferredFieldOfStudy}
-            onChange={(e) => setForm({ ...form, preferredFieldOfStudy: e.target.value })} />
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-            This is shown to HR as a note only - it is never automatically checked against a candidate&rsquo;s records.
-          </p>
-          <Button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create'}</Button>
+          <VacancyAdvertFields values={form} onChange={(patch) => setForm({ ...form, ...patch })} />
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <Button type="button" variant="secondary" onClick={previewCreateForm}>Preview advert</Button>
+            <Button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create'}</Button>
+          </div>
         </form>
         <Alert type="success" message={message} />
         <Alert type="error" message={error} />
@@ -258,33 +301,30 @@ export default function HRDashboard() {
           {v.deadline && <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
             Deadline: {new Date(v.deadline).toLocaleDateString()}
           </span>}
-          {['PendingApproval', 'Closed'].includes(v.status) && (
-            <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
-              {v.reviewedAt
-                ? `Reviewed by ${v.reviewedBy?.name || 'a Senior HR Officer'}`
-                : 'Awaiting Senior HR Officer review'}
-            </div>
-          )}
           <div style={{ marginTop: 8 }}>
             <Link to={`/hr/vacancy/${v.id}`}>View applications</Link>
             <Button variant="ghost" style={{ marginLeft: 12, padding: '2px 10px' }} onClick={() => openEdit(v)}>Edit</Button>
-            {/* Check-by stage: a Senior HR Officer+ must review before a
-                Principal HR Officer can approve - the backend refuses
-                approve() with no reviewedAt, so Approve/Re-open are only
-                ever shown once that's already true. */}
-            {['PendingApproval', 'Closed'].includes(v.status) && !v.reviewedAt && canReview && (
-              <Button variant="secondary" style={{ marginLeft: 8, padding: '2px 10px' }} onClick={() => review(v.id)}>Review</Button>
-            )}
-            {/* FIXED - this used to check status === 'Open', which only ever
-                showed "Re-approve" on a vacancy that was already approved and
-                needed no action at all. Now correctly split: Approve for a
-                fresh vacancy still awaiting its first decision, Re-open for
-                one that was previously withdrawn. */}
-            {v.status === 'PendingApproval' && v.reviewedAt && canApprove && (
+            {/* SIMPLIFIED - the Senior HR Officer review stage and its
+                "awaiting review" status line are both removed entirely,
+                not just hidden. The 2-tier flow goes straight from
+                PendingApproval to a Manager/Director's direct approval. */}
+            {v.status === 'PendingApproval' && canApprove && (
               <Button variant="secondary" style={{ marginLeft: 8, padding: '2px 10px' }} onClick={() => approve(v.id)}>Approve</Button>
             )}
-            {v.status === 'Closed' && v.reviewedAt && canApprove && (
+            {v.status === 'Closed' && canApprove && (
               <Button variant="secondary" style={{ marginLeft: 8, padding: '2px 10px' }} onClick={() => approve(v.id)}>Re-open</Button>
+            )}
+            {/* NEW - Internal <-> External transition, restricted to the
+                same Manager/Director tier as approval, and only while the
+                vacancy is actually live (Open/PartiallyFilled) - matches
+                the server-side guard in transitionPostingType() exactly,
+                so this button never appears somewhere the backend would
+                refuse it anyway. */}
+            {['Open', 'PartiallyFilled'].includes(v.status) && canTransition && (
+              <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 10px' }}
+                onClick={() => transitionPostingType(v.id, v.postingType === 'Internal' ? 'External' : 'Internal')}>
+                Transition to {v.postingType === 'Internal' ? 'External' : 'Internal'}
+              </Button>
             )}
             {v.status !== 'Closed' && canApprove && (
               <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 10px', color: 'var(--color-danger)' }}
@@ -298,8 +338,10 @@ export default function HRDashboard() {
         <Modal
           title={`Edit vacancy — ${editModal.jobRef}`}
           onClose={() => setEditModal(null)}
+          maxWidth={640}
           footer={<>
             <Button variant="ghost" onClick={() => setEditModal(null)}>Cancel</Button>
+            <Button variant="secondary" onClick={previewEditForm}>Preview advert</Button>
             <Button onClick={saveEdit}>Save changes</Button>
           </>}
         >
@@ -308,8 +350,13 @@ export default function HRDashboard() {
           </p>
           <TextField label="Positions required" type="number" min="1" value={editForm.positionsRequired}
             onChange={(e) => setEditForm({ ...editForm, positionsRequired: Number(e.target.value) })} />
-          <Select label="Posting type" value={editForm.postingType} onChange={(e) => setEditForm({ ...editForm, postingType: e.target.value })}>
-            <option value="Open">Open (internal + external)</option>
+          {/* This plain edit-form Select is for pre-approval changes only
+              (no audit trail beyond ordinary editing). Once a vacancy is
+              actually Open/PartiallyFilled, changing posting type here is
+              blocked server-side - use the audited Transition action on
+              the vacancy card instead, which is the only path once it's live. */}
+          <Select label="Posting type" value={editForm.postingType} onChange={(e) => setEditForm({ ...editForm, postingType: e.target.value })} required>
+            <option value="">Select one</option>
             <option value="Internal">Internal only</option>
             <option value="External">External only</option>
           </Select>
@@ -317,23 +364,14 @@ export default function HRDashboard() {
             onChange={(e) => setEditForm({ ...editForm, deadline: e.target.value })} />
           <TextField label="Salary level / scale" value={editForm.salaryScale}
             onChange={(e) => setEditForm({ ...editForm, salaryScale: e.target.value })} />
-          <RichTextField label="Job description" value={editForm.description}
-            onChange={(html) => setEditForm({ ...editForm, description: html })} />
-          <TextField label="Minimum experience (years, optional)" type="number" min="0"
-            value={editForm.minimumExperienceYears}
-            onChange={(e) => setEditForm({ ...editForm, minimumExperienceYears: e.target.value })} />
-          <Select label="Minimum education level (optional)" value={editForm.minimumEducationLevel}
-            onChange={(e) => setEditForm({ ...editForm, minimumEducationLevel: e.target.value })}>
-            <option value="">No minimum</option>
-            <option value="Certificate">Certificate</option>
-            <option value="Diploma">Diploma</option>
-            <option value="Bachelors">Bachelor's</option>
-            <option value="Masters">Master's</option>
-            <option value="PhD">PhD</option>
-          </Select>
-          <TextField label="Preferred field of study (optional, informational only)"
-            value={editForm.preferredFieldOfStudy}
-            onChange={(e) => setEditForm({ ...editForm, preferredFieldOfStudy: e.target.value })} />
+          <VacancyAdvertFields values={editForm} onChange={(patch) => setEditForm({ ...editForm, ...patch })} />
+        </Modal>
+      )}
+
+      {previewData && (
+        <Modal title="Vacancy advert preview" onClose={() => setPreviewData(null)} maxWidth={720}
+          footer={<Button variant="ghost" onClick={() => setPreviewData(null)}>Close</Button>}>
+          <VacancyAdvert {...previewData} />
         </Modal>
       )}
     </div>

@@ -24,8 +24,14 @@ function tierAbove(role) {
 // The tier a task is FIRST assigned to, before any escalation - matches
 // the role permission table exactly (PHRO can recommend an offer but
 // never approve it, so OfferApproval starts at Manager).
+//
+// CHANGED - VacancyApproval was Principal_HR_Officer, matching the old
+// 5-tier flow (create -> SHRO review -> PHRO approve). The vacancy
+// workflow simplified to 2-tier (HR Officer creates, Manager or Director
+// approves directly), so this now starts at Manager, matching who is
+// actually assigned the task from the moment a vacancy needs approval.
 const INITIAL_TIER = {
-  VacancyApproval: 'Principal_HR_Officer',
+  VacancyApproval: 'Manager',
   DepartmentApproval: 'Principal_HR_Officer',
   OfferApproval: 'Manager'
 };

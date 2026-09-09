@@ -6,7 +6,7 @@ const { validateVacancyEditableFields, VALID_POSTING_TYPES } = require('../src/u
 
 describe('validateVacancyEditableFields - full creation (partial=false)', () => {
   test('accepts a fully valid payload with no errors', () => {
-    const errors = validateVacancyEditableFields({ positionsRequired: 2, postingType: 'Open', deadline: null });
+    const errors = validateVacancyEditableFields({ positionsRequired: 2, postingType: 'External', deadline: null });
     expect(errors).toEqual([]);
   });
 

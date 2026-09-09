@@ -34,6 +34,11 @@ export default function ApplyForm() {
   const [questionsForm, setQuestionsForm] = useState({
     desiredSalary: '', openToRelocate: '', earliestStartDate: '', whyThisRole: ''
   });
+  // Answers to the vacancy's Desirable Requirements Yes/No questions -
+  // kept as { [requirementId]: true | false }, one key per question the
+  // candidate has actually answered so far. Converted to the [{id,
+  // answer}] array the backend expects only at save time (see saveDraft).
+  const [desirableAnswers, setDesirableAnswers] = useState({});
   const [cv, setCv] = useState(null);
   const [coverLetter, setCoverLetter] = useState(null);
 
@@ -68,6 +73,9 @@ export default function ApplyForm() {
           earliestStartDate: existing.earliestStartDate ? existing.earliestStartDate.slice(0, 10) : '',
           whyThisRole: existing.whyThisRole || ''
         });
+        setDesirableAnswers(
+          Object.fromEntries((existing.desirableResponses || []).map((r) => [r.id, r.answer]))
+        );
       }
     });
   }, [vacancyId]);
@@ -104,6 +112,11 @@ export default function ApplyForm() {
       formData.append('openToRelocate', questionsForm.openToRelocate);
       formData.append('earliestStartDate', questionsForm.earliestStartDate);
       formData.append('whyThisRole', questionsForm.whyThisRole);
+      formData.append('desirableResponses', JSON.stringify(
+        Object.entries(desirableAnswers)
+          .filter(([, answer]) => typeof answer === 'boolean')
+          .map(([id, answer]) => ({ id, answer }))
+      ));
       const res = await client.post('/api/applications', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setApplication(res.data);
       setMessage('Draft saved.');
@@ -168,7 +181,10 @@ export default function ApplyForm() {
               )}
               {steps[stepIndex].key === 'questions' && (
                 <QuestionsStep questions={questionsForm}
-                  set={(key) => (e) => setQuestionsForm({ ...questionsForm, [key]: e.target.value })} />
+                  set={(key) => (e) => setQuestionsForm({ ...questionsForm, [key]: e.target.value })}
+                  desirableRequirements={vacancy.desirableRequirements}
+                  desirableAnswers={desirableAnswers}
+                  setDesirableAnswer={(id) => (e) => setDesirableAnswers({ ...desirableAnswers, [id]: e.target.value === 'Yes' })} />
               )}
               {steps[stepIndex].key === 'internal' && (
                 <InternalProfileStep internalProfile={internalProfileForm}
@@ -177,7 +193,8 @@ export default function ApplyForm() {
               {steps[stepIndex].key === 'review' && (
                 <ReviewStep profile={profile} cv={cv} coverLetter={coverLetter}
                   profileDetails={profileDetailsForm} questions={questionsForm} internalProfile={internalProfileForm}
-                  candidateType={candidate?.candidateType} goTo={goTo} stepIndexes={stepIndexes} />
+                  candidateType={candidate?.candidateType} goTo={goTo} stepIndexes={stepIndexes}
+                  desirableRequirements={vacancy.desirableRequirements} desirableAnswers={desirableAnswers} />
               )}
               {steps[stepIndex].key === 'submit' && (
                 <SubmitStep vacancy={vacancy} applicationId={application?.id} status={application?.status}
