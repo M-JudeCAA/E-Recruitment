@@ -218,6 +218,19 @@ export default function VacancyDetail() {
 
   if (!vacancy) return <p>Loading...</p>;
 
+  // Safety net for direct navigation (typing/bookmarking the URL) -
+  // the "View applications" link on the dashboard is already disabled
+  // for a PendingApproval vacancy (see HRDashboard.jsx), since it hasn't
+  // been published yet and has nothing legitimate to review.
+  if (vacancy.status === 'PendingApproval') {
+    return (
+      <div>
+        <PageHeader title={vacancy.title} subtitle="Awaiting approval" />
+        <Alert type="info" message="This vacancy hasn't been approved and published yet, so there are no applications to review. Approve it from the HR dashboard first." />
+      </div>
+    );
+  }
+
   const appsById = Object.fromEntries(applications.map((a) => [a.id, a]));
   const rankedApps = shortlistOrder.map((appId) => appsById[appId]).filter(Boolean);
 
@@ -278,6 +291,27 @@ export default function VacancyDetail() {
           <div style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '6px 0' }}>
             CV: {app.cvUrl ? <a href={fileLink(app.cvUrl)} target="_blank" rel="noreferrer">view</a> : 'none'}
           </div>
+
+          {/* Desirable Requirements answers - informational only, never
+              part of screeningPassed (a "No" here doesn't fail
+              screening), so shown independently of the essential-criteria
+              flag above rather than folded into it. */}
+          {app.desirableResponses?.length > 0 && (
+            <div style={{ fontSize: 13, margin: '6px 0' }}>
+              {app.desirableResponses.filter((r) => r.answer === false).length > 0 ? (
+                <span style={{ color: 'var(--color-warning)' }}>
+                  &#9888; {app.desirableResponses.filter((r) => r.answer === false).length} desirable requirement(s) answered "No":
+                  <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                    {app.desirableResponses.filter((r) => r.answer === false).map((r) => (
+                      <li key={r.id}>{r.text}</li>
+                    ))}
+                  </ul>
+                </span>
+              ) : (
+                <span style={{ color: 'var(--color-success)' }}>&#10003; Answered "Yes" to all desirable requirements</span>
+              )}
+            </div>
+          )}
 
           {app.candidate.candidateType === 'Internal' && app.candidate.internalProfile && (
             <Card accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)', marginBottom: 8 }}>

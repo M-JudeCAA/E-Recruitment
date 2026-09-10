@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Modal({ title, onClose, children, footer }) {
+export default function Modal({ title, onClose, children, footer, maxWidth = 420 }) {
   return (
     <div
       onClick={onClose}
@@ -13,7 +13,7 @@ export default function Modal({ title, onClose, children, footer }) {
         onClick={(e) => e.stopPropagation()}
         style={{
           background: 'var(--color-surface)', borderRadius: 'var(--radius-lg)',
-          padding: 'var(--spacing-lg)', width: '90%', maxWidth: 440,
+          padding: 'var(--spacing-lg)', width: '90%', maxWidth,
           maxHeight: '85vh', overflowY: 'auto',
           boxShadow: '0 20px 50px rgba(15,23,28,0.25)'
         }}

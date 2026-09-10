@@ -6,7 +6,10 @@ const workflow = require('../services/workflowService');
 const slaModel = require('../models/slaModel');
 const { generateJobRef } = require('../utils/jobRefGenerator');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
-const { validateVacancyEditableFields } = require('../utils/vacancyValidation');
+const {
+  validateVacancyEditableFields,
+  normalizeStringList, normalizeDesirableRequirements
+} = require('../utils/vacancyValidation');
 
 // Title/Department come from the selected Position, not free text -
 // resolved by the Position-table specification. positionsRequired,
@@ -14,8 +17,10 @@ const { validateVacancyEditableFields } = require('../utils/vacancyValidation');
 // edge-case review required.
 async function create(req, res) {
   const { positionId, reportsToPositionId, positionsRequired, postingType, deadline, salaryScale,
-    description, regulatoryDriver, category, priority,
-    minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy } = req.body;
+    regulatoryDriver, category, priority,
+    minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy,
+    jobPurpose, essentialRequirements, desirableRequirements,
+    generalKnowledge, specialSkills } = req.body;
 
   const position = await positionModel.findById(Number(positionId));
   if (!position) {
@@ -61,7 +66,6 @@ async function create(req, res) {
     departmentId: position.departmentId, // derived, never independently supplied
     reportsToPositionId: validatedReportsToId,
     salaryScale: salaryScale || null,
-    description: sanitizeJobDescription(description), // server-side sanitization - the layer that actually matters
     // FIXED - a real gap found by re-checking the screening specification
     // against itself: screeningService.js reads vacancy.minimumEducationLevel
     // and vacancy.minimumExperienceYears, the schema declares them, and the
@@ -82,6 +86,21 @@ async function create(req, res) {
     postingType, // required, validated above - no more Open fallback
     deadline: deadline ? new Date(deadline) : null,
     regulatoryDriver, category, priority,
+    // Structured advert content (Job Purpose / Person Specification) -
+    // all optional, normalized defensively since these arrive as nested
+    // arrays/objects from the list-editor UI rather than plain scalars.
+    // `?? []` rather than the `|| null` pattern used above, since an
+    // explicit empty array is a valid "no items yet" value, not something
+    // to be coerced to null. jobPurpose is sanitized the same way the old
+    // standalone "Job description" field was - it now covers that ground
+    // too (job purpose, principal accountabilities, and any other
+    // narrative), pasted in as one block, so there is no separate
+    // `description` field to also sanitize and save.
+    jobPurpose: sanitizeJobDescription(jobPurpose),
+    essentialRequirements: normalizeStringList(essentialRequirements) ?? [],
+    desirableRequirements: normalizeDesirableRequirements(desirableRequirements) ?? [],
+    generalKnowledge: normalizeStringList(generalKnowledge) ?? [],
+    specialSkills: normalizeStringList(specialSkills) ?? [],
     createdById: req.user.id
   });
   res.status(201).json(vacancy);
@@ -89,7 +108,7 @@ async function create(req, res) {
 
 // What CAN be edited after creation: positionsRequired (guarded against
 // dropping below already-accepted offers), postingType, deadline,
-// salaryScale, description, regulatoryDriver/category/priority.
+// salaryScale, jobPurpose, regulatoryDriver/category/priority.
 // What CANNOT: positionId, departmentId, reportsToPositionId, jobRef -
 // these are fixed at creation, consistent with `title` being an
 // immutable snapshot rather than a live pointer.
@@ -98,8 +117,10 @@ async function update(req, res) {
   const vacancy = await vacancyModel.findById(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
 
-  const { positionsRequired, postingType, deadline, salaryScale, description, regulatoryDriver, category, priority,
-    minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy } = req.body;
+  const { positionsRequired, postingType, deadline, salaryScale, regulatoryDriver, category, priority,
+    minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy,
+    jobPurpose, essentialRequirements, desirableRequirements,
+    generalKnowledge, specialSkills } = req.body;
   const fieldErrors = validateVacancyEditableFields({ positionsRequired, postingType, deadline }, { partial: true });
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
@@ -107,7 +128,6 @@ async function update(req, res) {
   if (postingType !== undefined) data.postingType = postingType;
   if (deadline !== undefined) data.deadline = deadline ? new Date(deadline) : null;
   if (salaryScale !== undefined) data.salaryScale = salaryScale;
-  if (description !== undefined) data.description = sanitizeJobDescription(description);
   if (regulatoryDriver !== undefined) data.regulatoryDriver = regulatoryDriver;
   if (category !== undefined) data.category = category;
   if (priority !== undefined) data.priority = priority;
@@ -117,6 +137,15 @@ async function update(req, res) {
   if (minimumExperienceYears !== undefined) data.minimumExperienceYears = minimumExperienceYears ? Number(minimumExperienceYears) : null;
   if (minimumEducationLevel !== undefined) data.minimumEducationLevel = minimumEducationLevel || null;
   if (preferredFieldOfStudy !== undefined) data.preferredFieldOfStudy = preferredFieldOfStudy || null;
+  if (jobPurpose !== undefined) data.jobPurpose = sanitizeJobDescription(jobPurpose);
+  const normalizedEssential = normalizeStringList(essentialRequirements);
+  if (normalizedEssential !== undefined) data.essentialRequirements = normalizedEssential;
+  const normalizedDesirable = normalizeDesirableRequirements(desirableRequirements);
+  if (normalizedDesirable !== undefined) data.desirableRequirements = normalizedDesirable;
+  const normalizedGeneralKnowledge = normalizeStringList(generalKnowledge);
+  if (normalizedGeneralKnowledge !== undefined) data.generalKnowledge = normalizedGeneralKnowledge;
+  const normalizedSpecialSkills = normalizeStringList(specialSkills);
+  if (normalizedSpecialSkills !== undefined) data.specialSkills = normalizedSpecialSkills;
 
   if (positionsRequired !== undefined) {
     const n = Number(positionsRequired);

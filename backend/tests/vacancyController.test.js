@@ -109,16 +109,16 @@ describe('create', () => {
     expect(data.jobRef).toMatch(/^UCAA\/ADV\/EXT\/\d{2}\/\d{4}-2$/);
   });
 
-  test('sanitizes the description on create', async () => {
+  test('sanitizes the jobPurpose on create', async () => {
     prisma.position.findUnique.mockResolvedValue(officerCorp);
     prisma.vacancy.create.mockResolvedValue({ id: 1 });
-    const req = { body: { positionId: '100', postingType: 'External', description: '<p>ok</p><script>alert(1)</script>' }, user: { id: 1 } };
+    const req = { body: { positionId: '100', postingType: 'External', jobPurpose: '<p>ok</p><script>alert(1)</script>' }, user: { id: 1 } };
     const res = mockRes();
 
     await vacancyController.create(req, res);
 
     const data = prisma.vacancy.create.mock.calls[0][0].data;
-    expect(data.description).toBe('<p>ok</p>');
+    expect(data.jobPurpose).toBe('<p>ok</p>');
   });
 
   test('rejects a Reports To position in a different department, even with an identical department name (the CWG case)', async () => {
@@ -252,16 +252,16 @@ describe('update', () => {
     }));
   });
 
-  test('sanitizes the description on update', async () => {
+  test('sanitizes the jobPurpose on update', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionId: 100, positionsRequired: 1 });
     prisma.vacancy.update.mockResolvedValue({ id: 1 });
-    const req = { params: { id: '1' }, body: { description: '<b>ok</b><script>x()</script>' } };
+    const req = { params: { id: '1' }, body: { jobPurpose: '<b>ok</b><script>x()</script>' } };
     const res = mockRes();
 
     await vacancyController.update(req, res);
 
     const data = prisma.vacancy.update.mock.calls[0][0].data;
-    expect(data.description).toBe('<b>ok</b>');
+    expect(data.jobPurpose).toBe('<b>ok</b>');
   });
 });
 

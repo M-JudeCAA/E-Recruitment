@@ -1,4 +1,4 @@
-export default function ReviewStep({ profile, cv, coverLetter, profileDetails, questions, internalProfile, candidateType, goTo, stepIndexes }) {
+export default function ReviewStep({ profile, cv, coverLetter, profileDetails, questions, internalProfile, candidateType, goTo, stepIndexes, desirableRequirements, desirableAnswers }) {
   const WORK_AUTH_LABELS = { Yes: 'Yes', No: 'No', Sponsorship: 'Would need sponsorship' };
   const RELOCATE_LABELS = { Yes: 'Yes', No: 'No', Depends: 'Depends on the offer' };
 
@@ -31,6 +31,9 @@ export default function ReviewStep({ profile, cv, coverLetter, profileDetails, q
         ['Desired salary', questions.desiredSalary || '—'],
         ['Earliest start', questions.earliestStartDate || '—'],
         ['Why this role', questions.whyThisRole || '—'],
+        ...(desirableRequirements || []).map((req) => [
+          req.text, desirableAnswers[req.id] === undefined ? '—' : (desirableAnswers[req.id] ? 'Yes' : 'No')
+        ]),
       ],
     },
   ];
