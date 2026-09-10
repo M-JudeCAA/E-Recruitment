@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { Users } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
+import StatTile from '../components/StatTile';
+import SectionHeading from '../components/SectionHeading';
 import TextField from '../components/TextField';
 import Select from '../components/Select';
 import Button from '../components/Button';
@@ -58,12 +61,17 @@ export default function StaffAdmin() {
 
   return (
     <div>
-      <PageHeader title="Staff accounts" subtitle="HR Officer and Senior HR Officer accounts" />
+      <PageHeader eyebrow="HR" title="Staff accounts" subtitle="HR Officer and Senior HR Officer accounts" />
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
+        <StatTile icon={Users} label="HR team members" value={staffList.length} />
+      </div>
+
       <Alert type="success" message={message} />
       <Alert type="error" message={error} />
 
-      <Card accent="var(--color-primary)">
-        <h3 style={{ marginTop: 0 }}>Create an account</h3>
+      <Card>
+        <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 16 }}>Create an account</h3>
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           Only HR Officer and Senior HR Officer accounts can be created here. The new user is emailed a
           link to set their own password - no password is ever entered on their behalf.
@@ -81,25 +89,35 @@ export default function StaffAdmin() {
         </form>
       </Card>
 
-      <h3>HR team</h3>
+      <SectionHeading count={staffList.length}>HR team</SectionHeading>
       {staffList.map((s) => (
         <Card key={s.id}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 36, height: 36, borderRadius: '50%', background: 'var(--color-primary-tint)',
+              color: 'var(--color-primary)', fontWeight: 700, fontSize: 14, flexShrink: 0
+            }}>
+              {s.name?.[0]?.toUpperCase()}
+            </span>
             <div style={{ flex: 1, minWidth: 200 }}>
-              <strong>{s.name}</strong> <StatusBadge status={s.role} />
-              <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{s.email} &mdash; {s.department}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: 14.5 }}>{s.name}</strong>
+                <StatusBadge status={s.role} />
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 2 }}>{s.email} &mdash; {s.department}</div>
             </div>
             {CREATABLE_ROLES.includes(s.role) && (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <select
                   value={roleEdits[s.id] || s.role}
                   onChange={(e) => setRoleEdits({ ...roleEdits, [s.id]: e.target.value })}
-                  style={{ padding: 6, border: '1px solid var(--color-border)', borderRadius: 'var(--radius)' }}
+                  style={{ padding: 7, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-input)', fontSize: 13 }}
                 >
                   {CREATABLE_ROLES.map((r) => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
                 </select>
                 <Button
-                  style={{ padding: '4px 10px' }}
+                  style={{ padding: '6px 12px', fontSize: 13 }}
                   disabled={(roleEdits[s.id] || s.role) === s.role}
                   onClick={() => changeRole(s.id)}
                 >
@@ -110,7 +128,7 @@ export default function StaffAdmin() {
           </div>
         </Card>
       ))}
-      {staffList.length === 0 && <p style={{ color: 'var(--color-text-muted)' }}>No staff accounts found.</p>}
+      {staffList.length === 0 && <p style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>No staff accounts found.</p>}
     </div>
   );
 }

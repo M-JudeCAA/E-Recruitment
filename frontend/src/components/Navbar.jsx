@@ -1,33 +1,39 @@
 import React from "react";
-import { Link } from "react-router-dom";
-import { Briefcase } from "lucide-react";
+import { Link, NavLink } from "react-router-dom";
+import { Plane, Briefcase, LogOut, Building2, Users, GitBranch } from "lucide-react";
 import { useAuth } from "../models/AuthContext";
 import NotificationBell from "./NotificationBell";
 
-// CHANGED - was a separate, hardcoded palette disconnected from
-// theme.css (and from CandidateLogin.jsx's own separate hardcoded
-// palette). Both now read the same shared CSS variables, closing a real
-// visual-drift gap found while adopting the new design direction.
-const ucaa = {
-  navy: "var(--color-primary-dark)",
-  blue: "var(--color-primary)",
-  line: "rgba(255,255,255,0.15)",
-};
-
-const linkStyle = {
-  color: "#FFFFFF",
+// CHANGED - the previous navbar was a full-bleed navy->blue gradient
+// banner. Reimagined as a clean, light, sticky header: brand color now
+// lives in the logo mark and active/hover states only, instead of
+// painting the whole bar - reads as modern/minimal rather than "loud",
+// while staying unmistakably on-brand (same --color-primary throughout).
+const navLinkStyle = ({ isActive }) => ({
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
   textDecoration: "none",
-  fontSize: 14.5,
+  fontSize: 14,
   fontWeight: 500,
-};
+  padding: "7px 12px",
+  borderRadius: "var(--radius-sm)",
+  color: isActive ? "var(--color-primary)" : "var(--color-text-muted)",
+  background: isActive ? "var(--color-primary-tint)" : "transparent",
+  transition: "background var(--transition), color var(--transition)",
+});
 
 const buttonStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
   background: "transparent",
-  border: "1px solid rgba(255,255,255,0.4)",
-  color: "#FFFFFF",
-  borderRadius: 6,
-  padding: "6px 12px",
+  border: "1px solid var(--color-border)",
+  color: "var(--color-text-muted)",
+  borderRadius: "var(--radius-sm)",
+  padding: "7px 12px",
   fontSize: 13.5,
+  fontWeight: 500,
   cursor: "pointer",
 };
 
@@ -46,66 +52,77 @@ export default function Navbar() {
     <nav
       style={{
         width: "100%",
-        background: `linear-gradient(90deg, ${ucaa.navy} 0%, ${ucaa.blue} 100%)`,
-        borderBottom: `1px solid ${ucaa.line}`,
+        background: "var(--color-surface)",
+        borderBottom: "1px solid var(--color-border-subtle)",
         boxSizing: "border-box",
+        position: "sticky",
+        top: 0,
+        zIndex: 30,
       }}
     >
       <div
         style={{
-          maxWidth: 1160,
+          maxWidth: 1200,
           margin: "0 auto",
-          padding: "14px 24px",
+          padding: "10px 24px",
           display: "flex",
           alignItems: "center",
-          gap: 20,
+          gap: 6,
         }}
       >
-        <Link to="/" style={{ ...linkStyle, fontWeight: 600, fontSize: 16 }}>
-          UCAA e-Recruitment
+        <Link to="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", marginRight: 16 }}>
+          <span style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            width: 32, height: 32, borderRadius: 8, background: "var(--color-primary)", color: "#fff", flexShrink: 0
+          }}>
+            <Plane size={17} />
+          </span>
+          <span style={{ fontWeight: 700, fontSize: 15, color: "var(--color-text)", letterSpacing: -0.2 }}>
+            UCAA e-Recruitment
+          </span>
         </Link>
         <span style={{ flex: 1 }} />
         {candidate ? (
           <>
             {candidate.fullName && (
-              <span style={{ ...linkStyle, fontWeight: 400, opacity: 0.85 }}>{candidate.fullName}</span>
+              <span style={{ fontSize: 13.5, color: "var(--color-text-muted)", marginRight: 4 }}>{candidate.fullName}</span>
             )}
-            <Link to="/" style={{ ...linkStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Briefcase size={14} /> Available jobs
-            </Link>
-            <Link to="/dashboard" style={linkStyle}>
+            <NavLink to="/" style={navLinkStyle}>
+              <Briefcase size={15} /> Available jobs
+            </NavLink>
+            <NavLink to="/dashboard" style={navLinkStyle}>
               My dashboard
-            </Link>
-            <button onClick={logoutCandidate} style={buttonStyle}>
-              Log out
+            </NavLink>
+            <button onClick={logoutCandidate} style={{ ...buttonStyle, marginLeft: 8 }}>
+              <LogOut size={14} /> Log out
             </button>
           </>
         ) : (
-          <Link to="/login" style={linkStyle}>
+          <Link to="/login" style={{ ...navLinkStyle({ isActive: false }) }}>
             Candidate login
           </Link>
         )}
         {staff ? (
           <>
-            <Link to="/hr" style={linkStyle}>
+            <NavLink to="/hr" end style={navLinkStyle}>
               HR dashboard
-            </Link>
-            <Link to="/hr/departments" style={linkStyle}>
-              Departments & positions
-            </Link>
+            </NavLink>
+            <NavLink to="/hr/departments" style={navLinkStyle}>
+              <Building2 size={15} /> Departments
+            </NavLink>
             {canManageStaff && (
-              <Link to="/hr/staff" style={linkStyle}>
-                Staff accounts
-              </Link>
+              <NavLink to="/hr/staff" style={navLinkStyle}>
+                <Users size={15} /> Staff
+              </NavLink>
             )}
             {canDelegate && (
-              <Link to="/hr/delegations" style={linkStyle}>
-                Delegations
-              </Link>
+              <NavLink to="/hr/delegations" style={navLinkStyle}>
+                <GitBranch size={15} /> Delegations
+              </NavLink>
             )}
             <NotificationBell />
-            <button onClick={logoutStaff} style={buttonStyle}>
-              Staff log out
+            <button onClick={logoutStaff} style={{ ...buttonStyle, marginLeft: 8 }}>
+              <LogOut size={14} /> Staff log out
             </button>
           </>
         ) : (
@@ -114,7 +131,7 @@ export default function Navbar() {
           // not just unavailable. Shown only to a genuinely anonymous
           // visitor, who might be either kind of user.
           !candidate && (
-            <Link to="/staff/login" style={linkStyle}>
+            <Link to="/staff/login" style={navLinkStyle({ isActive: false })}>
               Staff login
             </Link>
           )

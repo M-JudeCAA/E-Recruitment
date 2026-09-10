@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { Building2, Network, Layers, ShieldCheck } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
+import StatTile from '../components/StatTile';
+import SectionHeading from '../components/SectionHeading';
 import TextField from '../components/TextField';
 import Select from '../components/Select';
 import Button from '../components/Button';
@@ -115,12 +118,21 @@ export default function DepartmentAdmin() {
 
   return (
     <div>
-      <PageHeader title="Departments & positions" subtitle="Manage the org structure vacancies are built on" />
+      <PageHeader eyebrow="HR" title="Departments & positions" subtitle="Manage the org structure vacancies are built on" />
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
+        <StatTile icon={Network} label="Directorates" value={directorates.length} />
+        <StatTile icon={Building2} label="Approved departments" value={approvedDepartments.length} color="var(--color-accent)" tint="var(--color-accent-tint)" />
+        {isReviewer && (
+          <StatTile icon={ShieldCheck} label="Pending approval" value={pendingDepartments.length} color="var(--color-warning)" tint="var(--color-warning-tint)" />
+        )}
+      </div>
+
       <Alert type="success" message={message} />
       <Alert type="error" message={error} />
 
-      <Card accent="var(--color-primary)">
-        <h3 style={{ marginTop: 0 }}>Propose a department</h3>
+      <Card>
+        <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 16 }}>Propose a department</h3>
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           New departments need Principal HR Officer approval before they can be used on a vacancy - unlike
           positions, which any HR Officer can add directly.
@@ -137,8 +149,8 @@ export default function DepartmentAdmin() {
         </form>
       </Card>
 
-      <Card accent="var(--color-accent)">
-        <h3 style={{ marginTop: 0 }}>Add a position</h3>
+      <Card>
+        <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 16 }}>Add a position</h3>
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           No approval workflow, unlike departments - any HR Officer can add a position directly to an
           approved department.
@@ -163,8 +175,8 @@ export default function DepartmentAdmin() {
       </Card>
 
       {isReviewer && (
-        <Card accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)' }}>
-          <h3 style={{ marginTop: 0 }}>Add a directorate</h3>
+        <Card style={{ background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)' }}>
+          <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 16 }}>Add a directorate</h3>
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
             Directorates are foundational and rarely change, unlike departments - restricted to Principal
             HR Officer and above.
@@ -183,23 +195,26 @@ export default function DepartmentAdmin() {
 
       {isReviewer && (
         <>
-          <h3>Pending departments</h3>
+          <SectionHeading count={pendingDepartments.length}>Pending departments</SectionHeading>
           {pendingDepartments.length === 0 && (
-            <p style={{ color: 'var(--color-text-muted)' }}>No departments awaiting approval.</p>
+            <p style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>No departments awaiting approval.</p>
           )}
           {pendingDepartments.map((d) => (
             <Card key={d.id}>
-              <strong>{d.directorate.name} &mdash; {d.name}</strong> <StatusBadge status={d.status} />
-              {d.createdBy?.name && <span style={{ marginLeft: 8, fontSize: 13, color: 'var(--color-text-muted)' }}>proposed by {d.createdBy.name}</span>}
-              <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <Button style={{ padding: '2px 10px' }} onClick={() => approveDepartment(d.id)}>Approve</Button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: 15 }}>{d.directorate.name} &mdash; {d.name}</strong>
+                <StatusBadge status={d.status} />
+              </div>
+              {d.createdBy?.name && <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>proposed by {d.createdBy.name}</div>}
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--color-border-subtle)', display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <Button style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => approveDepartment(d.id)}>Approve</Button>
                 <input
                   placeholder="Rejection reason"
                   value={rejectReason[d.id] || ''}
                   onChange={(e) => setRejectReason({ ...rejectReason, [d.id]: e.target.value })}
-                  style={{ flex: 1, padding: 8, border: '1px solid var(--color-border)', borderRadius: 'var(--radius)' }}
+                  style={{ flex: 1, minWidth: 160, padding: 8, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-input)' }}
                 />
-                <Button variant="ghost" style={{ padding: '2px 10px', color: 'var(--color-danger)' }}
+                <Button variant="ghost" style={{ padding: '6px 12px', fontSize: 13, color: 'var(--color-danger)' }}
                   onClick={() => rejectDepartment(d.id)}>Reject</Button>
               </div>
             </Card>
@@ -207,7 +222,7 @@ export default function DepartmentAdmin() {
         </>
       )}
 
-      <h3>Approved departments</h3>
+      <SectionHeading count={approvedDepartments.length}>Approved departments</SectionHeading>
       {Object.entries(
         approvedDepartments.reduce((groups, d) => {
           const key = d.directorate.name;
@@ -216,8 +231,11 @@ export default function DepartmentAdmin() {
         }, {})
       ).map(([directorateName, depts]) => (
         <Card key={directorateName}>
-          <strong>{directorateName}</strong>
-          <div style={{ marginTop: 4, fontSize: 13, color: 'var(--color-text-muted)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Layers size={15} style={{ color: 'var(--color-primary)' }} />
+            <strong style={{ fontSize: 14.5 }}>{directorateName}</strong>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 13, color: 'var(--color-text-muted)' }}>
             {depts.map((d) => d.name).join(', ')}
           </div>
         </Card>

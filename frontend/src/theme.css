@@ -3,28 +3,50 @@
 @tailwind utilities;
 
 :root {
-  /* UCAA brand palette - adopted from the application-wizard design
-     direction. Same variable NAMES as before, only the values changed -
-     every existing component that already references var(--color-*)
-     picks up the new look automatically, with zero code changes needed
-     anywhere else. This is deliberately a values-only change. */
-  --color-primary: #0B5FA5;       /* was #1d4e73 */
-  --color-primary-dark: #08466F;  /* was #143a56 */
-  --color-primary-light: #EAF3FA; /* was #eaf1f6 */
-  --color-accent: #1E7A46;        /* was #2f8f6e - aligned to the wizard's own success green */
-  --color-success: #1E7A46;       /* ADDED - referenced by VacancyDetail.jsx and others
-                                      but never actually declared anywhere in this file. Any
-                                      status relying on var(--color-success) was silently
-                                      falling back to an invalid/inherited value before this. */
+  /* UCAA brand palette - values unchanged from the prior design pass,
+     kept exactly so every existing component that reads var(--color-*)
+     stays on-brand. The dashboard redesign only adds new *neutral* and
+     *elevation* tokens below (canvas/surface/shadow/border-subtle) - it
+     does not touch a single brand color value. */
+  --color-primary: #0B5FA5;
+  --color-primary-dark: #08466F;
+  --color-primary-light: #EAF3FA;
+  --color-accent: #1E7A46;
+  --color-success: #1E7A46;
   --color-danger: #b3261e;
   --color-warning: #a66a00;
 
+  /* Soft tint backing for status pills / inline banners - derived from
+     the brand colors above at low opacity, not new hues. */
+  --color-primary-tint: rgba(11, 95, 165, 0.1);
+  --color-accent-tint: rgba(30, 122, 70, 0.1);
+  --color-danger-tint: rgba(179, 38, 30, 0.09);
+  --color-warning-tint: rgba(166, 106, 0, 0.1);
+  --color-muted-tint: rgba(81, 96, 107, 0.09);
+
   /* Neutrals */
-  --color-text: #14181C;      /* was #23262b */
-  --color-text-muted: #51606B; /* was #5a5f66 */
-  --color-border: #C9DCE8;    /* was #d8dbe0 */
+  --color-text: #14181C;
+  --color-text-muted: #51606B;
+  --color-border: #C9DCE8;
   --color-bg: #ffffff;
-  --color-bg-subtle: #E4EFF8; /* was #f6f7f9 */
+  --color-bg-subtle: #E4EFF8;
+
+  /* ADDED - dashboard redesign: a neutral (not blue-tinted) page canvas
+     that white Card surfaces sit on top of, plus a lighter divider tone
+     for internal card rules. Distinct from --color-border, which stays
+     the slightly-stronger brand-tinted border used on inputs/cards. */
+  --color-canvas: #F4F6F8;
+  --color-surface: #FFFFFF;
+  --color-border-subtle: #E7ECF1;
+
+  /* ADDED - elevation. Flat 1px borders read as dense/dated at dashboard
+     scale; soft shadows are what makes stacked cards feel like a modern
+     surface instead of a spreadsheet. Kept subtle on purpose - the brief
+     is minimalistic, not glossy. */
+  --shadow-xs: 0 1px 2px rgba(20, 24, 28, 0.05);
+  --shadow-sm: 0 1px 3px rgba(20, 24, 28, 0.06), 0 1px 2px rgba(20, 24, 28, 0.04);
+  --shadow-md: 0 8px 24px rgba(20, 24, 28, 0.08);
+  --transition: 150ms ease;
 
   /* Typography */
   --font-family:
@@ -32,13 +54,10 @@
   --font-size-base: 15px;
 
   /* Spacing / shape */
-  --radius: 6px;         /* containers/cards - unchanged */
-  --radius-sm: 3px;      /* ADDED - inputs, selects, buttons. Matches the
-                             application-wizard prototype's crisper control
-                             radius, distinct from the softer card radius. */
-  --color-bg-input: #FCFDFE; /* ADDED - subtle off-white input fill, matching
-                                 the prototype's form-field background instead
-                                 of plain white blending into the card. */
+  --radius: 6px;
+  --radius-sm: 3px;
+  --radius-lg: 14px;    /* ADDED - dashboard cards/panels, softer than --radius */
+  --color-bg-input: #FCFDFE;
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 16px;
@@ -54,7 +73,7 @@ body {
   font-family: var(--font-family);
   font-size: var(--font-size-base);
   color: var(--color-text);
-  background: var(--color-bg);
+  background: var(--color-canvas);
 }
 
 a {
@@ -66,6 +85,30 @@ a {
   flex-grow: 1;
   justify-content: center;
   align-items: center;
+}
+
+/* ADDED - shared hover/focus feedback for the redesigned Button, so the
+   component itself can stay inline-style-driven for its base look but
+   still get real :hover/:active/:focus states, which inline styles can't
+   express. Scoped by data-variant, set by Button.jsx. */
+button {
+  font-family: inherit;
+}
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+[data-btn="primary"]:hover:not(:disabled) { background: var(--color-primary-dark) !important; }
+[data-btn="secondary"]:hover:not(:disabled) { background: var(--color-primary-light) !important; }
+[data-btn="danger"]:hover:not(:disabled) { background: #921f19 !important; }
+[data-btn="ghost"]:hover:not(:disabled) { background: var(--color-bg-subtle) !important; border-color: var(--color-text-muted) !important; }
+input:focus, select:focus, textarea:focus {
+  border-color: var(--color-primary) !important;
+  box-shadow: 0 0 0 3px var(--color-primary-tint);
 }
 
 /* Guarantees pasted job-description content always renders in the

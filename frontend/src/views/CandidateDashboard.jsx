@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { FileStack, FileEdit, Send, Award, IdCard, Briefcase, GraduationCap } from 'lucide-react';
 import client from '../models/apiClient';
 import { useAuth } from '../models/AuthContext';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
+import StatTile from '../components/StatTile';
+import SectionHeading from '../components/SectionHeading';
 import TextField from '../components/TextField';
 import Select from '../components/Select';
 import Button from '../components/Button';
@@ -123,13 +126,26 @@ export default function CandidateDashboard() {
     }
   };
 
+  const draftCount = applications.filter((a) => a.status === 'Draft').length;
+  const submittedCount = applications.filter((a) => a.status !== 'Draft' && a.status !== 'Withdrawn').length;
+  const offerCount = applications.filter((a) => a.offer).length;
+
   return (
     <div>
-      <PageHeader title="My dashboard" />
+      <PageHeader eyebrow="Candidate" title="My dashboard" subtitle={candidate?.fullName ? `Welcome back, ${candidate.fullName}` : undefined} />
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
+        <StatTile icon={FileStack} label="Total applications" value={applications.length} />
+        <StatTile icon={FileEdit} label="Drafts" value={draftCount} color="var(--color-text-muted)" tint="var(--color-muted-tint)" />
+        <StatTile icon={Send} label="Submitted" value={submittedCount} color="var(--color-primary)" tint="var(--color-primary-tint)" />
+        <StatTile icon={Award} label="Offers" value={offerCount} color="var(--color-accent)" tint="var(--color-accent-tint)" />
+      </div>
 
       {candidate?.candidateType === 'Internal' && (
-        <Card accent="var(--color-primary)">
-          <h3 style={{ marginTop: 0 }}>Internal employment details</h3>
+        <Card>
+          <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <IdCard size={17} style={{ color: 'var(--color-primary)' }} /> Internal employment details
+          </h3>
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
             Required for any internal application to proceed past initial review. HR must verify this before shortlisting.
           </p>
@@ -152,15 +168,21 @@ export default function CandidateDashboard() {
         </Card>
       )}
 
-      <Card accent="var(--color-primary)">
-        <h3 style={{ marginTop: 0 }}>Work experience</h3>
+      <Card>
+        <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Briefcase size={17} style={{ color: 'var(--color-primary)' }} /> Work experience
+        </h3>
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           Candidate-level, reused across every application, and snapshotted fresh at each submission.
         </p>
         {workExperience.map((w) => (
-          <div key={w.id} style={{ fontSize: 13, marginBottom: 6 }}>
-            <strong>{w.jobTitle}</strong> at {w.employer} &middot; {new Date(w.startDate).toLocaleDateString()}
-            {' '}&ndash;{' '}{w.endDate ? new Date(w.endDate).toLocaleDateString() : 'present'}
+          <div key={w.id} style={{
+            fontSize: 13, padding: '8px 0', borderBottom: '1px solid var(--color-border-subtle)'
+          }}>
+            <strong>{w.jobTitle}</strong> at {w.employer}
+            <div style={{ color: 'var(--color-text-muted)', fontSize: 12.5, marginTop: 2 }}>
+              {new Date(w.startDate).toLocaleDateString()} &ndash; {w.endDate ? new Date(w.endDate).toLocaleDateString() : 'present'}
+            </div>
           </div>
         ))}
         <form onSubmit={addWorkExperience} style={{ marginTop: 12 }}>
@@ -176,10 +198,14 @@ export default function CandidateDashboard() {
         </form>
       </Card>
 
-      <Card accent="var(--color-primary)">
-        <h3 style={{ marginTop: 0 }}>Education</h3>
+      <Card>
+        <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <GraduationCap size={17} style={{ color: 'var(--color-primary)' }} /> Education
+        </h3>
         {education.map((ed) => (
-          <div key={ed.id} style={{ fontSize: 13, marginBottom: 6 }}>
+          <div key={ed.id} style={{
+            fontSize: 13, padding: '8px 0', borderBottom: '1px solid var(--color-border-subtle)'
+          }}>
             <strong>{ed.qualificationLevel || ed.qualificationLevelText}</strong> &mdash; {ed.fieldOfStudy}, {ed.institution}
             {ed.yearCompleted ? ` (${ed.yearCompleted})` : ''}
           </div>
@@ -205,30 +231,39 @@ export default function CandidateDashboard() {
         <Alert type="error" message={recordsMessage} />
       </Card>
 
-      <h3>My applications</h3>
+      <SectionHeading count={applications.length}>My applications</SectionHeading>
       <Alert type="info" message={offerMessage} />
       <Alert type="info" message={withdrawMessage} />
-      {applications.length === 0 && <p style={{ color: 'var(--color-text-muted)' }}>You haven't applied to any vacancies yet.</p>}
+      {applications.length === 0 && <p style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>You haven't applied to any vacancies yet.</p>}
       {applications.map((app) => (
         <Card key={app.id}>
-          <strong>{app.vacancy.title}</strong> &mdash; <StatusBadge status={app.status} />
-          {app.status === 'Draft' && (
-            <>
-              <Link to={`/apply/${app.vacancy.id}`} style={{ marginLeft: 8 }}>Continue draft</Link>
-              <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 10px', color: 'var(--color-danger)' }}
-                onClick={() => cancelDraft(app.id)}>Cancel</Button>
-            </>
-          )}
-          {app.status === 'Submitted' && (
-            <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 10px', color: 'var(--color-danger)' }}
-              onClick={() => withdrawApplication(app.id)}>Withdraw</Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <strong style={{ fontSize: 15 }}>{app.vacancy.title}</strong>
+            <StatusBadge status={app.status} />
+          </div>
+          {(app.status === 'Draft' || app.status === 'Submitted') && (
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--color-border-subtle)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {app.status === 'Draft' && (
+                <>
+                  <Link to={`/apply/${app.vacancy.id}`} style={{ fontSize: 13.5, fontWeight: 500 }}>Continue draft</Link>
+                  <Button variant="ghost" style={{ padding: '4px 10px', fontSize: 13, color: 'var(--color-danger)' }}
+                    onClick={() => cancelDraft(app.id)}>Cancel</Button>
+                </>
+              )}
+              {app.status === 'Submitted' && (
+                <Button variant="ghost" style={{ padding: '4px 10px', fontSize: 13, color: 'var(--color-danger)' }}
+                  onClick={() => withdrawApplication(app.id)}>Withdraw</Button>
+              )}
+            </div>
           )}
           {app.offer && (
-            <div style={{ marginTop: 8 }}>
-              Offer: <StatusBadge status={app.offer.status} />
+            <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--color-border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5 }}>
+                Offer: <StatusBadge status={app.offer.status} />
+              </div>
               {app.offer.status === 'Approved' && (
-                <div style={{ marginTop: 8 }}>
-                  <Button onClick={() => respondToOffer(app.offer.id, 'accept')}>Accept offer</Button>{' '}
+                <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                  <Button onClick={() => respondToOffer(app.offer.id, 'accept')}>Accept offer</Button>
                   <Button variant="ghost" onClick={() => respondToOffer(app.offer.id, 'decline')}>Decline</Button>
                 </div>
               )}

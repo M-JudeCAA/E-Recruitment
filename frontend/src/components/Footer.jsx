@@ -5,10 +5,11 @@ export default function Footer() {
     <footer
       style={{
         width: '100%',
-        borderTop: '1px solid var(--color-border)',
+        borderTop: '1px solid var(--color-border-subtle)',
         marginTop: 'var(--spacing-lg)',
         padding: 'var(--spacing-md) 24px',
         boxSizing: 'border-box',
+        background: 'var(--color-surface)',
       }}
     >
       <div

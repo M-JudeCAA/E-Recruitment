@@ -30,7 +30,7 @@ import { RequireCandidate, RequireStaff } from "./components/ProtectedRoute";
 // background and would get a second, unwanted inset if wrapped here too.
 function PaddedLayout() {
   return (
-    <div style={{ padding: 20 }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px", width: "100%", boxSizing: "border-box" }}>
       <Outlet />
     </div>
   );

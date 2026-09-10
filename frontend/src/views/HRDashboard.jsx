@@ -1,9 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Briefcase, CheckCircle2, Clock, FileStack, Plus, Calendar, Building2 } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
+import StatTile from '../components/StatTile';
+import SectionHeading from '../components/SectionHeading';
 import TextField from '../components/TextField';
 import RichTextField from '../components/RichTextField';
 import Select from '../components/Select';
@@ -159,12 +162,27 @@ export default function HRDashboard() {
     }
   };
 
+  const openCount = vacancies.filter((v) => v.status === 'Open' || v.status === 'PartiallyFilled').length;
+  const pendingCount = vacancies.filter((v) => v.status === 'PendingApproval').length;
+  const applicationCount = vacancies.reduce((sum, v) => sum + (v._count?.applications ?? 0), 0);
+
   return (
     <div>
-      <PageHeader title="HR dashboard" subtitle={`Logged in as ${staff?.name} (${staff?.role?.replace(/_/g, ' ')})`} />
+      <PageHeader
+        eyebrow="HR"
+        title="HR dashboard"
+        subtitle={`Logged in as ${staff?.name} (${staff?.role?.replace(/_/g, ' ')})`}
+      />
 
-      <Card accent="var(--color-primary)">
-        <h3 style={{ marginTop: 0 }}>Create vacancy</h3>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
+        <StatTile icon={Briefcase} label="Total vacancies" value={vacancies.length} />
+        <StatTile icon={CheckCircle2} label="Open" value={openCount} color="var(--color-accent)" tint="var(--color-accent-tint)" />
+        <StatTile icon={Clock} label="Pending approval" value={pendingCount} color="var(--color-warning)" tint="var(--color-warning-tint)" />
+        <StatTile icon={FileStack} label="Applications received" value={applicationCount} />
+      </div>
+
+      <Card>
+        <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 16 }}>Create vacancy</h3>
         <form onSubmit={createVacancy}>
           {/* Step 1: Department first, grouped by Directorate - true
               single-level grouping, since each Department row belongs to
@@ -253,30 +271,50 @@ export default function HRDashboard() {
         <Alert type="error" message={error} />
       </Card>
 
-      <h3>Vacancies</h3>
+      <SectionHeading count={vacancies.length}>Vacancies</SectionHeading>
+      {vacancies.length === 0 && <p style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>No vacancies yet.</p>}
       {vacancies.map((v) => (
         <Card key={v.id}>
-          <strong>{v.jobRef}</strong> &mdash; {v.title} &middot; <StatusBadge status={v.status} />
-          {' '}&middot; {v._count?.applications ?? 0} application(s)
-          <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-            {v.department?.directorate?.name} &mdash; {v.department?.name}
-            {v.reportsToPosition && <> &middot; Reports to {v.reportsToPosition.name}</>}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: 15 }}>{v.title}</strong>
+                <span style={{ fontSize: 12.5, color: 'var(--color-text-muted)' }}>{v.jobRef}</span>
+                <StatusBadge status={v.status} />
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 8, fontSize: 13, color: 'var(--color-text-muted)' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Building2 size={13.5} />
+                  {v.department?.directorate?.name} &mdash; {v.department?.name}
+                </span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <FileStack size={13.5} /> {v._count?.applications ?? 0} application(s)
+                </span>
+                {v.deadline && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Calendar size={13.5} /> Deadline: {new Date(v.deadline).toLocaleDateString()}
+                  </span>
+                )}
+              </div>
+              {v.reportsToPosition && (
+                <div style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                  Reports to {v.reportsToPosition.name}
+                </div>
+              )}
+            </div>
           </div>
-          {v.deadline && <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-            Deadline: {new Date(v.deadline).toLocaleDateString()}
-          </span>}
-          <div style={{ marginTop: 8 }}>
-            <Link to={`/hr/vacancy/${v.id}`}>View applications</Link>
-            <Button variant="ghost" style={{ marginLeft: 12, padding: '2px 10px' }} onClick={() => openEdit(v)}>Edit</Button>
+          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--color-border-subtle)', display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <Link to={`/hr/vacancy/${v.id}`} style={{ fontSize: 13.5, fontWeight: 500 }}>View applications</Link>
+            <Button variant="ghost" style={{ padding: '4px 10px', fontSize: 13 }} onClick={() => openEdit(v)}>Edit</Button>
             {/* SIMPLIFIED - the Senior HR Officer review stage and its
                 "awaiting review" status line are both removed entirely,
                 not just hidden. The 2-tier flow goes straight from
                 PendingApproval to a Manager/Director's direct approval. */}
             {v.status === 'PendingApproval' && canApprove && (
-              <Button variant="secondary" style={{ marginLeft: 8, padding: '2px 10px' }} onClick={() => approve(v.id)}>Approve</Button>
+              <Button variant="secondary" style={{ padding: '4px 10px', fontSize: 13 }} onClick={() => approve(v.id)}>Approve</Button>
             )}
             {v.status === 'Closed' && canApprove && (
-              <Button variant="secondary" style={{ marginLeft: 8, padding: '2px 10px' }} onClick={() => approve(v.id)}>Re-open</Button>
+              <Button variant="secondary" style={{ padding: '4px 10px', fontSize: 13 }} onClick={() => approve(v.id)}>Re-open</Button>
             )}
             {/* NEW - Internal <-> External transition, restricted to the
                 same Manager/Director tier as approval, and only while the
@@ -285,13 +323,13 @@ export default function HRDashboard() {
                 so this button never appears somewhere the backend would
                 refuse it anyway. */}
             {['Open', 'PartiallyFilled'].includes(v.status) && canTransition && (
-              <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 10px' }}
+              <Button variant="ghost" style={{ padding: '4px 10px', fontSize: 13 }}
                 onClick={() => transitionPostingType(v.id, v.postingType === 'Internal' ? 'External' : 'Internal')}>
                 Transition to {v.postingType === 'Internal' ? 'External' : 'Internal'}
               </Button>
             )}
             {v.status !== 'Closed' && canApprove && (
-              <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 10px', color: 'var(--color-danger)' }}
+              <Button variant="ghost" style={{ padding: '4px 10px', fontSize: 13, color: 'var(--color-danger)' }}
                 onClick={() => closeVacancy(v.id)}>Close vacancy</Button>
             )}
           </div>

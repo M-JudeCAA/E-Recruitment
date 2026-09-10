@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { GitBranch, UserCheck } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
+import StatTile from '../components/StatTile';
+import SectionHeading from '../components/SectionHeading';
 import TextField from '../components/TextField';
 import Select from '../components/Select';
 import TextArea from '../components/TextArea';
@@ -67,15 +70,22 @@ export default function DelegationAdmin() {
   };
 
   const eligibleDelegates = staffList.filter((s) => s.role === delegateRole);
+  const activeCount = delegations.filter((d) => new Date(d.startDate) <= new Date() && new Date() <= new Date(d.endDate)).length;
 
   return (
     <div>
-      <PageHeader title="Delegations" subtitle="Temporarily delegate your own authority to a subordinate" />
+      <PageHeader eyebrow="HR" title="Delegations" subtitle="Temporarily delegate your own authority to a subordinate" />
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
+        <StatTile icon={GitBranch} label={isOversight ? 'All delegations' : 'My delegations'} value={delegations.length} />
+        <StatTile icon={UserCheck} label="Currently active" value={activeCount} color="var(--color-accent)" tint="var(--color-accent-tint)" />
+      </div>
+
       <Alert type="success" message={message} />
       <Alert type="error" message={error} />
 
-      <Card accent="var(--color-primary)">
-        <h3 style={{ marginTop: 0 }}>Delegate your authority</h3>
+      <Card>
+        <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 16 }}>Delegate your authority</h3>
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
           While active, the person you choose can act with your permissions in addition to their own - you
           do not lose access yourself. You can only delegate to a {delegateRole ? delegateRole.replace(/_/g, ' ') : '(no eligible tier)'}.
@@ -96,17 +106,21 @@ export default function DelegationAdmin() {
         </form>
       </Card>
 
-      <h3>{isOversight ? 'All delegations' : 'My delegations'}</h3>
+      <SectionHeading count={delegations.length}>{isOversight ? 'All delegations' : 'My delegations'}</SectionHeading>
       {delegations.length === 0 && (
-        <p style={{ color: 'var(--color-text-muted)' }}>No delegations found.</p>
+        <p style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>No delegations found.</p>
       )}
       {delegations.map((d) => {
         const active = new Date(d.startDate) <= new Date() && new Date() <= new Date(d.endDate);
         return (
           <Card key={d.id}>
-            <strong>{d.delegate.name}</strong> acting for <strong>{d.delegator.name}</strong>{' '}
-            <StatusBadge status={active ? 'Open' : 'Closed'} />
-            <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <strong style={{ fontSize: 14.5 }}>{d.delegate.name}</strong>
+              <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>acting for</span>
+              <strong style={{ fontSize: 14.5 }}>{d.delegator.name}</strong>
+              <StatusBadge status={active ? 'Open' : 'Closed'} />
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 6 }}>
               {fmt(d.startDate)} &ndash; {fmt(d.endDate)} &middot; {d.reason}
             </div>
           </Card>

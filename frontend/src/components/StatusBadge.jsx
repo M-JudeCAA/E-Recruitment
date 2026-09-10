@@ -24,13 +24,24 @@ const STATUS_COLORS = {
   Discrepancy_Flagged: 'var(--color-danger)'
 };
 
+const STATUS_TINTS = {
+  'var(--color-accent)': 'var(--color-accent-tint)',
+  'var(--color-warning)': 'var(--color-warning-tint)',
+  'var(--color-danger)': 'var(--color-danger-tint)',
+  'var(--color-primary)': 'var(--color-primary-tint)',
+  'var(--color-text-muted)': 'var(--color-muted-tint)'
+};
+
 export default function StatusBadge({ status }) {
   const color = STATUS_COLORS[status] || 'var(--color-text-muted)';
+  const tint = STATUS_TINTS[color];
   return (
     <span style={{
-      display: 'inline-block', padding: '2px 10px', borderRadius: 999,
-      fontSize: 12, fontWeight: 600, color: '#fff', background: color
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      padding: '3px 10px', borderRadius: 999,
+      fontSize: 12, fontWeight: 600, color, background: tint
     }}>
+      <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0 }} />
       {String(status).replace(/_/g, ' ')}
     </span>
   );

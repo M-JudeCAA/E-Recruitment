@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Bell } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 
 const POLL_MS = 30000;
@@ -42,11 +43,13 @@ export default function NotificationBell() {
         onClick={() => setOpen((v) => !v)}
         aria-label="Notifications"
         style={{
-          position: 'relative', background: 'transparent', border: '1px solid rgba(255,255,255,0.4)',
-          color: '#fff', borderRadius: 6, padding: '6px 10px', fontSize: 14, cursor: 'pointer'
+          position: 'relative', display: 'flex', alignItems: 'center',
+          background: 'transparent', border: '1px solid var(--color-border)',
+          color: 'var(--color-text-muted)', borderRadius: 'var(--radius-sm)',
+          padding: '7px 10px', fontSize: 14, cursor: 'pointer'
         }}
       >
-        Notifications
+        <Bell size={15} />
         {notifications.length > 0 && (
           <span style={{
             position: 'absolute', top: -6, right: -6, background: 'var(--color-danger)', color: '#fff',
