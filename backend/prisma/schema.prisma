@@ -210,7 +210,6 @@ model Vacancy {
   reportsToPositionId  Int?
   reportsToPosition    Position?     @relation("VacancyReportsToPosition", fields: [reportsToPositionId], references: [id])
   salaryScale          String?
-  description          String?       @db.Text
   positionsRequired    Int           @default(1)
   status               VacancyStatus @default(PendingApproval)
   // No default - PostingType.Open is gone, so there is no longer a safe
@@ -269,6 +268,43 @@ model Vacancy {
   minimumEducationLevel  EducationLevel?
   preferredFieldOfStudy  String?
   reviewStartedAt        DateTime?
+
+  // Structured advert content, matching UCAA's standard job-advertisement
+  // layout (Job Purpose / Person Specification). All optional - a vacancy
+  // that sets none of these still works exactly as before.
+  //
+  // jobPurpose is sanitized rich-text HTML (the same
+  // paste-preserving RichTextField/sanitizeJobDescription pipeline the
+  // standalone "Job description" field used to use) - the two were doing
+  // the same job, so rather than keep a separate `description` column,
+  // this one field now covers job purpose, principal accountabilities,
+  // and any other narrative HR pastes in, exactly as it should read on
+  // the advert. No separate structured field for Principal
+  // Accountabilities either - HR pastes it in here as part of the same
+  // block, rather than re-entering it into a second structured input.
+  jobPurpose             String?  @db.Text
+  // Person Specification, Essential Requirements: string[] of free-text
+  // bullets (e.g. degree class, age limit) shown to candidates alongside
+  // the structured, actually-screened criteria above
+  // (minimumEducationLevel/minimumExperienceYears) - those two remain the
+  // machine-checked subset of this section, since requirements like "26
+  // years or less" or specific O-level subject credits are too varied to
+  // generalize into a screening rule.
+  essentialRequirements  Json?
+  // Person Specification, Desirable Requirements: [{ id: string, text:
+  // string }] - each becomes a Yes/No question candidates answer at
+  // application time (see Application.desirableResponses). `id` is
+  // generated once and kept stable across edits so an application's
+  // snapshotted answer stays correctly attributable even if the wording
+  // is later tweaked. Informational only - a "No" answer is shown to HR
+  // as a flag but never fails automated screening, since these are
+  // explicitly the non-mandatory half of the person specification.
+  desirableRequirements  Json?
+  // General Knowledge and Cognitive Aptitude, and Special Skills and
+  // Attributes: string[] each - both purely informational/display, never
+  // machine-checked (too subjective to screen automatically).
+  generalKnowledge       Json?
+  specialSkills          Json?
 
   // Why `title` is kept as a denormalized snapshot rather than always
   // reading through `position.name`: if a Position is later renamed, past
@@ -375,6 +411,16 @@ model Application {
   openToRelocate   String?           // 'Yes' | 'No' | 'Depends'
   earliestStartDate DateTime?
   whyThisRole      String?           @db.Text
+
+  // Answers to the vacancy's Desirable Requirements Yes/No questions (see
+  // Vacancy.desirableRequirements): [{ id, text, answer: boolean }].
+  // `text` is snapshotted at answer time - the same historical-accuracy
+  // principle used elsewhere in this schema - so a later edit to the
+  // vacancy's wording never rewrites what the candidate actually saw and
+  // answered. Purely informational for HR (see VacancyDetail.jsx); never
+  // read by screeningService, since a "No" here must not fail automated
+  // screening.
+  desirableResponses Json?
 
   interviewRounds  InterviewRound[]
   offer            Offer?
