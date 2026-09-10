@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import staffClient from '../models/staffApiClient';
-import { useAuth } from '../models/AuthContext';
-import PageHeader from '../components/PageHeader';
-import Card from '../components/Card';
-import Button from '../components/Button';
-import Alert from '../components/Alert';
-import StatusBadge from '../components/StatusBadge';
-import Modal from '../components/Modal';
-import TextField from '../components/TextField';
-import TextArea from '../components/TextArea';
-import Select from '../components/Select';
+import staffClient from '../../models/staffApiClient';
+import { useAuth } from '../../models/AuthContext';
+import PageHeader from '../../components/PageHeader';
+import Card from '../../components/Card';
+import Button from '../../components/Button';
+import Alert from '../../components/Alert';
+import StatusBadge from '../../components/StatusBadge';
+import Modal from '../../components/Modal';
+import TextField from '../../components/TextField';
+import TextArea from '../../components/TextArea';
+import Select from '../../components/Select';
 
 const emptyPanelist = { name: '', trade: '', email: '' };
 

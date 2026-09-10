@@ -1,14 +1,14 @@
 import React from "react";
 import { Link, NavLink } from "react-router-dom";
-import { Plane, Briefcase, LogOut, Building2, Users, GitBranch } from "lucide-react";
+import { Plane, LogOut, LayoutDashboard } from "lucide-react";
 import { useAuth } from "../models/AuthContext";
-import NotificationBell from "./NotificationBell";
 
-// CHANGED - the previous navbar was a full-bleed navy->blue gradient
-// banner. Reimagined as a clean, light, sticky header: brand color now
-// lives in the logo mark and active/hover states only, instead of
-// painting the whole bar - reads as modern/minimal rather than "loud",
-// while staying unmistakably on-brand (same --color-primary throughout).
+// Top-of-site chrome for the public jobs board and auth flows only. Once
+// signed in, /hr and /dashboard are separate full-height sidebar shells
+// (see StaffDashboardLayout/CandidateDashboardLayout) that don't render
+// this at all - so this only ever needs a single "go to my dashboard"
+// link per audience, not the full set of dashboard sub-links it used to
+// carry before the sidebar existed.
 const navLinkStyle = ({ isActive }) => ({
   display: "flex",
   alignItems: "center",
@@ -37,16 +37,8 @@ const buttonStyle = {
   cursor: "pointer",
 };
 
-// Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK. Delegation
-// is self-service (you delegate your own authority to a subordinate) -
-// an HR Officer has nobody below them, so the link is hidden rather
-// than shown and immediately 403'd.
-const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
-
 export default function Navbar() {
   const { candidate, staff, logoutCandidate, logoutStaff } = useAuth();
-  const canDelegate = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
-  const canManageStaff = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Principal_HR_Officer;
 
   return (
     <nav
@@ -87,40 +79,23 @@ export default function Navbar() {
             {candidate.fullName && (
               <span style={{ fontSize: 13.5, color: "var(--color-text-muted)", marginRight: 4 }}>{candidate.fullName}</span>
             )}
-            <NavLink to="/" style={navLinkStyle}>
-              <Briefcase size={15} /> Available jobs
-            </NavLink>
             <NavLink to="/dashboard" style={navLinkStyle}>
-              My dashboard
+              <LayoutDashboard size={15} /> My dashboard
             </NavLink>
             <button onClick={logoutCandidate} style={{ ...buttonStyle, marginLeft: 8 }}>
               <LogOut size={14} /> Log out
             </button>
           </>
         ) : (
-          <Link to="/login" style={{ ...navLinkStyle({ isActive: false }) }}>
+          <Link to="/login" style={navLinkStyle({ isActive: false })}>
             Candidate login
           </Link>
         )}
         {staff ? (
           <>
-            <NavLink to="/hr" end style={navLinkStyle}>
-              HR dashboard
+            <NavLink to="/hr" style={navLinkStyle}>
+              <LayoutDashboard size={15} /> HR dashboard
             </NavLink>
-            <NavLink to="/hr/departments" style={navLinkStyle}>
-              <Building2 size={15} /> Departments
-            </NavLink>
-            {canManageStaff && (
-              <NavLink to="/hr/staff" style={navLinkStyle}>
-                <Users size={15} /> Staff
-              </NavLink>
-            )}
-            {canDelegate && (
-              <NavLink to="/hr/delegations" style={navLinkStyle}>
-                <GitBranch size={15} /> Delegations
-              </NavLink>
-            )}
-            <NotificationBell />
             <button onClick={logoutStaff} style={{ ...buttonStyle, marginLeft: 8 }}>
               <LogOut size={14} /> Staff log out
             </button>

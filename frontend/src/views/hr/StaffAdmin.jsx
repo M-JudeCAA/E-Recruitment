@@ -1,15 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Users } from 'lucide-react';
-import staffClient from '../models/staffApiClient';
-import PageHeader from '../components/PageHeader';
-import Card from '../components/Card';
-import StatTile from '../components/StatTile';
-import SectionHeading from '../components/SectionHeading';
-import TextField from '../components/TextField';
-import Select from '../components/Select';
-import Button from '../components/Button';
-import Alert from '../components/Alert';
-import StatusBadge from '../components/StatusBadge';
+import staffClient from '../../models/staffApiClient';
+import PageHeader from '../../components/PageHeader';
+import Card from '../../components/Card';
+import StatTile from '../../components/StatTile';
+import SectionHeading from '../../components/SectionHeading';
+import TextField from '../../components/TextField';
+import Select from '../../components/Select';
+import Button from '../../components/Button';
+import Alert from '../../components/Alert';
+import StatusBadge from '../../components/StatusBadge';
 
 // The only two roles this screen can ever create or move an account
 // between - matches CREATABLE_ROLES in staffUserController.js exactly.

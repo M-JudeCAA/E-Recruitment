@@ -1,17 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { GitBranch, UserCheck } from 'lucide-react';
-import staffClient from '../models/staffApiClient';
-import { useAuth } from '../models/AuthContext';
-import PageHeader from '../components/PageHeader';
-import Card from '../components/Card';
-import StatTile from '../components/StatTile';
-import SectionHeading from '../components/SectionHeading';
-import TextField from '../components/TextField';
-import Select from '../components/Select';
-import TextArea from '../components/TextArea';
-import Button from '../components/Button';
-import Alert from '../components/Alert';
-import StatusBadge from '../components/StatusBadge';
+import staffClient from '../../models/staffApiClient';
+import { useAuth } from '../../models/AuthContext';
+import PageHeader from '../../components/PageHeader';
+import Card from '../../components/Card';
+import StatTile from '../../components/StatTile';
+import SectionHeading from '../../components/SectionHeading';
+import TextField from '../../components/TextField';
+import Select from '../../components/Select';
+import TextArea from '../../components/TextArea';
+import Button from '../../components/Button';
+import Alert from '../../components/Alert';
+import StatusBadge from '../../components/StatusBadge';
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };

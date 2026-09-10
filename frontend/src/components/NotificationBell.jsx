@@ -1,24 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
-import staffClient from '../models/staffApiClient';
-
-const POLL_MS = 30000;
+import useNotifications from '../hooks/useNotifications';
 
 export default function NotificationBell() {
-  const [notifications, setNotifications] = useState([]);
+  const { notifications, error, markRead } = useNotifications();
   const [open, setOpen] = useState(false);
-  const [error, setError] = useState('');
   const containerRef = useRef(null);
-
-  const load = () => staffClient.get('/api/notifications/mine')
-    .then((res) => setNotifications(res.data))
-    .catch((err) => setError(err.response?.data?.error || 'Could not load notifications'));
-
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, POLL_MS);
-    return () => clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     function onClickOutside(e) {
@@ -27,15 +14,6 @@ export default function NotificationBell() {
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
-
-  const markRead = async (id) => {
-    try {
-      await staffClient.patch(`/api/notifications/${id}/read`);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not mark notification read');
-    }
-  };
 
   return (
     <div ref={containerRef} style={{ position: 'relative' }}>

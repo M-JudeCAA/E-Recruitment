@@ -1,19 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Briefcase, CheckCircle2, Clock, FileStack, Plus, Calendar, Building2 } from 'lucide-react';
-import staffClient from '../models/staffApiClient';
-import { useAuth } from '../models/AuthContext';
-import PageHeader from '../components/PageHeader';
-import Card from '../components/Card';
-import StatTile from '../components/StatTile';
-import SectionHeading from '../components/SectionHeading';
-import TextField from '../components/TextField';
-import RichTextField from '../components/RichTextField';
-import Select from '../components/Select';
-import Button from '../components/Button';
-import Alert from '../components/Alert';
-import StatusBadge from '../components/StatusBadge';
-import Modal from '../components/Modal';
+import { FileStack, Calendar, Building2 } from 'lucide-react';
+import staffClient from '../../models/staffApiClient';
+import { useAuth } from '../../models/AuthContext';
+import PageHeader from '../../components/PageHeader';
+import Card from '../../components/Card';
+import SectionHeading from '../../components/SectionHeading';
+import TextField from '../../components/TextField';
+import RichTextField from '../../components/RichTextField';
+import Select from '../../components/Select';
+import Button from '../../components/Button';
+import Alert from '../../components/Alert';
+import StatusBadge from '../../components/StatusBadge';
+import Modal from '../../components/Modal';
 
 const emptyForm = {
   departmentId: '', positionId: '', reportsToPositionId: '',
@@ -27,7 +26,7 @@ const emptyForm = {
 // approval simplification was scoped narrowly to approval itself.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 
-export default function HRDashboard() {
+export default function HRVacancies() {
   const { staff } = useAuth();
   // CHANGED - was Principal_HR_Officer. The vacancy workflow simplified
   // from 5-tier (create -> Senior HR Officer review -> Principal HR
@@ -162,24 +161,9 @@ export default function HRDashboard() {
     }
   };
 
-  const openCount = vacancies.filter((v) => v.status === 'Open' || v.status === 'PartiallyFilled').length;
-  const pendingCount = vacancies.filter((v) => v.status === 'PendingApproval').length;
-  const applicationCount = vacancies.reduce((sum, v) => sum + (v._count?.applications ?? 0), 0);
-
   return (
     <div>
-      <PageHeader
-        eyebrow="HR"
-        title="HR dashboard"
-        subtitle={`Logged in as ${staff?.name} (${staff?.role?.replace(/_/g, ' ')})`}
-      />
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
-        <StatTile icon={Briefcase} label="Total vacancies" value={vacancies.length} />
-        <StatTile icon={CheckCircle2} label="Open" value={openCount} color="var(--color-accent)" tint="var(--color-accent-tint)" />
-        <StatTile icon={Clock} label="Pending approval" value={pendingCount} color="var(--color-warning)" tint="var(--color-warning-tint)" />
-        <StatTile icon={FileStack} label="Applications received" value={applicationCount} />
-      </div>
+      <PageHeader eyebrow="HR" title="Vacancies" subtitle="Create and manage recruitment vacancies" />
 
       <Card>
         <h3 style={{ marginTop: 0, marginBottom: 4, fontSize: 16 }}>Create vacancy</h3>
@@ -191,7 +175,7 @@ export default function HRDashboard() {
           <label style={{ display: 'block', marginBottom: 'var(--spacing-md)' }}>
             <span style={{ display: 'block', fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>Department</span>
             <select value={form.departmentId} onChange={(e) => handleDepartmentChange(e.target.value)} required
-              style={{ display: 'block', width: '100%', padding: 8, border: '1px solid var(--color-border)', borderRadius: 'var(--radius)' }}>
+              style={{ display: 'block', width: '100%', padding: 10, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-input)' }}>
               <option value="">Select a department</option>
               {Object.entries(groupDepartmentsByDirectorate(approvedDepartments)).map(([directorateName, depts]) => (
                 <optgroup key={directorateName} label={directorateName}>

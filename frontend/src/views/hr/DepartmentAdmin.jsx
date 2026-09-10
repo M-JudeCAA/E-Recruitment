@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Building2, Network, Layers, ShieldCheck } from 'lucide-react';
-import staffClient from '../models/staffApiClient';
-import { useAuth } from '../models/AuthContext';
-import PageHeader from '../components/PageHeader';
-import Card from '../components/Card';
-import StatTile from '../components/StatTile';
-import SectionHeading from '../components/SectionHeading';
-import TextField from '../components/TextField';
-import Select from '../components/Select';
-import Button from '../components/Button';
-import Alert from '../components/Alert';
-import StatusBadge from '../components/StatusBadge';
+import staffClient from '../../models/staffApiClient';
+import { useAuth } from '../../models/AuthContext';
+import PageHeader from '../../components/PageHeader';
+import Card from '../../components/Card';
+import StatTile from '../../components/StatTile';
+import SectionHeading from '../../components/SectionHeading';
+import TextField from '../../components/TextField';
+import Select from '../../components/Select';
+import Button from '../../components/Button';
+import Alert from '../../components/Alert';
+import StatusBadge from '../../components/StatusBadge';
 
 const emptyDeptForm = { name: '', directorateId: '' };
 const emptyPositionForm = { name: '', departmentId: '', level: 1 };
