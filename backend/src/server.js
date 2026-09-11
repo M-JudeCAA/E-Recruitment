@@ -1,6 +1,14 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+// Patches Express's router so a rejected promise from an async route
+// handler reaches the error middleware below via next(err), instead of
+// becoming an unhandled rejection that crashes the whole process (Express
+// 4 doesn't catch async handler rejections on its own) - this is what
+// actually crashed the server: notificationController.listMine hit a
+// Prisma connection-pool timeout with no try/catch, and Node kills the
+// process on an unhandled rejection by default.
+require('express-async-errors');
 
 const candidateAuthRoutes = require('./routes/candidateAuth');
 const staffAuthRoutes = require('./routes/staffAuth');

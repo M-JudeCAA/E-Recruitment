@@ -27,7 +27,7 @@ export default function BulletListEditor({ label, hint, items, onChange, placeho
             value={value}
             placeholder={placeholder}
             onChange={(e) => updateItem(index, e.target.value)}
-            style={{ flex: 1, padding: 8, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 'inherit', fontFamily: 'inherit', background: 'var(--color-bg-input)' }}
+            style={{ flex: 1, padding: '11px 14px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 'inherit', fontFamily: 'inherit', background: 'var(--color-bg-input)' }}
           />
           <button type="button" onClick={() => removeItem(index)}
             style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', fontSize: 18, padding: '0 8px' }}>&times;</button>

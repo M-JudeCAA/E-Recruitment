@@ -1,9 +1,10 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Briefcase } from "lucide-react";
+import { Briefcase, User, LogOut } from "lucide-react";
 import { useAuth } from "../models/AuthContext";
 import NotificationBell from "./NotificationBell";
 import CandidateNotificationBell from "./CandidateNotificationBell";
+import ucaaLogo from "../assets/ucaa-logo.png";
 
 // CHANGED - was a separate, hardcoded palette disconnected from
 // theme.css (and from CandidateLogin.jsx's own separate hardcoded
@@ -52,21 +53,55 @@ export default function Navbar() {
         boxSizing: "border-box",
       }}
     >
+      {/* No maxWidth/centering here - matches PaddedLayout's flat 20px
+          inset (App.jsx) exactly, so the logo's left edge and the profile
+          chip's right edge line up with the page content below instead of
+          drifting apart on wide viewports where a centered, width-capped
+          bar would leave extra margin the page content doesn't have. */}
       <div
         style={{
-          maxWidth: 1160,
-          margin: "0 auto",
-          padding: "14px 24px",
+          padding: "14px 20px",
           display: "flex",
           alignItems: "center",
           gap: 20,
         }}
       >
-        <Link to="/" style={{ ...linkStyle, fontWeight: 600, fontSize: 16 }}>
-          UCAA e-Recruitment
+        {/* Real UCAA logo - the PNG's own background is opaque white, so it
+            sits on a small white rounded card rather than directly on the
+            navbar's blue gradient. Links to the HR home page for a
+            signed-in staff member (their landing page after login), or
+            home otherwise. */}
+        <Link
+          to={staff ? "/hr/home" : "/"}
+          style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}
+        >
+          <span
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 38,
+              height: 38,
+              flexShrink: 0,
+              borderRadius: 8,
+              background: "#FFFFFF",
+              padding: 3,
+              boxSizing: "border-box",
+            }}
+          >
+            <img src={ucaaLogo} alt="UCAA logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+          </span>
+          <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+            <span style={{ ...linkStyle, fontWeight: 700, fontSize: 14.5 }}>
+              Uganda Civil Aviation Authority
+            </span>
+            <span style={{ ...linkStyle, fontWeight: 400, fontSize: 11.5, opacity: 0.85 }}>
+              e-Recruitment
+            </span>
+          </span>
         </Link>
         <span style={{ flex: 1 }} />
-        {candidate ? (
+        {candidate && (
           <>
             {candidate.fullName && (
               <span style={{ ...linkStyle, fontWeight: 400, opacity: 0.85 }}>{candidate.fullName}</span>
@@ -78,23 +113,13 @@ export default function Navbar() {
               My dashboard
             </Link>
             <CandidateNotificationBell />
-            <button onClick={logoutCandidate} style={buttonStyle}>
-              Log out
+            <button onClick={logoutCandidate} style={{ ...buttonStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <LogOut size={14} /> Log out
             </button>
           </>
-        ) : (
-          <Link to="/login" style={linkStyle}>
-            Candidate login
-          </Link>
         )}
         {staff ? (
           <>
-            <Link to="/hr" style={linkStyle}>
-              HR dashboard
-            </Link>
-            <Link to="/hr/departments" style={linkStyle}>
-              Departments & positions
-            </Link>
             {canManageStaff && (
               <Link to="/hr/staff" style={linkStyle}>
                 Staff accounts
@@ -106,8 +131,36 @@ export default function Navbar() {
               </Link>
             )}
             <NotificationBell />
-            <button onClick={logoutStaff} style={buttonStyle}>
-              Staff log out
+
+            {/* Profile chip - carries "logged in as <name> (<role>)", moved
+                here from the HR dashboard's page header so it's visible on
+                every staff screen, not just that one. */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 30,
+                  height: 30,
+                  flexShrink: 0,
+                  borderRadius: "50%",
+                  background: "rgba(255,255,255,0.15)",
+                  border: "1px solid rgba(255,255,255,0.4)",
+                }}
+              >
+                <User size={15} color="#FFFFFF" />
+              </span>
+              <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+                <span style={{ ...linkStyle, fontWeight: 600, fontSize: 13 }}>{staff?.name}</span>
+                <span style={{ ...linkStyle, fontWeight: 400, fontSize: 11, opacity: 0.8 }}>
+                  {staff?.role?.replace(/_/g, ' ')}
+                </span>
+              </span>
+            </div>
+
+            <button onClick={logoutStaff} style={{ ...buttonStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <LogOut size={14} /> Staff log out
             </button>
           </>
         ) : (

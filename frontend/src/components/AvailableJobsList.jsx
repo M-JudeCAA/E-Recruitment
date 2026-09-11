@@ -6,10 +6,11 @@ import Card from './Card';
 import StatusBadge from './StatusBadge';
 import LoadingState from './LoadingState';
 
-// Extracted from Home.jsx so the same "Open Jobs" listing can also be
-// embedded in CandidateDashboard.jsx - the dashboard is meant to be
-// usable as a landing page in its own right after profile completion,
-// not just a link away from it.
+// Extracted from Home.jsx so the same "Open Jobs" listing is available
+// wherever it's needed without duplicating the fetch/render logic. Now
+// used only by Home.jsx itself - CandidateHome.jsx (the signed-in
+// dashboard's landing page) has its own richer inline listing with
+// search and pagination.
 export default function AvailableJobsList() {
   const [vacancies, setVacancies] = useState([]);
   const [loading, setLoading] = useState(true);

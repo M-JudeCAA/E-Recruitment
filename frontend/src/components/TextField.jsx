@@ -8,7 +8,7 @@ import React from 'react';
 // since every form in the system already renders through this component.
 export default function TextField({ label, hint, error, required, style, ...inputProps }) {
   return (
-    <label style={{ display: 'block', marginBottom: 20, maxWidth: 640 }}>
+    <label style={{ display: 'block', marginBottom: 22, maxWidth: 640 }}>
       {label && (
         <span style={{ display: 'block', fontSize: 14, color: 'var(--color-text-muted)', marginBottom: 6 }}>
           {label}
@@ -20,7 +20,7 @@ export default function TextField({ label, hint, error, required, style, ...inpu
         style={{
           display: 'block',
           width: '100%',
-          padding: '10px 12px',
+          padding: '11px 14px',
           border: `1px solid ${error ? 'var(--color-danger)' : 'var(--color-border)'}`,
           borderRadius: 'var(--radius-sm)',
           fontSize: 'inherit',

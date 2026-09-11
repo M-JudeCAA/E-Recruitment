@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
-import PageHeader from '../components/PageHeader';
+import HRSidebar from '../components/HRSidebar';
 import Card from '../components/Card';
 import TextField from '../components/TextField';
 import Select from '../components/Select';
@@ -115,7 +115,10 @@ export default function DepartmentAdmin() {
 
   return (
     <div>
-      <PageHeader title="Departments & positions" subtitle="Manage the org structure vacancies are built on" />
+      <div style={{ display: 'flex', gap: 'var(--spacing-lg)', alignItems: 'flex-start' }}>
+        <HRSidebar active="departments" />
+
+        <div style={{ flex: 1, minWidth: 0 }}>
       <Alert type="success" message={message} />
       <Alert type="error" message={error} />
 
@@ -222,6 +225,8 @@ export default function DepartmentAdmin() {
           </div>
         </Card>
       ))}
+        </div>
+      </div>
     </div>
   );
 }

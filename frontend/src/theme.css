@@ -3,14 +3,14 @@
 @tailwind utilities;
 
 :root {
-  /* UCAA brand palette - adopted from the application-wizard design
-     direction. Same variable NAMES as before, only the values changed -
-     every existing component that already references var(--color-*)
-     picks up the new look automatically, with zero code changes needed
-     anywhere else. This is deliberately a values-only change. */
-  --color-primary: #0B5FA5;       /* was #1d4e73 */
-  --color-primary-dark: #08466F;  /* was #143a56 */
-  --color-primary-light: #EAF3FA; /* was #eaf1f6 */
+  /* UCAA brand palette - Curious Blue theme, applied app-wide. Same
+     variable NAMES as before, only the values changed - every existing
+     component that already references var(--color-*) picks up the new
+     look automatically, with zero code changes needed anywhere else.
+     This is deliberately a values-only change. */
+  --color-primary: #2596D1;       /* Curious Blue - was #0B5FA5 */
+  --color-primary-dark: #1C719D;  /* Curious Blue, darkened ~25% - was #08466F */
+  --color-primary-light: #E9F4FA; /* Curious Blue tinted ~90% toward white - was #EAF3FA */
   --color-accent: #1E7A46;        /* was #2f8f6e - aligned to the wizard's own success green */
   --color-success: #1E7A46;       /* ADDED - referenced by VacancyDetail.jsx and others
                                       but never actually declared anywhere in this file. Any
@@ -32,10 +32,12 @@
   --font-size-base: 15px;
 
   /* Spacing / shape */
-  --radius: 6px;         /* containers/cards - unchanged */
-  --radius-sm: 3px;      /* ADDED - inputs, selects, buttons. Matches the
-                             application-wizard prototype's crisper control
-                             radius, distinct from the softer card radius. */
+  --radius: 10px;        /* containers/cards - bumped from 6px for a
+                             softer, smoother card/modal silhouette. */
+  --radius-sm: 8px;      /* inputs, selects, buttons - bumped from 3px;
+                             still smaller than --radius so cards read as
+                             the "outer" shape and controls as the "inner"
+                             one, just noticeably smoother than before. */
   --color-bg-input: #FCFDFE; /* ADDED - subtle off-white input fill, matching
                                  the prototype's form-field background instead
                                  of plain white blending into the card. */
@@ -108,4 +110,81 @@ a {
 .rich-text-content td, .rich-text-content th {
   border: 1px solid var(--color-border);
   padding: 4px 8px;
+}
+
+/* Smooth, attractive form fields app-wide. Targets raw <input>/<select>/
+   <textarea> elements directly (checkbox/radio/range/file excluded, since
+   those render their own native control and a text-field hover/focus ring
+   looks wrong on them) rather than a class, so every field in the system -
+   the shared TextField/Select/TextArea components AND any one-off inline
+   input in a view - gets the same treatment with zero per-view changes.
+   .form-control opts in contentEditable-based fields (RichTextField) that
+   aren't real <input>/<textarea> elements and so aren't matched above. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+select,
+textarea,
+.form-control {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):hover:not(:disabled),
+select:hover:not(:disabled),
+textarea:hover:not(:disabled),
+.form-control:hover {
+  border-color: var(--color-primary);
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):focus,
+select:focus,
+textarea:focus,
+.form-control:focus,
+.form-control:focus-within {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+input:disabled, select:disabled, textarea:disabled {
+  background: var(--color-bg-subtle);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.65;
+}
+
+/* Button hover/active/focus feedback - scoped to the shared Button
+   component's own .btn class (not a blanket <button> rule) so it never
+   collides with one-off buttons that already carry deliberate custom
+   styling, e.g. Navbar's white-on-blue buttons or Modal's close icon. */
+.btn {
+  transition: filter 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+}
+.btn:hover:not(:disabled) {
+  filter: brightness(0.94);
+}
+.btn-secondary:hover:not(:disabled),
+.btn-ghost:hover:not(:disabled) {
+  background: var(--color-primary-light);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+
+/* Clickable Card (see Card.jsx's optional onClick prop) - a subtle hover
+   lift so a whole card reads as clickable, not just the buttons inside it. */
+.card-clickable {
+  transition: box-shadow 0.15s ease, transform 0.05s ease;
+}
+.card-clickable:hover {
+  box-shadow: 0 4px 14px rgba(20,24,28,0.12);
+}
+.card-clickable:active {
+  transform: translateY(1px);
 }

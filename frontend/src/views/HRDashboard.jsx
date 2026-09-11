@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
-import PageHeader from '../components/PageHeader';
+import HRSidebar from '../components/HRSidebar';
 import Card from '../components/Card';
 import TextField from '../components/TextField';
 import Select from '../components/Select';
@@ -12,6 +12,8 @@ import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import VacancyAdvertFields from '../components/VacancyAdvertFields';
 import VacancyAdvert from '../components/VacancyAdvert';
+
+const VALID_TABS = ['vacancies', 'applications', 'interviews', 'offers'];
 
 const emptyForm = {
   departmentId: '', positionId: '', reportsToPositionId: '',
@@ -56,13 +58,64 @@ export default function HRDashboard() {
   const [editModal, setEditModal] = useState(null);
   const [editForm, setEditForm] = useState({});
 
+  // Which tab is showing lives in the URL (?tab=...), not local state, so
+  // HRSidebar links from other /hr/* pages (and browser back/forward/reload)
+  // land on the right tab instead of always resetting to Vacancies.
+  const [searchParams] = useSearchParams();
+  const requestedTab = searchParams.get('tab');
+  const activeSection = VALID_TABS.includes(requestedTab) ? requestedTab : 'vacancies';
+
+  // Applications/Interviews/Offer are cross-vacancy views. There's no
+  // aggregate endpoint for these, so this fetches each vacancy's
+  // applications (the same endpoint VacancyDetail already uses) in
+  // parallel and flattens them, tagging each with its vacancy - fetched
+  // once and cached rather than re-fetched on every tab switch.
+  const [crossApps, setCrossApps] = useState(null);
+  const [crossLoading, setCrossLoading] = useState(false);
+  // True once the initial vacancy fetch below has resolved (even to an
+  // empty list) - distinguishes "no vacancies yet" from "vacancies just
+  // haven't loaded yet", so the cross-vacancy fetch isn't skipped forever
+  // when a tab is clicked before that first fetch resolves.
+  const [vacanciesLoaded, setVacanciesLoaded] = useState(false);
+
+  const loadCrossVacancyApplications = async () => {
+    if (crossApps || crossLoading || !vacanciesLoaded) return;
+    setCrossLoading(true);
+    setError('');
+    try {
+      const results = await Promise.all(
+        vacancies.map((v) =>
+          staffClient.get(`/api/vacancies/${v.id}/applications`)
+            .then((res) => res.data.map((app) => ({ ...app, vacancy: v })))
+        )
+      );
+      setCrossApps(results.flat());
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not load applications');
+    } finally {
+      setCrossLoading(false);
+    }
+  };
+
+  // Also retries once vacancies finish loading, in case a cross-vacancy tab
+  // was clicked (and bailed via the vacanciesLoaded guard above) before
+  // that first fetch resolved.
+  useEffect(() => {
+    if (vacanciesLoaded && ['applications', 'interviews', 'offers'].includes(activeSection)) {
+      loadCrossVacancyApplications();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vacanciesLoaded, activeSection]);
+
   // Shared preview modal - built from the create form or the edit form,
   // whichever is open, so HR can see exactly what candidates will see
   // (the same VacancyAdvert component the candidate-facing apply wizard
   // uses) before ever submitting for approval.
   const [previewData, setPreviewData] = useState(null);
 
-  const load = () => staffClient.get('/api/vacancies/admin').then((res) => setVacancies(res.data));
+  const load = () => staffClient.get('/api/vacancies/admin')
+    .then((res) => setVacancies(res.data))
+    .finally(() => setVacanciesLoaded(true));
   useEffect(() => {
     load();
     staffClient.get('/api/departments/approved')
@@ -217,8 +270,16 @@ export default function HRDashboard() {
 
   return (
     <div>
-      <PageHeader title="HR dashboard" subtitle={`Logged in as ${staff?.name} (${staff?.role?.replace(/_/g, ' ')})`} />
+      {/* "HR dashboard" title and "Logged in as ..." now live in the
+          navbar's profile chip instead - see Navbar.jsx. */}
+      <div style={{ display: 'flex', gap: 'var(--spacing-lg)', alignItems: 'flex-start' }}>
+        <HRSidebar active={activeSection} />
 
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {activeSection !== 'vacancies' && <Alert type="error" message={error} />}
+
+          {activeSection === 'vacancies' && (
+            <>
       <Card accent="var(--color-primary)">
         <h3 style={{ marginTop: 0 }}>Create vacancy</h3>
         <form onSubmit={createVacancy}>
@@ -386,6 +447,73 @@ export default function HRDashboard() {
           <VacancyAdvert {...previewData} />
         </Modal>
       )}
+            </>
+          )}
+
+          {activeSection === 'applications' && (
+            <div>
+              <h3 style={{ marginTop: 0 }}>Applications</h3>
+              {crossLoading && <p>Loading applications...</p>}
+              {crossApps && crossApps.length === 0 && <p>No applications yet.</p>}
+              {crossApps && crossApps.map((app) => (
+                <Card key={app.id}>
+                  <strong>{app.candidate.fullName}</strong> ({app.candidate.candidateType})
+                  {' '}&middot; <StatusBadge status={app.status} />
+                  <div style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '6px 0' }}>
+                    {app.vacancy.jobRef} &middot; {app.vacancy.title}
+                    {app.submittedDate && <> &middot; submitted {new Date(app.submittedDate).toLocaleDateString()}</>}
+                  </div>
+                  <Link to={`/hr/vacancy/${app.vacancy.id}`}>Open vacancy &rarr;</Link>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {activeSection === 'interviews' && (
+            <div>
+              <h3 style={{ marginTop: 0 }}>Interviews</h3>
+              {crossLoading && <p>Loading interviews...</p>}
+              {crossApps && crossApps.filter((app) => app.interviewRounds?.length > 0).length === 0 && (
+                <p>No interviews scheduled yet.</p>
+              )}
+              {crossApps && crossApps.filter((app) => app.interviewRounds?.length > 0).map((app) => (
+                <Card key={app.id}>
+                  <strong>{app.candidate.fullName}</strong> &mdash; {app.vacancy.jobRef} ({app.vacancy.title})
+                  <div style={{ marginTop: 6 }}>
+                    {app.interviewRounds.map((r) => (
+                      <div key={r.id} style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>
+                        Round {r.roundNumber}
+                        {' '}&middot; {r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString() : 'unscheduled'}
+                        {' '}&middot; {r.mode}
+                        {r.score != null && <> &middot; average {r.score.toFixed(1)}</>}
+                        {r.recommendation && <> &middot; <StatusBadge status={r.recommendation} /></>}
+                      </div>
+                    ))}
+                  </div>
+                  <Link to={`/hr/vacancy/${app.vacancy.id}`}>Manage in vacancy &rarr;</Link>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {activeSection === 'offers' && (
+            <div>
+              <h3 style={{ marginTop: 0 }}>Offers</h3>
+              {crossLoading && <p>Loading offers...</p>}
+              {crossApps && crossApps.filter((app) => app.offer).length === 0 && <p>No offers recommended yet.</p>}
+              {crossApps && crossApps.filter((app) => app.offer).map((app) => (
+                <Card key={app.id}>
+                  <strong>{app.candidate.fullName}</strong> &mdash; {app.vacancy.jobRef} ({app.vacancy.title})
+                  {' '}&middot; Offer: <StatusBadge status={app.offer.status} />
+                  <div style={{ marginTop: 6 }}>
+                    <Link to={`/hr/vacancy/${app.vacancy.id}`}>Manage in vacancy &rarr;</Link>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

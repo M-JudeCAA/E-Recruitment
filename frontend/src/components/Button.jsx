@@ -14,12 +14,15 @@ const VARIANTS = {
 // used to only flip a bare "Saving..." label with no visual cue that the
 // click actually registered). `loadingText`, if given, replaces the label
 // while loading; otherwise the children stay and only the spinner is added.
-export default function Button({ variant = 'primary', children, style, disabled, loading, loadingText, ...props }) {
+// The btn/btn-<variant> classes drive the hover/active/focus feedback in
+// theme.css - inline `style` below still wins for anything it sets itself.
+export default function Button({ variant = 'primary', children, style, disabled, loading, loadingText, className, ...props }) {
   const isDisabled = disabled || loading;
   return (
     <button
       {...props}
       disabled={isDisabled}
+      className={`btn btn-${variant}${className ? ` ${className}` : ''}`}
       style={{
         ...VARIANTS[variant],
         padding: '8px 16px',
