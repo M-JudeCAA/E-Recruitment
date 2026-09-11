@@ -1,4 +1,5 @@
 import React from 'react';
+import Spinner from './Spinner';
 
 const VARIANTS = {
   primary: { background: 'var(--color-primary)', color: '#fff', border: 'none' },
@@ -7,22 +8,33 @@ const VARIANTS = {
   ghost: { background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }
 };
 
-export default function Button({ variant = 'primary', children, style, disabled, ...props }) {
+// `loading` covers the gap between click and response on a button that
+// triggers a request - without it, a slow request just looks unresponsive
+// (see ProfileCompletionForm/ProfileStep's add/save/delete buttons, which
+// used to only flip a bare "Saving..." label with no visual cue that the
+// click actually registered). `loadingText`, if given, replaces the label
+// while loading; otherwise the children stay and only the spinner is added.
+export default function Button({ variant = 'primary', children, style, disabled, loading, loadingText, ...props }) {
+  const isDisabled = disabled || loading;
   return (
     <button
       {...props}
-      disabled={disabled}
+      disabled={isDisabled}
       style={{
         ...VARIANTS[variant],
         padding: '8px 16px',
         borderRadius: 'var(--radius-sm)',
         fontSize: 'inherit',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
+        opacity: isDisabled ? 0.6 : 1,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
         ...style
       }}
     >
-      {children}
+      {loading && <Spinner size={13} color="currentColor" />}
+      {loading && loadingText !== undefined ? loadingText : children}
     </button>
   );
 }

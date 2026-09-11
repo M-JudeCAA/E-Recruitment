@@ -16,11 +16,14 @@ export default function ConfirmEmail() {
       .catch((err) => { setOk(false); setMessage(err.response?.data?.error || 'Confirmation failed'); });
   }, [params]);
 
+  const returnTo = params.get('returnTo');
+  const loginHref = returnTo ? `/login?returnTo=${encodeURIComponent(returnTo)}` : '/login';
+
   return (
     <div>
       <PageHeader title="Email confirmation" />
       <Alert type={ok ? 'success' : 'error'} message={message} />
-      <Link to="/login">Go to login</Link>
+      <Link to={loginHref}>Go to login</Link>
     </div>
   );
 }

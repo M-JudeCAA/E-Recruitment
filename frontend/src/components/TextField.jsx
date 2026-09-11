@@ -6,7 +6,7 @@ import React from 'react';
 // Spacing/radius/background here match the application-wizard prototype's
 // form-field styling (Field/inputStyle in its theme.js) - adopted app-wide
 // since every form in the system already renders through this component.
-export default function TextField({ label, hint, required, style, ...inputProps }) {
+export default function TextField({ label, hint, error, required, style, ...inputProps }) {
   return (
     <label style={{ display: 'block', marginBottom: 20, maxWidth: 640 }}>
       {label && (
@@ -21,7 +21,7 @@ export default function TextField({ label, hint, required, style, ...inputProps 
           display: 'block',
           width: '100%',
           padding: '10px 12px',
-          border: '1px solid var(--color-border)',
+          border: `1px solid ${error ? 'var(--color-danger)' : 'var(--color-border)'}`,
           borderRadius: 'var(--radius-sm)',
           fontSize: 'inherit',
           fontFamily: 'inherit',
@@ -29,7 +29,9 @@ export default function TextField({ label, hint, required, style, ...inputProps 
           ...style
         }}
       />
-      {hint && (
+      {error ? (
+        <span style={{ display: 'block', fontSize: 12, color: 'var(--color-danger)', marginTop: 6 }}>{error}</span>
+      ) : hint && (
         <span style={{ display: 'block', fontSize: 12, color: 'var(--color-text-muted)', marginTop: 6 }}>{hint}</span>
       )}
     </label>

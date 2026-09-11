@@ -18,6 +18,22 @@ const staffUsersRoutes = require('./routes/staffUsers');
 const delegationRoutes = require('./routes/delegations');
 const notificationRoutes = require('./routes/notifications');
 
+// Express 4 does not forward a rejected promise from an async route
+// handler to the error middleware below on its own - an uncaught
+// rejection there (e.g. a transient database blip) is a plain unhandled
+// rejection, and modern Node's default behavior for those is to
+// terminate the process outright, taking the whole API down for every
+// user rather than just failing that one request. This is a last-resort
+// safety net so a single bad request can't do that; asyncHandler.js
+// (used in routes/candidates.js) is the actual per-request fix, giving
+// the caller a real 500 instead of a hung connection.
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection (server kept running):', err);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception (server kept running):', err);
+});
+
 const app = express();
 
 app.use(cors({ origin: process.env.FRONTEND_URL }));

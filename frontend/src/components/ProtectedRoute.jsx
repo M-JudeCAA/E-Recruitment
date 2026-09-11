@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../models/AuthContext';
 
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
@@ -15,6 +15,13 @@ export function RequireStaff({ minRole = 'HR_Officer', children }) {
 
 export function RequireCandidate({ children }) {
   const { candidate } = useAuth();
-  if (!candidate) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (!candidate) {
+    // Remembers the page the candidate was trying to reach (an Advert
+    // User clicking Apply while logged out, most importantly) so login/
+    // register can send them back afterward instead of stranding them on
+    // a generic dashboard. See CandidateLogin.jsx/Register.jsx.
+    return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname)}`} replace />;
+  }
   return children;
 }

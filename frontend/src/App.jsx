@@ -10,6 +10,7 @@ import CandidateLogin from "./views/CandidateLogin";
 import ForgotPassword from "./views/ForgotPassword";
 import ResetPassword from "./views/ResetPassword";
 import CandidateDashboard from "./views/CandidateDashboard";
+import ProfileCompletePage from "./views/ProfileCompletePage";
 import ApplyForm from "./views/ApplyForm";
 import StaffLogin from "./views/StaffLogin";
 import StaffForgotPassword from "./views/StaffForgotPassword";
@@ -111,6 +112,14 @@ export default function App() {
             from the window edge - the exact bug this layout split avoids. */}
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<CandidateLogin />} />
+        <Route
+          path="/profile/complete"
+          element={
+            <RequireCandidate>
+              <ProfileCompletePage />
+            </RequireCandidate>
+          }
+        />
         <Route
           path="/apply/:vacancyId"
           element={

@@ -5,6 +5,13 @@ const internalProfileModel = require('../models/internalProfileModel');
 const pendingRegistrationModel = require('../models/pendingRegistrationModel');
 const { sendMail } = require('../utils/mailer');
 const { createToken, consumeToken } = require('../services/tokenService');
+const { validateEmail, validatePassword } = require('../utils/validators');
+
+// Only ever forwarded into a redirect target, never used for anything
+// else - restricting it to this exact shape rules out an open-redirect
+// via a crafted returnTo value riding the query string or request body.
+const RETURN_TO_RE = /^\/apply\/\d+$/;
+const isValidReturnTo = (value) => typeof value === 'string' && RETURN_TO_RE.test(value);
 
 // No Candidate row (and no claim on the unique Candidate.email) is
 // created until the confirmation link is actually used - the registration
@@ -13,9 +20,15 @@ const { createToken, consumeToken } = require('../services/tokenService');
 // design held the email hostage forever, since Candidate.email is unique
 // regardless of emailConfirmed.
 async function register(req, res) {
-  const { fullName, email, password, phone, nationalId } = req.body;
+  const { fullName, email, password, phone, nationalId, returnTo } = req.body;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'fullName, email and password are required' });
+  }
+  if (!validateEmail(email)) {
+    return res.status(400).json({ error: 'Enter a valid email address' });
+  }
+  if (!validatePassword(password)) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a digit, and a symbol' });
   }
 
   const existingCandidate = await candidateModel.findByEmail(email);
@@ -44,7 +57,8 @@ async function register(req, res) {
   });
 
   const token = await createToken({ type: 'EmailConfirmation', pendingRegistrationId: pending.id });
-  const confirmUrl = `${process.env.FRONTEND_URL}/confirm-email?token=${token}`;
+  const confirmUrl = `${process.env.FRONTEND_URL}/confirm-email?token=${token}`
+    + (isValidReturnTo(returnTo) ? `&returnTo=${encodeURIComponent(returnTo)}` : '');
   await sendMail({
     to: email,
     subject: 'Confirm your e-Recruitment account',
@@ -102,12 +116,19 @@ async function login(req, res) {
   const valid = await bcrypt.compare(password, candidate.passwordHash);
   if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
+  // Read before overwriting - "first login" only exists in the one
+  // request where lastLoginAt is about to transition from null to a real
+  // timestamp. Drives the New User (full /profile/complete page) vs Old
+  // User (closable dashboard modal) distinction on the frontend.
+  const firstLogin = candidate.lastLoginAt === null;
+  await candidateModel.update(candidate.id, { lastLoginAt: new Date() });
+
   const token = jwt.sign(
     { type: 'candidate', id: candidate.id, candidateType: candidate.candidateType, fullName: candidate.fullName },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN }
   );
-  res.json({ token, candidateType: candidate.candidateType, fullName: candidate.fullName });
+  res.json({ token, candidateType: candidate.candidateType, fullName: candidate.fullName, firstLogin });
 }
 
 async function forgotPassword(req, res) {
@@ -127,8 +148,8 @@ async function forgotPassword(req, res) {
 
 async function resetPassword(req, res) {
   const { token, newPassword } = req.body;
-  if (!newPassword || newPassword.length < 8) {
-    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (!validatePassword(newPassword)) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a digit, and a symbol' });
   }
   try {
     const record = await consumeToken(token, 'PasswordReset');

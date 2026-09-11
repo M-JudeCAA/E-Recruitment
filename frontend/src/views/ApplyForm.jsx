@@ -6,6 +6,9 @@ import { useAuth } from '../models/AuthContext';
 import Button from '../components/Button';
 import Alert from '../components/Alert';
 import LoadingState from '../components/LoadingState';
+import Modal from '../components/Modal';
+import ProfileCompletionForm from '../components/ProfileCompletionForm';
+import { isProfileComplete } from '../utils/profileCompleteness';
 import StepperRail from './apply-wizard/StepperRail';
 import JobDetailsStep from './apply-wizard/JobDetailsStep';
 import ProfileStep from './apply-wizard/ProfileStep';
@@ -48,6 +51,13 @@ export default function ApplyForm() {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
+  // Advert User path: a candidate who arrived here via a pending
+  // returnTo (see CandidateLogin.jsx/ProtectedRoute.jsx) sees a closable
+  // profile-completion modal over this page instead of the dashboard or
+  // the standalone /profile/complete page - the wizard underneath stays
+  // mounted and visible either way.
+  const [showProfileModal, setShowProfileModal] = useState(false);
+
   const loadProfile = () => client.get('/api/candidates/me').then((res) => {
     setProfile(res.data);
     setProfileDetailsForm({
@@ -58,6 +68,7 @@ export default function ApplyForm() {
       portfolioUrl: res.data.portfolioUrl || ''
     });
     if (res.data.internalProfile) setInternalProfileForm(res.data.internalProfile);
+    if (!isProfileComplete(res.data)) setShowProfileModal(true);
   });
 
   useEffect(() => {
@@ -162,6 +173,11 @@ export default function ApplyForm() {
 
   return (
     <div style={{ background: 'var(--color-primary-light)', minHeight: '100%', width: '100%' }}>
+      {showProfileModal && (
+        <Modal title="Complete your profile" onClose={() => setShowProfileModal(false)} maxWidth={720}>
+          <ProfileCompletionForm onComplete={() => setShowProfileModal(false)} />
+        </Modal>
+      )}
       <div className="p-4 md:p-8">
         <div className="max-w-3xl mx-auto" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
           <div className="flex flex-col md:flex-row">

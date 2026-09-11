@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Briefcase } from "lucide-react";
 import { useAuth } from "../models/AuthContext";
 import NotificationBell from "./NotificationBell";
+import CandidateNotificationBell from "./CandidateNotificationBell";
 
 // CHANGED - was a separate, hardcoded palette disconnected from
 // theme.css (and from CandidateLogin.jsx's own separate hardcoded
@@ -76,6 +77,7 @@ export default function Navbar() {
             <Link to="/dashboard" style={linkStyle}>
               My dashboard
             </Link>
+            <CandidateNotificationBell />
             <button onClick={logoutCandidate} style={buttonStyle}>
               Log out
             </button>

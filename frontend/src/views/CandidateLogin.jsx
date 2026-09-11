@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useNavigate, useSearchParams, Link } from "react-router-dom";
 import client from "../models/apiClient";
 import { useAuth } from "../models/AuthContext";
 import PageHeader from "../components/PageHeader";
@@ -18,6 +18,8 @@ const ucaa = {
   card: "var(--color-bg)",
 };
 
+const RETURN_TO_RE = /^\/apply\/\d+$/;
+
 function validate(values) {
   const errors = {};
 
@@ -27,16 +29,27 @@ function validate(values) {
     errors.email = "Enter a valid email address.";
   }
 
+  // Deliberately no length/complexity check here - login only checks a
+  // password against its stored hash, and a client-side "too short"
+  // rejection would be actively wrong for an account created before the
+  // password policy existed. The server's bcrypt compare is the only
+  // source of truth for whether a login password is correct.
   if (!values.password) {
     errors.password = "Password is required.";
-  } else if (values.password.length < 6) {
-    errors.password = "Password must be at least 6 characters.";
   }
 
   return errors;
 }
 
 export default function CandidateLogin() {
+  const [params] = useSearchParams();
+  const returnTo = params.get("returnTo") || sessionStorage.getItem("pendingReturnTo");
+  const validReturnTo = returnTo && RETURN_TO_RE.test(returnTo) ? returnTo : null;
+
+  useEffect(() => {
+    if (validReturnTo) sessionStorage.setItem("pendingReturnTo", validReturnTo);
+  }, [validReturnTo]);
+
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -58,7 +71,15 @@ export default function CandidateLogin() {
     try {
       const res = await client.post("/api/candidates/auth/login", form);
       loginCandidate(res.data.token, res.data.candidateType, res.data.fullName);
-      navigate("/dashboard");
+      sessionStorage.removeItem("pendingReturnTo");
+
+      // Precedence: a pending Apply-page destination always wins, even on
+      // a first-ever login - the Advert User path takes over from the
+      // New User "go straight to the full profile page" rule in that
+      // case (see ApplyForm.jsx, which shows the completion modal itself).
+      if (validReturnTo) navigate(validReturnTo);
+      else if (res.data.firstLogin) navigate("/profile/complete");
+      else navigate("/dashboard");
     } catch (err) {
       setError(err.response?.data?.error || "Login failed");
     } finally {
@@ -109,7 +130,9 @@ export default function CandidateLogin() {
         </form>
         <Alert type="error" message={error} />
         <p style={{ textAlign: "center", marginTop: 18, marginBottom: 4 }}>
-          <Link to="/register">Create an account</Link>
+          <Link to={validReturnTo ? `/register?returnTo=${encodeURIComponent(validReturnTo)}` : "/register"}>
+            Create an account
+          </Link>
         </p>
         <p style={{ textAlign: "center", marginTop: 0, marginBottom: 0 }}>
           <Link to="/forgot-password">Forgot password?</Link>

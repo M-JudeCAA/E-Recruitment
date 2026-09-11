@@ -324,6 +324,9 @@ model Candidate {
   phone              String?
   candidateType      CandidateType
   nationalId         String?
+  idType             String?        // 'NationalID' | 'Passport' - which format nationalId is meant to follow;
+                                     // the Uganda NIN regex is only enforced when this is 'NationalID', since a
+                                     // foreign candidate's passport format varies too much to validate meaningfully.
   emailConfirmed     Boolean        @default(false)
   passwordHash       String
   createdAt          DateTime       @default(now())
@@ -337,11 +340,24 @@ model Candidate {
   portfolioUrl       String?
   workAuthorization  String?        // 'Yes' | 'No' | 'Sponsorship'
 
+  // Null until the first successful login - distinguishes a brand-new
+  // candidate (who should land on the full /profile/complete page) from a
+  // returning one (who gets a closable modal prompt instead), without a
+  // separate "is this their first login" flag to keep in sync.
+  lastLoginAt        DateTime?
+  // Set once, the first time getMissingProfileFields() finds nothing
+  // missing - never cleared afterward, even if the profile later becomes
+  // incomplete again. Exists purely to fire the "profile completed"
+  // notification exactly once; completeness itself is always computed
+  // fresh (see backend/src/utils/profileCompleteness.js), never cached.
+  profileCompletedAt DateTime?
+
   workExperience     WorkExperience[]
   education          Education[]
   applications       Application[]
   internalProfile    InternalProfile?
   verificationTokens VerificationToken[]
+  notifications      CandidateNotification[]
 }
 
 model WorkExperience {
@@ -615,5 +631,26 @@ model Notification {
   taskId      Int
   message     String
   sentAt      DateTime            @default(now())
+  readAt      DateTime?
+}
+
+enum CandidateNotificationType {
+  ProfileCompleted
+}
+
+// A separate model rather than reusing Notification above: recipientId
+// there is a hard FK into StaffUser.id, and Candidate.id is a distinct
+// autoincrement sequence that can collide in value with StaffUser.id -
+// making that FK polymorphic would mean dropping referential integrity
+// for the (currently working) staff case too. Same "parallel model for a
+// shape mismatch" principle already used for PendingCandidateRegistration.
+model CandidateNotification {
+  id          Int                       @id @default(autoincrement())
+  candidateId Int
+  candidate   Candidate                 @relation(fields: [candidateId], references: [id])
+  channel     NotificationChannel
+  type        CandidateNotificationType
+  message     String
+  sentAt      DateTime                  @default(now())
   readAt      DateTime?
 }
