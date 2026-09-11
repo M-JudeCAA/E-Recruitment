@@ -9,11 +9,14 @@ import ConfirmEmail from "./views/ConfirmEmail";
 import CandidateLogin from "./views/CandidateLogin";
 import ForgotPassword from "./views/ForgotPassword";
 import ResetPassword from "./views/ResetPassword";
-import CandidateDashboard from "./views/CandidateDashboard";
+import CandidateHome from "./views/CandidateHome";
+import CandidateJobs from "./views/CandidateJobs";
+import CandidateApplications from "./views/CandidateApplications";
 import ApplyForm from "./views/ApplyForm";
 import StaffLogin from "./views/StaffLogin";
 import StaffForgotPassword from "./views/StaffForgotPassword";
 import StaffResetPassword from "./views/StaffResetPassword";
+import HRHome from "./views/HRHome";
 import HRDashboard from "./views/HRDashboard";
 import DepartmentAdmin from "./views/DepartmentAdmin";
 import StaffAdmin from "./views/StaffAdmin";
@@ -51,7 +54,23 @@ export default function App() {
             path="/dashboard"
             element={
               <RequireCandidate>
-                <CandidateDashboard />
+                <CandidateHome />
+              </RequireCandidate>
+            }
+          />
+          <Route
+            path="/dashboard/jobs"
+            element={
+              <RequireCandidate>
+                <CandidateJobs />
+              </RequireCandidate>
+            }
+          />
+          <Route
+            path="/dashboard/applications"
+            element={
+              <RequireCandidate>
+                <CandidateApplications />
               </RequireCandidate>
             }
           />
@@ -60,6 +79,14 @@ export default function App() {
             element={<StaffForgotPassword />}
           />
           <Route path="/staff/reset-password" element={<StaffResetPassword />} />
+          <Route
+            path="/hr/home"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <HRHome />
+              </RequireStaff>
+            }
+          />
           <Route
             path="/hr"
             element={

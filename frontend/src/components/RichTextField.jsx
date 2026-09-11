@@ -88,14 +88,15 @@ export default function RichTextField({ label, value, onChange, placeholder }) {
         contentEditable
         onPaste={handlePaste}
         onInput={() => onChange(editorRef.current.innerHTML)}
-        className="rich-text-content"
+        className="rich-text-content form-control"
         data-placeholder={placeholder}
         style={{
           minHeight: 160,
           border: '1px solid var(--color-border)',
-          borderRadius: 'var(--radius)',
-          padding: 10,
-          fontSize: 'inherit'
+          borderRadius: 'var(--radius-sm)',
+          padding: '11px 14px',
+          fontSize: 'inherit',
+          background: 'var(--color-bg-input)'
         }}
       />
     </label>

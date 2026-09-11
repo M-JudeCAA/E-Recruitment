@@ -199,7 +199,7 @@ export default function ApplyForm() {
               {steps[stepIndex].key === 'submit' && (
                 <SubmitStep vacancy={vacancy} applicationId={application?.id} status={application?.status}
                   onSubmitted={() => setApplication({ ...application, status: 'Submitted' })}
-                  onWithdrawn={() => navigate('/dashboard')} />
+                  onWithdrawn={() => navigate('/dashboard/applications')} />
               )}
 
               <Alert type="success" message={message} />

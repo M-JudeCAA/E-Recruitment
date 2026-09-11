@@ -1,8 +1,9 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Briefcase, Plane, User, LogOut } from "lucide-react";
+import { Briefcase, User, LogOut } from "lucide-react";
 import { useAuth } from "../models/AuthContext";
 import NotificationBell from "./NotificationBell";
+import ucaaLogo from "../assets/ucaa-logo.png";
 
 // CHANGED - was a separate, hardcoded palette disconnected from
 // theme.css (and from CandidateLogin.jsx's own separate hardcoded
@@ -64,12 +65,13 @@ export default function Navbar() {
           gap: 20,
         }}
       >
-        {/* Logo placeholder - a real UCAA logo asset can be dropped in and
-            swapped for this SVG mark; the wordmark/link behavior stays the
-            same either way. Links to the HR dashboard for a signed-in staff
-            member (their landing page after login), or home otherwise. */}
+        {/* Real UCAA logo - the PNG's own background is opaque white, so it
+            sits on a small white rounded card rather than directly on the
+            navbar's blue gradient. Links to the HR home page for a
+            signed-in staff member (their landing page after login), or
+            home otherwise. */}
         <Link
-          to={staff ? "/hr" : "/"}
+          to={staff ? "/hr/home" : "/"}
           style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}
         >
           <span
@@ -77,15 +79,16 @@ export default function Navbar() {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              width: 34,
-              height: 34,
+              width: 38,
+              height: 38,
               flexShrink: 0,
-              borderRadius: "50%",
-              background: "rgba(255,255,255,0.15)",
-              border: "1px solid rgba(255,255,255,0.4)",
+              borderRadius: 8,
+              background: "#FFFFFF",
+              padding: 3,
+              boxSizing: "border-box",
             }}
           >
-            <Plane size={18} color="#FFFFFF" style={{ transform: "rotate(45deg)" }} />
+            <img src={ucaaLogo} alt="UCAA logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           </span>
           <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
             <span style={{ ...linkStyle, fontWeight: 700, fontSize: 14.5 }}>

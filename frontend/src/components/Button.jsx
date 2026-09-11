@@ -7,11 +7,12 @@ const VARIANTS = {
   ghost: { background: 'transparent', color: 'var(--color-text-muted)', border: '1px solid var(--color-border)' }
 };
 
-export default function Button({ variant = 'primary', children, style, disabled, ...props }) {
+export default function Button({ variant = 'primary', children, style, disabled, className, ...props }) {
   return (
     <button
       {...props}
       disabled={disabled}
+      className={`btn btn-${variant}${className ? ` ${className}` : ''}`}
       style={{
         ...VARIANTS[variant],
         padding: '8px 16px',

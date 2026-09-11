@@ -1,14 +1,15 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Briefcase, FileText, Building2, CalendarClock, Award } from 'lucide-react';
+import { Home, Briefcase, FileText, Building2, CalendarClock, Award } from 'lucide-react';
 
 // Shared across every /hr/* screen so the navigation is identical no matter
 // which one you're on. Vacancies/Applications/Interviews/Offer are tabs on
 // the HR dashboard itself (driven by /hr's ?tab= query param, read in
-// HRDashboard.jsx), not separate routes - Departments is its own existing
-// screen (DepartmentAdmin) with its own create/approve workflow, so it
-// links out to /hr/departments instead of duplicating that here.
+// HRDashboard.jsx), not separate routes - Departments and Home are their
+// own existing screens (DepartmentAdmin / HRHome) with their own routes, so
+// they link out directly instead of duplicating that here.
 const ITEMS = [
+  { key: 'home', label: 'Home', icon: Home, to: '/hr/home' },
   { key: 'vacancies', label: 'Vacancy Management', icon: Briefcase, to: '/hr' },
   { key: 'applications', label: 'Application Management', icon: FileText, to: '/hr?tab=applications' },
   { key: 'departments', label: 'Department Management', icon: Building2, to: '/hr/departments' },
