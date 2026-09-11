@@ -32,7 +32,7 @@ export default function VacancyAdvert({
   const hasEssential = essentialRequirements?.length || minimumEducationLevel || minimumExperienceYears || preferredFieldOfStudy;
 
   return (
-    <div className="rich-text-content">
+    <div>
       <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-primary-dark)', marginBottom: 4 }}>{title || 'Untitled position'}</div>
 
       <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0 20px' }}>
@@ -49,7 +49,14 @@ export default function VacancyAdvert({
       {jobPurpose && (
         <>
           <h4 style={{ marginBottom: 6 }}>Job Purpose</h4>
-          <div dangerouslySetInnerHTML={{ __html: jobPurpose }} />
+          {/* rich-text-content is scoped to just this pasted HTML (not the
+              whole advert, as it used to be) - it's the only place raw
+              pasted content with its own inconsistent heading sizes lives;
+              the facts table and requirement lists above/below are
+              deliberately sized inline and shouldn't be flattened to the
+              page's base font-size along with it. See theme.css's comment
+              on .rich-text-content * for why the override exists at all. */}
+          <div className="rich-text-content" dangerouslySetInnerHTML={{ __html: jobPurpose }} />
         </>
       )}
 

@@ -1,13 +1,14 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Home, Briefcase, FileText } from 'lucide-react';
+import { Home, FileText } from 'lucide-react';
 
 // Shared across every /dashboard/* screen, mirroring HRSidebar's pattern
 // for the staff side of the app. Home is the default landing page after
-// candidate login (see CandidateLogin.jsx's navigate("/dashboard")).
+// candidate login (see CandidateLogin.jsx's navigate("/dashboard")) and
+// now also carries the Available Jobs search/listing directly - there's
+// no separate jobs item/route any more, see CandidateHome.jsx.
 const ITEMS = [
   { key: 'home', label: 'Home', icon: Home, to: '/dashboard' },
-  { key: 'jobs', label: 'Available Jobs', icon: Briefcase, to: '/dashboard/jobs' },
   { key: 'applications', label: 'Application', icon: FileText, to: '/dashboard/applications' },
 ];
 

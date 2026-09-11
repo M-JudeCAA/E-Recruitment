@@ -10,7 +10,6 @@ import CandidateLogin from "./views/CandidateLogin";
 import ForgotPassword from "./views/ForgotPassword";
 import ResetPassword from "./views/ResetPassword";
 import CandidateHome from "./views/CandidateHome";
-import CandidateJobs from "./views/CandidateJobs";
 import CandidateApplications from "./views/CandidateApplications";
 import ApplyForm from "./views/ApplyForm";
 import StaffLogin from "./views/StaffLogin";
@@ -55,14 +54,6 @@ export default function App() {
             element={
               <RequireCandidate>
                 <CandidateHome />
-              </RequireCandidate>
-            }
-          />
-          <Route
-            path="/dashboard/jobs"
-            element={
-              <RequireCandidate>
-                <CandidateJobs />
               </RequireCandidate>
             }
           />
