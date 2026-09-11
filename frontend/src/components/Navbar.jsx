@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { Briefcase, User, LogOut } from "lucide-react";
+import { User, LogOut } from "lucide-react";
 import { useAuth } from "../models/AuthContext";
 import NotificationBell from "./NotificationBell";
 import CandidateNotificationBell from "./CandidateNotificationBell";
@@ -47,6 +47,12 @@ export default function Navbar() {
   return (
     <nav
       style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        height: "var(--navbar-height)",
+        zIndex: 100,
         width: "100%",
         background: `linear-gradient(90deg, ${ucaa.navy} 0%, ${ucaa.blue} 100%)`,
         borderBottom: `1px solid ${ucaa.line}`,
@@ -60,19 +66,23 @@ export default function Navbar() {
           bar would leave extra margin the page content doesn't have. */}
       <div
         style={{
-          padding: "14px 20px",
+          height: "100%",
+          padding: "0 20px",
           display: "flex",
           alignItems: "center",
           gap: 20,
+          boxSizing: "border-box",
         }}
       >
         {/* Real UCAA logo - the PNG's own background is opaque white, so it
             sits on a small white rounded card rather than directly on the
             navbar's blue gradient. Links to the HR home page for a
-            signed-in staff member (their landing page after login), or
-            home otherwise. */}
+            signed-in staff member, the candidate dashboard for a
+            signed-in candidate (the guest landing page's "Create an
+            account"/"Sign in" CTAs don't make sense once already signed
+            in), or the guest landing page otherwise. */}
         <Link
-          to={staff ? "/hr/home" : "/"}
+          to={staff ? "/hr/home" : candidate ? "/dashboard" : "/"}
           style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}
         >
           <span
@@ -106,9 +116,6 @@ export default function Navbar() {
             {candidate.fullName && (
               <span style={{ ...linkStyle, fontWeight: 400, opacity: 0.85 }}>{candidate.fullName}</span>
             )}
-            <Link to="/" style={{ ...linkStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Briefcase size={14} /> Available jobs
-            </Link>
             <Link to="/dashboard" style={linkStyle}>
               My dashboard
             </Link>
@@ -163,17 +170,7 @@ export default function Navbar() {
               <LogOut size={14} /> Staff log out
             </button>
           </>
-        ) : (
-          // A logged-in candidate has already declared which side of the
-          // app this session is for - staff sign-in is irrelevant to them,
-          // not just unavailable. Shown only to a genuinely anonymous
-          // visitor, who might be either kind of user.
-          !candidate && (
-            <Link to="/staff/login" style={linkStyle}>
-              Staff login
-            </Link>
-          )
-        )}
+        ) : null}
       </div>
     </nav>
   );

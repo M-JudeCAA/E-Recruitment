@@ -2,6 +2,7 @@ const panelMemberModel = require('../models/panelMemberModel');
 const panelAccessService = require('../services/panelAccessService');
 const interviewService = require('../services/interviewService');
 const { sendMail } = require('../utils/mailer');
+const { frontendUrl } = require('../config/frontendUrl');
 
 // HR Officer+ generates a scoped, single-use link for one panelist.
 // If the panelist has an email on file it's sent directly; either way the
@@ -22,7 +23,7 @@ async function generateLink(req, res) {
   await panelAccessService.revokeOutstandingTokens(panelMemberId);
 
   const token = await panelAccessService.createAccessToken(panelMemberId);
-  const url = `${process.env.FRONTEND_URL}/panel-score/${token}`;
+  const url = `${frontendUrl}/panel-score/${token}`;
 
   let emailed = false;
   if (panelMember.email) {

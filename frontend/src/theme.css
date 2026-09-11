@@ -45,6 +45,15 @@
   --spacing-sm: 8px;
   --spacing-md: 16px;
   --spacing-lg: 24px;
+
+  /* Navbar and Footer are position:fixed (see Navbar.jsx/Footer.jsx) so
+     they stay pinned to the viewport on scroll - these are the single
+     source of truth for their heights, read by both components
+     themselves and by App.jsx's content wrapper, which pads by exactly
+     these amounts so fixed-position content never overlaps routed
+     page content. */
+  --navbar-height: 64px;
+  --footer-height: 48px;
 }
 
 * {

@@ -6,6 +6,7 @@ const pendingRegistrationModel = require('../models/pendingRegistrationModel');
 const { sendMail } = require('../utils/mailer');
 const { createToken, consumeToken } = require('../services/tokenService');
 const { validateEmail, validatePassword } = require('../utils/validators');
+const { frontendUrl } = require('../config/frontendUrl');
 
 // Only ever forwarded into a redirect target, never used for anything
 // else - restricting it to this exact shape rules out an open-redirect
@@ -57,7 +58,7 @@ async function register(req, res) {
   });
 
   const token = await createToken({ type: 'EmailConfirmation', pendingRegistrationId: pending.id });
-  const confirmUrl = `${process.env.FRONTEND_URL}/confirm-email?token=${token}`
+  const confirmUrl = `${frontendUrl}/confirm-email?token=${token}`
     + (isValidReturnTo(returnTo) ? `&returnTo=${encodeURIComponent(returnTo)}` : '');
   await sendMail({
     to: email,
@@ -136,7 +137,7 @@ async function forgotPassword(req, res) {
   const candidate = await candidateModel.findByEmail(email);
   if (candidate) {
     const token = await createToken({ type: 'PasswordReset', candidateId: candidate.id });
-    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+    const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
     await sendMail({
       to: email,
       subject: 'Reset your e-Recruitment password',

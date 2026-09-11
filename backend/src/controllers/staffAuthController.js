@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const staffModel = require('../models/staffModel');
 const { sendMail } = require('../utils/mailer');
 const { createToken, consumeToken } = require('../services/tokenService');
+const { staffFrontendUrl } = require('../config/frontendUrl');
 
 async function login(req, res) {
   const { email, password } = req.body;
@@ -24,7 +25,7 @@ async function forgotPassword(req, res) {
   const staff = await staffModel.findByEmail(email);
   if (staff) {
     const token = await createToken({ type: 'PasswordReset', staffId: staff.id });
-    const resetUrl = `${process.env.FRONTEND_URL}/staff/reset-password?token=${token}`;
+    const resetUrl = `${staffFrontendUrl}/staff/reset-password?token=${token}`;
     await sendMail({
       to: email,
       subject: 'Reset your UCAA e-Recruitment staff password',

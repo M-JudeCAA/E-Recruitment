@@ -4,6 +4,7 @@ const prisma = require('../config/db');
 const staffModel = require('../models/staffModel');
 const { sendMail } = require('../utils/mailer');
 const { createToken } = require('../services/tokenService');
+const { staffFrontendUrl } = require('../config/frontendUrl');
 
 // Only these two - a PHRO+ can never create another PHRO+, Manager, or
 // Director account through this endpoint (Decision: PHRO+ creates
@@ -44,7 +45,7 @@ async function create(req, res) {
   });
 
   const token = await createToken({ type: 'PasswordReset', staffId: staff.id });
-  const setPasswordUrl = `${process.env.FRONTEND_URL}/staff/reset-password?token=${token}`;
+  const setPasswordUrl = `${staffFrontendUrl}/staff/reset-password?token=${token}`;
   await sendMail({
     to: staff.email,
     subject: 'Your UCAA e-Recruitment staff account',

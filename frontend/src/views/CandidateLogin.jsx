@@ -90,7 +90,7 @@ export default function CandidateLogin() {
   return (
     <div
       style={{
-        minHeight: "100vh",
+        minHeight: "calc(100vh - var(--navbar-height) - var(--footer-height))",
         width: "100%",
         display: "flex",
         alignItems: "center",

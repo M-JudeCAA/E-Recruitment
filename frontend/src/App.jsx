@@ -23,7 +23,7 @@ import StaffAdmin from "./views/StaffAdmin";
 import DelegationAdmin from "./views/DelegationAdmin";
 import VacancyDetail from "./views/VacancyDetail";
 import PanelScoreAccess from "./views/PanelScoreAccess";
-import { RequireCandidate, RequireStaff } from "./components/ProtectedRoute";
+import { RequireCandidate, RequireStaff, RequireStaffPort } from "./components/ProtectedRoute";
 
 // Padding lives here, not on the app shell - Navbar/Footer render outside
 // this entirely, full width with no inset. Only routes nested under this
@@ -44,9 +44,15 @@ export default function App() {
     <div style={{ fontFamily: "sans-serif", width: "100%" }}>
       <Navbar />
 
+      {/* Navbar and Footer are position:fixed (pinned to the viewport on
+          scroll) - this padding is what keeps routed content from
+          rendering underneath either of them. Applied once here rather
+          than in every view, including the full-bleed ones registered as
+          siblings below (their own edge-to-edge backgrounds still start
+          right under the navbar, not behind it). */}
+      <div style={{ paddingTop: "var(--navbar-height)", paddingBottom: "var(--footer-height)", boxSizing: "border-box" }}>
       <Routes>
         <Route element={<PaddedLayout />}>
-          <Route path="/" element={<Home />} />
           <Route path="/confirm-email" element={<ConfirmEmail />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />
@@ -68,9 +74,20 @@ export default function App() {
           />
           <Route
             path="/staff/forgot-password"
-            element={<StaffForgotPassword />}
+            element={
+              <RequireStaffPort>
+                <StaffForgotPassword />
+              </RequireStaffPort>
+            }
           />
-          <Route path="/staff/reset-password" element={<StaffResetPassword />} />
+          <Route
+            path="/staff/reset-password"
+            element={
+              <RequireStaffPort>
+                <StaffResetPassword />
+              </RequireStaffPort>
+            }
+          />
           <Route
             path="/hr/home"
             element={
@@ -128,6 +145,7 @@ export default function App() {
             (a full-viewport gradient card, or the wizard's own themed
             wrapper), so adding padding here would inset that background
             from the window edge - the exact bug this layout split avoids. */}
+        <Route path="/" element={<Home />} />
         <Route path="/register" element={<Register />} />
         <Route path="/login" element={<CandidateLogin />} />
         <Route
@@ -146,8 +164,16 @@ export default function App() {
             </RequireCandidate>
           }
         />
-        <Route path="/staff/login" element={<StaffLogin />} />
+        <Route
+          path="/staff/login"
+          element={
+            <RequireStaffPort>
+              <StaffLogin />
+            </RequireStaffPort>
+          }
+        />
       </Routes>
+      </div>
 
       <Footer />
     </div>

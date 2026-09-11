@@ -29,8 +29,12 @@ export default function HRSidebar({ active }) {
         border: '1px solid var(--color-border)',
         borderRadius: 'var(--radius)',
         padding: 'var(--spacing-sm)',
+        boxSizing: 'border-box',
+        // See CandidateSidebar.jsx's comment - same reasoning applies here.
         position: 'sticky',
-        top: 'var(--spacing-md)',
+        top: 'calc(var(--navbar-height) + var(--spacing-md))',
+        maxHeight: 'calc(100vh - var(--navbar-height) - var(--footer-height) - var(--spacing-lg))',
+        overflowY: 'auto',
       }}
     >
       {ITEMS.map(({ key, label, icon: Icon, to }) => {

@@ -295,14 +295,7 @@ export default function CandidateHome() {
                       <span><StatusBadge status={v.status} /></span>
                     </div>
 
-                    <div style={{ marginTop: 'auto', display: 'flex', gap: 8 }}>
-                      <Button
-                        variant="secondary"
-                        style={{ flex: 1 }}
-                        onClick={(e) => { e.stopPropagation(); setDetailsVacancy(v); }}
-                      >
-                        View Details
-                      </Button>
+                    <div style={{ marginTop: 'auto', display: 'flex' }}>
                       <Link
                         to={`/apply/${v.id}`}
                         style={{ flex: 1, textDecoration: 'none' }}

@@ -1,8 +1,18 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../models/AuthContext';
+import { isStaffPort } from '../staffPort';
 
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
+
+// Guards the unauthenticated staff entry points (login, forgot/reset
+// password) so they only render from the staff-only port - reached
+// directly by URL on the guest port otherwise, since removing the navbar
+// link (Navbar.jsx) only hides the link, not the route itself.
+export function RequireStaffPort({ children }) {
+  if (!isStaffPort()) return <Navigate to="/" replace />;
+  return children;
+}
 
 export function RequireStaff({ minRole = 'HR_Officer', children }) {
   const { staff } = useAuth();

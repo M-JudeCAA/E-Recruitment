@@ -22,8 +22,20 @@ export default function CandidateSidebar({ active }) {
         border: '1px solid var(--color-border)',
         borderRadius: 'var(--radius)',
         padding: 'var(--spacing-sm)',
+        boxSizing: 'border-box',
+        // Sticky, not a real position:fixed - it stays pinned in the
+        // viewport as the page scrolls (reads as "fixed" to a user) while
+        // still reserving its own width as a normal flex item, so every
+        // page that renders it needs no matching margin/left-offset hack.
+        // top clears the fixed Navbar (App.jsx's --navbar-height) with a
+        // little breathing room; maxHeight stops short of the fixed
+        // Footer and switches to its own scrollbar once the item list
+        // outgrows the space between them, instead of the sidebar
+        // growing taller than the viewport or sliding under the footer.
         position: 'sticky',
-        top: 'var(--spacing-md)',
+        top: 'calc(var(--navbar-height) + var(--spacing-md))',
+        maxHeight: 'calc(100vh - var(--navbar-height) - var(--footer-height) - var(--spacing-lg))',
+        overflowY: 'auto',
       }}
     >
       {ITEMS.map(({ key, label, icon: Icon, to }) => {

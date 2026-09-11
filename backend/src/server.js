@@ -44,7 +44,8 @@ process.on('uncaughtException', (err) => {
 
 const app = express();
 
-app.use(cors({ origin: process.env.FRONTEND_URL }));
+const { allowedOrigins } = require('./config/frontendUrl');
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

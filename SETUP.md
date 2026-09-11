@@ -54,7 +54,7 @@ Every other field in `.env.example` needs a real value too:
 | `JWT_EXPIRES_IN` | Leave as `8h` |
 | `INTERNAL_EMAIL_DOMAIN` | Leave as `caa.co.ug` — determines Internal vs External candidate type |
 | `PORT` | Leave as `4000` |
-| `FRONTEND_URL` | Leave as `http://localhost:5173` |
+| `FRONTEND_URL` | Comma-separated list of allowed CORS origins. Leave as `http://localhost:5173,http://localhost:4174` (guest dev server + staff preview, see [below](#staff-access-on-a-separate-port)) |
 | `SMTP_*` | See [Email](#email-gmail-smtp) below |
 | `UPLOAD_DIR` | Leave as `./uploads` |
 
@@ -126,8 +126,32 @@ npm run dev       # vite, http://localhost:5173
 
 Check the backend is up: `curl http://localhost:4000/health` → `{"status":"ok"}`
 
-Open http://localhost:5173 and log in with one of the seeded staff accounts,
-or register a new candidate account.
+Open http://localhost:5173 to register or log in as a candidate. Staff sign
+in from a separate port — see below.
+
+## Staff access on a separate port
+
+`/staff/login`, `/staff/forgot-password`, and `/staff/reset-password` only
+render when the app is served from the staff port (`4174` by default,
+`VITE_STAFF_PORT` to change it) — `RequireStaffPort` in
+`frontend/src/components/ProtectedRoute.jsx` bounces them back to `/` on
+any other port, including the guest dev server on `5173`. It's the same SPA
+(same build, same routes), just gated by `window.location.port`:
+
+```bash
+cd frontend
+npm run build            # produces dist/, needed before either preview
+npm run preview:staff    # vite preview, http://localhost:4174
+```
+
+Staff sign in at http://localhost:4174/staff/login. `FRONTEND_URL` in
+`backend/.env` must list the guest origin first, then the staff origin
+(`http://localhost:5173,http://localhost:4174`) — order matters, since the
+backend also uses the second entry (`staffFrontendUrl` in
+`backend/src/config/frontendUrl.js`) to build the links it emails staff
+(new-account "set your password", "reset your password"). Getting the
+order wrong doesn't break CORS, but it does send staff an email link to a
+port that immediately redirects them away.
 
 ## Common issues
 
