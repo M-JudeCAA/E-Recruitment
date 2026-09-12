@@ -11,6 +11,8 @@ import ForgotPassword from "./views/ForgotPassword";
 import ResetPassword from "./views/ResetPassword";
 import ProfileCompletePage from "./views/ProfileCompletePage";
 import CandidateHome from "./views/CandidateHome";
+import CandidateJobs from "./views/CandidateJobs";
+import CandidateProfile from "./views/CandidateProfile";
 import CandidateApplications from "./views/CandidateApplications";
 import ApplyForm from "./views/ApplyForm";
 import StaffLogin from "./views/StaffLogin";
@@ -65,10 +67,26 @@ export default function App() {
             }
           />
           <Route
+            path="/dashboard/jobs"
+            element={
+              <RequireCandidate>
+                <CandidateJobs />
+              </RequireCandidate>
+            }
+          />
+          <Route
             path="/dashboard/applications"
             element={
               <RequireCandidate>
                 <CandidateApplications />
+              </RequireCandidate>
+            }
+          />
+          <Route
+            path="/dashboard/profile"
+            element={
+              <RequireCandidate>
+                <CandidateProfile />
               </RequireCandidate>
             }
           />

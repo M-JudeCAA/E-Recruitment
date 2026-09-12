@@ -24,4 +24,7 @@ export function validateNationalId(nationalId) {
 }
 
 export const PASSWORD_HINT = 'At least 8 characters, with an uppercase letter, a lowercase letter, a digit, and a symbol.';
-export const NATIONAL_ID_HINT = '14 characters: C, then F or M, then your 2-digit birth year, then 10 letters/numbers.';
+// Deliberately doesn't describe the NIN format (C/F-M/birth year/etc.) -
+// just flags the entry as wrong and asks for a correct one, rather than
+// handing out the exact rule being checked against.
+export const NATIONAL_ID_ERROR = 'That doesn\'t look like a valid National ID number. Please check and enter it again.';

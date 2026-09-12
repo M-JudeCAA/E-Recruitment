@@ -4,6 +4,7 @@ const notificationController = require('../controllers/candidateNotificationCont
 const cvParseController = require('../controllers/cvParseController');
 const { authenticate, requireCandidate } = require('../middleware/auth');
 const { uploadMemory } = require('../middleware/uploadMemory');
+const { uploadPhoto } = require('../middleware/upload');
 const asyncHandler = require('../utils/asyncHandler');
 
 const router = express.Router();
@@ -23,6 +24,8 @@ router.post('/me/education', authenticate, requireCandidate, asyncHandler(contro
 router.put('/me/education/:id', authenticate, requireCandidate, asyncHandler(controller.updateEducation));
 router.delete('/me/education/:id', authenticate, requireCandidate, asyncHandler(controller.deleteEducation));
 router.put('/me/internal-profile', authenticate, requireCandidate, asyncHandler(controller.updateInternalProfile));
+router.put('/me/photo', authenticate, requireCandidate, uploadPhoto.single('photo'), asyncHandler(controller.updatePhoto));
+router.delete('/me/photo', authenticate, requireCandidate, asyncHandler(controller.removePhoto));
 router.get('/me/applications', authenticate, requireCandidate, asyncHandler(controller.myApplications));
 router.get('/me/notifications', authenticate, requireCandidate, asyncHandler(notificationController.listMine));
 router.patch('/me/notifications/:id/read', authenticate, requireCandidate, asyncHandler(notificationController.markRead));

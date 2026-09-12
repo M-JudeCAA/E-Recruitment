@@ -4,6 +4,7 @@ const applicationModel = require('../models/applicationModel');
 const profileEntriesModel = require('../models/profileEntriesModel');
 const { validateNationalId } = require('../utils/validators');
 const { checkAndFireCompletionEvent } = require('../services/profileCompletionService');
+const { fileUrl } = require('../middleware/upload');
 
 // Candidate rows carry passwordHash - fine for the internal auth-check
 // reads in candidateAuthController, but every response here goes straight
@@ -121,8 +122,11 @@ async function updateProfile(req, res) {
   // their id as a National ID in this same request - a foreign candidate's
   // passport format varies too much by country to validate meaningfully,
   // and idType/nationalId are always submitted together by the frontend.
+  // Deliberately doesn't describe the NIN format - just flags the entry
+  // as wrong and asks for a correct one, matching the frontend's own
+  // validation message (ProfileCompletionForm.jsx / validators.js).
   if (idType === 'NationalID' && nationalId && !validateNationalId(nationalId)) {
-    return res.status(400).json({ error: 'National ID must be 14 characters: C, then F or M, then 2-digit birth year, then 10 alphanumeric characters' });
+    return res.status(400).json({ error: 'That doesn\'t look like a valid National ID number. Please check and enter it again.' });
   }
 
   const data = {};
@@ -135,6 +139,21 @@ async function updateProfile(req, res) {
 
   const candidate = await candidateModel.update(req.user.id, data);
   await checkAndFireCompletionEvent(req.user.id);
+  res.json(omitPasswordHash(candidate));
+}
+
+// Optional - never part of profileCompleteness's required fields. Old
+// photo files, if any, are deliberately left on disk rather than
+// unlinked, matching the rest of this codebase's uploads (a replaced
+// cvUrl/coverLetterUrl isn't cleaned up either).
+async function updatePhoto(req, res) {
+  if (!req.file) return res.status(400).json({ error: 'No photo uploaded' });
+  const candidate = await candidateModel.update(req.user.id, { photoUrl: fileUrl(req.file) });
+  res.json(omitPasswordHash(candidate));
+}
+
+async function removePhoto(req, res) {
+  const candidate = await candidateModel.update(req.user.id, { photoUrl: null });
   res.json(omitPasswordHash(candidate));
 }
 
@@ -159,5 +178,6 @@ async function myApplications(req, res) {
 
 module.exports = {
   me, addWorkExperience, addEducation, updateProfile, updateInternalProfile, myApplications,
-  updateEducation, deleteEducation, updateWorkExperience, deleteWorkExperience
+  updateEducation, deleteEducation, updateWorkExperience, deleteWorkExperience,
+  updatePhoto, removePhoto
 };

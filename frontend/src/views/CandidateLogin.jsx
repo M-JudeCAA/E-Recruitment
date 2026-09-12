@@ -70,7 +70,7 @@ export default function CandidateLogin() {
     setSubmitting(true);
     try {
       const res = await client.post("/api/candidates/auth/login", form);
-      loginCandidate(res.data.token, res.data.candidateType, res.data.fullName);
+      loginCandidate(res.data.token, res.data.candidateType, res.data.fullName, res.data.photoUrl);
       sessionStorage.removeItem("pendingReturnTo");
 
       // Precedence: a pending Apply-page destination always wins, even on

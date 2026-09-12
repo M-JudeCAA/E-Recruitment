@@ -33,3 +33,17 @@ export function getMissingProfileFields(candidate) {
 export function isProfileComplete(candidate) {
   return getMissingProfileFields(candidate).length === 0;
 }
+
+// Denominator matches getMissingProfileFields' own checks: the 4 base
+// fields it always checks (location, workAuthorization, nationalId,
+// education), plus INTERNAL_PROFILE_FIELDS when the candidate is
+// Internal - so this stays in lockstep with that function's notion of
+// "missing" without duplicating the field list.
+const BASE_FIELD_COUNT = 4;
+
+export function getProfileCompletionPercent(candidate) {
+  if (!candidate) return 0;
+  const total = BASE_FIELD_COUNT + (candidate.candidateType === 'Internal' ? INTERNAL_PROFILE_FIELDS.length : 0);
+  const missing = getMissingProfileFields(candidate).length;
+  return Math.round(((total - missing) / total) * 100);
+}

@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const applicationModel = require('../models/applicationModel');
+const candidateModel = require('../models/candidateModel');
 
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || './uploads');
 
@@ -24,8 +25,12 @@ async function serve(req, res) {
   if (req.user.type === 'staff') {
     // allowed
   } else if (req.user.type === 'candidate') {
-    const owns = await applicationModel.findOwnedByCandidate(req.user.id, relativeUrl);
-    if (!owns) return res.status(403).json({ error: 'You do not have access to this file' });
+    // A file is either attached to one of the candidate's own
+    // applications (cvUrl/coverLetterUrl) or is their own profile photo -
+    // either is sufficient.
+    const ownsApplicationFile = await applicationModel.findOwnedByCandidate(req.user.id, relativeUrl);
+    const ownsPhoto = await candidateModel.findOwnedByCandidate(req.user.id, relativeUrl);
+    if (!ownsApplicationFile && !ownsPhoto) return res.status(403).json({ error: 'You do not have access to this file' });
   } else {
     return res.status(403).json({ error: 'Not authorized' });
   }

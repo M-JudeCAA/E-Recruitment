@@ -4,6 +4,8 @@ import { User, LogOut } from "lucide-react";
 import { useAuth } from "../models/AuthContext";
 import NotificationBell from "./NotificationBell";
 import CandidateNotificationBell from "./CandidateNotificationBell";
+import Avatar from "./Avatar";
+import { candidateFileSrc } from "../utils/fileSrc";
 import ucaaLogo from "../assets/ucaa-logo.png";
 
 // CHANGED - was a separate, hardcoded palette disconnected from
@@ -114,7 +116,16 @@ export default function Navbar() {
         {candidate && (
           <>
             {candidate.fullName && (
-              <span style={{ ...linkStyle, fontWeight: 400, opacity: 0.85 }}>{candidate.fullName}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Avatar
+                  src={candidateFileSrc(candidate.photoUrl)}
+                  size={28}
+                  background="rgba(255,255,255,0.15)"
+                  border="1px solid rgba(255,255,255,0.4)"
+                  iconColor="#FFFFFF"
+                />
+                <span style={{ ...linkStyle, fontWeight: 400, opacity: 0.85 }}>{candidate.fullName}</span>
+              </span>
             )}
             <Link to="/dashboard" style={linkStyle}>
               My dashboard

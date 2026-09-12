@@ -7,7 +7,8 @@ import Button from './Button';
 import Alert from './Alert';
 import LoadingState from './LoadingState';
 import CvAutofillPanel from './CvAutofillPanel';
-import { validateNationalId, NATIONAL_ID_HINT } from '../utils/validators';
+import PhotoUploadPanel from './PhotoUploadPanel';
+import { validateNationalId, NATIONAL_ID_ERROR } from '../utils/validators';
 import { isProfileComplete } from '../utils/profileCompleteness';
 
 const emptyEducation = { institution: '', qualificationLevel: '', fieldOfStudy: '', yearCompleted: '' };
@@ -24,7 +25,7 @@ export default function ProfileCompletionForm({ onComplete }) {
   const { candidate } = useAuth();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
-  const [form, setForm] = useState({ idType: '', nationalId: '', location: '', workAuthorization: '', linkedinUrl: '' });
+  const [form, setForm] = useState({ idType: '', nationalId: '', location: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '' });
   const [internalForm, setInternalForm] = useState({ employeeId: '', department: '', position: '', dateJoined: '', supervisorName: '', supervisorEmail: '' });
   const [newEdu, setNewEdu] = useState(emptyEducation);
   const [newExp, setNewExp] = useState(emptyExperience);
@@ -71,7 +72,8 @@ export default function ProfileCompletionForm({ onComplete }) {
       nationalId: data.nationalId || '',
       location: data.location || '',
       workAuthorization: data.workAuthorization || '',
-      linkedinUrl: data.linkedinUrl || ''
+      linkedinUrl: data.linkedinUrl || '',
+      portfolioUrl: data.portfolioUrl || ''
     });
     if (data.internalProfile) {
       const p = data.internalProfile;
@@ -93,7 +95,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       case 'idType': return value ? '' : 'Select an ID type.';
       case 'nationalId':
         if (!value) return 'This field is required.';
-        if (form.idType === 'NationalID' && !validateNationalId(value)) return NATIONAL_ID_HINT;
+        if (form.idType === 'NationalID' && !validateNationalId(value)) return NATIONAL_ID_ERROR;
         return '';
       case 'location': return value ? '' : 'This field is required.';
       case 'workAuthorization': return value ? '' : 'This field is required.';
@@ -274,6 +276,11 @@ export default function ProfileCompletionForm({ onComplete }) {
 
   return (
     <form onSubmit={handleSave}>
+      <PhotoUploadPanel
+        photoUrl={profile?.photoUrl}
+        onChange={(photoUrl) => setProfile((p) => (p ? { ...p, photoUrl } : p))}
+      />
+
       <CvAutofillPanel
         onLinkedinSuggested={(url) => setForm((f) => ({ ...f, linkedinUrl: url }))}
         onEducationSuggested={(entry) => setStagedEducation((rows) => [...rows, {
@@ -297,7 +304,6 @@ export default function ProfileCompletionForm({ onComplete }) {
           label={form.idType === 'Passport' ? 'Passport number' : 'National ID number'}
           required value={form.nationalId} onChange={setField('nationalId')} onBlur={blur('nationalId')}
           error={showError('nationalId')}
-          hint={form.idType === 'NationalID' ? NATIONAL_ID_HINT : undefined}
         />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
@@ -311,8 +317,12 @@ export default function ProfileCompletionForm({ onComplete }) {
           <option value="Sponsorship">Would need sponsorship</option>
         </Select>
       </div>
-      <TextField label="LinkedIn or personal site" hint="Optional" placeholder="linkedin.com/in/..."
-        value={form.linkedinUrl} onChange={setField('linkedinUrl')} />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
+        <TextField label="LinkedIn" hint="Optional" placeholder="linkedin.com/in/..."
+          value={form.linkedinUrl} onChange={setField('linkedinUrl')} />
+        <TextField label="Portfolio or personal website" hint="Optional" placeholder="yoursite.com"
+          value={form.portfolioUrl} onChange={setField('portfolioUrl')} />
+      </div>
 
       <h3 style={{ fontSize: 15, marginBottom: 8, marginTop: 24 }}>Education</h3>
       {(profile?.education || []).length === 0 && stagedEducation.length === 0 && (submitted || touched.education) && (

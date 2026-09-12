@@ -339,6 +339,9 @@ model Candidate {
   linkedinUrl        String?
   portfolioUrl       String?
   workAuthorization  String?        // 'Yes' | 'No' | 'Sponsorship'
+  // Optional avatar, same /api/files/:filename authenticated-serving
+  // pattern as Application.cvUrl/coverLetterUrl - never a public URL.
+  photoUrl           String?
 
   // Null until the first successful login - distinguishes a brand-new
   // candidate (who should land on the full /profile/complete page) from a

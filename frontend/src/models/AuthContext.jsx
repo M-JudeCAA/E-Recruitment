@@ -6,7 +6,8 @@ export function AuthProvider({ children }) {
   const [candidate, setCandidate] = useState(() => {
     const type = localStorage.getItem('candidateType');
     const fullName = localStorage.getItem('candidateName');
-    return localStorage.getItem('candidateToken') ? { candidateType: type, fullName } : null;
+    const photoUrl = localStorage.getItem('candidatePhotoUrl') || null;
+    return localStorage.getItem('candidateToken') ? { candidateType: type, fullName, photoUrl } : null;
   });
   const [staff, setStaff] = useState(() => {
     const role = localStorage.getItem('staffRole');
@@ -14,17 +15,29 @@ export function AuthProvider({ children }) {
     return localStorage.getItem('staffToken') ? { role, name } : null;
   });
 
-  function loginCandidate(token, candidateType, fullName) {
+  function loginCandidate(token, candidateType, fullName, photoUrl) {
     localStorage.setItem('candidateToken', token);
     localStorage.setItem('candidateType', candidateType);
     if (fullName) localStorage.setItem('candidateName', fullName);
-    setCandidate({ candidateType, fullName });
+    if (photoUrl) localStorage.setItem('candidatePhotoUrl', photoUrl);
+    else localStorage.removeItem('candidatePhotoUrl');
+    setCandidate({ candidateType, fullName, photoUrl: photoUrl || null });
   }
   function logoutCandidate() {
     localStorage.removeItem('candidateToken');
     localStorage.removeItem('candidateType');
     localStorage.removeItem('candidateName');
+    localStorage.removeItem('candidatePhotoUrl');
     setCandidate(null);
+  }
+  // Called right after a photo upload/removal (ProfileCompletionForm's
+  // PhotoUploadPanel) so the Navbar avatar updates immediately, without
+  // requiring a fresh login - AuthContext otherwise only ever reflects
+  // what the login response carried.
+  function updateCandidatePhoto(photoUrl) {
+    if (photoUrl) localStorage.setItem('candidatePhotoUrl', photoUrl);
+    else localStorage.removeItem('candidatePhotoUrl');
+    setCandidate((c) => (c ? { ...c, photoUrl } : c));
   }
 
   function loginStaff(token, role, name) {
@@ -41,7 +54,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ candidate, staff, loginCandidate, logoutCandidate, loginStaff, logoutStaff }}>
+    <AuthContext.Provider value={{ candidate, staff, loginCandidate, logoutCandidate, updateCandidatePhoto, loginStaff, logoutStaff }}>
       {children}
     </AuthContext.Provider>
   );

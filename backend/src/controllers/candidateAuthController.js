@@ -129,7 +129,10 @@ async function login(req, res) {
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN }
   );
-  res.json({ token, candidateType: candidate.candidateType, fullName: candidate.fullName, firstLogin });
+  res.json({
+    token, candidateType: candidate.candidateType, fullName: candidate.fullName,
+    photoUrl: candidate.photoUrl, firstLogin
+  });
 }
 
 async function forgotPassword(req, res) {
