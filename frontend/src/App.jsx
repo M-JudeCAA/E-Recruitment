@@ -25,7 +25,7 @@ import StaffAdmin from "./views/StaffAdmin";
 import DelegationAdmin from "./views/DelegationAdmin";
 import VacancyDetail from "./views/VacancyDetail";
 import PanelScoreAccess from "./views/PanelScoreAccess";
-import { RequireCandidate, RequireStaff, RequireStaffPort } from "./components/ProtectedRoute";
+import { RequireCandidate, RequireStaff, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
 
 // Padding lives here, not on the app shell - Navbar/Footer render outside
 // this entirely, full width with no inset. Only routes nested under this
@@ -54,42 +54,10 @@ export default function App() {
           right under the navbar, not behind it). */}
       <div style={{ paddingTop: "var(--navbar-height)", paddingBottom: "var(--footer-height)", boxSizing: "border-box" }}>
       <Routes>
+        {/* Staff-side and public routes - never gated by GuestPortGate.
+            The unauthenticated staff entry points below are gated the
+            opposite way instead (RequireStaffPort: staff port only). */}
         <Route element={<PaddedLayout />}>
-          <Route path="/confirm-email" element={<ConfirmEmail />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
-          <Route
-            path="/dashboard"
-            element={
-              <RequireCandidate>
-                <CandidateHome />
-              </RequireCandidate>
-            }
-          />
-          <Route
-            path="/dashboard/jobs"
-            element={
-              <RequireCandidate>
-                <CandidateJobs />
-              </RequireCandidate>
-            }
-          />
-          <Route
-            path="/dashboard/applications"
-            element={
-              <RequireCandidate>
-                <CandidateApplications />
-              </RequireCandidate>
-            }
-          />
-          <Route
-            path="/dashboard/profile"
-            element={
-              <RequireCandidate>
-                <CandidateProfile />
-              </RequireCandidate>
-            }
-          />
           <Route
             path="/staff/forgot-password"
             element={
@@ -154,34 +122,11 @@ export default function App() {
               </RequireStaff>
             }
           />
-          {/* Public - reached via a panelist's emailed/shared link, no login */}
+          {/* Public - reached via a panelist's emailed/shared link, no login,
+              and not gated by port since that link always points at the
+              guest origin (see backend/src/config/frontendUrl.js) anyway. */}
           <Route path="/panel-score/:token" element={<PanelScoreAccess />} />
         </Route>
-
-        {/* Full-bleed, self-contained pages - NOT wrapped in PaddedLayout.
-            Each already renders its own edge-to-edge width:100% background
-            (a full-viewport gradient card, or the wizard's own themed
-            wrapper), so adding padding here would inset that background
-            from the window edge - the exact bug this layout split avoids. */}
-        <Route path="/" element={<Home />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/login" element={<CandidateLogin />} />
-        <Route
-          path="/profile/complete"
-          element={
-            <RequireCandidate>
-              <ProfileCompletePage />
-            </RequireCandidate>
-          }
-        />
-        <Route
-          path="/apply/:vacancyId"
-          element={
-            <RequireCandidate>
-              <ApplyForm />
-            </RequireCandidate>
-          }
-        />
         <Route
           path="/staff/login"
           element={
@@ -190,6 +135,74 @@ export default function App() {
             </RequireStaffPort>
           }
         />
+
+        {/* Guest/candidate-side routes - all gated by GuestPortGate so none
+            of them render from the staff-only port; a staff member opening
+            any of these URLs there lands on staff login instead. */}
+        <Route element={<GuestPortGate />}>
+          <Route element={<PaddedLayout />}>
+            <Route path="/confirm-email" element={<ConfirmEmail />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route
+              path="/dashboard"
+              element={
+                <RequireCandidate>
+                  <CandidateHome />
+                </RequireCandidate>
+              }
+            />
+            <Route
+              path="/dashboard/jobs"
+              element={
+                <RequireCandidate>
+                  <CandidateJobs />
+                </RequireCandidate>
+              }
+            />
+            <Route
+              path="/dashboard/applications"
+              element={
+                <RequireCandidate>
+                  <CandidateApplications />
+                </RequireCandidate>
+              }
+            />
+            <Route
+              path="/dashboard/profile"
+              element={
+                <RequireCandidate>
+                  <CandidateProfile />
+                </RequireCandidate>
+              }
+            />
+          </Route>
+
+          {/* Full-bleed, self-contained pages - NOT wrapped in PaddedLayout.
+              Each already renders its own edge-to-edge width:100% background
+              (a full-viewport gradient card, or the wizard's own themed
+              wrapper), so adding padding here would inset that background
+              from the window edge - the exact bug this layout split avoids. */}
+          <Route path="/" element={<Home />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/login" element={<CandidateLogin />} />
+          <Route
+            path="/profile/complete"
+            element={
+              <RequireCandidate>
+                <ProfileCompletePage />
+              </RequireCandidate>
+            }
+          />
+          <Route
+            path="/apply/:vacancyId"
+            element={
+              <RequireCandidate>
+                <ApplyForm />
+              </RequireCandidate>
+            }
+          />
+        </Route>
       </Routes>
       </div>
 

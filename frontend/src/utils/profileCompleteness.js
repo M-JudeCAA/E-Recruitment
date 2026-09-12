@@ -7,7 +7,7 @@ const INTERNAL_PROFILE_FIELDS = ['employeeId', 'department', 'position', 'dateJo
 
 export function getMissingProfileFields(candidate) {
   const missing = [];
-  if (!candidate) return ['location', 'workAuthorization', 'nationalId', 'education'];
+  if (!candidate) return ['location', 'workAuthorization', 'nationalId', 'education', 'workExperience'];
 
   if (!candidate.location) missing.push('location');
   if (!candidate.workAuthorization) missing.push('workAuthorization');
@@ -19,6 +19,7 @@ export function getMissingProfileFields(candidate) {
   }
 
   if (!(candidate.education || []).length) missing.push('education');
+  if (!(candidate.workExperience || []).length) missing.push('workExperience');
 
   if (candidate.candidateType === 'Internal') {
     const internalProfile = candidate.internalProfile || {};
@@ -34,12 +35,12 @@ export function isProfileComplete(candidate) {
   return getMissingProfileFields(candidate).length === 0;
 }
 
-// Denominator matches getMissingProfileFields' own checks: the 4 base
+// Denominator matches getMissingProfileFields' own checks: the 5 base
 // fields it always checks (location, workAuthorization, nationalId,
-// education), plus INTERNAL_PROFILE_FIELDS when the candidate is
-// Internal - so this stays in lockstep with that function's notion of
-// "missing" without duplicating the field list.
-const BASE_FIELD_COUNT = 4;
+// education, workExperience), plus INTERNAL_PROFILE_FIELDS when the
+// candidate is Internal - so this stays in lockstep with that function's
+// notion of "missing" without duplicating the field list.
+const BASE_FIELD_COUNT = 5;
 
 export function getProfileCompletionPercent(candidate) {
   if (!candidate) return 0;

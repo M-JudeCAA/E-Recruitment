@@ -5,6 +5,8 @@ const profileEntriesModel = require('../models/profileEntriesModel');
 const { validateNationalId } = require('../utils/validators');
 const { checkAndFireCompletionEvent } = require('../services/profileCompletionService');
 const { fileUrl } = require('../middleware/upload');
+const { educationKey, workExperienceKey, certificateKey } = require('../utils/entryDedup');
+const { normalizeStringList } = require('../utils/vacancyValidation');
 
 // Candidate rows carry passwordHash - fine for the internal auth-check
 // reads in candidateAuthController, but every response here goes straight
@@ -17,18 +19,32 @@ function omitPasswordHash(candidate) {
 
 async function me(req, res) {
   const candidate = await candidateModel.findById(req.user.id, {
-    workExperience: true, education: true, internalProfile: true
+    workExperience: true, education: true, certificates: true, internalProfile: true
   });
   res.json(omitPasswordHash(candidate));
 }
 
 async function addWorkExperience(req, res) {
-  const { employer, jobTitle, startDate, endDate } = req.body;
+  const { employer, jobTitle, startDate, endDate, duties } = req.body;
+
+  // Idempotent: re-submitting an entry equivalent to one already on file
+  // (a re-uploaded CV suggesting the same role again, a retried or
+  // double-clicked request) returns the existing row instead of creating
+  // a duplicate - see entryDedup.js for what counts as "equivalent". Not
+  // keyed on duties - a later edit that only fills in/refines the duty
+  // list for the same role is still the same entry, not a new one.
+  const existing = await profileEntriesModel.findWorkExperienceForCandidate(req.user.id);
+  const key = workExperienceKey({ employer, jobTitle, startDate });
+  const duplicate = existing.find((e) => workExperienceKey(e) === key);
+  if (duplicate) return res.status(200).json(duplicate);
+
   const entry = await profileEntriesModel.createWorkExperience({
     candidateId: req.user.id, employer, jobTitle,
     startDate: new Date(startDate),
-    endDate: endDate ? new Date(endDate) : null
+    endDate: endDate ? new Date(endDate) : null,
+    duties: normalizeStringList(duties) || []
   });
+  await checkAndFireCompletionEvent(req.user.id);
   res.status(201).json(entry);
 }
 
@@ -45,6 +61,13 @@ async function addEducation(req, res) {
   if (!EDUCATION_LEVELS.includes(qualificationLevel)) {
     return res.status(400).json({ error: `Qualification level must be one of: ${EDUCATION_LEVELS.join(', ')}` });
   }
+
+  // Idempotent - see addWorkExperience's comment above; same reasoning.
+  const existing = await profileEntriesModel.findEducationForCandidate(req.user.id);
+  const key = educationKey({ institution, qualificationLevel, fieldOfStudy });
+  const duplicate = existing.find((e) => educationKey(e) === key);
+  if (duplicate) return res.status(200).json(duplicate);
+
   const entry = await profileEntriesModel.createEducation({
     candidateId: req.user.id, institution,
     qualificationLevelText: qualificationLevel,
@@ -83,11 +106,12 @@ async function deleteEducation(req, res) {
 async function updateWorkExperience(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid work experience id' });
-  const { employer, jobTitle, startDate, endDate } = req.body;
+  const { employer, jobTitle, startDate, endDate, duties } = req.body;
   const result = await profileEntriesModel.updateWorkExperience(id, req.user.id, {
     employer, jobTitle,
     startDate: new Date(startDate),
-    endDate: endDate ? new Date(endDate) : null
+    endDate: endDate ? new Date(endDate) : null,
+    duties: normalizeStringList(duties) || []
   });
   if (result.count === 0) return res.status(404).json({ error: 'Work experience entry not found' });
   res.json({ message: 'Work experience entry updated' });
@@ -99,6 +123,54 @@ async function deleteWorkExperience(req, res) {
   const result = await profileEntriesModel.deleteWorkExperience(id, req.user.id);
   if (result.count === 0) return res.status(404).json({ error: 'Work experience entry not found' });
   res.json({ message: 'Work experience entry deleted' });
+}
+
+// Optional - unlike education/work experience, never checked by
+// profileCompleteness.js, and adding one never fires checkAndFireCompletionEvent.
+async function addCertificate(req, res) {
+  const { name, issuingOrganization, issueDate, expiryDate } = req.body;
+  if (!name || !issuingOrganization) {
+    return res.status(400).json({ error: 'Certificate name and issuing organization are required' });
+  }
+
+  // Idempotent - see addWorkExperience's comment above; same reasoning.
+  // expiryDate is left out of the key so correcting/adding it later
+  // doesn't spawn a duplicate row.
+  const existing = await profileEntriesModel.findCertificatesForCandidate(req.user.id);
+  const key = certificateKey({ name, issuingOrganization, issueDate });
+  const duplicate = existing.find((c) => certificateKey(c) === key);
+  if (duplicate) return res.status(200).json(duplicate);
+
+  const entry = await profileEntriesModel.createCertificate({
+    candidateId: req.user.id, name, issuingOrganization,
+    issueDate: issueDate ? new Date(issueDate) : null,
+    expiryDate: expiryDate ? new Date(expiryDate) : null
+  });
+  res.status(201).json(entry);
+}
+
+async function updateCertificate(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid certificate id' });
+  const { name, issuingOrganization, issueDate, expiryDate } = req.body;
+  if (!name || !issuingOrganization) {
+    return res.status(400).json({ error: 'Certificate name and issuing organization are required' });
+  }
+  const result = await profileEntriesModel.updateCertificate(id, req.user.id, {
+    name, issuingOrganization,
+    issueDate: issueDate ? new Date(issueDate) : null,
+    expiryDate: expiryDate ? new Date(expiryDate) : null
+  });
+  if (result.count === 0) return res.status(404).json({ error: 'Certificate entry not found' });
+  res.json({ message: 'Certificate entry updated' });
+}
+
+async function deleteCertificate(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid certificate id' });
+  const result = await profileEntriesModel.deleteCertificate(id, req.user.id);
+  if (result.count === 0) return res.status(404).json({ error: 'Certificate entry not found' });
+  res.json({ message: 'Certificate entry deleted' });
 }
 
 const WORK_AUTHORIZATION_VALUES = ['Yes', 'No', 'Sponsorship'];
@@ -179,5 +251,6 @@ async function myApplications(req, res) {
 module.exports = {
   me, addWorkExperience, addEducation, updateProfile, updateInternalProfile, myApplications,
   updateEducation, deleteEducation, updateWorkExperience, deleteWorkExperience,
+  addCertificate, updateCertificate, deleteCertificate,
   updatePhoto, removePhoto
 };

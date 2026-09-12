@@ -357,6 +357,7 @@ model Candidate {
 
   workExperience     WorkExperience[]
   education          Education[]
+  certificates       Certificate[]
   applications       Application[]
   internalProfile    InternalProfile?
   verificationTokens VerificationToken[]
@@ -371,6 +372,11 @@ model WorkExperience {
   jobTitle     String
   startDate    DateTime
   endDate      DateTime?
+  // Array of duty/responsibility strings, same Json-array convention as
+  // Vacancy.essentialRequirements/generalKnowledge/specialSkills - free
+  // text per line, either typed manually or extracted from an uploaded
+  // CV's bullet points under that role (see cvHeuristics.js).
+  duties       Json?
 }
 
 model Education {
@@ -383,6 +389,20 @@ model Education {
   qualificationLevel     EducationLevel? // the controlled, ordered value screening actually reads
   fieldOfStudy           String
   yearCompleted          Int?
+}
+
+// Optional, unlike Education/WorkExperience - never part of
+// profileCompleteness's required fields. issueDate/expiryDate are both
+// nullable since a CV often states a certificate without a precise date,
+// and plenty of certifications never expire.
+model Certificate {
+  id                  Int       @id @default(autoincrement())
+  candidateId         Int
+  candidate           Candidate @relation(fields: [candidateId], references: [id])
+  name                String
+  issuingOrganization String
+  issueDate           DateTime?
+  expiryDate          DateTime?
 }
 
 model InternalProfile {

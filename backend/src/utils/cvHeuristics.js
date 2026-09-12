@@ -5,6 +5,8 @@
 // reviewed before saving. The "system template" path never calls this at
 // all (it's just the structured form filled in directly).
 
+const { educationKey, workExperienceKey, certificateKey, dedupeBy } = require('./entryDedup');
+
 const EMAIL_RE = /[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}/;
 const PHONE_RE = /(\+?\d[\d\s()-]{7,}\d)/;
 const LINKEDIN_RE = /(https?:\/\/)?(www\.)?linkedin\.com\/in\/[a-zA-Z0-9-_/]+/i;
@@ -21,7 +23,8 @@ const QUALIFICATION_KEYWORDS = [
 
 const SECTION_HEADERS = {
   education: /^(academic\s+)?education(al\s+background)?:?$/i,
-  workExperience: /^(work\s+|professional\s+)?(experience|employment history|career history|work history):?$/i
+  workExperience: /^(work\s+|professional\s+)?(experience|employment history|career history|work history):?$/i,
+  certifications: /^(professional\s+)?certificat(ions?|es)(\s+(&|and)\s+licen[cs]es)?:?$/i
 };
 
 function splitLines(text) {
@@ -49,7 +52,7 @@ function looksLikeHeading(normalizedLine) {
 }
 
 function groupBySection(lines) {
-  const sections = { education: [], workExperience: [] };
+  const sections = { education: [], workExperience: [], certifications: [] };
   let current = null;
   for (const rawLine of lines) {
     const normalized = collapseLetterSpacing(rawLine);
@@ -106,22 +109,50 @@ function parseEducationLines(lines) {
       yearCompleted: years ? Number(years[years.length - 1]) : null
     });
   }
-  if (entries.length === 0 && lines.length > 0) {
+  // Two lines can legitimately describe the same entry (a wrapped line,
+  // or the same heading matched by more than one heuristic) - deduped on
+  // institution+level+field so the same credential isn't ever suggested
+  // twice from a single parse, while two genuinely distinct entries at
+  // the same institution (e.g. O-Level and A-Level certificates from one
+  // school) are untouched since their fieldOfStudy differs.
+  const deduped = dedupeBy(entries, educationKey);
+  if (deduped.length === 0 && lines.length > 0) {
     warnings.push('Could not confidently identify education entries - please add them manually.');
   }
-  entries.forEach((e) => {
+  deduped.forEach((e) => {
     if (!e.institution) warnings.push(`Institution not detected for a ${e.qualificationLevel} entry - please fill it in.`);
     if (!e.fieldOfStudy) warnings.push(`Field of study not detected for a ${e.qualificationLevel} entry - please fill it in.`);
   });
-  return { entries, warnings };
+  return { entries: deduped, warnings };
+}
+
+// Strips a leading bullet glyph (-, •, *, ▪, ◦, ‣, ·) or a lone leading
+// dash used as a plain-text bullet, so a stored duty reads as prose
+// ("Managed the on-call rotation") rather than carrying the marker
+// ("- Managed the on-call rotation").
+function stripBulletMarker(line) {
+  return line.replace(/^[-•*▪◦‣·]+\s*/, '').trim();
 }
 
 function parseWorkExperienceLines(lines) {
   const entries = [];
   const warnings = [];
+  // A line containing a year starts a new role - every following line up
+  // to the next such line is that role's duty/responsibility bullets
+  // (the common resume shape: one title/employer/dates line, then a
+  // handful of bullet points describing the role). A line with no active
+  // role yet (nothing detected before the first date line) is dropped,
+  // same as the pre-existing behavior.
+  let current = null;
   for (const line of lines) {
     const years = line.match(YEAR_RE);
-    if (!years) continue;
+    if (!years) {
+      if (current) {
+        const duty = stripBulletMarker(line);
+        if (duty) current.duties.push(duty);
+      }
+      continue;
+    }
     const isCurrent = /present|current/i.test(line);
 
     // Common resume layout: "Job Title | Employer — Location Dates".
@@ -138,21 +169,79 @@ function parseWorkExperienceLines(lines) {
       jobTitle = line.slice(0, line.indexOf(years[0])).trim().replace(/[-–—,|]+$/, '').trim();
     }
 
-    entries.push({
+    current = {
       employer,
       jobTitle,
       startDate: years[0] ? `${years[0]}-01-01` : '',
-      endDate: isCurrent || years.length < 2 ? '' : `${years[years.length - 1]}-01-01`
-    });
+      endDate: isCurrent || years.length < 2 ? '' : `${years[years.length - 1]}-01-01`,
+      duties: []
+    };
+    entries.push(current);
   }
-  if (entries.length === 0 && lines.length > 0) {
+  // See parseEducationLines' comment above - same reasoning, deduped on
+  // employer+jobTitle+startDate (duties aren't part of that key, so the
+  // first occurrence's duty list - whichever is more complete or first
+  // in the document - is the one kept).
+  const deduped = dedupeBy(entries, workExperienceKey);
+  if (deduped.length === 0 && lines.length > 0) {
     warnings.push('Could not confidently identify work experience entries - please add them manually.');
   }
-  entries.forEach((e) => {
+  deduped.forEach((e) => {
     if (!e.employer) warnings.push('Employer not detected for a work experience entry - please fill it in.');
     if (!e.jobTitle) warnings.push('Job title not detected for a work experience entry - please fill it in.');
   });
-  return { entries, warnings };
+  return { entries: deduped, warnings };
+}
+
+// Certificates are one-per-line (no duty bullets underneath), so unlike
+// parseWorkExperienceLines this doesn't need block/current-pointer
+// tracking - every non-empty line in the certifications section is
+// treated as a single certificate.
+function parseCertificateLines(lines) {
+  const entries = [];
+  const warnings = [];
+  for (const line of lines) {
+    const years = line.match(YEAR_RE);
+    let name = line;
+    let issuingOrganization = '';
+
+    // Common layouts: "Name | Issuer (2021)" or "Name - Issuer, 2021".
+    // Without either separator, fall back to the whole line (minus any
+    // year/parentheses) as the name, same crude fallback used elsewhere
+    // in this file when a layout can't be split confidently.
+    if (line.includes('|')) {
+      const [left, right] = line.split('|').map((s) => s.trim());
+      name = left;
+      issuingOrganization = right;
+    } else if (line.includes(' - ')) {
+      const [left, right] = line.split(/\s-\s/).map((s) => s.trim());
+      name = left;
+      issuingOrganization = right;
+    } else if (line.includes(',')) {
+      const [left, ...rest] = line.split(',');
+      name = left.trim();
+      issuingOrganization = rest.join(',').trim();
+    }
+    name = name.replace(YEAR_RE, '').replace(/[()]/g, '').trim().replace(/[-–—,]+$/, '').trim();
+    issuingOrganization = issuingOrganization.replace(YEAR_RE, '').replace(/[()]/g, '').trim().replace(/[-–—,]+$/, '').trim();
+
+    entries.push({
+      name,
+      issuingOrganization,
+      issueDate: years && years[0] ? `${years[0]}-01-01` : '',
+      expiryDate: years && years.length > 1 ? `${years[years.length - 1]}-01-01` : ''
+    });
+  }
+  // See parseEducationLines' comment above - same reasoning, deduped on
+  // name+issuingOrganization+issueDate (expiryDate isn't part of that key).
+  const deduped = dedupeBy(entries, certificateKey);
+  if (deduped.length === 0 && lines.length > 0) {
+    warnings.push('Could not confidently identify certificate entries - please add them manually.');
+  }
+  deduped.forEach((e) => {
+    if (!e.name) warnings.push('Certificate name not detected for an entry - please fill it in.');
+  });
+  return { entries: deduped, warnings };
 }
 
 function extractFieldsFromText(text) {
@@ -165,6 +254,7 @@ function extractFieldsFromText(text) {
 
   const education = parseEducationLines(sections.education);
   const workExperience = parseWorkExperienceLines(sections.workExperience);
+  const certificates = parseCertificateLines(sections.certifications);
 
   return {
     email: emailMatch ? emailMatch[0] : '',
@@ -172,7 +262,8 @@ function extractFieldsFromText(text) {
     linkedinUrl: linkedinMatch ? linkedinMatch[0] : '',
     education: education.entries,
     workExperience: workExperience.entries,
-    warnings: [...education.warnings, ...workExperience.warnings]
+    certificates: certificates.entries,
+    warnings: [...education.warnings, ...workExperience.warnings, ...certificates.warnings]
   };
 }
 

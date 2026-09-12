@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../models/AuthContext';
 import { isStaffPort } from '../staffPort';
 
@@ -12,6 +12,18 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 export function RequireStaffPort({ children }) {
   if (!isStaffPort()) return <Navigate to="/" replace />;
   return children;
+}
+
+// Mirror image of RequireStaffPort: gates every guest/candidate-facing
+// route (the landing page, register, candidate login, the dashboard,
+// apply, etc.) so none of them render from the staff-only port - a staff
+// member opening that port directly always lands on staff login instead,
+// no matter which guest URL they typed or had bookmarked. A layout route
+// (like PaddedLayout below), so App.jsx wraps a whole group of routes in
+// it at once rather than repeating this on every single one.
+export function GuestPortGate() {
+  if (isStaffPort()) return <Navigate to="/staff/login" replace />;
+  return <Outlet />;
 }
 
 export function RequireStaff({ minRole = 'HR_Officer', children }) {

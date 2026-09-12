@@ -2,13 +2,13 @@ const candidateModel = require('../models/candidateModel');
 const { isProfileComplete } = require('../utils/profileCompleteness');
 const { notifyCandidate } = require('./candidateNotificationService');
 
-// Completeness can tip over from any of three independent endpoints
-// (updateProfile, addEducation, updateInternalProfile) - so this is called
-// at the end of all three rather than living inside just one of them.
-// profileCompletedAt guards against firing more than once, ever, even
-// though it's called unconditionally from all three call sites.
+// Completeness can tip over from any of four independent endpoints
+// (updateProfile, addEducation, addWorkExperience, updateInternalProfile) -
+// so this is called at the end of all four rather than living inside just
+// one of them. profileCompletedAt guards against firing more than once,
+// ever, even though it's called unconditionally from all four call sites.
 async function checkAndFireCompletionEvent(candidateId) {
-  const candidate = await candidateModel.findById(candidateId, { education: true, internalProfile: true });
+  const candidate = await candidateModel.findById(candidateId, { education: true, workExperience: true, internalProfile: true });
   if (!candidate || candidate.profileCompletedAt) return;
   if (!isProfileComplete(candidate)) return;
 

@@ -4,6 +4,7 @@ module.exports = {
   offer: { update: jest.fn(), count: jest.fn(), create: jest.fn(), findUnique: jest.fn() },
   workExperience: { findMany: jest.fn() },
   education: { findMany: jest.fn() },
+  certificate: { findMany: jest.fn() },
   auditLog: { create: jest.fn() },
   candidate: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   panelMember: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },

@@ -115,22 +115,37 @@ export default function Navbar() {
         <span style={{ flex: 1 }} />
         {candidate && (
           <>
-            {candidate.fullName && (
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Avatar
-                  src={candidateFileSrc(candidate.photoUrl)}
-                  size={28}
-                  background="rgba(255,255,255,0.15)"
-                  border="1px solid rgba(255,255,255,0.4)"
-                  iconColor="#FFFFFF"
-                />
-                <span style={{ ...linkStyle, fontWeight: 400, opacity: 0.85 }}>{candidate.fullName}</span>
-              </span>
-            )}
             <Link to="/dashboard" style={linkStyle}>
               My dashboard
             </Link>
             <CandidateNotificationBell />
+
+            {/* Profile chip - same shape as staff's below (circular
+                photo/icon + stacked name/type), just fed from the
+                candidate's own photoUrl/fullName/candidateType, so a
+                signed-in candidate and a signed-in staff member get a
+                consistent navbar regardless of which side of the app
+                they're on. */}
+            {candidate.fullName && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Avatar
+                  src={candidateFileSrc(candidate.photoUrl)}
+                  size={30}
+                  background="rgba(255,255,255,0.15)"
+                  border="1px solid rgba(255,255,255,0.4)"
+                  iconColor="#FFFFFF"
+                />
+                <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+                  <span style={{ ...linkStyle, fontWeight: 600, fontSize: 13 }}>{candidate.fullName}</span>
+                  {candidate.candidateType && (
+                    <span style={{ ...linkStyle, fontWeight: 400, fontSize: 11, opacity: 0.8 }}>
+                      {candidate.candidateType}
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+
             <button onClick={logoutCandidate} style={{ ...buttonStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
               <LogOut size={14} /> Log out
             </button>
