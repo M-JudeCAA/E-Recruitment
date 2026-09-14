@@ -197,12 +197,12 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
         <TextField label="Phone" value={profile?.phone || ''} disabled />
-        <TextField label="Current location" hint="City, country" value={profileDetails.location} onChange={setProfileDetail('location')} />
+        <TextField label="Current location" required hint="City, country" value={profileDetails.location} onChange={setProfileDetail('location')} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
-        <TextField label="National Identification Number (NIN)" hint="As it appears on your National ID"
+        <TextField label="National Identification Number (NIN)" required hint="As it appears on your National ID"
           value={profileDetails.nationalId} onChange={setProfileDetail('nationalId')} />
-        <Select label="Authorized to work in Uganda?" value={profileDetails.workAuthorization} onChange={setProfileDetail('workAuthorization')}>
+        <Select label="Authorized to work in Uganda?" required value={profileDetails.workAuthorization} onChange={setProfileDetail('workAuthorization')}>
           <option value="">Select one</option>
           <option value="Yes">Yes</option>
           <option value="No">No</option>
@@ -212,9 +212,11 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
       <TextField label="LinkedIn or personal site" hint="Optional" placeholder="linkedin.com/in/..."
         value={profileDetails.linkedinUrl} onChange={setProfileDetail('linkedinUrl')} />
 
-      <h3 style={{ fontSize: 15, marginBottom: 8, marginTop: 24 }}>Education</h3>
+      <h3 style={{ fontSize: 15, marginBottom: 8, marginTop: 24 }}>
+        Education<span style={{ color: 'var(--color-primary)', marginLeft: 4 }}>*</span>
+      </h3>
       {(profile?.education || []).length === 0 && (
-        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No education entries on file yet.</p>
+        <p style={{ fontSize: 13, color: 'var(--color-danger)' }}>At least one education entry is required to continue.</p>
       )}
       {(profile?.education || []).map((e) => editingEduId === e.id ? (
         <div key={e.id} style={{ marginTop: 12, marginBottom: 12, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
@@ -262,9 +264,11 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
         <Button type="button" variant="ghost" loading={isBusy('addEdu')} loadingText="Adding..." onClick={() => runBusy('addEdu', addEducation)}><Plus size={14} /> Add education entry</Button>
       </div>
 
-      <h3 style={{ fontSize: 15, marginBottom: 8 }}>Work Experience</h3>
+      <h3 style={{ fontSize: 15, marginBottom: 8 }}>
+        Work Experience<span style={{ color: 'var(--color-primary)', marginLeft: 4 }}>*</span>
+      </h3>
       {(profile?.workExperience || []).length === 0 && (
-        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No work experience entries on file yet.</p>
+        <p style={{ fontSize: 13, color: 'var(--color-danger)' }}>At least one work experience entry is required to continue.</p>
       )}
       {(profile?.workExperience || []).map((w) => editingExpId === w.id ? (
         <div key={w.id} style={{ marginTop: 12, marginBottom: 12, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>

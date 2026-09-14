@@ -123,6 +123,52 @@ export default function ApplyForm() {
   const back = () => goTo(Math.max(stepIndex - 1, 0));
   const isComplete = (i) => i < stepIndex || (i === steps.length - 1 && ['Submitted', 'UnderReview'].includes(application?.status));
 
+  // What's missing before Continue is allowed to advance past this step -
+  // returns a list of human-readable field names, empty when the step is
+  // satisfied. Gates the Continue button below (and, transitively,
+  // StepperRail's own visited[i]-only navigation - a step can never become
+  // "visited" without going through here first, so there's no separate
+  // bypass to close there). JobDetails/Review/Submit have nothing to
+  // validate - Review is read-only, and Submit has no Continue button at
+  // all (see the footer render below).
+  const stepErrors = (key) => {
+    switch (key) {
+      case 'profile': {
+        const missing = [];
+        if (!profileDetailsForm.location) missing.push('Current location');
+        if (!profileDetailsForm.nationalId) missing.push('National ID number');
+        if (!profileDetailsForm.workAuthorization) missing.push('Work authorization');
+        if (!(profile?.education?.length)) missing.push('At least one education entry');
+        if (!(profile?.workExperience?.length)) missing.push('At least one work experience entry');
+        return missing;
+      }
+      case 'documents':
+        return cv ? [] : ['CV / Resume upload'];
+      case 'questions': {
+        const missing = [];
+        if (!questionsForm.openToRelocate) missing.push('Open to relocating?');
+        if (!questionsForm.whyThisRole?.trim()) missing.push('Why this role?');
+        (vacancy.desirableRequirements || []).forEach((r) => {
+          if (desirableAnswers[r.id] === undefined) missing.push(r.text);
+        });
+        return missing;
+      }
+      case 'internal': {
+        const missing = [];
+        if (!internalProfileForm.employeeId) missing.push('Employee ID');
+        if (!internalProfileForm.dateJoined) missing.push('Date joined UCAA');
+        if (!internalProfileForm.department) missing.push('Current department');
+        if (!internalProfileForm.position) missing.push('Current position');
+        if (!internalProfileForm.supervisorName) missing.push("Supervisor's name");
+        if (!internalProfileForm.supervisorEmail) missing.push("Supervisor's email");
+        return missing;
+      }
+      default:
+        return [];
+    }
+  };
+  const currentStepErrors = stepErrors(steps[stepIndex].key);
+
   // Application-level - CV/cover letter plus the Questions step answers,
   // all persisted through the same draft-save endpoint so "Save as draft"
   // captures everything entered so far in one request.
@@ -279,6 +325,17 @@ export default function ApplyForm() {
               <Alert type="success" message={message} />
               <Alert type="error" message={error} />
 
+              {/* Told plainly, not just implied by a disabled button - a
+                  disabled Continue with no explanation reads as broken,
+                  not gated. Only ever shown for the step actually being
+                  viewed, so it disappears the moment its own fields are
+                  filled in without needing to click Continue first. */}
+              {currentStepErrors.length > 0 && (
+                <p style={{ fontSize: 13, color: 'var(--color-danger)', marginTop: 16 }}>
+                  Before continuing, please complete: {currentStepErrors.join(', ')}
+                </p>
+              )}
+
               {/* Back/Save/Continue stay visible while viewing the Submit
                   step pre-submission - only hidden once the application has
                   actually been decided (Submitted/UnderReview), so a
@@ -297,7 +354,7 @@ export default function ApplyForm() {
                           {saving ? 'Saving...' : 'Save as draft'}
                         </Button>
                       )}
-                      <Button type="button" disabled={continuing} onClick={async () => {
+                      <Button type="button" disabled={continuing || currentStepErrors.length > 0} onClick={async () => {
                         setContinuing(true);
                         try {
                           if (steps[stepIndex].key === 'profile' || steps[stepIndex].key === 'documents') await saveProfileDetails();
