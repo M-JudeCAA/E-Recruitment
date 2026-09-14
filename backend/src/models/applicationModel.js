@@ -36,6 +36,13 @@ module.exports = {
   findByVacancyAndStatus: (vacancyId, status) => prisma.application.findMany({
     where: { vacancyId, status }
   }),
+  // Same Draft exclusion as findByVacancy - a single query in place of the
+  // per-vacancy fetch-and-sum HRHome.jsx used to do.
+  countAll: () => prisma.application.count({ where: { status: { not: 'Draft' } } }),
+  // Same Draft exclusion, scoped to one vacancy - used by
+  // scripts/checkVacancyDeadlines.js to report how many real applications
+  // a vacancy actually received before its deadline passed.
+  countByVacancy: (vacancyId) => prisma.application.count({ where: { vacancyId, status: { not: 'Draft' } } }),
   update: (id, data) => prisma.application.update({ where: { id }, data }),
   // Used only for cancelling a Draft (never a Submitted-or-later
   // application) - see applicationDraftController.withdraw. Deleting the

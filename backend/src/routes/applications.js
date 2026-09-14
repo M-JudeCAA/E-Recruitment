@@ -6,6 +6,10 @@ const { upload } = require('../middleware/upload');
 
 const router = express.Router();
 
+// Same HR_Officer+ gate as vacancies/:id/applications (the per-vacancy
+// equivalent this aggregates across all vacancies).
+router.get('/count', authenticate, requireStaffRole('HR_Officer'), controller.count);
+
 // REPLACES the old single-step submit() entirely (was the old one-step
 // controller.submit). saveDraft() handles both first-save and every
 // subsequent edit to that same draft.

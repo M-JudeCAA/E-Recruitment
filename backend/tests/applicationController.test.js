@@ -119,6 +119,19 @@ describe('submit', () => {
   });
 });
 
+describe('count', () => {
+  test('returns the total application count in one query', async () => {
+    prisma.application.count.mockResolvedValue(42);
+    const req = {};
+    const res = mockRes();
+
+    await applicationController.count(req, res);
+
+    expect(prisma.application.count).toHaveBeenCalledWith({ where: { status: { not: 'Draft' } } });
+    expect(res.json).toHaveBeenCalledWith({ count: 42 });
+  });
+});
+
 describe('recommendOffer', () => {
   test('rejects when the application has no scored interview yet', async () => {
     prisma.application.findUnique.mockResolvedValue({

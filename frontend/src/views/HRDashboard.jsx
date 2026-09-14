@@ -113,6 +113,18 @@ export default function HRDashboard() {
   // uses) before ever submitting for approval.
   const [previewData, setPreviewData] = useState(null);
 
+  // Create vacancy now opens in a modal (was a permanently-expanded Card
+  // at the top of the page, pushing the actual vacancy list below the
+  // fold) - see #1 of the Vacancy Management redesign.
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Filter bar (#2) - client-side over the already-loaded admin vacancy
+  // list, same tradeoff HRHome's widgets make: no extra request, just a
+  // derived view over data already in hand.
+  const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [departmentFilter, setDepartmentFilter] = useState('All');
+
   const load = () => staffClient.get('/api/vacancies/admin')
     .then((res) => setVacancies(res.data))
     .finally(() => setVacanciesLoaded(true));
@@ -197,6 +209,7 @@ export default function HRDashboard() {
       setForm(emptyForm);
       setDepartmentPositions([]);
       setReportsToOptions([]);
+      setShowCreateModal(false);
       load();
     } catch (err) {
       const errs = err.response?.data?.errors;
@@ -268,6 +281,14 @@ export default function HRDashboard() {
     }
   };
 
+  const filteredVacancies = vacancies.filter((v) => {
+    if (statusFilter !== 'All' && v.status !== statusFilter) return false;
+    if (departmentFilter !== 'All' && String(v.departmentId) !== departmentFilter) return false;
+    const q = searchText.trim().toLowerCase();
+    if (q && !v.title.toLowerCase().includes(q) && !v.jobRef.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
   return (
     <div>
       {/* "HR dashboard" title and "Logged in as ..." now live in the
@@ -280,8 +301,46 @@ export default function HRDashboard() {
 
           {activeSection === 'vacancies' && (
             <>
-      <Card accent="var(--color-primary)">
-        <h3 style={{ marginTop: 0 }}>Create vacancy</h3>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
+        <h3 style={{ margin: 0 }}>Vacancies</h3>
+        <Button onClick={() => { setError(''); setShowCreateModal(true); }}>+ New vacancy</Button>
+      </div>
+
+      <Alert type="success" message={message} />
+      <Alert type="error" message={error} />
+
+      {/* Filter bar (#2) - text search plus status/department filters over
+          the already-loaded admin vacancy list. */}
+      <Card style={{ marginBottom: 'var(--spacing-md)' }}>
+        <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+          <TextField
+            label="Search"
+            placeholder="Title or job ref"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            style={{ flex: '2 1 220px' }}
+          />
+          <Select label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ flex: '1 1 160px' }}>
+            <option value="All">All statuses</option>
+            <option value="PendingApproval">Pending approval</option>
+            <option value="Open">Open</option>
+            <option value="PartiallyFilled">Partially filled</option>
+            <option value="Filled">Filled</option>
+            <option value="Closed">Closed</option>
+          </Select>
+          <Select label="Department" value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)} style={{ flex: '1 1 200px' }}>
+            <option value="All">All departments</option>
+            {approvedDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </Select>
+        </div>
+      </Card>
+
+      {/* Create vacancy now opens in a modal instead of sitting permanently
+          expanded above the list (#1) - the list is what HR scans
+          repeatedly, the form is used occasionally. */}
+      {showCreateModal && (
+      <Modal title="Create vacancy" onClose={() => setShowCreateModal(false)} maxWidth={640}>
+        <Alert type="error" message={error} />
         <form onSubmit={createVacancy}>
           {/* Step 1: Department first, grouped by Directorate - true
               single-level grouping, since each Department row belongs to
@@ -342,50 +401,80 @@ export default function HRDashboard() {
           <VacancyAdvertFields values={form} onChange={(patch) => setForm({ ...form, ...patch })} />
 
           <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
+            <Button type="button" variant="ghost" onClick={() => setShowCreateModal(false)}>Cancel</Button>
             <Button type="button" variant="secondary" onClick={previewCreateForm}>Preview advert</Button>
             <Button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create'}</Button>
           </div>
         </form>
-        <Alert type="success" message={message} />
-        <Alert type="error" message={error} />
-      </Card>
+      </Modal>
+      )}
 
-      <h3>Vacancies</h3>
-      {vacancies.map((v) => (
+      {filteredVacancies.length === 0 ? (
+        <Card>
+          <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>
+            {vacancies.length === 0 ? 'No vacancies yet.' : 'No vacancies match these filters.'}
+          </p>
+        </Card>
+      ) : (
+      filteredVacancies.map((v) => (
         <Card key={v.id}>
-          <strong>{v.jobRef}</strong> &mdash; {v.title} &middot; <StatusBadge status={v.status} />
-          {' '}&middot; {v._count?.applications ?? 0} application(s)
-          <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-            {v.department?.directorate?.name} &mdash; {v.department?.name}
-            {v.reportsToPosition && <> &middot; Reports to {v.reportsToPosition.name}</>}
+          {/* Header: title reads as the actual heading (was buried mid-
+              sentence after the jobRef); status + application count form
+              a right-aligned cluster instead of running into the title
+              line, so both are scannable at a glance down a long list. */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text)' }}>{v.title}</div>
+              <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                {v.jobRef}
+                {' '}&middot; {v.department?.directorate?.name} &mdash; {v.department?.name}
+                {v.reportsToPosition && <> &middot; Reports to {v.reportsToPosition.name}</>}
+                {v.deadline && <> &middot; Deadline {new Date(v.deadline).toLocaleDateString()}</>}
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <StatusBadge status={v.status} />
+              <span style={{ fontSize: 12, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                {v._count?.applications ?? 0} application{v._count?.applications === 1 ? '' : 's'}
+              </span>
+            </div>
           </div>
-          {v.deadline && <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-            Deadline: {new Date(v.deadline).toLocaleDateString()}
-          </span>}
-          <div style={{ marginTop: 8 }}>
+
+          {/* Action toolbar: right-aligned, every action the same size/
+              spacing, separated from the header by a rule - was a left-
+              flowing mix of a plain Link and several differently-spaced
+              Buttons that visually competed with each other. */}
+          <div
+            style={{
+              display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 8,
+              marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)'
+            }}
+          >
             {/* Inactive while PendingApproval - the vacancy hasn't been
                 published yet, so there is nothing legitimate to review
                 (see applicationEligibility.js's status gate, which candidates
                 are meant to be blocked by before ever reaching this vacancy).
                 Every other status has been published at least once. */}
             {v.status === 'PendingApproval' ? (
-              <span title="Applications become viewable once this vacancy is approved and published"
-                style={{ color: 'var(--color-text-muted)', cursor: 'not-allowed' }}>
+              <span
+                title="Applications become viewable once this vacancy is approved and published"
+                style={{ padding: '4px 10px', fontSize: 13, color: 'var(--color-text-muted)', cursor: 'not-allowed' }}
+              >
                 View applications
               </span>
             ) : (
-              <Link to={`/hr/vacancy/${v.id}`}>View applications</Link>
+              <Link to={`/hr/vacancy/${v.id}`} style={{ padding: '4px 10px', fontSize: 13 }}>View applications</Link>
             )}
-            <Button variant="ghost" style={{ marginLeft: 12, padding: '2px 10px' }} onClick={() => openEdit(v)}>Edit</Button>
+            <Button variant="ghost" style={{ padding: '4px 10px' }} onClick={() => openEdit(v)}>Edit</Button>
             {/* SIMPLIFIED - the Senior HR Officer review stage and its
                 "awaiting review" status line are both removed entirely,
                 not just hidden. The 2-tier flow goes straight from
                 PendingApproval to a Manager/Director's direct approval. */}
             {v.status === 'PendingApproval' && canApprove && (
-              <Button variant="secondary" style={{ marginLeft: 8, padding: '2px 10px' }} onClick={() => approve(v.id)}>Approve</Button>
+              <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => approve(v.id)}>Approve</Button>
             )}
             {v.status === 'Closed' && canApprove && (
-              <Button variant="secondary" style={{ marginLeft: 8, padding: '2px 10px' }} onClick={() => approve(v.id)}>Re-open</Button>
+              <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => approve(v.id)}>Re-open</Button>
             )}
             {/* NEW - Internal <-> External transition, restricted to the
                 same Manager/Director tier as approval, and only while the
@@ -394,18 +483,19 @@ export default function HRDashboard() {
                 so this button never appears somewhere the backend would
                 refuse it anyway. */}
             {['Open', 'PartiallyFilled'].includes(v.status) && canTransition && (
-              <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 10px' }}
+              <Button variant="ghost" style={{ padding: '4px 10px' }}
                 onClick={() => transitionPostingType(v.id, v.postingType === 'Internal' ? 'External' : 'Internal')}>
                 Transition to {v.postingType === 'Internal' ? 'External' : 'Internal'}
               </Button>
             )}
             {v.status !== 'Closed' && canApprove && (
-              <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 10px', color: 'var(--color-danger)' }}
+              <Button variant="ghost" style={{ padding: '4px 10px', color: 'var(--color-danger)' }}
                 onClick={() => closeVacancy(v.id)}>Close vacancy</Button>
             )}
           </div>
         </Card>
-      ))}
+      ))
+      )}
 
       {editModal && (
         <Modal
@@ -418,6 +508,7 @@ export default function HRDashboard() {
             <Button onClick={saveEdit}>Save changes</Button>
           </>}
         >
+          <Alert type="error" message={error} />
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
             Title, Department, and Reports To are fixed at creation and cannot be changed here.
           </p>

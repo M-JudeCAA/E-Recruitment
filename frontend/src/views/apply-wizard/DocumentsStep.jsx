@@ -8,9 +8,18 @@ function AttachmentField({ label, hint, required, name, file, onChange, onClear 
         {label}{required && <span style={{ color: 'var(--color-primary)', marginLeft: 4 }}>*</span>}
       </span>
       {file ? (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 8, border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-subtle)' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-text)' }}><Paperclip size={14} /> {file.name}</span>
-          <button type="button" onClick={onClear} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={14} /></button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 8, border: '1px solid var(--color-primary)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-subtle)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-text)', minWidth: 0, flex: 1 }}>
+            <Paperclip size={14} style={{ flexShrink: 0 }} />
+            {/* This inner span is itself a flex item of the span above (which is
+                display:flex) - flex items default to min-width:auto, which
+                overrides overflow/text-overflow and refuses to shrink below the
+                filename's full intrinsic width no matter what the parent does.
+                minWidth: 0 here (not just on the parent) is what actually lets
+                it shrink and the ellipsis take effect. */}
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.name}>{file.name}</span>
+          </span>
+          <button type="button" onClick={onClear} style={{ background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}><X size={14} /></button>
         </div>
       ) : (
         <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 8, border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-muted)', cursor: 'pointer' }}>

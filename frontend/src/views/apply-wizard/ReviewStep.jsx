@@ -63,9 +63,19 @@ export default function ReviewStep({ profile, cv, coverLetter, profileDetails, q
             <button onClick={() => goTo(section.i)} style={{ fontSize: 12, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer' }}>Edit</button>
           </div>
           {section.rows.map(([label, value]) => (
-            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '3px 0' }}>
-              <span style={{ color: 'var(--color-text-muted)' }}>{label}</span>
-              <span style={{ color: 'var(--color-text)', textAlign: 'right', maxWidth: '60%' }}>{value || '—'}</span>
+            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, padding: '3px 0' }}>
+              {/* Both sides wrap rather than truncate - a long CV filename or
+                  portfolio URL (one unbroken "word"), a long free-text answer
+                  like "Why this role", and a long desirable-requirement question
+                  used as the label here all need to stay fully visible on a
+                  review-before-submit step. minWidth: 0 on BOTH flex items is
+                  required - flex items default to min-width:auto, which ignores
+                  maxWidth/wrapping and forces the row wider instead, exactly the
+                  bug this fixes (see DocumentsStep.jsx for the same root cause). */}
+              <span style={{ color: 'var(--color-text-muted)', maxWidth: '55%', minWidth: 0, overflowWrap: 'break-word', wordBreak: 'break-word' }}>{label}</span>
+              <span style={{ color: 'var(--color-text)', textAlign: 'right', maxWidth: '45%', minWidth: 0, overflowWrap: 'break-word', wordBreak: 'break-word' }}>
+                {value || '—'}
+              </span>
             </div>
           ))}
         </div>

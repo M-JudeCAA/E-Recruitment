@@ -50,6 +50,13 @@ export default function ApplyForm() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  // Disables Continue while its own save(s) are in flight - awaiting them
+  // before calling next() means a real double-click can't fire a second
+  // overlapping saveDraft() call while the first is still pending (the
+  // backend also tolerates this - see the P2002 fallback in
+  // applicationDraftController.saveDraft - but not firing the duplicate
+  // request in the first place is cleaner than relying on that alone).
+  const [continuing, setContinuing] = useState(false);
 
   // Advert User path: a candidate who arrived here via a pending
   // returnTo (see CandidateLogin.jsx/ProtectedRoute.jsx) sees a closable
@@ -183,7 +190,13 @@ export default function ApplyForm() {
           <div className="flex flex-col md:flex-row">
             <StepperRail steps={steps} stepIndex={stepIndex} isComplete={isComplete} visited={visited} goTo={goTo} />
 
-            <div className="flex-1 px-6 md:px-8 py-6 md:py-8">
+            {/* min-w-0 overrides flex's default min-width:auto - without it, an
+                unbreakable long string anywhere inside (e.g. a long CV filename
+                with no spaces) sets this column's minimum content size to the
+                string's full width, forcing the whole wizard layout wider and
+                getting hard-clipped by the card's overflow:hidden above, no
+                matter what truncation styling exists further down the tree. */}
+            <div className="flex-1 min-w-0 px-6 md:px-8 py-6 md:py-8">
               {steps[stepIndex].key === 'jobDetails' && <JobDetailsStep vacancy={vacancy} />}
               {steps[stepIndex].key === 'profile' && (
                 <ProfileStep profile={profile} onProfileChange={loadProfile}
@@ -239,10 +252,23 @@ export default function ApplyForm() {
                           {saving ? 'Saving...' : 'Save as draft'}
                         </Button>
                       )}
-                      <Button type="button" onClick={() => {
-                        if (steps[stepIndex].key === 'profile' || steps[stepIndex].key === 'documents') saveProfileDetails();
-                        if (steps[stepIndex].key === 'internal') saveInternalProfile();
-                        next();
+                      <Button type="button" disabled={continuing} onClick={async () => {
+                        setContinuing(true);
+                        try {
+                          if (steps[stepIndex].key === 'profile' || steps[stepIndex].key === 'documents') await saveProfileDetails();
+                          if (steps[stepIndex].key === 'internal') await saveInternalProfile();
+                          // Guarantees an Application draft row exists (with
+                          // whatever cv/cover letter/answers have been entered so
+                          // far) by the time the candidate can reach Review/Submit
+                          // - without this, a candidate who never clicks the
+                          // separate "Save as draft" button reaches Submit with
+                          // applicationId still null, and Send application calls
+                          // PATCH /api/applications/undefined/submit.
+                          if (steps[stepIndex].key === 'documents' || steps[stepIndex].key === 'questions') await saveDraft();
+                          next();
+                        } finally {
+                          setContinuing(false);
+                        }
                       }}>
                         Continue <ChevronRight size={15} />
                       </Button>
