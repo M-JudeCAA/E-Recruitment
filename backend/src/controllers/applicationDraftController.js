@@ -2,7 +2,7 @@ const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
 const candidateModel = require('../models/candidateModel');
 const workflow = require('../services/workflowService');
-const { screenApplication } = require('../services/screeningService');
+const { screenApplication, scoreApplication, evaluateEssentialCriteria } = require('../services/screeningService');
 const { fileUrl } = require('../middleware/upload');
 const {
   assertPostingTypeEligible, assertVacancyAcceptingApplications, assertBeforeDeadline
@@ -185,9 +185,14 @@ async function submit(req, res) {
   let data = { status: 'Submitted', submittedDate: new Date() };
   if (vacancy.reviewStartedAt) {
     const result = screenApplication(application, candidate, vacancy);
+    const score = scoreApplication(application, candidate, vacancy);
+    const essentialCriteria = evaluateEssentialCriteria(candidate, vacancy);
     data = {
       ...data, status: 'UnderReview',
-      screeningPassed: result.passed, screeningReasons: JSON.stringify(result.reasons), screenedAt: new Date()
+      screeningPassed: result.passed, screeningReasons: JSON.stringify(result.reasons), screenedAt: new Date(),
+      fieldOfStudyMatch: result.fieldOfStudyMatch,
+      shortlistScore: score.score, shortlistScoreReasons: JSON.stringify(score.reasons),
+      essentialCriteriaResults: JSON.stringify(essentialCriteria)
     };
   }
 

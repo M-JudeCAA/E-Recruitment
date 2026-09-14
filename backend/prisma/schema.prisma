@@ -445,7 +445,15 @@ model Application {
   candidate        Candidate         @relation(fields: [candidateId], references: [id])
   status           ApplicationStatus @default(Draft)
   submittedDate    DateTime?
-  shortlistScore   Float?
+  // Computed by screeningService.scoreApplication whenever an application
+  // is screened (both the Begin Review batch and the late-joiner inline
+  // path) - never hand-entered. Purely additive (meeting/exceeding a
+  // minimum or a desirable requirement adds points; nothing subtracts),
+  // so it only ever suggests a starting order for the drag-to-rank pool -
+  // see shortlistScoreReasons for the human-readable breakdown, and
+  // applicationModel.findByVacancy's orderBy for where this is read.
+  shortlistScore        Float?
+  shortlistScoreReasons String?     @db.Text // JSON array of human-readable strings, same convention as screeningReasons
   rank             Int?
   listStatus       ListStatus?
   cvUrl            String?
@@ -454,6 +462,22 @@ model Application {
   screeningPassed  Boolean?          // null until screened
   screeningReasons String?           @db.Text // JSON array of human-readable strings
   screenedAt       DateTime?
+  // Best-effort case-insensitive match between the candidate's Education
+  // rows and Vacancy.preferredFieldOfStudy, computed alongside the checks
+  // above but kept out of screeningPassed/screeningReasons deliberately -
+  // preferredFieldOfStudy is free text with no controlled vocabulary, so a
+  // miss here is a "worth a human glance" signal, not a disqualifier. Null
+  // means not applicable (vacancy set no preference, or nothing to compare
+  // against yet) rather than "no match".
+  fieldOfStudyMatch Boolean?
+  // Itemized, one-row-per-minimum-requirement breakdown from
+  // screeningService.evaluateEssentialCriteria - the Essential
+  // Requirements counterpart to desirableResponses below, giving HR the
+  // same per-item detail for mandatory criteria that desirable
+  // (preferred) ones already get, instead of only the collapsed
+  // screeningPassed/screeningReasons summary. JSON array of
+  // {key, label, requirement, met, detail}.
+  essentialCriteriaResults String?    @db.Text
   createdAt        DateTime          @default(now())
 
   // Set by applicationController.reject (an explicit HR action, gated at

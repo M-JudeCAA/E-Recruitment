@@ -74,8 +74,16 @@ export default function VacancyDetail() {
         .filter((a) => a.rank != null)
         .sort((a, b) => a.rank - b.rank)
         .map((a) => a.id);
+      // Score-ordered, highest first - this is what makes positioning
+      // "adjust as applications come in": every reload (after Begin
+      // Review screens a new batch, or a late applicant is screened
+      // inline at submit) reflects each candidate's current
+      // shortlistScore. Already-ranked applicants keep their committed
+      // rank untouched - only the still-unranked pool re-sorts, and HR's
+      // manual drag/"Save ranking" always has the final word.
       const candidates = res.data
         .filter((a) => a.status === 'UnderReview' && a.rank == null)
+        .sort((a, b) => (b.shortlistScore ?? -Infinity) - (a.shortlistScore ?? -Infinity))
         .map((a) => a.id);
       setShortlistOrder([...alreadyRanked, ...candidates]);
     });
@@ -312,6 +320,12 @@ export default function VacancyDetail() {
           >
             #{index + 1} &mdash; {app.candidate.fullName} ({app.candidate.candidateType})
             {' '}&middot; {index < vacancy.positionsRequired ? 'Primary' : 'Reserve'}
+            {app.shortlistScore != null && (
+              <span title={(JSON.parse(app.shortlistScoreReasons || '[]')).join('; ') || 'No scoring factors applied'}
+                style={{ color: 'var(--color-text-muted)', marginLeft: 8, fontSize: 12 }}>
+                &middot; Score: {app.shortlistScore.toFixed(1)}
+              </span>
+            )}
           </div>
         </Card>
       ))}
@@ -354,6 +368,53 @@ export default function VacancyDetail() {
             CV: {app.cvUrl ? <a href={fileLink(app.cvUrl)} target="_blank" rel="noreferrer">view</a> : 'none'}
           </div>
 
+          {/* Minimum required specifications (Essential Requirements) -
+              the mandatory counterpart to the Desirable Requirements list
+              below: every minimum the vacancy actually sets is itemized
+              with its own met/not-met status and the specific reason,
+              instead of only the collapsed flag-count/"Meets criteria"
+              badge above. */}
+          {app.essentialCriteriaResults && JSON.parse(app.essentialCriteriaResults).length > 0 && (
+            <div style={{ fontSize: 13, margin: '6px 0' }}>
+              <strong>Minimum required specifications:</strong>{' '}
+              {JSON.parse(app.essentialCriteriaResults).filter((r) => r.met).length} of {JSON.parse(app.essentialCriteriaResults).length} met
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, listStyle: 'none' }}>
+                {JSON.parse(app.essentialCriteriaResults).map((r) => (
+                  <li key={r.key} style={{ color: r.met ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                    {r.met ? '✓' : '✗'} {r.label} (requires {r.requirement}) &mdash; {r.detail}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Shortlist score - a ranking signal, not a gate (see
+              scoreApplication's comment): additive credit for exceeding a
+              minimum or matching a preference, shown with the specific
+              reasons behind it rather than a bare number, so HR can see
+              exactly what earned it. */}
+          {app.shortlistScore != null && (
+            <div style={{ fontSize: 13, margin: '6px 0' }}>
+              <strong>Score: {app.shortlistScore.toFixed(1)}</strong>
+              {JSON.parse(app.shortlistScoreReasons || '[]').length > 0 ? (
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18, color: 'var(--color-text-muted)' }}>
+                  {JSON.parse(app.shortlistScoreReasons || '[]').map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              ) : (
+                <span style={{ color: 'var(--color-text-muted)' }}> &mdash; no factors above the vacancy's stated minimums/preferences</span>
+              )}
+            </div>
+          )}
+
+          {/* Field-of-study is a preference, not a requirement (free text,
+              no controlled vocabulary) - kept out of screeningPassed, shown
+              as its own worth-a-glance flag instead. */}
+          {app.fieldOfStudyMatch === false && (
+            <div style={{ fontSize: 13, color: 'var(--color-warning)', margin: '6px 0' }}>
+              &#9888; Field of study may not match the preferred field ({vacancy.preferredFieldOfStudy}) - worth a second look, not part of screening
+            </div>
+          )}
+
           {app.status === 'Rejected' && (
             <div style={{ fontSize: 13, color: 'var(--color-danger)', margin: '6px 0' }}>
               Rejected{app.rejectedBy?.name ? ` by ${app.rejectedBy.name}` : ''}{app.rejectedAt ? ` on ${new Date(app.rejectedAt).toLocaleDateString()}` : ''}
@@ -361,24 +422,26 @@ export default function VacancyDetail() {
             </div>
           )}
 
-          {/* Desirable Requirements answers - informational only, never
-              part of screeningPassed (a "No" here doesn't fail
-              screening), so shown independently of the essential-criteria
-              flag above rather than folded into it. */}
+          {/* Desirable Requirements - preferred, not mandatory, criteria:
+              informational only, never part of screeningPassed (a "No"
+              here doesn't fail screening). Every requirement is listed
+              individually with its own answer rather than collapsing a
+              clean sweep into one generic line, so HR can see exactly
+              which preferences a candidate does and doesn't meet - the
+              same detail a "No" already got, now applied consistently.
+              Each "Yes" here is also what scoreApplication credits in the
+              shortlist score above. */}
           {app.desirableResponses?.length > 0 && (
             <div style={{ fontSize: 13, margin: '6px 0' }}>
-              {app.desirableResponses.filter((r) => r.answer === false).length > 0 ? (
-                <span style={{ color: 'var(--color-warning)' }}>
-                  &#9888; {app.desirableResponses.filter((r) => r.answer === false).length} desirable requirement(s) answered "No":
-                  <ul style={{ margin: '4px 0 0', paddingLeft: 18 }}>
-                    {app.desirableResponses.filter((r) => r.answer === false).map((r) => (
-                      <li key={r.id}>{r.text}</li>
-                    ))}
-                  </ul>
-                </span>
-              ) : (
-                <span style={{ color: 'var(--color-success)' }}>&#10003; Answered "Yes" to all desirable requirements</span>
-              )}
+              <strong>Desirable (preferred) requirements:</strong>{' '}
+              {app.desirableResponses.filter((r) => r.answer === true).length} of {app.desirableResponses.length} met
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, listStyle: 'none' }}>
+                {app.desirableResponses.map((r) => (
+                  <li key={r.id} style={{ color: r.answer ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                    {r.answer ? '✓' : '⚠'} {r.text}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
