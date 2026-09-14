@@ -2,7 +2,9 @@ import React from 'react';
 
 // Central color mapping for every status enum used across the system -
 // change a status's color here and it updates everywhere it's shown.
-const STATUS_COLORS = {
+// Exported so other status-driven visuals (e.g. HRHome's status breakdown
+// bar) reuse the exact same mapping instead of duplicating it.
+export const STATUS_COLORS = {
   // Panel/interview recommendation
   Shortlist: 'var(--color-accent)', Hold: 'var(--color-warning)', Reject: 'var(--color-danger)',
   // Vacancy

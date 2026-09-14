@@ -1,5 +1,5 @@
 module.exports = {
-  application: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn(), create: jest.fn() },
+  application: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), count: jest.fn() },
   vacancy: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   offer: { update: jest.fn(), count: jest.fn(), create: jest.fn(), findUnique: jest.fn() },
   workExperience: { findMany: jest.fn() },
@@ -18,6 +18,6 @@ module.exports = {
   delegationUsage: { create: jest.fn() },
   slaPolicy: { findUnique: jest.fn(), upsert: jest.fn() },
   taskEscalation: { create: jest.fn(), findFirst: jest.fn(), updateMany: jest.fn() },
-  notification: { create: jest.fn(), findMany: jest.fn(), update: jest.fn() },
+  notification: { create: jest.fn(), findMany: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
   candidateNotification: { create: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() }
 };

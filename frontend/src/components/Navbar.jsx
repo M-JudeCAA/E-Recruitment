@@ -1,10 +1,9 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { User, LogOut } from "lucide-react";
 import { useAuth } from "../models/AuthContext";
 import NotificationBell from "./NotificationBell";
 import CandidateNotificationBell from "./CandidateNotificationBell";
-import Avatar from "./Avatar";
+import ProfileMenu from "./ProfileMenu";
 import { candidateFileSrc } from "../utils/fileSrc";
 import ucaaLogo from "../assets/ucaa-logo.png";
 
@@ -23,16 +22,6 @@ const linkStyle = {
   textDecoration: "none",
   fontSize: 14.5,
   fontWeight: 500,
-};
-
-const buttonStyle = {
-  background: "transparent",
-  border: "1px solid rgba(255,255,255,0.4)",
-  color: "#FFFFFF",
-  borderRadius: 6,
-  padding: "6px 12px",
-  fontSize: 13.5,
-  cursor: "pointer",
 };
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK. Delegation
@@ -120,35 +109,19 @@ export default function Navbar() {
             </Link>
             <CandidateNotificationBell />
 
-            {/* Profile chip - same shape as staff's below (circular
-                photo/icon + stacked name/type), just fed from the
-                candidate's own photoUrl/fullName/candidateType, so a
+            {/* Account panel - click the avatar for a card with name/type/
+                email and Sign out, replacing the old always-visible chip +
+                separate logout button. Same shape as staff's below so a
                 signed-in candidate and a signed-in staff member get a
                 consistent navbar regardless of which side of the app
                 they're on. */}
-            {candidate.fullName && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Avatar
-                  src={candidateFileSrc(candidate.photoUrl)}
-                  size={30}
-                  background="rgba(255,255,255,0.15)"
-                  border="1px solid rgba(255,255,255,0.4)"
-                  iconColor="#FFFFFF"
-                />
-                <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
-                  <span style={{ ...linkStyle, fontWeight: 600, fontSize: 13 }}>{candidate.fullName}</span>
-                  {candidate.candidateType && (
-                    <span style={{ ...linkStyle, fontWeight: 400, fontSize: 11, opacity: 0.8 }}>
-                      {candidate.candidateType}
-                    </span>
-                  )}
-                </span>
-              </div>
-            )}
-
-            <button onClick={logoutCandidate} style={{ ...buttonStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <LogOut size={14} /> Log out
-            </button>
+            <ProfileMenu
+              name={candidate.fullName}
+              subtitle={candidate.candidateType}
+              email={candidate.email}
+              avatarSrc={candidateFileSrc(candidate.photoUrl)}
+              onLogout={logoutCandidate}
+            />
           </>
         )}
         {staff ? (
@@ -165,36 +138,17 @@ export default function Navbar() {
             )}
             <NotificationBell />
 
-            {/* Profile chip - carries "logged in as <name> (<role>)", moved
-                here from the HR dashboard's page header so it's visible on
-                every staff screen, not just that one. */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 30,
-                  height: 30,
-                  flexShrink: 0,
-                  borderRadius: "50%",
-                  background: "rgba(255,255,255,0.15)",
-                  border: "1px solid rgba(255,255,255,0.4)",
-                }}
-              >
-                <User size={15} color="#FFFFFF" />
-              </span>
-              <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
-                <span style={{ ...linkStyle, fontWeight: 600, fontSize: 13 }}>{staff?.name}</span>
-                <span style={{ ...linkStyle, fontWeight: 400, fontSize: 11, opacity: 0.8 }}>
-                  {staff?.role?.replace(/_/g, ' ')}
-                </span>
-              </span>
-            </div>
-
-            <button onClick={logoutStaff} style={{ ...buttonStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <LogOut size={14} /> Staff log out
-            </button>
+            {/* Account panel - carries "logged in as <name> (<role>)" plus
+                email, moved here from the HR dashboard's page header so
+                it's visible on every staff screen, not just that one.
+                Click the avatar for the card; replaces the old
+                always-visible chip + separate "Staff log out" button. */}
+            <ProfileMenu
+              name={staff?.name}
+              subtitle={staff?.role?.replace(/_/g, ' ')}
+              email={staff?.email}
+              onLogout={logoutStaff}
+            />
           </>
         ) : null}
       </div>

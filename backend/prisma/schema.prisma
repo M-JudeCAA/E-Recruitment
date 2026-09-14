@@ -641,6 +641,15 @@ model DelegationUsage {
   usedAt       DateTime   @default(now())
 }
 
+// VacancyDeadlinePassed and NewApplicationSubmitted are declaring
+// untracked drift already live on the shared dev database (see
+// prisma/migrations/README_notification_task_types.md), not new
+// additions - schema.prisma was out of date with reality, not the other
+// way round. Despite the shared enum name/column, they are plain
+// Notification.taskType events, not real SLA-escalation task types:
+// SlaPolicy/TaskEscalation and scripts/checkSlaEscalations.js only ever
+// reference the original three by name, so adding these here does not
+// pull them into approval-SLA timing.
 enum SlaTaskType {
   VacancyApproval
   DepartmentApproval

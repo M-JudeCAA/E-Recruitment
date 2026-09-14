@@ -161,7 +161,7 @@ async function login(req, res) {
   );
   res.json({
     token, candidateType: candidate.candidateType, fullName: candidate.fullName,
-    photoUrl: candidate.photoUrl, firstLogin
+    photoUrl: candidate.photoUrl, email: candidate.email, firstLogin
   });
 }
 

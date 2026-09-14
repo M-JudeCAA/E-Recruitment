@@ -1,6 +1,6 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { Home, Briefcase, FileText, Building2, CalendarClock, Award } from 'lucide-react';
+import Sidebar from './Sidebar';
 
 // Shared across every /hr/* screen so the navigation is identical no matter
 // which one you're on. Vacancies/Applications/Interviews/Offer are tabs on
@@ -20,52 +20,5 @@ const ITEMS = [
 ];
 
 export default function HRSidebar({ active }) {
-  return (
-    <aside
-      style={{
-        width: 250,
-        flexShrink: 0,
-        background: 'var(--color-bg-subtle)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius)',
-        padding: 'var(--spacing-sm)',
-        boxSizing: 'border-box',
-        // See CandidateSidebar.jsx's comment - same reasoning applies here.
-        position: 'sticky',
-        // Cleared past the fixed BreadcrumbNav bar too now, not just the
-        // Navbar - otherwise the sidebar's top edge would end up sliding
-        // underneath that bar once the page is scrolled.
-        top: 'calc(var(--navbar-height) + var(--breadcrumb-height) + var(--spacing-md))',
-        maxHeight: 'calc(100vh - var(--navbar-height) - var(--breadcrumb-height) - var(--footer-height) - var(--spacing-lg))',
-        overflowY: 'auto',
-      }}
-    >
-      {ITEMS.map(({ key, label, icon: Icon, to }) => {
-        const isActive = active === key;
-        return (
-          <Link
-            key={key}
-            to={to}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              width: '100%',
-              boxSizing: 'border-box',
-              textDecoration: 'none',
-              padding: '10px 12px',
-              marginBottom: 4,
-              borderRadius: 'var(--radius-sm)',
-              fontSize: 14,
-              fontWeight: isActive ? 600 : 500,
-              background: isActive ? 'var(--color-primary)' : 'transparent',
-              color: isActive ? '#FFFFFF' : 'var(--color-text)',
-            }}
-          >
-            <Icon size={16} /> {label}
-          </Link>
-        );
-      })}
-    </aside>
-  );
+  return <Sidebar items={ITEMS} active={active} storageKey="hrSidebarCollapsed" width={250} />;
 }

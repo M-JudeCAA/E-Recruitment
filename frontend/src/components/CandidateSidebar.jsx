@@ -1,6 +1,6 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { Home, Search, FileText, User } from 'lucide-react';
+import Sidebar from './Sidebar';
 
 // Shared across every /dashboard/* screen, mirroring HRSidebar's pattern
 // for the staff side of the app. Four stops instead of the previous two:
@@ -17,60 +17,5 @@ const ITEMS = [
 ];
 
 export default function CandidateSidebar({ active }) {
-  return (
-    <aside
-      style={{
-        width: 220,
-        flexShrink: 0,
-        background: 'var(--color-bg-subtle)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 'var(--radius)',
-        padding: 'var(--spacing-sm)',
-        boxSizing: 'border-box',
-        // Sticky, not a real position:fixed - it stays pinned in the
-        // viewport as the page scrolls (reads as "fixed" to a user) while
-        // still reserving its own width as a normal flex item, so every
-        // page that renders it needs no matching margin/left-offset hack.
-        // top clears the fixed Navbar (App.jsx's --navbar-height) with a
-        // little breathing room; maxHeight stops short of the fixed
-        // Footer and switches to its own scrollbar once the item list
-        // outgrows the space between them, instead of the sidebar
-        // growing taller than the viewport or sliding under the footer.
-        position: 'sticky',
-        // Cleared past the fixed BreadcrumbNav bar too now, not just the
-        // Navbar - otherwise the sidebar's top edge would end up sliding
-        // underneath that bar once the page is scrolled.
-        top: 'calc(var(--navbar-height) + var(--breadcrumb-height) + var(--spacing-md))',
-        maxHeight: 'calc(100vh - var(--navbar-height) - var(--breadcrumb-height) - var(--footer-height) - var(--spacing-lg))',
-        overflowY: 'auto',
-      }}
-    >
-      {ITEMS.map(({ key, label, icon: Icon, to }) => {
-        const isActive = active === key;
-        return (
-          <Link
-            key={key}
-            to={to}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              width: '100%',
-              boxSizing: 'border-box',
-              textDecoration: 'none',
-              padding: '10px 12px',
-              marginBottom: 4,
-              borderRadius: 'var(--radius-sm)',
-              fontSize: 14,
-              fontWeight: isActive ? 600 : 500,
-              background: isActive ? 'var(--color-primary)' : 'transparent',
-              color: isActive ? '#FFFFFF' : 'var(--color-text)',
-            }}
-          >
-            <Icon size={16} /> {label}
-          </Link>
-        );
-      })}
-    </aside>
-  );
+  return <Sidebar items={ITEMS} active={active} storageKey="candidateSidebarCollapsed" width={220} />;
 }

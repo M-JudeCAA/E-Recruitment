@@ -37,6 +37,11 @@ module.exports = {
   findByVacancyAndStatus: (vacancyId, status) => prisma.application.findMany({
     where: { vacancyId, status }
   }),
+  // Same Draft exclusion as findByVacancy - a single query in place of the
+  // per-vacancy fetch-and-sum HRHome.jsx used to do.
+  countAll: () => prisma.application.count({ where: { status: { not: 'Draft' } } }),
+  // Same Draft exclusion, scoped to one vacancy.
+  countByVacancy: (vacancyId) => prisma.application.count({ where: { vacancyId, status: { not: 'Draft' } } }),
   // include is optional (undefined -> Prisma returns scalars only, same
   // as before) - added so a couple of callers that need the vacancy title
   // for a candidate-facing notification message don't need a second

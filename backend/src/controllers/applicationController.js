@@ -8,6 +8,13 @@ const { notifyCandidate } = require('../services/candidateNotificationService');
 // now (saveDraft/submit/withdraw) - see routes/applications.js. This file
 // keeps everything downstream of a Submitted application.
 
+// Cross-vacancy total for HRHome's KPI card - one count query instead of
+// fetching every vacancy's application list and summing client-side.
+async function count(req, res) {
+  const total = await applicationModel.countAll();
+  res.json({ count: total });
+}
+
 async function shortlist(req, res) {
   const applicationId = Number(req.params.id);
   if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
@@ -182,4 +189,4 @@ async function declineOffer(req, res) {
   res.json(result);
 }
 
-module.exports = { shortlist, reject, approveShortlist, recommendOffer, approveOffer, acceptOffer, declineOffer };
+module.exports = { count, shortlist, reject, approveShortlist, recommendOffer, approveOffer, acceptOffer, declineOffer };
