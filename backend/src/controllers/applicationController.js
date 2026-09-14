@@ -2,6 +2,7 @@ const applicationModel = require('../models/applicationModel');
 const offerModel = require('../models/offerModel');
 const slaModel = require('../models/slaModel');
 const workflow = require('../services/workflowService');
+const { notifyCandidate } = require('../services/candidateNotificationService');
 
 // NOTE: application creation/submission lives in applicationDraftController
 // now (saveDraft/submit/withdraw) - see routes/applications.js. This file
@@ -17,8 +18,52 @@ async function shortlist(req, res) {
   }
   const application = await applicationModel.update(applicationId, {
     status: 'Shortlisted', rank: req.body.rank, listStatus: req.body.listStatus
-  });
+  }, { vacancy: true });
+  await notifyCandidate(
+    application.candidateId, 'ApplicationShortlisted',
+    `Good news - you've been shortlisted for "${application.vacancy.title}". We'll be in touch about next steps.`
+  );
   res.json(application);
+}
+
+// A status HR can reach from anywhere before an offer is on the table -
+// Submitted through Interviewed. Not Draft (the candidate's own to
+// withdraw, HR never sees it), not Offered/Rejected/Withdrawn (already
+// terminal or past the point rejection makes sense here). Gated at the
+// same Senior_HR_Officer+ tier as shortlist/beginReview - the first tier
+// with review authority over an application.
+const NOT_REJECTABLE = ['Draft', 'Offered', 'Rejected', 'Withdrawn'];
+
+async function reject(req, res) {
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
+  const application = await applicationModel.findById(applicationId, { vacancy: true });
+  if (!application) return res.status(404).json({ error: 'Application not found' });
+  if (NOT_REJECTABLE.includes(application.status)) {
+    return res.status(422).json({ error: `An application at status "${application.status}" cannot be rejected here` });
+  }
+
+  const reason = req.body.reason || null;
+  // Scoped to the status just read, same atomic-guard pattern as
+  // applicationModel.updateIfStatus's other callers - avoids a second,
+  // near-simultaneous action on this application (an interview panel's
+  // "Reject" recommendation landing at the same moment as this) silently
+  // overwriting each other.
+  const result = await applicationModel.updateIfStatus(applicationId, application.status, {
+    status: 'Rejected', rejectedAt: new Date(), rejectedById: req.user.id, rejectionReason: reason
+  });
+  if (result.count === 0) {
+    return res.status(409).json({ error: 'This application was already updated - please refresh and try again' });
+  }
+
+  await notifyCandidate(
+    application.candidateId, 'ApplicationRejected',
+    `We're sorry to let you know your application for "${application.vacancy.title}" was not successful this time.` +
+      (reason ? ` ${reason}` : '')
+  );
+
+  const updated = await applicationModel.findById(applicationId, { vacancy: true, rejectedBy: { select: { name: true } } });
+  res.json(updated);
 }
 
 async function approveShortlist(req, res) {
@@ -41,9 +86,22 @@ async function recommendOffer(req, res) {
   const application = await applicationModel.findById(applicationId, { interviewRounds: true });
   if (!application) return res.status(404).json({ error: 'Application not found' });
 
-  const hasFinalizedInterview = application.interviewRounds.some((r) => r.score != null && r.recommendation);
-  if (!hasFinalizedInterview) {
-    return res.status(422).json({ error: 'This application has no finalized interview recommendation yet' });
+  // Requires both an application actually at Interviewed (not, say,
+  // already Rejected by a "Reject" panel recommendation - see
+  // interviewController.finalizeRecommendation) AND a round whose
+  // recommendation is specifically "Shortlist", not merely present.
+  // Previously only "some round has any recommendation at all" was
+  // checked, so a panel's explicit "Hold" or "Reject" recommendation
+  // satisfied this exactly like "Shortlist" would - letting PHRO
+  // recommend an offer for someone the panel had said not to hire.
+  if (application.status !== 'Interviewed') {
+    return res.status(422).json({ error: 'This application is not awaiting an offer recommendation' });
+  }
+  const hasShortlistRecommendation = application.interviewRounds.some(
+    (r) => r.score != null && r.recommendation === 'Shortlist'
+  );
+  if (!hasShortlistRecommendation) {
+    return res.status(422).json({ error: 'This application has no finalized "Shortlist" interview recommendation yet' });
   }
 
   let offer;
@@ -76,6 +134,17 @@ async function approveOffer(req, res) {
   // anywhere - without this, an escalated OfferApproval task would stay
   // "active" (resolvedAt: null) forever even after being decided.
   await slaModel.resolveEscalations('OfferApproval', offerId);
+  // Approved (not Recommended) is the moment the candidate can actually
+  // act on this - OfferPanel in CandidateApplications.jsx only renders
+  // Accept/Decline once offer.status === 'Approved'. Notifying any
+  // earlier would point the candidate at something they can't do
+  // anything about yet.
+  if (offer.application?.vacancy) {
+    await notifyCandidate(
+      offer.application.candidateId, 'OfferReceived',
+      `Congratulations! You have received an offer for "${offer.application.vacancy.title}". Please log in to accept or decline.`
+    );
+  }
   res.json(offer);
 }
 
@@ -113,4 +182,4 @@ async function declineOffer(req, res) {
   res.json(result);
 }
 
-module.exports = { shortlist, approveShortlist, recommendOffer, approveOffer, acceptOffer, declineOffer };
+module.exports = { shortlist, reject, approveShortlist, recommendOffer, approveOffer, acceptOffer, declineOffer };

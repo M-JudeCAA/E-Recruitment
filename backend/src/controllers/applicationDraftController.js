@@ -7,6 +7,9 @@ const { fileUrl } = require('../middleware/upload');
 const {
   assertPostingTypeEligible, assertVacancyAcceptingApplications, assertBeforeDeadline
 } = require('../utils/applicationEligibility');
+const { isProfileComplete } = require('../utils/profileCompleteness');
+const { notifyCandidate } = require('../services/candidateNotificationService');
+const { notify } = require('../services/notificationService');
 
 // REPLACES the old single-step submit() entirely - having two parallel
 // "create an application" code paths (one direct-to-Submitted, one
@@ -34,10 +37,12 @@ async function saveDraft(req, res) {
   try {
     assertPostingTypeEligible(vacancy, req.user.candidateType);
     assertVacancyAcceptingApplications(vacancy);
-    // Deliberately NOT calling assertBeforeDeadline here - a draft
-    // started in good faith before the deadline can still be edited as
-    // the deadline approaches or passes; only the transition to
-    // Submitted (below) is actually blocked by it.
+    // CHANGED - a closed (deadline-passed) vacancy's draft can no longer be
+    // created OR continued/edited here, applying to both branches below.
+    // The Draft row itself is never deleted or hidden by this - it still
+    // shows up on My Applications (with its Started date), just without a
+    // working "Continue draft" link once its vacancy has closed.
+    assertBeforeDeadline(vacancy);
   } catch (err) {
     return res.status(422).json({ error: err.message });
   }
@@ -157,6 +162,21 @@ async function submit(req, res) {
     return res.status(422).json({ error: err.message });
   }
 
+  // Checked after the vacancy-level eligibility above, deliberately - if
+  // the vacancy itself is closed/filled/past its deadline, that's the
+  // relevant reason submission isn't possible, and it would be a confusing
+  // (and wrong) message to tell the candidate to go complete their profile
+  // when doing so wouldn't help at all. The "complete your profile" prompt
+  // elsewhere in the app (modal on the dashboard/apply wizard) is closable
+  // and reappears rather than blocking anything - this is the one place
+  // that's actually enforced, since HR should never receive a submission
+  // with no education/experience/contact details on file just because the
+  // candidate dismissed a reminder.
+  const candidate = await candidateModel.findByIdWithRecords(req.user.id);
+  if (!isProfileComplete(candidate)) {
+    return res.status(422).json({ error: 'Please complete your profile before submitting an application' });
+  }
+
   // If HR has already opened this vacancy's review queue
   // (reviewStartedAt set), a late-but-valid applicant should join that
   // queue immediately, screened the same way the original batch was -
@@ -164,7 +184,6 @@ async function submit(req, res) {
   // Begin Review a second time.
   let data = { status: 'Submitted', submittedDate: new Date() };
   if (vacancy.reviewStartedAt) {
-    const candidate = await candidateModel.findByIdWithRecords(req.user.id);
     const result = screenApplication(application, candidate, vacancy);
     data = {
       ...data, status: 'UnderReview',
@@ -172,12 +191,38 @@ async function submit(req, res) {
     };
   }
 
-  const updated = await applicationModel.update(applicationId, data);
+  // Scoped to status: 'Draft' so a second, near-simultaneous submit call
+  // for the same application (double click reaching the API, a retried
+  // request, two open tabs) can't also pass - see applicationModel.js's
+  // comment on updateIfStatus for why this needs to be atomic rather than
+  // the earlier "read status, then write" check above.
+  const result = await applicationModel.updateIfStatus(applicationId, 'Draft', data);
+  if (result.count === 0) {
+    return res.status(409).json({ error: 'This application has already been submitted' });
+  }
+  const updated = await applicationModel.findById(applicationId);
 
   await workflow.captureSnapshot({
     entityType: 'ApplicationSnapshot', entityId: applicationId, candidateId: req.user.id
   });
+  // Internal-only, unaffected by the two notifications below - notifies
+  // the candidate's declared supervisor, a different audience than either.
   await workflow.notifySupervisor(applicationId);
+
+  // Closes two gaps found in the same audit: (1) SubmitStep.jsx has always
+  // promised "a confirmation has been sent to your email" - nothing ever
+  // sent one until now; (2) an External candidate's submission previously
+  // notified literally no one on the HR side (notifySupervisor above
+  // no-ops for anyone who isn't Internal) - this fires for both posting
+  // types, to whoever created the vacancy, regardless.
+  await notifyCandidate(
+    req.user.id, 'ApplicationSubmitted',
+    `Your application for "${vacancy.title}" (${vacancy.jobRef}) has been received. We'll notify you of any updates.`
+  );
+  await notify(
+    vacancy.createdById, 'NewApplicationSubmitted', applicationId,
+    `${candidate.fullName} applied for "${vacancy.title}" (${vacancy.jobRef}).`
+  );
 
   res.json(updated);
 }

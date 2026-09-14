@@ -21,7 +21,8 @@ module.exports = {
     include: {
       candidate: { select: { id: true, fullName: true, candidateType: true, internalProfile: true } },
       interviewRounds: true,
-      offer: true
+      offer: true,
+      rejectedBy: { select: { name: true } }
     },
     orderBy: [{ rank: 'asc' }, { shortlistScore: 'desc' }]
   }),
@@ -36,7 +37,20 @@ module.exports = {
   findByVacancyAndStatus: (vacancyId, status) => prisma.application.findMany({
     where: { vacancyId, status }
   }),
-  update: (id, data) => prisma.application.update({ where: { id }, data }),
+  // include is optional (undefined -> Prisma returns scalars only, same
+  // as before) - added so a couple of callers that need the vacancy title
+  // for a candidate-facing notification message don't need a second
+  // round-trip query just for that.
+  update: (id, data, include) => prisma.application.update({ where: { id }, data, include }),
+  // Atomic guard against a submit race - two near-simultaneous submit
+  // requests for the same Draft (double API call, a retry, two open tabs)
+  // both pass a "status === Draft" read before either commits a write.
+  // Scoping the update itself to status: expectedStatus (updateMany, so it
+  // reports a count instead of throwing when zero rows match) means only
+  // the first one to actually reach the database wins - the second sees
+  // count 0 and knows someone else already changed it, instead of both
+  // proceeding to capture a snapshot and notify the supervisor twice.
+  updateIfStatus: (id, expectedStatus, data) => prisma.application.updateMany({ where: { id, status: expectedStatus }, data }),
   // Used only for cancelling a Draft (never a Submitted-or-later
   // application) - see applicationDraftController.withdraw. Deleting the
   // row, rather than marking it Withdrawn, frees the (vacancyId,

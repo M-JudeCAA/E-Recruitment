@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Search, MapPin, Users, Calendar, ArrowRight, UserPlus, LogIn,
+  Search, MapPin, Users, Calendar, ArrowRight, UserPlus, LogIn, Download,
   FileEdit, Send, ListChecks, ShieldCheck, TrendingUp, HeartHandshake, GraduationCap
 } from 'lucide-react';
 import client from '../models/apiClient';
@@ -10,6 +10,13 @@ import Card from '../components/Card';
 import StatusBadge from '../components/StatusBadge';
 import LoadingState from '../components/LoadingState';
 import ucaaLogo from '../assets/ucaa-logo.png';
+import { useVacancyPdfDownload } from '../utils/useVacancyPdfDownload';
+
+// A vacancy whose deadline has passed is still shown here (see
+// vacancyController.listPublic's own comment - Vacancy.status is never
+// mutated just because a deadline lapsed), tagged Closed with its Apply
+// button swapped for a details-download one, rather than disappearing.
+const isClosed = (v) => v.deadline && new Date(v.deadline) < new Date();
 
 // Same CSS-variable-backed palette as CandidateLogin.jsx/Navbar.jsx, so
 // this full-bleed hero stays visually identical to the rest of the app's
@@ -54,6 +61,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [titleSearch, setTitleSearch] = useState('');
   const [deptSearch, setDeptSearch] = useState('');
+  const { download, hiddenPrintArea, downloadingId } = useVacancyPdfDownload();
 
   useEffect(() => {
     client.get('/api/vacancies')
@@ -266,7 +274,9 @@ export default function Home() {
                 gap: 'var(--spacing-md)', marginBottom: 56
               }}
             >
-              {filtered.map((v) => (
+              {filtered.map((v) => {
+                const closed = isClosed(v);
+                return (
                 <Card key={v.id} style={{ marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
                   <div style={{ fontWeight: 700, marginBottom: 8 }}>
                     {v.jobRef ? <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{v.jobRef}: </span> : null}
@@ -286,17 +296,31 @@ export default function Home() {
                         <Calendar size={14} /> Apply by {new Date(v.deadline).toLocaleDateString()}
                       </span>
                     )}
-                    <span><StatusBadge status={v.status} /></span>
+                    <span style={{ display: 'flex', gap: 6 }}>
+                      {closed ? <StatusBadge status="Closed" /> : <StatusBadge status={v.status} />}
+                    </span>
                   </div>
-                  {/* /apply/:id is RequireCandidate-gated (see App.jsx) - an
-                      anonymous visitor is bounced to /login?returnTo=... and
-                      lands back here after signing in, same as clicking
-                      Apply from any other job listing in the app. */}
-                  <Link to={`/apply/${v.id}`} style={{ marginTop: 'auto', textDecoration: 'none' }}>
-                    <Button style={{ width: '100%' }}>Apply Now</Button>
-                  </Link>
+                  {closed ? (
+                    <Button
+                      variant="secondary"
+                      disabled={downloadingId === v.id}
+                      style={{ marginTop: 'auto', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      onClick={() => download(v)}
+                    >
+                      <Download size={16} /> {downloadingId === v.id ? 'Preparing PDF...' : 'Download Job Details'}
+                    </Button>
+                  ) : (
+                    // /apply/:id is RequireCandidate-gated (see App.jsx) - an
+                    // anonymous visitor is bounced to /login?returnTo=... and
+                    // lands back here after signing in, same as clicking
+                    // Apply from any other job listing in the app.
+                    <Link to={`/apply/${v.id}`} style={{ marginTop: 'auto', textDecoration: 'none' }}>
+                      <Button style={{ width: '100%' }}>Apply Now</Button>
+                    </Link>
+                  )}
                 </Card>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -314,6 +338,8 @@ export default function Home() {
           </Button>
         </Link>
       </section>
+
+      {hiddenPrintArea}
     </div>
   );
 }

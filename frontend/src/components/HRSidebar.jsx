@@ -32,8 +32,11 @@ export default function HRSidebar({ active }) {
         boxSizing: 'border-box',
         // See CandidateSidebar.jsx's comment - same reasoning applies here.
         position: 'sticky',
-        top: 'calc(var(--navbar-height) + var(--spacing-md))',
-        maxHeight: 'calc(100vh - var(--navbar-height) - var(--footer-height) - var(--spacing-lg))',
+        // Cleared past the fixed BreadcrumbNav bar too now, not just the
+        // Navbar - otherwise the sidebar's top edge would end up sliding
+        // underneath that bar once the page is scrolled.
+        top: 'calc(var(--navbar-height) + var(--breadcrumb-height) + var(--spacing-md))',
+        maxHeight: 'calc(100vh - var(--navbar-height) - var(--breadcrumb-height) - var(--footer-height) - var(--spacing-lg))',
         overflowY: 'auto',
       }}
     >

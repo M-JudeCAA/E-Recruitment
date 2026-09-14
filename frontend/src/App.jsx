@@ -2,6 +2,7 @@ import React from "react";
 import { Routes, Route, Outlet } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
+import BreadcrumbNav from "./components/BreadcrumbNav";
 
 import Home from "./views/Home";
 import Register from "./views/Register";
@@ -35,7 +36,13 @@ import { RequireCandidate, RequireStaff, RequireStaffPort, GuestPortGate } from 
 // background and would get a second, unwanted inset if wrapped here too.
 function PaddedLayout() {
   return (
-    <div style={{ padding: 20 }}>
+    // BreadcrumbNav is position:fixed (pinned under the Navbar, see its own
+    // comment) - the extra top padding here is what reserves exactly its
+    // height so routed content never renders underneath it. Only this
+    // layout pads by --breadcrumb-height, not the outer wrapper below,
+    // since the full-bleed sibling routes never render the bar at all.
+    <div style={{ padding: 20, paddingTop: 'calc(20px + var(--breadcrumb-height))' }}>
+      <BreadcrumbNav />
       <Outlet />
     </div>
   );

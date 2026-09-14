@@ -131,6 +131,7 @@ model StaffUser {
   departmentsCreated  Department[]  @relation("DepartmentCreatedBy")
   departmentsApproved Department[]  @relation("DepartmentApprovedBy")
   positionsCreated    Position[]    @relation("PositionCreatedBy")
+  applicationsRejected Application[] @relation("ApplicationRejectedBy")
 
   // Real, time-bounded, audited delegation - distinct from the older
   // static `actingAsId` field above, which predates this and is left
@@ -217,6 +218,13 @@ model Vacancy {
   // creation (enforced in vacancyController.create).
   postingType          PostingType
   deadline             DateTime?
+  // Set once, the first time scripts/checkVacancyDeadlines.js notifies the
+  // vacancy's creator that its deadline has passed - never cleared
+  // afterward, same one-time-fire-guard idiom as
+  // Candidate.profileCompletedAt. Deadline itself is intentionally NOT a
+  // stored status transition (see VacancyStatus's own comment) - this only
+  // guards the notification from firing more than once per vacancy.
+  deadlineNotifiedAt   DateTime?
   regulatoryDriver     String?
   category             String?
   priority             String?
@@ -323,7 +331,12 @@ model Candidate {
   email              String         @unique
   phone              String?
   candidateType      CandidateType
-  nationalId         String?
+  // Unique (not just per-idType) - a National ID or Passport number is a
+  // real-world identity document either way, and nothing should let two
+  // accounts claim the same one. NULL is exempt from this in MySQL (only
+  // actual duplicate values collide), so candidates who haven't set one
+  // yet never conflict with each other.
+  nationalId         String?        @unique
   idType             String?        // 'NationalID' | 'Passport' - which format nationalId is meant to follow;
                                      // the Uganda NIN regex is only enforced when this is 'NationalID', since a
                                      // foreign candidate's passport format varies too much to validate meaningfully.
@@ -442,6 +455,18 @@ model Application {
   screeningReasons String?           @db.Text // JSON array of human-readable strings
   screenedAt       DateTime?
   createdAt        DateTime          @default(now())
+
+  // Set by applicationController.reject (an explicit HR action, gated at
+  // Senior_HR_Officer+) or by interviewController.finalizeRecommendation
+  // when the panel's recommendation is itself "Reject" - the only two
+  // places ApplicationStatus.Rejected is ever written. rejectionReason is
+  // optional (HR's prerogative, mirrors withdrawalReason above) and is
+  // shown to the candidate in the rejection notification/on their
+  // application when present.
+  rejectedAt       DateTime?
+  rejectedById     Int?
+  rejectedBy       StaffUser?        @relation("ApplicationRejectedBy", fields: [rejectedById], references: [id])
+  rejectionReason  String?           @db.Text
 
   // Application-level answers (vary per application, unlike the
   // candidate-level profile fields on Candidate) - the wizard's Questions
@@ -620,6 +645,18 @@ enum SlaTaskType {
   VacancyApproval
   DepartmentApproval
   OfferApproval
+  // Not part of the SLA-escalation machinery in checkSlaEscalations.js
+  // (that script's taskType loop is an explicit, separate array, not
+  // derived from this enum) - reusing Notification/notify() here just for
+  // its existing dual-channel (InApp+Email) delivery, from
+  // scripts/checkVacancyDeadlines.js.
+  VacancyDeadlinePassed
+  // Same "reuse notify()'s plumbing, not part of the SLA-escalation loop"
+  // principle as VacancyDeadlinePassed above - fired once per submission
+  // (both Internal and External candidates) to the vacancy's creator, from
+  // applicationDraftController.submit. Internal candidates additionally
+  // trigger workflowService.notifySupervisor, which is unrelated to this.
+  NewApplicationSubmitted
 }
 
 model SlaPolicy {
@@ -652,13 +689,29 @@ model Notification {
   channel     NotificationChannel
   taskType    SlaTaskType
   taskId      Int
-  message     String
+  // @db.Text, not the unannotated VARCHAR(191) default - a message built
+  // from a vacancy's jobRef+title+deadline+review-status (see
+  // scripts/checkVacancyDeadlines.js) routinely exceeds 191 characters and
+  // was hitting a real "value too long for column" error in production use,
+  // not just a hypothetical edge case.
+  message     String              @db.Text
   sentAt      DateTime            @default(now())
   readAt      DateTime?
 }
 
 enum CandidateNotificationType {
   ProfileCompleted
+  // Fired once, from applicationDraftController.submit - closes the gap
+  // where SubmitStep.jsx promised "a confirmation has been sent to your
+  // email" but nothing ever sent one.
+  ApplicationSubmitted
+  ApplicationShortlisted
+  // Fired from either applicationController.reject or
+  // interviewController.finalizeRecommendation (panel recommendation
+  // "Reject") - see the comment on Application.rejectedAt.
+  ApplicationRejected
+  InterviewScheduled
+  OfferReceived
 }
 
 // A separate model rather than reusing Notification above: recipientId
@@ -673,7 +726,9 @@ model CandidateNotification {
   candidate   Candidate                 @relation(fields: [candidateId], references: [id])
   channel     NotificationChannel
   type        CandidateNotificationType
-  message     String
+  // @db.Text for the same reason as Notification.message above - no
+  // deliberate 191-char limit was ever intended here either.
+  message     String                    @db.Text
   sentAt      DateTime                  @default(now())
   readAt      DateTime?
 }

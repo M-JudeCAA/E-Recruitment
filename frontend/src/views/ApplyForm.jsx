@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import client from '../models/apiClient';
 import { useAuth } from '../models/AuthContext';
@@ -64,6 +64,12 @@ export default function ApplyForm() {
   // the standalone /profile/complete page - the wizard underneath stays
   // mounted and visible either way.
   const [showProfileModal, setShowProfileModal] = useState(false);
+  // True once the /me/applications lookup below has resolved (whether or
+  // not it found a match) - needed so the deadline-passed screen render
+  // check further down never fires on a false negative while that request
+  // is still in flight (which would otherwise briefly block a candidate
+  // who actually already has a Draft/Submitted application here).
+  const [applicationsChecked, setApplicationsChecked] = useState(false);
 
   const loadProfile = () => client.get('/api/candidates/me').then((res) => {
     setProfile(res.data);
@@ -95,6 +101,7 @@ export default function ApplyForm() {
           Object.fromEntries((existing.desirableResponses || []).map((r) => [r.id, r.answer]))
         );
       }
+      setApplicationsChecked(true);
     });
   }, [vacancyId]);
 
@@ -164,12 +171,50 @@ export default function ApplyForm() {
     }
   };
 
-  if (!vacancy) {
+  if (!vacancy || !applicationsChecked) {
     return (
       <div style={{ background: 'var(--color-primary-light)', minHeight: '100%', width: '100%' }}>
         <div className="p-4 md:p-8">
           <div className="max-w-3xl mx-auto" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)' }}>
             <LoadingState label="Loading this vacancy..." />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // CHANGED - a Draft is now also blocked here, not just "no application at
+  // all". A vacancy past its deadline can no longer be applied to OR
+  // continued - the Draft row itself isn't touched by this (it stays
+  // visible, with its Started date, on My Applications - see
+  // CandidateApplications.jsx), it just can't be edited/submitted further,
+  // matching applicationDraftController.saveDraft's own unconditional
+  // assertBeforeDeadline. An already-Submitted-or-beyond application is
+  // unaffected either way - it was decided before or after the deadline
+  // stopped mattering to it.
+  const deadlinePassed = vacancy.deadline && new Date(vacancy.deadline) < new Date();
+  const blockedByDeadline = deadlinePassed && (!application || application.status === 'Draft');
+  if (blockedByDeadline) {
+    return (
+      <div style={{ background: 'var(--color-primary-light)', minHeight: '100%', width: '100%' }}>
+        <div className="p-4 md:p-8">
+          <div className="max-w-3xl mx-auto" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 32, textAlign: 'center' }}>
+            <h2 style={{ color: 'var(--color-primary-dark)', marginTop: 0 }}>Applications closed</h2>
+            <p style={{ color: 'var(--color-text-muted)', maxWidth: 480, margin: '0 auto 20px' }}>
+              The application deadline for <strong>{vacancy.title}</strong> ({vacancy.jobRef}) was{' '}
+              {new Date(vacancy.deadline).toLocaleDateString()}. This vacancy is no longer accepting new applications.
+              {application && ' Your draft is still saved and visible from My Applications, but can no longer be edited or submitted.'}
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Link to="/dashboard/jobs" style={{ textDecoration: 'none' }}>
+                <Button>Browse open positions</Button>
+              </Link>
+              {application && (
+                <Link to="/dashboard/applications" style={{ textDecoration: 'none' }}>
+                  <Button variant="ghost">View my applications</Button>
+                </Link>
+              )}
+            </div>
           </div>
         </div>
       </div>

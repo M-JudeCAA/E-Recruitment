@@ -209,7 +209,18 @@ async function updateProfile(req, res) {
   if (portfolioUrl !== undefined) data.portfolioUrl = portfolioUrl || null;
   if (workAuthorization !== undefined) data.workAuthorization = workAuthorization || null;
 
-  const candidate = await candidateModel.update(req.user.id, data);
+  let candidate;
+  try {
+    candidate = await candidateModel.update(req.user.id, data);
+  } catch (err) {
+    // nationalId is @unique (see schema.prisma) - two accounts claiming
+    // the same National ID/Passport number surfaces here as a Prisma
+    // P2002 rather than something worth exposing raw to the candidate.
+    if (err.code === 'P2002' && err.meta?.target?.includes('nationalId')) {
+      return res.status(409).json({ error: 'This National ID or Passport number is already registered on another account.' });
+    }
+    throw err;
+  }
   await checkAndFireCompletionEvent(req.user.id);
   res.json(omitPasswordHash(candidate));
 }

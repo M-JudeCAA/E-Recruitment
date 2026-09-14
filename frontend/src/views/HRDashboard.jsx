@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
@@ -33,6 +33,15 @@ const emptyForm = {
 // vacancy" remains Principal HR Officer+, unchanged - the vacancy
 // approval simplification was scoped narrowly to approval itself.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
+
+// A vacancy whose deadline has passed but is still Open/PartiallyFilled
+// (Vacancy.status is never mutated just because a deadline lapsed - see
+// scripts/checkVacancyDeadlines.js's own comment) needs HR's attention -
+// candidates can no longer apply to it, but nothing here told HR that
+// without them cross-checking today's date against every listed deadline
+// themselves. A vacancy already Closed/Filled isn't "overdue" in this
+// sense - it's already been resolved one way or the other.
+const isOverdue = (v) => v.deadline && new Date(v.deadline) < new Date() && ['Open', 'PartiallyFilled'].includes(v.status);
 
 export default function HRDashboard() {
   const { staff } = useAuth();
@@ -116,6 +125,17 @@ export default function HRDashboard() {
   const load = () => staffClient.get('/api/vacancies/admin')
     .then((res) => setVacancies(res.data))
     .finally(() => setVacanciesLoaded(true));
+
+  // Display-only ordering (a separate array, not a re-sort of `vacancies`
+  // itself) - overdue-and-still-active vacancies surface first so they
+  // aren't missed among newer ones, without disturbing the createdAt-desc
+  // order findManyForAdmin already returns for everything else, or the
+  // fetch order the cross-vacancy Applications/Interviews/Offers tabs rely
+  // on above.
+  const sortedVacancies = useMemo(
+    () => [...vacancies].sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a))),
+    [vacancies]
+  );
   useEffect(() => {
     load();
     staffClient.get('/api/departments/approved')
@@ -351,17 +371,19 @@ export default function HRDashboard() {
       </Card>
 
       <h3>Vacancies</h3>
-      {vacancies.map((v) => (
-        <Card key={v.id}>
+      {sortedVacancies.map((v) => (
+        <Card key={v.id} accent={isOverdue(v) ? 'var(--color-danger)' : undefined}>
           <strong>{v.jobRef}</strong> &mdash; {v.title} &middot; <StatusBadge status={v.status} />
           {' '}&middot; {v._count?.applications ?? 0} application(s)
           <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
             {v.department?.directorate?.name} &mdash; {v.department?.name}
             {v.reportsToPosition && <> &middot; Reports to {v.reportsToPosition.name}</>}
           </div>
-          {v.deadline && <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-            Deadline: {new Date(v.deadline).toLocaleDateString()}
-          </span>}
+          {v.deadline && (
+            <span style={{ fontSize: 13, fontWeight: isOverdue(v) ? 600 : 400, color: isOverdue(v) ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
+              {isOverdue(v) ? 'Deadline passed' : 'Deadline'}: {new Date(v.deadline).toLocaleDateString()}
+            </span>
+          )}
           <div style={{ marginTop: 8 }}>
             {/* Inactive while PendingApproval - the vacancy hasn't been
                 published yet, so there is nothing legitimate to review

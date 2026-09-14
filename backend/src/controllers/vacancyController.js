@@ -274,6 +274,13 @@ async function transitionPostingType(req, res) {
 // External ones. This is the same rule submit()/saveDraft() enforce at
 // application time (see applicationEligibility.js) - a candidate can
 // never even see a vacancy they wouldn't be allowed to apply to.
+// A deadline-passed vacancy is still returned here, deliberately - the
+// frontend tags it "Closed" and swaps its Apply button for a "Download job
+// details" one (still-visible advert, no more new applications), rather
+// than the listing hiding it outright. Vacancy.status is never mutated
+// just because a deadline lapsed (see its own comment: status reflects
+// fill-count, not time) - a manually status:Closed/Filled vacancy is a
+// separate, unrelated case still excluded by the status filter below.
 async function listPublic(req, res) {
   const candidateType = req.user?.type === 'candidate' ? req.user.candidateType : 'External';
   const postingType = candidateType === 'Internal' ? 'Internal' : 'External';

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Briefcase, FileText, Clock } from 'lucide-react';
+import { Briefcase, FileText, Clock, AlertTriangle } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import HRSidebar from '../components/HRSidebar';
 import Card from '../components/Card';
@@ -66,6 +66,13 @@ export default function HRHome() {
 
   const availableJobs = vacancies.filter((v) => v.status === 'Open' || v.status === 'PartiallyFilled').length;
   const pendingApproval = vacancies.filter((v) => v.status === 'PendingApproval').length;
+  // Still Open/PartiallyFilled (Vacancy.status is never mutated just
+  // because a deadline lapsed - see scripts/checkVacancyDeadlines.js's own
+  // comment) but past its deadline - candidates can no longer apply, so
+  // this is specifically "needs your attention", not just "closed".
+  const deadlinesPassed = vacancies.filter((v) =>
+    v.deadline && new Date(v.deadline) < new Date() && (v.status === 'Open' || v.status === 'PartiallyFilled')
+  ).length;
 
   return (
     <div>
@@ -101,6 +108,13 @@ export default function HRHome() {
               label="Pending Approval"
               value={pendingApproval}
               accent="var(--color-warning)"
+              loading={loadingVacancies}
+            />
+            <KpiCard
+              icon={AlertTriangle}
+              label="Deadlines Passed"
+              value={deadlinesPassed}
+              accent="var(--color-danger)"
               loading={loadingVacancies}
             />
           </div>
