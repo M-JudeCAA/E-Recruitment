@@ -9,6 +9,7 @@ const workflow = require('../services/workflowService');
 
 async function shortlist(req, res) {
   const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
   try {
     await workflow.assertCanShortlist(applicationId);
   } catch (err) {
@@ -35,6 +36,7 @@ async function approveShortlist(req, res) {
 // the Offer row DHRA later approves. Nothing existed to do this before.
 async function recommendOffer(req, res) {
   const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
 
   const application = await applicationModel.findById(applicationId, { interviewRounds: true });
   if (!application) return res.status(404).json({ error: 'Application not found' });

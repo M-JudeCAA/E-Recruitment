@@ -95,15 +95,36 @@ async function saveDraft(req, res) {
     return res.json(updated);
   }
 
-  const application = await applicationModel.create({
-    vacancyId,
-    candidateId: req.user.id,
-    cvUrl: fileUrl(cvFile),
-    coverLetterUrl: fileUrl(coverLetterFile),
-    status: 'Draft',
-    ...questionsData
-  });
-  res.status(201).json(application);
+  try {
+    const application = await applicationModel.create({
+      vacancyId,
+      candidateId: req.user.id,
+      cvUrl: fileUrl(cvFile),
+      coverLetterUrl: fileUrl(coverLetterFile),
+      status: 'Draft',
+      ...questionsData
+    });
+    res.status(201).json(application);
+  } catch (err) {
+    // Two concurrent saveDraft calls for the same (vacancyId, candidateId)
+    // pair - e.g. the apply wizard auto-saving on more than one "Continue"
+    // click in quick succession - can both reach the findFirst check above
+    // before either has actually inserted a row, so both attempt create()
+    // and the loser hits this unique constraint. Falling back to updating
+    // the winner's row keeps this endpoint safe to call concurrently,
+    // rather than surfacing a raw database error to the candidate.
+    if (err.code === 'P2002') {
+      const winner = await applicationModel.findFirst({ vacancyId, candidateId: req.user.id });
+      if (winner) {
+        const data = { ...questionsData };
+        if (cvFile) data.cvUrl = fileUrl(cvFile);
+        if (coverLetterFile) data.coverLetterUrl = fileUrl(coverLetterFile);
+        const updated = await applicationModel.update(winner.id, data);
+        return res.json(updated);
+      }
+    }
+    throw err;
+  }
 }
 
 // The real gate - all three eligibility checks apply here, plus the one
@@ -114,6 +135,7 @@ async function saveDraft(req, res) {
 // applying," not a work in progress.
 async function submit(req, res) {
   const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
   const application = await applicationModel.findById(applicationId);
   if (!application) return res.status(404).json({ error: 'Application not found' });
   if (application.candidateId !== req.user.id) {
@@ -177,6 +199,7 @@ async function submit(req, res) {
 //     Decision #8 in the candidate application workflow spec.
 async function withdraw(req, res) {
   const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
   const application = await applicationModel.findById(applicationId);
   if (!application) return res.status(404).json({ error: 'Application not found' });
   if (application.candidateId !== req.user.id) {

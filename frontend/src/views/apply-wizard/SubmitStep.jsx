@@ -10,7 +10,12 @@ export default function SubmitStep({ vacancy, applicationId, status, onSubmitted
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // applicationId should always be set by the time this step is reachable
+  // (ApplyForm.jsx now auto-saves a draft when leaving Documents/Questions)
+  // - this guard is only a last line of defense against a request firing
+  // at /api/applications/undefined/submit if that save ever failed silently.
   const handleSubmit = async () => {
+    if (!applicationId) { setError('Your application draft has not finished saving yet - please go back a step and try again.'); return; }
     setError(''); setBusy(true);
     try {
       await client.patch(`/api/applications/${applicationId}/submit`);
@@ -23,6 +28,7 @@ export default function SubmitStep({ vacancy, applicationId, status, onSubmitted
   };
 
   const handleWithdraw = async () => {
+    if (!applicationId) { setError('Your application draft has not finished saving yet - please go back a step and try again.'); return; }
     if (!window.confirm('Withdraw this application? This cannot be undone, and you will not be able to re-apply to this vacancy.')) return;
     setBusy(true);
     try {
