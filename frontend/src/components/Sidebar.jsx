@@ -53,15 +53,20 @@ export default function Sidebar({ items, active, storageKey, width = 250 }) {
   // desktop-only concept (an inline sidebar sitting there permanently),
   // and shouldn't leak into a drawer that's opened on demand and has
   // plenty of width for text.
+  // `badge` is an optional count (e.g. HRSidebar's Approvals Center item)
+  // - a small pill after the label when expanded, or a dot over the icon
+  // when collapsed/icon-only, so the "something needs you" signal survives
+  // the fold instead of disappearing with the label.
   function renderLinks(onNavigate, forceExpanded) {
     const iconOnly = collapsed && !forceExpanded;
-    return items.map(({ key, label, icon: Icon, to }) => {
+    return items.map(({ key, label, icon: Icon, to, badge }) => {
       const isActive = active === key;
+      const showBadge = badge != null && badge > 0;
       return (
         <Link
           key={key}
           to={to}
-          title={iconOnly ? label : undefined}
+          title={iconOnly ? (showBadge ? `${label} (${badge})` : label) : undefined}
           onClick={onNavigate}
           style={{
             display: 'flex',
@@ -78,10 +83,29 @@ export default function Sidebar({ items, active, storageKey, width = 250 }) {
             fontWeight: isActive ? 600 : 500,
             background: isActive ? 'var(--color-primary)' : 'transparent',
             color: isActive ? '#FFFFFF' : 'var(--color-text)',
+            position: 'relative',
           }}
         >
-          <Icon size={16} style={{ flexShrink: 0 }} />
-          {!iconOnly && label}
+          <span style={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
+            <Icon size={16} />
+            {showBadge && iconOnly && (
+              <span style={{
+                position: 'absolute', top: -4, right: -4, width: 8, height: 8, borderRadius: '50%',
+                background: isActive ? '#FFFFFF' : 'var(--color-danger)',
+              }} />
+            )}
+          </span>
+          {!iconOnly && <span style={{ flex: 1, minWidth: 0 }}>{label}</span>}
+          {!iconOnly && showBadge && (
+            <span style={{
+              flexShrink: 0, minWidth: 18, padding: '0 5px', borderRadius: 999, textAlign: 'center',
+              fontSize: 11, fontWeight: 700, lineHeight: '17px',
+              background: isActive ? 'rgba(255,255,255,0.25)' : 'var(--color-danger)',
+              color: '#FFFFFF',
+            }}>
+              {badge}
+            </span>
+          )}
         </Link>
       );
     });

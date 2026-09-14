@@ -129,6 +129,14 @@ async function recommendOffer(req, res) {
   res.status(201).json(offer);
 }
 
+// Manager/Director Approvals Center - every offer currently awaiting
+// their approval, across every vacancy, in one list instead of hunting
+// through each vacancy's own applications tab.
+async function listOffersPendingApproval(req, res) {
+  const offers = await offerModel.findManyPendingApproval();
+  res.json(offers);
+}
+
 async function approveOffer(req, res) {
   const offerId = Number(req.params.offerId);
   const existing = await offerModel.findById(offerId);
@@ -189,4 +197,7 @@ async function declineOffer(req, res) {
   res.json(result);
 }
 
-module.exports = { count, shortlist, reject, approveShortlist, recommendOffer, approveOffer, acceptOffer, declineOffer };
+module.exports = {
+  count, shortlist, reject, approveShortlist, recommendOffer,
+  listOffersPendingApproval, approveOffer, acceptOffer, declineOffer
+};

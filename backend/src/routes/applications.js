@@ -32,6 +32,9 @@ router.patch('/:id/shortlist', authenticate, requireStaffRole('Senior_HR_Officer
 router.patch('/:id/reject', authenticate, requireStaffRole('Senior_HR_Officer'), controller.reject);
 router.post('/vacancies/:vacancyId/approve-shortlist', authenticate, requireStaffRole('Principal_HR_Officer'), controller.approveShortlist);
 router.post('/:id/recommend-offer', authenticate, requireStaffRole('Principal_HR_Officer'), controller.recommendOffer);
+// Approvals Center listing - same Manager+ tier as approving one, since
+// this is purely "what's waiting for me to approve".
+router.get('/offers/pending-approval', authenticate, requireStaffRole('Manager'), controller.listOffersPendingApproval);
 // "Approve a final offer" explicitly excludes Principal HR Officer - only
 // Manager and Director can, per the 5-tier permission table (Decision #10:
 // PHRO can recommend but never approve).

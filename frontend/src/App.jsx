@@ -20,10 +20,11 @@ import StaffLogin from "./views/StaffLogin";
 import StaffForgotPassword from "./views/StaffForgotPassword";
 import StaffResetPassword from "./views/StaffResetPassword";
 import HRHome from "./views/HRHome";
+import ExecutiveDashboard from "./views/ExecutiveDashboard";
+import ApprovalsCenter from "./views/ApprovalsCenter";
 import HRDashboard from "./views/HRDashboard";
 import DepartmentAdmin from "./views/DepartmentAdmin";
-import StaffAdmin from "./views/StaffAdmin";
-import DelegationAdmin from "./views/DelegationAdmin";
+import StaffManagement from "./views/StaffManagement";
 import VacancyDetail from "./views/VacancyDetail";
 import PanelScoreAccess from "./views/PanelScoreAccess";
 import { RequireCandidate, RequireStaff, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
@@ -105,19 +106,34 @@ export default function App() {
               </RequireStaff>
             }
           />
+          {/* Manager/Director-only - the reimagined executive landing and
+              the unified Approvals Center, see HRSidebar.jsx. */}
           <Route
-            path="/hr/staff"
+            path="/hr/executive"
             element={
-              <RequireStaff minRole="Principal_HR_Officer">
-                <StaffAdmin />
+              <RequireStaff minRole="Manager">
+                <ExecutiveDashboard />
               </RequireStaff>
             }
           />
           <Route
-            path="/hr/delegations"
+            path="/hr/approvals"
+            element={
+              <RequireStaff minRole="Manager">
+                <ApprovalsCenter />
+              </RequireStaff>
+            }
+          />
+          {/* Combined Staff Accounts + Delegations page, replacing the two
+              old standalone routes and their Navbar links - see
+              StaffManagement.jsx and HRSidebar.jsx. Gated at the lower of
+              the two original tiers; each section inside enforces its own
+              original boundary. */}
+          <Route
+            path="/hr/staff-management"
             element={
               <RequireStaff minRole="Senior_HR_Officer">
-                <DelegationAdmin />
+                <StaffManagement />
               </RequireStaff>
             }
           />

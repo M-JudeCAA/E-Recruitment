@@ -10,6 +10,7 @@ import CvAutofillPanel from './CvAutofillPanel';
 import PhotoUploadPanel from './PhotoUploadPanel';
 import BulletListEditor from './BulletListEditor';
 import Modal from './Modal';
+import { useConfirm } from './ConfirmDialog';
 import { validateNationalId, NATIONAL_ID_ERROR } from '../utils/validators';
 import { isProfileComplete } from '../utils/profileCompleteness';
 import { educationKey, workExperienceKey, certificateKey } from '../utils/entryDedup';
@@ -27,6 +28,7 @@ const nextStagedKey = () => `staged-${Date.now()}-${stagedKeySeq++}`;
 // dropped into any of those three contexts unchanged.
 export default function ProfileCompletionForm({ onComplete }) {
   const { candidate } = useAuth();
+  const confirm = useConfirm();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({ idType: '', nationalId: '', location: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '' });
@@ -303,7 +305,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     if (await persistEducation(editEduForm, editingEduId)) setEditingEduId(null);
   };
   const deleteEducationEntry = async (id) => {
-    if (!window.confirm('Delete this education entry? This cannot be undone.')) return;
+    if (!(await confirm('Delete this education entry? This cannot be undone.', { title: 'Delete education entry', confirmLabel: 'Delete', danger: true }))) return;
     setError('');
     try {
       await client.delete(`/api/candidates/me/education/${id}`);
@@ -330,7 +332,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     if (await persistWorkExperience(editExpForm, editingExpId)) setEditingExpId(null);
   };
   const deleteExperienceEntry = async (id) => {
-    if (!window.confirm('Delete this work experience entry? This cannot be undone.')) return;
+    if (!(await confirm('Delete this work experience entry? This cannot be undone.', { title: 'Delete work experience entry', confirmLabel: 'Delete', danger: true }))) return;
     setError('');
     try {
       await client.delete(`/api/candidates/me/work-experience/${id}`);
@@ -356,7 +358,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     if (await persistCertificate(editCertForm, editingCertId)) setEditingCertId(null);
   };
   const deleteCertificateEntry = async (id) => {
-    if (!window.confirm('Delete this certificate entry? This cannot be undone.')) return;
+    if (!(await confirm('Delete this certificate entry? This cannot be undone.', { title: 'Delete certificate entry', confirmLabel: 'Delete', danger: true }))) return;
     setError('');
     try {
       await client.delete(`/api/candidates/me/certificates/${id}`);

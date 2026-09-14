@@ -345,6 +345,22 @@ describe('recommendOffer', () => {
   });
 });
 
+describe('listOffersPendingApproval', () => {
+  test('returns whatever the model finds, unmodified', async () => {
+    const offers = [{ id: 1, status: 'Recommended' }, { id: 2, status: 'Recommended' }];
+    prisma.offer.findMany.mockResolvedValue(offers);
+    const req = {};
+    const res = mockRes();
+
+    await applicationController.listOffersPendingApproval(req, res);
+
+    expect(prisma.offer.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { status: 'Recommended' }
+    }));
+    expect(res.json).toHaveBeenCalledWith(offers);
+  });
+});
+
 describe('approveOffer', () => {
   test('returns 404 rather than crashing when the offer does not exist', async () => {
     prisma.offer.findUnique.mockResolvedValue(null);

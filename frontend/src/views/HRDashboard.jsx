@@ -10,6 +10,7 @@ import Button from '../components/Button';
 import Alert from '../components/Alert';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
+import { useConfirm } from '../components/ConfirmDialog';
 import VacancyAdvertFields from '../components/VacancyAdvertFields';
 import VacancyAdvert from '../components/VacancyAdvert';
 
@@ -45,6 +46,7 @@ const isOverdue = (v) => v.deadline && new Date(v.deadline) < new Date() && ['Op
 
 export default function HRDashboard() {
   const { staff } = useAuth();
+  const confirm = useConfirm();
   // CHANGED - was Principal_HR_Officer. The vacancy workflow simplified
   // from 5-tier (create -> Senior HR Officer review -> Principal HR
   // Officer approve) to 2-tier: HR Officer creates, Manager or Director
@@ -240,7 +242,7 @@ export default function HRDashboard() {
   };
 
   const transitionPostingType = async (id, target) => {
-    if (!window.confirm(`Transition this vacancy to ${target}? This is audited and cannot be undone directly - you would need a second transition back.`)) return;
+    if (!(await confirm(`Transition this vacancy to ${target}? This is audited and cannot be undone directly - you would need a second transition back.`, { title: 'Transition posting type', confirmLabel: 'Transition' }))) return;
     setError('');
     try {
       await staffClient.patch(`/api/vacancies/${id}/transition-posting-type`, { postingType: target });

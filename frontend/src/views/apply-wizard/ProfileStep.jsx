@@ -4,6 +4,7 @@ import TextField from '../../components/TextField';
 import Select from '../../components/Select';
 import Button from '../../components/Button';
 import BulletListEditor from '../../components/BulletListEditor';
+import { useConfirm } from '../../components/ConfirmDialog';
 import client from '../../models/apiClient';
 
 // No candidate-facing UI for these existed before this. The backend
@@ -12,6 +13,7 @@ import client from '../../models/apiClient';
 // application-level - they persist across every application this
 // candidate ever submits.
 export default function ProfileStep({ profile, onProfileChange, profileDetails, setProfileDetail }) {
+  const confirm = useConfirm();
   const [newEdu, setNewEdu] = useState({ institution: '', qualificationLevel: '', fieldOfStudy: '', yearCompleted: '' });
   const [newExp, setNewExp] = useState({ employer: '', jobTitle: '', startDate: '', endDate: '', duties: [] });
   const [editingEduId, setEditingEduId] = useState(null);
@@ -93,7 +95,7 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
     }
   };
   const deleteEducationEntry = async (id) => {
-    if (!window.confirm('Delete this education entry? This cannot be undone.')) return;
+    if (!(await confirm('Delete this education entry? This cannot be undone.', { title: 'Delete education entry', confirmLabel: 'Delete', danger: true }))) return;
     setError('');
     try {
       await client.delete(`/api/candidates/me/education/${id}`);
@@ -126,7 +128,7 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
     }
   };
   const deleteExperienceEntry = async (id) => {
-    if (!window.confirm('Delete this work experience entry? This cannot be undone.')) return;
+    if (!(await confirm('Delete this work experience entry? This cannot be undone.', { title: 'Delete work experience entry', confirmLabel: 'Delete', danger: true }))) return;
     setError('');
     try {
       await client.delete(`/api/candidates/me/work-experience/${id}`);
@@ -173,7 +175,7 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
     }
   };
   const deleteCertificateEntry = async (id) => {
-    if (!window.confirm('Delete this certificate entry? This cannot be undone.')) return;
+    if (!(await confirm('Delete this certificate entry? This cannot be undone.', { title: 'Delete certificate entry', confirmLabel: 'Delete', danger: true }))) return;
     setError('');
     try {
       await client.delete(`/api/candidates/me/certificates/${id}`);

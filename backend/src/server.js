@@ -25,6 +25,7 @@ const directorateRoutes = require('./routes/directorates');
 const staffUsersRoutes = require('./routes/staffUsers');
 const delegationRoutes = require('./routes/delegations');
 const notificationRoutes = require('./routes/notifications');
+const dashboardRoutes = require('./routes/dashboard');
 
 // Express 4 does not forward a rejected promise from an async route
 // handler to the error middleware below on its own - an uncaught
@@ -68,6 +69,7 @@ app.use('/api/directorates', directorateRoutes);
 app.use('/api/staff-users', staffUsersRoutes);
 app.use('/api/delegations', delegationRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Basic error handler - catches Multer file-validation errors etc.
 app.use((err, req, res, next) => {

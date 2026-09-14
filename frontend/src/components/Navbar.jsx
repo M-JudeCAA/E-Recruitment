@@ -24,16 +24,14 @@ const linkStyle = {
   fontWeight: 500,
 };
 
-// Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK. Delegation
-// is self-service (you delegate your own authority to a subordinate) -
-// an HR Officer has nobody below them, so the link is hidden rather
-// than shown and immediately 403'd.
+// Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 
 export default function Navbar() {
   const { candidate, staff, logoutCandidate, logoutStaff } = useAuth();
-  const canDelegate = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
-  const canManageStaff = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Principal_HR_Officer;
+  // Manager/Director land on the reimagined Executive Overview instead of
+  // the HR Officer's operational Home - see HRSidebar.jsx/ExecutiveDashboard.jsx.
+  const isExecutive = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Manager;
 
   return (
     <nav
@@ -73,7 +71,7 @@ export default function Navbar() {
             account"/"Sign in" CTAs don't make sense once already signed
             in), or the guest landing page otherwise. */}
         <Link
-          to={staff ? "/hr/home" : candidate ? "/dashboard" : "/"}
+          to={staff ? (isExecutive ? "/hr/executive" : "/hr/home") : candidate ? "/dashboard" : "/"}
           style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}
         >
           <span
@@ -126,16 +124,9 @@ export default function Navbar() {
         )}
         {staff ? (
           <>
-            {canManageStaff && (
-              <Link to="/hr/staff" style={linkStyle}>
-                Staff accounts
-              </Link>
-            )}
-            {canDelegate && (
-              <Link to="/hr/delegations" style={linkStyle}>
-                Delegations
-              </Link>
-            )}
+            {/* Staff accounts / Delegations moved off the top nav - both
+                now live under the "Staff Management" sidebar entry
+                (HRSidebar.jsx) on one combined page (StaffManagement.jsx). */}
             <NotificationBell />
 
             {/* Account panel - carries "logged in as <name> (<role>)" plus
