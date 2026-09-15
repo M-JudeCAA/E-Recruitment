@@ -101,8 +101,11 @@ export default function Sidebar({ items, active, storageKey, width = 250 }) {
           padding: 'var(--spacing-sm)',
           boxSizing: 'border-box',
           position: 'sticky',
-          top: 'calc(var(--navbar-height) + var(--spacing-md))',
-          maxHeight: 'calc(100vh - var(--navbar-height) - var(--footer-height) - var(--spacing-lg))',
+          // Cleared past the fixed BreadcrumbNav bar too, not just the
+          // Navbar - otherwise the sidebar's top edge would end up sliding
+          // underneath that bar once the page is scrolled.
+          top: 'calc(var(--navbar-height) + var(--breadcrumb-height) + var(--spacing-md))',
+          maxHeight: 'calc(100vh - var(--navbar-height) - var(--breadcrumb-height) - var(--footer-height) - var(--spacing-lg))',
           overflowY: 'auto',
           overflowX: 'hidden',
           transition: 'width 0.15s ease',

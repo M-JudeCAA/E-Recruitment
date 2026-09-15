@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronRight } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
 import HRSidebar from '../components/HRSidebar';
@@ -34,6 +33,15 @@ const emptyForm = {
 // vacancy" remains Principal HR Officer+, unchanged - the vacancy
 // approval simplification was scoped narrowly to approval itself.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
+
+// A vacancy whose deadline has passed but is still Open/PartiallyFilled
+// (Vacancy.status is never mutated just because a deadline lapsed - see
+// scripts/checkVacancyDeadlines.js's own comment) needs HR's attention -
+// candidates can no longer apply to it, but nothing here told HR that
+// without them cross-checking today's date against every listed deadline
+// themselves. A vacancy already Closed/Filled isn't "overdue" in this
+// sense - it's already been resolved one way or the other.
+const isOverdue = (v) => v.deadline && new Date(v.deadline) < new Date() && ['Open', 'PartiallyFilled'].includes(v.status);
 
 export default function HRDashboard() {
   const { staff } = useAuth();
@@ -126,28 +134,10 @@ export default function HRDashboard() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [departmentFilter, setDepartmentFilter] = useState('All');
 
-  // Application Management tab - vacancy-grouped instead of one flat list
-  // of every applicant, so "how many applications does this vacancy have"
-  // is the headline number on each row rather than something you scroll
-  // and count for. Same filter-bar shape as Vacancy Management's, plus a
-  // sort (busiest vacancies first by default). Expansion is local UI
-  // state over crossApps, already loaded for this tab - no new request.
-  const [appSearchText, setAppSearchText] = useState('');
-  const [appStatusFilter, setAppStatusFilter] = useState('All');
-  const [appSortBy, setAppSortBy] = useState('count');
-  const [expandedVacancyIds, setExpandedVacancyIds] = useState(() => new Set());
-
-  const toggleVacancyExpanded = (id) => {
-    setExpandedVacancyIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
   const load = () => staffClient.get('/api/vacancies/admin')
     .then((res) => setVacancies(res.data))
     .finally(() => setVacanciesLoaded(true));
+
   useEffect(() => {
     load();
     staffClient.get('/api/departments/approved')
@@ -309,27 +299,11 @@ export default function HRDashboard() {
     return true;
   });
 
-  // crossApps grouped by vacancy id, once loaded - v._count.applications
-  // (Draft-excluded, same as crossApps' own source query) is still the
-  // headline count even before this resolves, so the number never flickers
-  // in behind a loading state the way an expanded applicant list does.
-  const appsByVacancyId = {};
-  (crossApps || []).forEach((app) => {
-    const vid = app.vacancy.id;
-    (appsByVacancyId[vid] = appsByVacancyId[vid] || []).push(app);
-  });
-
-  const applicationVacancies = vacancies
-    .filter((v) => {
-      if (appStatusFilter !== 'All' && v.status !== appStatusFilter) return false;
-      const q = appSearchText.trim().toLowerCase();
-      if (q && !v.title.toLowerCase().includes(q) && !v.jobRef.toLowerCase().includes(q)) return false;
-      return true;
-    })
-    .slice()
-    .sort((a, b) => appSortBy === 'count'
-      ? (b._count?.applications ?? 0) - (a._count?.applications ?? 0)
-      : new Date(b.createdAt) - new Date(a.createdAt));
+  // Display-only ordering over the filtered results - overdue-and-still-
+  // active vacancies surface first so they aren't missed among newer
+  // ones, without disturbing findManyForAdmin's createdAt-desc order for
+  // everything else.
+  const sortedVacancies = [...filteredVacancies].sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a)));
 
   return (
     <div>
@@ -451,15 +425,15 @@ export default function HRDashboard() {
       </Modal>
       )}
 
-      {filteredVacancies.length === 0 ? (
+      {sortedVacancies.length === 0 ? (
         <Card>
           <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>
             {vacancies.length === 0 ? 'No vacancies yet.' : 'No vacancies match these filters.'}
           </p>
         </Card>
       ) : (
-      filteredVacancies.map((v) => (
-        <Card key={v.id}>
+      sortedVacancies.map((v) => (
+        <Card key={v.id} accent={isOverdue(v) ? 'var(--color-danger)' : undefined}>
           {/* Header: title reads as the actual heading (was buried mid-
               sentence after the jobRef); status + application count form
               a right-aligned cluster instead of running into the title
@@ -471,7 +445,11 @@ export default function HRDashboard() {
                 {v.jobRef}
                 {' '}&middot; {v.department?.directorate?.name} &mdash; {v.department?.name}
                 {v.reportsToPosition && <> &middot; Reports to {v.reportsToPosition.name}</>}
-                {v.deadline && <> &middot; Deadline {new Date(v.deadline).toLocaleDateString()}</>}
+                {v.deadline && (
+                  <span style={{ fontWeight: isOverdue(v) ? 600 : 400, color: isOverdue(v) ? 'var(--color-danger)' : 'inherit' }}>
+                    {' '}&middot; {isOverdue(v) ? 'Deadline passed' : 'Deadline'} {new Date(v.deadline).toLocaleDateString()}
+                  </span>
+                )}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -492,6 +470,21 @@ export default function HRDashboard() {
               marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)'
             }}
           >
+            {/* Inactive while PendingApproval - the vacancy hasn't been
+                published yet, so there is nothing legitimate to review
+                (see applicationEligibility.js's status gate, which candidates
+                are meant to be blocked by before ever reaching this vacancy).
+                Every other status has been published at least once. */}
+            {v.status === 'PendingApproval' ? (
+              <span
+                title="Applications become viewable once this vacancy is approved and published"
+                style={{ padding: '4px 10px', fontSize: 13, color: 'var(--color-text-muted)', cursor: 'not-allowed' }}
+              >
+                View applications
+              </span>
+            ) : (
+              <Link to={`/hr/vacancy/${v.id}`} style={{ padding: '4px 10px', fontSize: 13 }}>View applications</Link>
+            )}
             <Button variant="ghost" style={{ padding: '4px 10px' }} onClick={() => openEdit(v)}>Edit</Button>
             {/* SIMPLIFIED - the Senior HR Officer review stage and its
                 "awaiting review" status line are both removed entirely,
@@ -571,124 +564,19 @@ export default function HRDashboard() {
           {activeSection === 'applications' && (
             <div>
               <h3 style={{ marginTop: 0 }}>Applications</h3>
-
-              {/* Same filter-bar shape as Vacancy Management's, plus a sort
-                  - busiest vacancies first by default, so the ones needing
-                  attention surface without scrolling. */}
-              <Card style={{ marginBottom: 'var(--spacing-md)' }}>
-                <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                  <TextField
-                    label="Search"
-                    placeholder="Title or job ref"
-                    value={appSearchText}
-                    onChange={(e) => setAppSearchText(e.target.value)}
-                    style={{ flex: '2 1 220px' }}
-                  />
-                  <Select label="Vacancy status" value={appStatusFilter} onChange={(e) => setAppStatusFilter(e.target.value)} style={{ flex: '1 1 160px' }}>
-                    <option value="All">All statuses</option>
-                    <option value="PendingApproval">Pending approval</option>
-                    <option value="Open">Open</option>
-                    <option value="PartiallyFilled">Partially filled</option>
-                    <option value="Filled">Filled</option>
-                    <option value="Closed">Closed</option>
-                  </Select>
-                  <Select label="Sort by" value={appSortBy} onChange={(e) => setAppSortBy(e.target.value)} style={{ flex: '1 1 160px' }}>
-                    <option value="count">Most applications</option>
-                    <option value="newest">Newest vacancy</option>
-                  </Select>
-                </div>
-              </Card>
-
-              {applicationVacancies.length === 0 ? (
-                <Card>
-                  <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>
-                    {vacancies.length === 0 ? 'No vacancies yet.' : 'No vacancies match these filters.'}
-                  </p>
+              {crossLoading && <p>Loading applications...</p>}
+              {crossApps && crossApps.length === 0 && <p>No applications yet.</p>}
+              {crossApps && crossApps.map((app) => (
+                <Card key={app.id}>
+                  <strong>{app.candidate.fullName}</strong> ({app.candidate.candidateType})
+                  {' '}&middot; <StatusBadge status={app.status} />
+                  <div style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '6px 0' }}>
+                    {app.vacancy.jobRef} &middot; {app.vacancy.title}
+                    {app.submittedDate && <> &middot; submitted {new Date(app.submittedDate).toLocaleDateString()}</>}
+                  </div>
+                  <Link to={`/hr/vacancy/${app.vacancy.id}`}>Open vacancy &rarr;</Link>
                 </Card>
-              ) : (
-                applicationVacancies.map((v) => {
-                  const isExpanded = expandedVacancyIds.has(v.id);
-                  const apps = appsByVacancyId[v.id] || [];
-                  const count = v._count?.applications ?? 0;
-                  const statusCounts = {};
-                  apps.forEach((a) => { statusCounts[a.status] = (statusCounts[a.status] || 0) + 1; });
-
-                  return (
-                    <Card key={v.id}>
-                      {/* The whole header row is the expand/collapse
-                          toggle - the application count is the thing HR
-                          scans for, so it's the largest, right-aligned
-                          number rather than buried in a sentence. */}
-                      <div
-                        onClick={() => toggleVacancyExpanded(v.id)}
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, cursor: 'pointer' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                          {isExpanded ? <ChevronDown size={16} style={{ flexShrink: 0, color: 'var(--color-text-muted)' }} /> : <ChevronRight size={16} style={{ flexShrink: 0, color: 'var(--color-text-muted)' }} />}
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text)' }}>{v.title}</div>
-                            <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                              {v.jobRef} &middot; <StatusBadge status={v.status} />
-                            </div>
-                          </div>
-                        </div>
-                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                          <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--color-text)', lineHeight: 1 }}>{count}</div>
-                          <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2, whiteSpace: 'nowrap' }}>
-                            application{count === 1 ? '' : 's'}
-                          </div>
-                        </div>
-                      </div>
-
-                      {isExpanded && (
-                        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
-                          {!crossApps && (
-                            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>Loading applicants...</p>
-                          )}
-                          {crossApps && apps.length === 0 && (
-                            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>No applications received yet.</p>
-                          )}
-                          {apps.length > 0 && (
-                            <>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
-                                {Object.entries(statusCounts).map(([status, n]) => (
-                                  <div key={status} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                    <StatusBadge status={status} />
-                                    <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>&times;{n}</span>
-                                  </div>
-                                ))}
-                              </div>
-                              {apps.map((app, i) => (
-                                <div
-                                  key={app.id}
-                                  style={{
-                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-                                    padding: '8px 0', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none'
-                                  }}
-                                >
-                                  <div style={{ minWidth: 0 }}>
-                                    <strong>{app.candidate.fullName}</strong>
-                                    <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 8 }}>{app.candidate.candidateType}</span>
-                                    {app.submittedDate && (
-                                      <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 8 }}>
-                                        submitted {new Date(app.submittedDate).toLocaleDateString()}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <StatusBadge status={app.status} />
-                                </div>
-                              ))}
-                            </>
-                          )}
-                          <div style={{ marginTop: 10 }}>
-                            <Link to={`/hr/vacancy/${v.id}`} onClick={(e) => e.stopPropagation()}>Open in vacancy workspace &rarr;</Link>
-                          </div>
-                        </div>
-                      )}
-                    </Card>
-                  );
-                })
-              )}
+              ))}
             </div>
           )}
 

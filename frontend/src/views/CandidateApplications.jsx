@@ -187,23 +187,51 @@ export default function CandidateApplications() {
             <p style={{ color: 'var(--color-text-muted)' }}>No applications in this category.</p>
           )}
 
-          {visible.map((app) => (
+          {visible.map((app) => {
+            // A Draft's vacancy can close (deadline passes) out from under
+            // it without the Draft row itself changing status - it stays
+            // listed here exactly as before, it just can't be continued any
+            // further (see applicationDraftController.saveDraft's
+            // unconditional assertBeforeDeadline and ApplyForm.jsx's
+            // matching gate).
+            const draftClosed = app.status === 'Draft' && app.vacancy.deadline && new Date(app.vacancy.deadline) < new Date();
+            return (
             <Card key={app.id}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
                 <div>
                   <strong>{app.vacancy.title}</strong>
-                  {app.submittedDate && (
+                  {app.submittedDate ? (
                     <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
                       Submitted {new Date(app.submittedDate).toLocaleDateString()}
                     </div>
+                  ) : app.status === 'Draft' && (
+                    <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                      Started {new Date(app.createdAt).toLocaleDateString()}
+                    </div>
                   )}
                 </div>
-                <StatusBadge status={app.status} />
+                <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  <StatusBadge status={app.status} />
+                  {draftClosed && <StatusBadge status="Closed" />}
+                </span>
               </div>
+
+              {app.status === 'Rejected' && (
+                <div style={{ marginTop: 10, fontSize: 13, color: 'var(--color-text-muted)' }}>
+                  {app.rejectedAt && `Decided ${new Date(app.rejectedAt).toLocaleDateString()}. `}
+                  {app.rejectionReason || 'Thank you for your interest - we encourage you to apply for future vacancies.'}
+                </div>
+              )}
 
               {app.status === 'Draft' && (
                 <div style={{ marginTop: 10 }}>
-                  <Link to={`/apply/${app.vacancy.id}`} style={{ marginRight: 8 }}>Continue draft</Link>
+                  {draftClosed ? (
+                    <span style={{ fontSize: 13, color: 'var(--color-text-muted)', marginRight: 8 }}>
+                      This vacancy's deadline has passed - this draft can no longer be continued.
+                    </span>
+                  ) : (
+                    <Link to={`/apply/${app.vacancy.id}`} style={{ marginRight: 8 }}>Continue draft</Link>
+                  )}
                   <Button variant="ghost" style={{ padding: '2px 10px', color: 'var(--color-danger)' }}
                     onClick={() => cancelDraft(app.id)}>Cancel</Button>
                 </div>
@@ -233,7 +261,8 @@ export default function CandidateApplications() {
                 </div>
               )}
             </Card>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

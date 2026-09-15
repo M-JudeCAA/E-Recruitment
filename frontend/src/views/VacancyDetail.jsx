@@ -54,6 +54,18 @@ export default function VacancyDetail() {
   const [verifyComments, setVerifyComments] = useState('');
   const [verifyFile, setVerifyFile] = useState(null);
 
+  // Reject modal - a reason is optional (HR's prerogative, mirrors the
+  // candidate's own optional withdrawal reason) but encouraged, since it's
+  // what's included in the notification sent to the candidate.
+  const [rejectModal, setRejectModal] = useState(null); // { applicationId, candidateName }
+  const [rejectReason, setRejectReason] = useState('');
+
+  // Screening triage filter - purely client-side, the same data is
+  // already loaded. Matters once a vacancy has more than a handful of
+  // applicants and HR wants to work through the flagged ones first
+  // without eyeballing every card.
+  const [screeningFilter, setScreeningFilter] = useState('all');
+
   const load = () => {
     staffClient.get(`/api/vacancies/${id}`).then((res) => setVacancy(res.data));
     staffClient.get(`/api/vacancies/${id}/applications`).then((res) => {
@@ -109,6 +121,22 @@ export default function VacancyDetail() {
     setVerifyComments(''); setVerifyFile(null); setError('');
     setVerifyModal({ candidateId, decision });
   };
+  // --- Reject modal ---
+  const NOT_REJECTABLE = ['Draft', 'Offered', 'Rejected', 'Withdrawn'];
+  const openReject = (applicationId, candidateName) => {
+    setRejectReason(''); setError('');
+    setRejectModal({ applicationId, candidateName });
+  };
+  const submitReject = async () => {
+    try {
+      await staffClient.patch(`/api/applications/${rejectModal.applicationId}/reject`, { reason: rejectReason || undefined });
+      setRejectModal(null);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not reject this application');
+    }
+  };
+
   const submitVerify = async () => {
     try {
       const formData = new FormData();
@@ -234,13 +262,28 @@ export default function VacancyDetail() {
   const appsById = Object.fromEntries(applications.map((a) => [a.id, a]));
   const rankedApps = shortlistOrder.map((appId) => appsById[appId]).filter(Boolean);
 
+  // vacancy.department is an object ({ name, directorate }, see
+  // vacancyModel.findByIdWithDetails' include) - interpolating it directly
+  // rendered as the literal string "[object Object]" here before.
+  const departmentLabel = vacancy.department?.name
+    ? `${vacancy.department.name}${vacancy.department.directorate?.name ? ', ' + vacancy.department.directorate.name : ''}`
+    : null;
+  const deadlinePassed = vacancy.deadline && new Date(vacancy.deadline) < new Date();
+
   return (
     <div>
       <PageHeader
         title={vacancy.title}
-        subtitle={`${vacancy.department} \u00b7 ${vacancy.positionsRequired} position(s) required`}
+        subtitle={`${departmentLabel ? departmentLabel + ' \u00b7 ' : ''}${vacancy.positionsRequired} position(s) required`}
       />
-      <p><StatusBadge status={vacancy.status} /></p>
+      <p style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <StatusBadge status={vacancy.status} />
+        {vacancy.deadline && (
+          <span style={{ fontSize: 13, color: deadlinePassed ? 'var(--color-danger)' : 'var(--color-text-muted)', fontWeight: deadlinePassed ? 600 : 400 }}>
+            {deadlinePassed ? 'Deadline passed' : 'Deadline'}: {new Date(vacancy.deadline).toLocaleDateString()}
+          </span>
+        )}
+      </p>
       <Alert type="error" message={error} />
       <Alert type="info" message={linkMessage} />
 
@@ -274,8 +317,27 @@ export default function VacancyDetail() {
       ))}
       {rankedApps.length > 0 && <Button onClick={saveRanking}>Save ranking &amp; shortlist</Button>}
 
-      <h3 style={{ marginTop: 24 }}>All applications</h3>
-      {applications.map((app) => (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 24, flexWrap: 'wrap', gap: 8 }}>
+        <h3 style={{ margin: 0 }}>All applications</h3>
+        {applications.some((a) => a.screeningPassed != null) && (
+          <Select
+            value={screeningFilter}
+            onChange={(e) => setScreeningFilter(e.target.value)}
+            style={{ width: 220 }}
+          >
+            <option value="all">Show: All applications</option>
+            <option value="flagged">Show: Flagged only</option>
+            <option value="passed">Show: Meets criteria only</option>
+          </Select>
+        )}
+      </div>
+      {applications
+        .filter((app) => {
+          if (screeningFilter === 'flagged') return app.screeningPassed === false;
+          if (screeningFilter === 'passed') return app.screeningPassed === true;
+          return true;
+        })
+        .map((app) => (
         <Card key={app.id}>
           <strong>{app.candidate.fullName}</strong> ({app.candidate.candidateType}) &mdash; <StatusBadge status={app.status} />
           {app.rank && <span> &middot; Rank {app.rank} ({app.listStatus})</span>}
@@ -291,6 +353,13 @@ export default function VacancyDetail() {
           <div style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '6px 0' }}>
             CV: {app.cvUrl ? <a href={fileLink(app.cvUrl)} target="_blank" rel="noreferrer">view</a> : 'none'}
           </div>
+
+          {app.status === 'Rejected' && (
+            <div style={{ fontSize: 13, color: 'var(--color-danger)', margin: '6px 0' }}>
+              Rejected{app.rejectedBy?.name ? ` by ${app.rejectedBy.name}` : ''}{app.rejectedAt ? ` on ${new Date(app.rejectedAt).toLocaleDateString()}` : ''}
+              {app.rejectionReason ? `: "${app.rejectionReason}"` : ''}
+            </div>
+          )}
 
           {/* Desirable Requirements answers - informational only, never
               part of screeningPassed (a "No" here doesn't fail
@@ -384,9 +453,35 @@ export default function VacancyDetail() {
               <Button onClick={() => approveOffer(app.offer.id)}>Approve offer</Button>
             )}
             {app.offer && <span style={{ marginLeft: 8 }}>Offer: <StatusBadge status={app.offer.status} /></span>}
+            {!NOT_REJECTABLE.includes(app.status) && (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer && (
+              <Button
+                variant="ghost"
+                style={{ marginLeft: 8, color: 'var(--color-danger)' }}
+                onClick={() => openReject(app.id, app.candidate.fullName)}
+              >
+                Reject
+              </Button>
+            )}
           </div>
         </Card>
       ))}
+
+      {rejectModal && (
+        <Modal
+          title={`Reject application — ${rejectModal.candidateName}`}
+          onClose={() => setRejectModal(null)}
+          footer={<>
+            <Button variant="ghost" onClick={() => setRejectModal(null)}>Cancel</Button>
+            <Button onClick={submitReject}>Confirm rejection</Button>
+          </>}
+        >
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
+            This is a final decision - the candidate will be notified by email and in-app. A reason is optional
+            but is included in their notification when given.
+          </p>
+          <TextArea label="Reason (optional)" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+        </Modal>
+      )}
 
       {verifyModal && (
         <Modal

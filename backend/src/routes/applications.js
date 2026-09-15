@@ -26,6 +26,10 @@ router.patch('/:id/withdraw', authenticate, requireCandidate, draftController.wi
 // the 5-tier permission table - an HR Officer can create/propose but not
 // review/shortlist.
 router.patch('/:id/shortlist', authenticate, requireStaffRole('Senior_HR_Officer'), controller.shortlist);
+// Formal rejection - the only staff-driven way to reach ApplicationStatus
+// Rejected (the other is interviewController.finalizeRecommendation, when
+// the panel's own recommendation is "Reject"). Same tier as shortlist.
+router.patch('/:id/reject', authenticate, requireStaffRole('Senior_HR_Officer'), controller.reject);
 router.post('/vacancies/:vacancyId/approve-shortlist', authenticate, requireStaffRole('Principal_HR_Officer'), controller.approveShortlist);
 router.post('/:id/recommend-offer', authenticate, requireStaffRole('Principal_HR_Officer'), controller.recommendOffer);
 // "Approve a final offer" explicitly excludes Principal HR Officer - only

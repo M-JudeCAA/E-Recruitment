@@ -54,6 +54,11 @@
      page content. */
   --navbar-height: 64px;
   --footer-height: 48px;
+  /* BreadcrumbNav.jsx - also position:fixed (pinned just below the Navbar
+     on scroll), same reasoning as the two above. Only App.jsx's
+     PaddedLayout pads by this amount, not the outer wrapper, since only
+     routes rendered through that layout show the breadcrumb bar. */
+  --breadcrumb-height: 45px;
 }
 
 * {

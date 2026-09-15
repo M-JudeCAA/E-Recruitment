@@ -2,6 +2,7 @@ const interviewModel = require('../models/interviewModel');
 const applicationModel = require('../models/applicationModel');
 const panelMemberModel = require('../models/panelMemberModel');
 const interviewService = require('../services/interviewService');
+const { notifyCandidate } = require('../services/candidateNotificationService');
 
 // Round number is computed server-side from existing rounds for this
 // application, not taken from the client - avoids every round being
@@ -24,7 +25,20 @@ async function schedule(req, res) {
 
   // Distinct from "Interviewed" - this means an interview is upcoming,
   // not that it has happened yet.
-  await applicationModel.update(applicationId, { status: 'InterviewScheduled' });
+  const application = await applicationModel.update(applicationId, { status: 'InterviewScheduled' }, { vacancy: true });
+
+  // Previously the candidate had no way to learn an interview was
+  // scheduled short of manually checking My Applications - a real gap,
+  // not just a nice-to-have, since scheduledDate can be null ("date to be
+  // confirmed") and this is the only channel that tells them one exists.
+  const dateLabel = round.scheduledDate
+    ? new Date(round.scheduledDate).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+    : 'a date to be confirmed';
+  await notifyCandidate(
+    application.candidateId, 'InterviewScheduled',
+    `An interview has been scheduled for your application to "${application.vacancy.title}" - ${dateLabel}${mode ? ` (${mode})` : ''}.`
+  );
+
   res.status(201).json(round);
 }
 
@@ -69,9 +83,28 @@ async function finalizeRecommendation(req, res) {
     recommendation, conductedById: req.user.id
   });
 
-  // Only now, once a recommendation has actually been finalized, does the
-  // application move to "Interviewed".
-  await applicationModel.update(round.applicationId, { status: 'Interviewed' });
+  // A panel recommendation of "Reject" used to leave the application
+  // sitting at "Interviewed" forever with nothing but a label indicating
+  // the outcome - recommendOffer's own check only required SOME
+  // recommendation to be present, not specifically "Shortlist" (see the
+  // comment there), so this was also a live path to recommending an offer
+  // for someone the panel had explicitly rejected. Routing "Reject" here
+  // through the same status/notification path as applicationController's
+  // own reject() closes both at once.
+  if (recommendation === 'Reject') {
+    const application = await applicationModel.update(round.applicationId, {
+      status: 'Rejected', rejectedAt: new Date(), rejectedById: req.user.id,
+      rejectionReason: 'Not recommended for offer following the interview panel\'s review.'
+    }, { vacancy: true });
+    await notifyCandidate(
+      application.candidateId, 'ApplicationRejected',
+      `We're sorry to let you know your application for "${application.vacancy.title}" was not successful this time.`
+    );
+  } else {
+    // Only now, once a recommendation has actually been finalized, does
+    // the application move to "Interviewed".
+    await applicationModel.update(round.applicationId, { status: 'Interviewed' });
+  }
   res.json(round);
 }
 

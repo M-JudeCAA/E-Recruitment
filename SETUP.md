@@ -153,6 +153,39 @@ backend also uses the second entry (`staffFrontendUrl` in
 order wrong doesn't break CORS, but it does send staff an email link to a
 port that immediately redirects them away.
 
+## Scheduled maintenance scripts
+
+Three scripts in `backend/scripts/` are meant to run on a recurring
+schedule, not manually — each says so in its own header comment, but
+nothing in this repo actually wires that up, so on a fresh deployment
+they simply never run until someone schedules them:
+
+| Script | What it does | Suggested interval |
+|---|---|---|
+| `checkSlaEscalations.js` | Escalates an overdue VacancyApproval/DepartmentApproval/OfferApproval to the next role tier | Hourly |
+| `checkVacancyDeadlines.js` | Notifies a vacancy's creator once its deadline passes while still Open/PartiallyFilled | Hourly |
+| `cleanupPendingRegistrations.js` | Deletes abandoned candidate registrations whose confirmation link expired unused | Daily |
+
+**Linux/macOS (cron)** — `crontab -e`, then:
+```cron
+0 * * * * cd /path/to/backend && node scripts/checkSlaEscalations.js >> /var/log/erecruitment/sla.log 2>&1
+0 * * * * cd /path/to/backend && node scripts/checkVacancyDeadlines.js >> /var/log/erecruitment/deadlines.log 2>&1
+0 3 * * * cd /path/to/backend && node scripts/cleanupPendingRegistrations.js >> /var/log/erecruitment/cleanup.log 2>&1
+```
+
+**Windows (Task Scheduler)** — one example, repeat per script with its own
+trigger interval and script path:
+```powershell
+$action = New-ScheduledTaskAction -Execute "node.exe" -Argument "scripts\checkVacancyDeadlines.js" -WorkingDirectory "D:\CAA Work\E-Recruitment\backend"
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration ([TimeSpan]::MaxValue)
+Register-ScheduledTask -TaskName "UCAA-CheckVacancyDeadlines" -Action $action -Trigger $trigger -Description "Notifies HR when a vacancy deadline passes"
+```
+
+Each script connects to `DATABASE_URL` from `backend/.env` directly (same
+as the server), so it must run somewhere with that file present and
+network access to the database — on the same host as the API is the
+simplest option.
+
 ## Common issues
 
 - **`EADDRINUSE` on port 4000** — a previous `npm run dev` is still running
