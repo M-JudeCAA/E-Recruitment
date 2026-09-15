@@ -9,13 +9,14 @@ import LoadingState from './LoadingState';
 import CvAutofillPanel from './CvAutofillPanel';
 import PhotoUploadPanel from './PhotoUploadPanel';
 import BulletListEditor from './BulletListEditor';
+import ExamGradesEditor from './ExamGradesEditor';
 import Modal from './Modal';
 import { useConfirm } from './ConfirmDialog';
 import { validateNationalId, NATIONAL_ID_ERROR } from '../utils/validators';
 import { isProfileComplete } from '../utils/profileCompleteness';
 import { educationKey, workExperienceKey, certificateKey } from '../utils/entryDedup';
 
-const emptyEducation = { institution: '', qualificationLevel: '', fieldOfStudy: '', yearCompleted: '' };
+const emptyEducation = { institution: '', qualificationLevel: '', fieldOfStudy: '', yearCompleted: '', cgpa: '' };
 const emptyExperience = { employer: '', jobTitle: '', startDate: '', endDate: '', duties: [] };
 const emptyCertificate = { name: '', issuingOrganization: '', issueDate: '', expiryDate: '' };
 let stagedKeySeq = 0;
@@ -31,7 +32,10 @@ export default function ProfileCompletionForm({ onComplete }) {
   const confirm = useConfirm();
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
-  const [form, setForm] = useState({ idType: '', nationalId: '', location: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '' });
+  const [form, setForm] = useState({
+    idType: '', nationalId: '', location: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '',
+    dateOfBirth: '', flyingHours: ''
+  });
   const [internalForm, setInternalForm] = useState({ employeeId: '', department: '', position: '', dateJoined: '', supervisorName: '', supervisorEmail: '' });
   const [newEdu, setNewEdu] = useState(emptyEducation);
   const [newExp, setNewExp] = useState(emptyExperience);
@@ -91,7 +95,9 @@ export default function ProfileCompletionForm({ onComplete }) {
       location: data.location || '',
       workAuthorization: data.workAuthorization || '',
       linkedinUrl: data.linkedinUrl || '',
-      portfolioUrl: data.portfolioUrl || ''
+      portfolioUrl: data.portfolioUrl || '',
+      dateOfBirth: data.dateOfBirth ? data.dateOfBirth.slice(0, 10) : '',
+      flyingHours: data.flyingHours ?? ''
     });
     if (data.internalProfile) {
       const p = data.internalProfile;
@@ -138,7 +144,8 @@ export default function ProfileCompletionForm({ onComplete }) {
     try {
       const payload = {
         institution: entry.institution, qualificationLevel: entry.qualificationLevel,
-        fieldOfStudy: entry.fieldOfStudy, yearCompleted: entry.yearCompleted ? Number(entry.yearCompleted) : null
+        fieldOfStudy: entry.fieldOfStudy, yearCompleted: entry.yearCompleted ? Number(entry.yearCompleted) : null,
+        cgpa: entry.cgpa || null
       };
       if (id) await client.put(`/api/candidates/me/education/${id}`, payload);
       else await client.post('/api/candidates/me/education', payload);
@@ -293,7 +300,8 @@ export default function ProfileCompletionForm({ onComplete }) {
     setEditingEduId(edu.id);
     setEditEduForm({
       institution: edu.institution || '', qualificationLevel: edu.qualificationLevel || '',
-      fieldOfStudy: edu.fieldOfStudy || '', yearCompleted: edu.yearCompleted ? String(edu.yearCompleted) : ''
+      fieldOfStudy: edu.fieldOfStudy || '', yearCompleted: edu.yearCompleted ? String(edu.yearCompleted) : '',
+      cgpa: edu.cgpa ? String(edu.cgpa) : ''
     });
   };
   const saveEditEducation = async () => {
@@ -421,7 +429,8 @@ export default function ProfileCompletionForm({ onComplete }) {
           setDedupeNotice('');
           setStagedEducation((rows) => [...rows, {
             key: nextStagedKey(), institution: entry.institution || '', qualificationLevel: entry.qualificationLevel || '',
-            fieldOfStudy: entry.fieldOfStudy || '', yearCompleted: entry.yearCompleted ? String(entry.yearCompleted) : ''
+            fieldOfStudy: entry.fieldOfStudy || '', yearCompleted: entry.yearCompleted ? String(entry.yearCompleted) : '',
+            cgpa: entry.cgpa ? String(entry.cgpa) : ''
           }]);
         }}
         onWorkExperienceSuggested={(entry) => {
@@ -479,6 +488,12 @@ export default function ProfileCompletionForm({ onComplete }) {
         <TextField label="Portfolio or personal website" hint="Optional" placeholder="yoursite.com"
           value={form.portfolioUrl} onChange={setField('portfolioUrl')} />
       </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
+        <TextField label="Date of birth" type="date" hint="Optional - only needed if a role sets an age requirement"
+          value={form.dateOfBirth} onChange={setField('dateOfBirth')} />
+        <TextField label="Total flying hours" type="number" min="0" hint="Optional - only relevant to flight-crew roles"
+          value={form.flyingHours} onChange={setField('flyingHours')} />
+      </div>
 
       <h3 style={{ fontSize: 15, marginBottom: 8, marginTop: 24 }}>Education</h3>
       {(profile?.education || []).length === 0 && stagedEducation.length === 0 && (submitted || touched.education) && (
@@ -493,12 +508,16 @@ export default function ProfileCompletionForm({ onComplete }) {
               <option value="Certificate">Certificate</option>
               <option value="Diploma">Diploma</option>
               <option value="Bachelors">Bachelor's</option>
+              <option value="Postgraduate">Postgraduate</option>
               <option value="Masters">Master's</option>
               <option value="PhD">PhD</option>
             </Select>
             <TextField label="Field of study" value={editEduForm.fieldOfStudy} onChange={(e) => setEditEduForm({ ...editEduForm, fieldOfStudy: e.target.value })} />
           </div>
-          <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={editEduForm.yearCompleted} onChange={(e) => setEditEduForm({ ...editEduForm, yearCompleted: e.target.value })} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
+            <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={editEduForm.yearCompleted} onChange={(e) => setEditEduForm({ ...editEduForm, yearCompleted: e.target.value })} />
+            <TextField label="CGPA (optional)" type="number" min="0" max="5" step="0.01" value={editEduForm.cgpa} onChange={(e) => setEditEduForm({ ...editEduForm, cgpa: e.target.value })} />
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button type="button" loading={isBusy('editEdu')} loadingText="Saving..." onClick={() => runBusy('editEdu', saveEditEducation)}>Save changes</Button>
             <Button type="button" variant="ghost" disabled={isBusy('editEdu')} onClick={() => setEditingEduId(null)}>Cancel</Button>
@@ -506,7 +525,7 @@ export default function ProfileCompletionForm({ onComplete }) {
         </div>
       ) : (
         <div key={edu.id} style={{ fontSize: 13, padding: '6px 0', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-          <span><strong>{edu.qualificationLevel}</strong> in {edu.fieldOfStudy} - {edu.institution} ({edu.yearCompleted || 'in progress'})</span>
+          <span><strong>{edu.qualificationLevel}</strong> in {edu.fieldOfStudy} - {edu.institution} ({edu.yearCompleted || 'in progress'}){edu.cgpa ? `, CGPA ${edu.cgpa}` : ''}</span>
           <span style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
             <Button type="button" variant="ghost" onClick={() => startEditEducation(edu)}>Edit</Button>
             <Button type="button" variant="ghost" loading={isBusy(`delete-edu-${edu.id}`)} loadingText="Deleting..." onClick={() => runBusy(`delete-edu-${edu.id}`, () => deleteEducationEntry(edu.id))}>Delete</Button>
@@ -524,12 +543,16 @@ export default function ProfileCompletionForm({ onComplete }) {
               <option value="Certificate">Certificate</option>
               <option value="Diploma">Diploma</option>
               <option value="Bachelors">Bachelor's</option>
+              <option value="Postgraduate">Postgraduate</option>
               <option value="Masters">Master's</option>
               <option value="PhD">PhD</option>
             </Select>
             <TextField label="Field of study" value={row.fieldOfStudy} onChange={(e) => updateStagedEducation(row.key, 'fieldOfStudy', e.target.value)} />
           </div>
-          <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={row.yearCompleted} onChange={(e) => updateStagedEducation(row.key, 'yearCompleted', e.target.value)} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
+            <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={row.yearCompleted} onChange={(e) => updateStagedEducation(row.key, 'yearCompleted', e.target.value)} />
+            <TextField label="CGPA (optional)" type="number" min="0" max="5" step="0.01" value={row.cgpa || ''} onChange={(e) => updateStagedEducation(row.key, 'cgpa', e.target.value)} />
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Button type="button" loading={isBusy(`staged-edu-${row.key}`)} loadingText="Adding..." onClick={() => runBusy(`staged-edu-${row.key}`, () => addStagedEducation(row))}>Add this entry</Button>
             <Button type="button" variant="ghost" disabled={isBusy(`staged-edu-${row.key}`)} onClick={() => setStagedEducation((rows) => rows.filter((r) => r.key !== row.key))}>Discard</Button>
@@ -545,12 +568,16 @@ export default function ProfileCompletionForm({ onComplete }) {
             <option value="Certificate">Certificate</option>
             <option value="Diploma">Diploma</option>
             <option value="Bachelors">Bachelor's</option>
+            <option value="Postgraduate">Postgraduate</option>
             <option value="Masters">Master's</option>
             <option value="PhD">PhD</option>
           </Select>
           <TextField label="Field of study" value={newEdu.fieldOfStudy} onChange={(e) => setNewEdu({ ...newEdu, fieldOfStudy: e.target.value })} />
         </div>
-        <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={newEdu.yearCompleted} onChange={(e) => setNewEdu({ ...newEdu, yearCompleted: e.target.value })} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
+          <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={newEdu.yearCompleted} onChange={(e) => setNewEdu({ ...newEdu, yearCompleted: e.target.value })} />
+          <TextField label="CGPA (optional)" type="number" min="0" max="5" step="0.01" hint="0-5 scale" value={newEdu.cgpa} onChange={(e) => setNewEdu({ ...newEdu, cgpa: e.target.value })} />
+        </div>
         <Button type="button" variant="ghost" loading={isBusy('addEdu')} loadingText="Adding..." onClick={() => runBusy('addEdu', addEducation)}>Add education entry</Button>
       </div>
 
@@ -722,6 +749,10 @@ export default function ProfileCompletionForm({ onComplete }) {
           <TextField label="Expiry date" type="date" hint="Leave blank if it does not expire" value={newCert.expiryDate} onChange={(e) => setNewCert({ ...newCert, expiryDate: e.target.value })} />
         </div>
         <Button type="button" variant="ghost" loading={isBusy('addCert')} loadingText="Adding..." onClick={() => runBusy('addCert', addCertificate)}>Add certificate</Button>
+      </div>
+
+      <div style={{ marginBottom: 24 }}>
+        <ExamGradesEditor examGrades={profile?.examGrades} onChange={load} />
       </div>
 
       {isInternal && (

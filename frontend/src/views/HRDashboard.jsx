@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
 import HRSidebar from '../components/HRSidebar';
 import Card from '../components/Card';
 import TextField from '../components/TextField';
+import TextArea from '../components/TextArea';
 import Select from '../components/Select';
 import Button from '../components/Button';
 import Alert from '../components/Alert';
@@ -16,19 +17,15 @@ import VacancyAdvert from '../components/VacancyAdvert';
 
 const VALID_TABS = ['vacancies', 'applications', 'interviews', 'offers'];
 
-const emptyForm = {
-  departmentId: '', positionId: '', reportsToPositionId: '',
-  positionsRequired: 1, postingType: '', deadline: '', // postingType is now required with no default, so this starts blank to force an explicit choice
-  salaryScale: '',
-  // Structured advert content (Job Purpose / Person Specification) - see
-  // backend/prisma/schema.prisma's comment on Vacancy.jobPurpose. There is
-  // no separate "description" field any more - it and jobPurpose were
-  // doing the same job, so this is the only one now. Rendered together by
-  // VacancyAdvertFields, below, in both this form and the edit modal.
-  minimumExperienceYears: '', minimumEducationLevel: '', preferredFieldOfStudy: '',
-  jobPurpose: '', essentialRequirements: [],
-  desirableRequirements: [], generalKnowledge: [], specialSkills: []
-};
+const EMPLOYMENT_CATEGORY_LABELS = { FullTime: 'Full-time', Contract: 'Contract', FixedTermContract: 'Fixed Term Contract' };
+// UCAA's actual sites - matches backend/src/utils/vacancyValidation.js's
+// VALID_LOCATIONS exactly (confirmed against a real reference "Create
+// Job" form).
+const LOCATIONS = [
+  'Entebbe International Airport', 'UCAA Head Office — Entebbe', 'Kampala HQ',
+  'Gulu Aerodrome', 'Jinja Aerodrome', 'Mbarara Aerodrome', 'Fort Portal (Kasese) Aerodrome',
+  'Arua Aerodrome', 'Soroti Aerodrome', 'Kidepo Aerodrome'
+];
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK. "Close a
 // vacancy" remains Principal HR Officer+, unchanged - the vacancy
@@ -47,6 +44,8 @@ const isOverdue = (v) => v.deadline && new Date(v.deadline) < new Date() && ['Op
 export default function HRDashboard() {
   const { staff } = useAuth();
   const confirm = useConfirm();
+  const location = useLocation();
+  const navigate = useNavigate();
   // CHANGED - was Principal_HR_Officer. The vacancy workflow simplified
   // from 5-tier (create -> Senior HR Officer review -> Principal HR
   // Officer approve) to 2-tier: HR Officer creates, Manager or Director
@@ -58,16 +57,20 @@ export default function HRDashboard() {
 
   const [vacancies, setVacancies] = useState([]);
   const [approvedDepartments, setApprovedDepartments] = useState([]);
-  const [departmentPositions, setDepartmentPositions] = useState([]);
-  const [reportsToOptions, setReportsToOptions] = useState([]);
 
-  const [form, setForm] = useState(emptyForm);
-  const [creating, setCreating] = useState(false); // double-submission lock
-  const [message, setMessage] = useState('');
+  // Set once, on arrival back here from the (now standalone)
+  // /hr/vacancies/new page after a successful create - see
+  // CreateVacancyListing.jsx's navigate() call.
+  const [message, setMessage] = useState(location.state?.vacancyCreatedMessage || '');
   const [error, setError] = useState('');
 
   const [editModal, setEditModal] = useState(null);
   const [editForm, setEditForm] = useState({});
+  // Same reasoning as CreateVacancyListing.jsx's customLocation - kept
+  // separate from editForm.location itself, and (re)initialized in
+  // openEdit based on whether the vacancy's current location is a custom
+  // one not on the LOCATIONS list.
+  const [editCustomLocation, setEditCustomLocation] = useState(false);
 
   // Which tab is showing lives in the URL (?tab=...), not local state, so
   // HRSidebar links from other /hr/* pages (and browser back/forward/reload)
@@ -124,11 +127,6 @@ export default function HRDashboard() {
   // uses) before ever submitting for approval.
   const [previewData, setPreviewData] = useState(null);
 
-  // Create vacancy now opens in a modal (was a permanently-expanded Card
-  // at the top of the page, pushing the actual vacancy list below the
-  // fold) - see #1 of the Vacancy Management redesign.
-  const [showCreateModal, setShowCreateModal] = useState(false);
-
   // Filter bar (#2) - client-side over the already-loaded admin vacancy
   // list, same tradeoff HRHome's widgets make: no extra request, just a
   // derived view over data already in hand.
@@ -147,54 +145,6 @@ export default function HRDashboard() {
       .catch((err) => setError(err.response?.data?.error || 'Could not load departments'));
   }, []);
 
-  function groupDepartmentsByDirectorate(departments) {
-    const groups = {};
-    departments.forEach((dept) => {
-      const key = dept.directorate.name;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(dept);
-    });
-    return groups;
-  }
-
-  // Step 1: Department chosen first - loads a short, scoped Position list.
-  const handleDepartmentChange = async (departmentId) => {
-    setForm({ ...form, departmentId, positionId: '', reportsToPositionId: '' });
-    setReportsToOptions([]);
-    if (!departmentId) { setDepartmentPositions([]); return; }
-    const res = await staffClient.get(`/api/departments/${departmentId}/positions`);
-    setDepartmentPositions(res.data);
-  };
-
-  // Step 2: Position (Title) chosen - loads senior positions for Reports To.
-  const handlePositionChange = async (positionId) => {
-    setForm({ ...form, positionId, reportsToPositionId: '' });
-    if (!positionId) { setReportsToOptions([]); return; }
-    const res = await staffClient.get(`/api/positions/${positionId}/senior-options`);
-    setReportsToOptions(res.data);
-  };
-
-  // Resolves the currently-selected department/position/reports-to ids
-  // into display names for the preview - the create form only holds ids,
-  // so this is the one place that needs the lookup lists already loaded
-  // for the cascading selects above.
-  const previewCreateForm = () => {
-    const dept = approvedDepartments.find((d) => String(d.id) === String(form.departmentId));
-    const position = departmentPositions.find((p) => String(p.id) === String(form.positionId));
-    const reportsTo = reportsToOptions.find((p) => String(p.id) === String(form.reportsToPositionId));
-    setPreviewData({
-      jobRef: null,
-      title: position?.name || '(select a title)',
-      departmentLabel: dept ? `${dept.name}${dept.directorate?.name ? ', ' + dept.directorate.name : ''}` : null,
-      reportsToName: reportsTo?.name,
-      salaryScale: form.salaryScale, positionsRequired: form.positionsRequired, deadline: form.deadline,
-      jobPurpose: form.jobPurpose, essentialRequirements: form.essentialRequirements,
-      minimumEducationLevel: form.minimumEducationLevel, minimumExperienceYears: form.minimumExperienceYears,
-      preferredFieldOfStudy: form.preferredFieldOfStudy, desirableRequirements: form.desirableRequirements,
-      generalKnowledge: form.generalKnowledge, specialSkills: form.specialSkills
-    });
-  };
-
   const previewEditForm = () => {
     setPreviewData({
       jobRef: editModal.jobRef,
@@ -204,31 +154,15 @@ export default function HRDashboard() {
         : null,
       reportsToName: editModal.reportsToPosition?.name,
       salaryScale: editForm.salaryScale, positionsRequired: editForm.positionsRequired, deadline: editForm.deadline,
+      location: editForm.location, employmentCategory: editForm.employmentCategory,
       jobPurpose: editForm.jobPurpose, essentialRequirements: editForm.essentialRequirements,
       minimumEducationLevel: editForm.minimumEducationLevel, minimumExperienceYears: editForm.minimumExperienceYears,
-      preferredFieldOfStudy: editForm.preferredFieldOfStudy, desirableRequirements: editForm.desirableRequirements,
+      preferredFieldOfStudy: editForm.preferredFieldOfStudy,
+      minimumAge: editForm.minimumAge, maximumAge: editForm.maximumAge,
+      minimumFlyingHours: editForm.minimumFlyingHours, minimumCGPA: editForm.minimumCGPA, requiredExamGrades: editForm.requiredExamGrades,
+      desirableRequirements: editForm.desirableRequirements,
       generalKnowledge: editForm.generalKnowledge, specialSkills: editForm.specialSkills
     });
-  };
-
-  const createVacancy = async (e) => {
-    e.preventDefault();
-    if (creating) return; // a double-click or slow-network retry must not create two vacancies
-    setMessage(''); setError(''); setCreating(true);
-    try {
-      const res = await staffClient.post('/api/vacancies', form);
-      setMessage(`Vacancy created (Ref: ${res.data.jobRef}). It needs Manager or Director approval to open.`);
-      setForm(emptyForm);
-      setDepartmentPositions([]);
-      setReportsToOptions([]);
-      setShowCreateModal(false);
-      load();
-    } catch (err) {
-      const errs = err.response?.data?.errors;
-      setError(errs ? errs.join('; ') : (err.response?.data?.error || 'Failed to create vacancy'));
-    } finally {
-      setCreating(false);
-    }
   };
 
   const approve = async (id) => {
@@ -270,15 +204,26 @@ export default function HRDashboard() {
       positionsRequired: v.positionsRequired, postingType: v.postingType,
       deadline: v.deadline ? v.deadline.slice(0, 10) : '',
       salaryScale: v.salaryScale || '',
+      location: v.location || '',
+      employmentCategory: v.employmentCategory || '',
+      internalSalaryRange: v.internalSalaryRange || '',
+      recruiterNotes: v.recruiterNotes || '',
       minimumExperienceYears: v.minimumExperienceYears ?? '',
       minimumEducationLevel: v.minimumEducationLevel || '',
       preferredFieldOfStudy: v.preferredFieldOfStudy || '',
+      minimumAge: v.minimumAge ?? '',
+      maximumAge: v.maximumAge ?? '',
+      minimumFlyingHours: v.minimumFlyingHours ?? '',
+      minimumCGPA: v.minimumCGPA ?? '',
+      requiredExamGrades: v.requiredExamGrades || [],
       jobPurpose: v.jobPurpose || '',
       essentialRequirements: v.essentialRequirements || [],
       desirableRequirements: v.desirableRequirements || [],
+      disqualifyingRequirements: v.disqualifyingRequirements || [],
       generalKnowledge: v.generalKnowledge || [],
       specialSkills: v.specialSkills || []
     });
+    setEditCustomLocation(!!(v.location && !LOCATIONS.includes(v.location)));
     setEditModal(v);
   };
 
@@ -321,7 +266,7 @@ export default function HRDashboard() {
             <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
         <h3 style={{ margin: 0 }}>Vacancies</h3>
-        <Button onClick={() => { setError(''); setShowCreateModal(true); }}>+ New vacancy</Button>
+        <Button onClick={() => navigate('/hr/vacancies/new')}>+ New Listing</Button>
       </div>
 
       <Alert type="success" message={message} />
@@ -352,80 +297,6 @@ export default function HRDashboard() {
           </Select>
         </div>
       </Card>
-
-      {/* Create vacancy now opens in a modal instead of sitting permanently
-          expanded above the list (#1) - the list is what HR scans
-          repeatedly, the form is used occasionally. */}
-      {showCreateModal && (
-      <Modal title="Create vacancy" onClose={() => setShowCreateModal(false)} maxWidth={640}>
-        <Alert type="error" message={error} />
-        <form onSubmit={createVacancy}>
-          {/* Step 1: Department first, grouped by Directorate - true
-              single-level grouping, since each Department row belongs to
-              exactly one Directorate. Disambiguates cases like "CWG",
-              which exists under five different directorates at UCAA. */}
-          <label style={{ display: 'block', marginBottom: 'var(--spacing-md)' }}>
-            <span style={{ display: 'block', fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>Department</span>
-            <select value={form.departmentId} onChange={(e) => handleDepartmentChange(e.target.value)} required
-              style={{ display: 'block', width: '100%', padding: 8, border: '1px solid var(--color-border)', borderRadius: 'var(--radius)' }}>
-              <option value="">Select a department</option>
-              {Object.entries(groupDepartmentsByDirectorate(approvedDepartments)).map(([directorateName, depts]) => (
-                <optgroup key={directorateName} label={directorateName}>
-                  {depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          </label>
-
-          {/* Step 2: Title (Position) - short, scoped to the chosen department */}
-          <Select label="Title" value={form.positionId} onChange={(e) => handlePositionChange(e.target.value)}
-            disabled={!form.departmentId} required>
-            <option value="">{form.departmentId ? 'Select a position' : 'Select a department first'}</option>
-            {departmentPositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-          {form.departmentId && departmentPositions.length === 0 && (
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-              No positions exist yet for this department. <Link to="/hr/departments">Add one from the Departments screen.</Link>
-            </p>
-          )}
-
-          {/* Step 3: Reports To - senior positions in that exact department */}
-          <Select label="Reports to" value={form.reportsToPositionId}
-            onChange={(e) => setForm({ ...form, reportsToPositionId: e.target.value })}
-            disabled={!form.positionId}>
-            <option value="">{form.positionId ? 'Select a position (optional)' : 'Select a title first'}</option>
-            {reportsToOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </Select>
-          {form.positionId && reportsToOptions.length === 0 && (
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-              No position senior to this one exists yet in this department.
-            </p>
-          )}
-
-          <TextField label="Positions required" type="number" min="1" value={form.positionsRequired}
-            onChange={(e) => setForm({ ...form, positionsRequired: Number(e.target.value) })} />
-          <Select label="Posting type" value={form.postingType} onChange={(e) => setForm({ ...form, postingType: e.target.value })} required>
-            <option value="">Select one</option>
-            {/* "Open (internal + external)" REMOVED - a vacancy is now
-                always exactly one or the other; there is no longer a
-                "both" option, and this choice is required. */}
-            <option value="Internal">Internal only</option>
-            <option value="External">External only</option>
-          </Select>
-          <TextField label="Deadline" type="date" value={form.deadline}
-            onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
-          <TextField label="Salary level / scale" placeholder="e.g. Scale 5" value={form.salaryScale}
-            onChange={(e) => setForm({ ...form, salaryScale: e.target.value })} />
-          <VacancyAdvertFields values={form} onChange={(patch) => setForm({ ...form, ...patch })} />
-
-          <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-            <Button type="button" variant="ghost" onClick={() => setShowCreateModal(false)}>Cancel</Button>
-            <Button type="button" variant="secondary" onClick={previewCreateForm}>Preview advert</Button>
-            <Button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create'}</Button>
-          </div>
-        </form>
-      </Modal>
-      )}
 
       {sortedVacancies.length === 0 ? (
         <Card>
@@ -550,7 +421,29 @@ export default function HRDashboard() {
             onChange={(e) => setEditForm({ ...editForm, deadline: e.target.value })} />
           <TextField label="Salary level / scale" value={editForm.salaryScale}
             onChange={(e) => setEditForm({ ...editForm, salaryScale: e.target.value })} />
-          <VacancyAdvertFields values={editForm} onChange={(patch) => setEditForm({ ...editForm, ...patch })} />
+          <Select label="Location" value={editCustomLocation ? '__custom__' : editForm.location}
+            onChange={(e) => {
+              if (e.target.value === '__custom__') { setEditCustomLocation(true); }
+              else { setEditCustomLocation(false); setEditForm({ ...editForm, location: e.target.value }); }
+            }}>
+            <option value="">Not specified</option>
+            {LOCATIONS.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+            <option value="__custom__">Other (specify)</option>
+          </Select>
+          {editCustomLocation && (
+            <TextField label="Custom location" placeholder="e.g. a new site not listed above"
+              value={editForm.location} onChange={(e) => setEditForm({ ...editForm, location: e.target.value })} />
+          )}
+          <Select label="Employment category" value={editForm.employmentCategory}
+            onChange={(e) => setEditForm({ ...editForm, employmentCategory: e.target.value })}>
+            <option value="">Not specified</option>
+            {Object.entries(EMPLOYMENT_CATEGORY_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </Select>
+          <TextField label="Internal salary range (HR only - never shown to candidates)" value={editForm.internalSalaryRange}
+            onChange={(e) => setEditForm({ ...editForm, internalSalaryRange: e.target.value })} />
+          <TextArea label="Notes for recruiters (HR only)" rows={2} value={editForm.recruiterNotes}
+            onChange={(e) => setEditForm({ ...editForm, recruiterNotes: e.target.value })} />
+          <VacancyAdvertFields values={editForm} onChange={(patch) => setEditForm((prev) => ({ ...prev, ...patch }))} />
         </Modal>
       )}
 

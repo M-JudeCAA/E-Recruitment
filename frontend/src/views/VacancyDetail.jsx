@@ -11,6 +11,7 @@ import Modal from '../components/Modal';
 import TextField from '../components/TextField';
 import TextArea from '../components/TextArea';
 import Select from '../components/Select';
+import { useGeneratedCvDownload } from '../utils/useGeneratedCvDownload';
 
 const emptyPanelist = { name: '', trade: '', email: '' };
 
@@ -65,6 +66,8 @@ export default function VacancyDetail() {
   // applicants and HR wants to work through the flagged ones first
   // without eyeballing every card.
   const [screeningFilter, setScreeningFilter] = useState('all');
+
+  const { download: downloadGeneratedCv, hiddenPrintArea: generatedCvPrintArea, downloadingId: downloadingCvId } = useGeneratedCvDownload();
 
   const load = () => {
     staffClient.get(`/api/vacancies/${id}`).then((res) => setVacancy(res.data));
@@ -364,8 +367,17 @@ export default function VacancyDetail() {
           {app.screeningPassed === true && (
             <span style={{ color: 'var(--color-success)', marginLeft: 8, fontSize: 13 }}>&#10003; Meets criteria</span>
           )}
-          <div style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '6px 0' }}>
-            CV: {app.cvUrl ? <a href={fileLink(app.cvUrl)} target="_blank" rel="noreferrer">view</a> : 'none'}
+          <div style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '6px 0', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <span>
+              CV:{' '}
+              <button type="button" onClick={() => downloadGeneratedCv(app, vacancy)} disabled={downloadingCvId === app.id}
+                style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: downloadingCvId === app.id ? 'default' : 'pointer', textDecoration: 'underline', fontSize: 'inherit' }}>
+                {downloadingCvId === app.id ? 'Generating...' : 'Download generated CV'}
+              </button>
+            </span>
+            <span>
+              Cover letter: {app.coverLetterUrl ? <a href={fileLink(app.coverLetterUrl)} target="_blank" rel="noreferrer">view</a> : 'none'}
+            </span>
           </div>
 
           {/* Minimum required specifications (Essential Requirements) -
@@ -387,6 +399,42 @@ export default function VacancyDetail() {
               </ul>
             </div>
           )}
+
+          {/* Eligibility questions (disqualifying) - unlike Desirable
+              Requirements below, a "wrong" answer here DOES fail
+              screeningPassed (see screeningService.screenApplication), so
+              this is styled as a real gate (danger, not warning) rather
+              than a soft flag. met/not-met is derived here from the
+              snapshotted answer vs. requiredAnswer, same values
+              screenApplication itself compared at screening time. */}
+          {app.disqualifyingResponses?.length > 0 && (() => {
+            // A 'number' row (see ScreeningQuestionsEditor.jsx) is met once
+            // the answer reaches its own snapshotted minValue - same
+            // comparison screenApplication itself used at screening time.
+            // Every other row (including one with no answerType, from
+            // before 'number' existed) keeps the original Yes/No compare.
+            const isMet = (r) => r.answerType === 'number'
+              ? typeof r.answer === 'number' && r.answer >= r.minValue
+              : r.answer === (r.requiredAnswer !== 'No');
+            return (
+              <div style={{ fontSize: 13, margin: '6px 0' }}>
+                <strong>Eligibility questions:</strong>{' '}
+                {app.disqualifyingResponses.filter(isMet).length} of {app.disqualifyingResponses.length} met
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18, listStyle: 'none' }}>
+                  {app.disqualifyingResponses.map((r) => {
+                    const met = isMet(r);
+                    return (
+                      <li key={r.id} style={{ color: met ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                        {met ? '✓' : '✗'} {r.text} {r.answerType === 'number'
+                          ? `(must be at least ${r.minValue}, answered ${r.answer ?? '—'})`
+                          : `(must answer ${r.requiredAnswer}, answered ${r.answer ? 'Yes' : 'No'})`}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })()}
 
           {/* Shortlist score - a ranking signal, not a gate (see
               scoreApplication's comment): additive credit for exceeding a
@@ -431,19 +479,27 @@ export default function VacancyDetail() {
               same detail a "No" already got, now applied consistently.
               Each "Yes" here is also what scoreApplication credits in the
               shortlist score above. */}
-          {app.desirableResponses?.length > 0 && (
-            <div style={{ fontSize: 13, margin: '6px 0' }}>
-              <strong>Desirable (preferred) requirements:</strong>{' '}
-              {app.desirableResponses.filter((r) => r.answer === true).length} of {app.desirableResponses.length} met
-              <ul style={{ margin: '4px 0 0', paddingLeft: 18, listStyle: 'none' }}>
-                {app.desirableResponses.map((r) => (
-                  <li key={r.id} style={{ color: r.answer ? 'var(--color-success)' : 'var(--color-warning)' }}>
-                    {r.answer ? '✓' : '⚠'} {r.text}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {app.desirableResponses?.length > 0 && (() => {
+            const isMet = (r) => r.answerType === 'number'
+              ? typeof r.answer === 'number' && r.answer >= r.minValue
+              : r.answer === true;
+            return (
+              <div style={{ fontSize: 13, margin: '6px 0' }}>
+                <strong>Desirable (preferred) requirements:</strong>{' '}
+                {app.desirableResponses.filter(isMet).length} of {app.desirableResponses.length} met
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18, listStyle: 'none' }}>
+                  {app.desirableResponses.map((r) => {
+                    const met = isMet(r);
+                    return (
+                      <li key={r.id} style={{ color: met ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                        {met ? '✓' : '⚠'} {r.text}{r.answerType === 'number' ? ` (answered ${r.answer ?? '—'}, needs ${r.minValue})` : ''}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })()}
 
           {app.candidate.candidateType === 'Internal' && app.candidate.internalProfile && (
             <Card accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)', marginBottom: 8 }}>
@@ -642,6 +698,8 @@ export default function VacancyDetail() {
           </Select>
         </Modal>
       )}
+
+      {generatedCvPrintArea}
     </div>
   );
 }

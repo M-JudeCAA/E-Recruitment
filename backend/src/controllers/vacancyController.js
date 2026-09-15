@@ -8,7 +8,7 @@ const { generateJobRef } = require('../utils/jobRefGenerator');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
 const {
   validateVacancyEditableFields,
-  normalizeStringList, normalizeDesirableRequirements
+  normalizeStringList, normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades
 } = require('../utils/vacancyValidation');
 
 // Title/Department come from the selected Position, not free text -
@@ -19,8 +19,10 @@ async function create(req, res) {
   const { positionId, reportsToPositionId, positionsRequired, postingType, deadline, salaryScale,
     regulatoryDriver, category, priority,
     minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy,
-    jobPurpose, essentialRequirements, desirableRequirements,
-    generalKnowledge, specialSkills } = req.body;
+    minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
+    jobPurpose, essentialRequirements, desirableRequirements, disqualifyingRequirements,
+    generalKnowledge, specialSkills,
+    location, employmentCategory, internalSalaryRange, recruiterNotes } = req.body;
 
   const position = await positionModel.findById(Number(positionId));
   if (!position) {
@@ -35,7 +37,9 @@ async function create(req, res) {
     return res.status(400).json({ error: 'Posting type (Internal or External) is required' });
   }
 
-  const fieldErrors = validateVacancyEditableFields({ positionsRequired, postingType, deadline });
+  const fieldErrors = validateVacancyEditableFields({
+    positionsRequired, postingType, deadline, employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA
+  });
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
   // Reports-To must be a genuinely senior position in the exact same
@@ -76,6 +80,11 @@ async function create(req, res) {
     minimumExperienceYears: minimumExperienceYears ? Number(minimumExperienceYears) : null,
     minimumEducationLevel: minimumEducationLevel || null,
     preferredFieldOfStudy: preferredFieldOfStudy || null,
+    minimumAge: minimumAge ? Number(minimumAge) : null,
+    maximumAge: maximumAge ? Number(maximumAge) : null,
+    minimumFlyingHours: minimumFlyingHours ? Number(minimumFlyingHours) : null,
+    minimumCGPA: minimumCGPA ? Number(minimumCGPA) : null,
+    requiredExamGrades: normalizeRequiredExamGrades(requiredExamGrades) ?? [],
     positionsRequired: positionsRequired !== undefined ? Number(positionsRequired) : 1,
     // FIXED - this was never set at all, so every vacancy defaulted to
     // the schema default (previously 'Open') and was immediately visible
@@ -99,8 +108,13 @@ async function create(req, res) {
     jobPurpose: sanitizeJobDescription(jobPurpose),
     essentialRequirements: normalizeStringList(essentialRequirements) ?? [],
     desirableRequirements: normalizeDesirableRequirements(desirableRequirements) ?? [],
+    disqualifyingRequirements: normalizeDisqualifyingRequirements(disqualifyingRequirements) ?? [],
     generalKnowledge: normalizeStringList(generalKnowledge) ?? [],
     specialSkills: normalizeStringList(specialSkills) ?? [],
+    location: location || null,
+    employmentCategory: employmentCategory || null,
+    internalSalaryRange: internalSalaryRange || null,
+    recruiterNotes: recruiterNotes || null,
     createdById: req.user.id
   });
   res.status(201).json(vacancy);
@@ -119,9 +133,13 @@ async function update(req, res) {
 
   const { positionsRequired, postingType, deadline, salaryScale, regulatoryDriver, category, priority,
     minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy,
-    jobPurpose, essentialRequirements, desirableRequirements,
-    generalKnowledge, specialSkills } = req.body;
-  const fieldErrors = validateVacancyEditableFields({ positionsRequired, postingType, deadline }, { partial: true });
+    minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
+    jobPurpose, essentialRequirements, desirableRequirements, disqualifyingRequirements,
+    generalKnowledge, specialSkills,
+    location, employmentCategory, internalSalaryRange, recruiterNotes } = req.body;
+  const fieldErrors = validateVacancyEditableFields({
+    positionsRequired, postingType, deadline, employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA
+  }, { partial: true });
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
   const data = {};
@@ -137,15 +155,27 @@ async function update(req, res) {
   if (minimumExperienceYears !== undefined) data.minimumExperienceYears = minimumExperienceYears ? Number(minimumExperienceYears) : null;
   if (minimumEducationLevel !== undefined) data.minimumEducationLevel = minimumEducationLevel || null;
   if (preferredFieldOfStudy !== undefined) data.preferredFieldOfStudy = preferredFieldOfStudy || null;
+  if (minimumAge !== undefined) data.minimumAge = minimumAge ? Number(minimumAge) : null;
+  if (maximumAge !== undefined) data.maximumAge = maximumAge ? Number(maximumAge) : null;
+  if (minimumFlyingHours !== undefined) data.minimumFlyingHours = minimumFlyingHours ? Number(minimumFlyingHours) : null;
+  if (minimumCGPA !== undefined) data.minimumCGPA = minimumCGPA ? Number(minimumCGPA) : null;
+  const normalizedExamGrades = normalizeRequiredExamGrades(requiredExamGrades);
+  if (normalizedExamGrades !== undefined) data.requiredExamGrades = normalizedExamGrades;
   if (jobPurpose !== undefined) data.jobPurpose = sanitizeJobDescription(jobPurpose);
   const normalizedEssential = normalizeStringList(essentialRequirements);
   if (normalizedEssential !== undefined) data.essentialRequirements = normalizedEssential;
   const normalizedDesirable = normalizeDesirableRequirements(desirableRequirements);
   if (normalizedDesirable !== undefined) data.desirableRequirements = normalizedDesirable;
+  const normalizedDisqualifying = normalizeDisqualifyingRequirements(disqualifyingRequirements);
+  if (normalizedDisqualifying !== undefined) data.disqualifyingRequirements = normalizedDisqualifying;
   const normalizedGeneralKnowledge = normalizeStringList(generalKnowledge);
   if (normalizedGeneralKnowledge !== undefined) data.generalKnowledge = normalizedGeneralKnowledge;
   const normalizedSpecialSkills = normalizeStringList(specialSkills);
   if (normalizedSpecialSkills !== undefined) data.specialSkills = normalizedSpecialSkills;
+  if (location !== undefined) data.location = location || null;
+  if (employmentCategory !== undefined) data.employmentCategory = employmentCategory || null;
+  if (internalSalaryRange !== undefined) data.internalSalaryRange = internalSalaryRange || null;
+  if (recruiterNotes !== undefined) data.recruiterNotes = recruiterNotes || null;
 
   if (positionsRequired !== undefined) {
     const n = Number(positionsRequired);

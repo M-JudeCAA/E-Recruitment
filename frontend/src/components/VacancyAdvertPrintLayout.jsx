@@ -49,22 +49,33 @@ function NumberedList({ items, style, getKey }) {
 const tableCellStyle = { border: `1px solid ${TABLE_BORDER}`, padding: '10px 14px', verticalAlign: 'top' };
 const tableLabelCellStyle = { ...tableCellStyle, fontWeight: 700, color: SUBLABEL_COLOR, width: '30%' };
 
+const EMPLOYMENT_CATEGORY_LABELS = { FullTime: 'Full-time', Contract: 'Contract', FixedTermContract: 'Fixed Term Contract' };
+
 export default function VacancyAdvertPrintLayout({
   jobRef, title, reportsToName, salaryScale, positionsRequired, deadline,
+  location, employmentCategory,
   jobPurpose, essentialRequirements,
   minimumEducationLevel, minimumExperienceYears, preferredFieldOfStudy,
+  minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
   desirableRequirements, generalKnowledge, specialSkills
 }) {
   const siteUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
-  // Minimum education/experience and preferred field of study are the
-  // structured, actually-screened half of Essential Requirements (see
-  // VacancyAdvert's own comment on the same split) - folded into the same
-  // numbered list here as the free-text essentialRequirements bullets, so
-  // the Person Specification table reads as one coherent list.
+  const ageRequirementText = [minimumAge ? `${minimumAge}+` : null, maximumAge ? `${maximumAge} or under` : null].filter(Boolean).join(', ');
+
+  // Minimum education/experience/age/flying-hours/exam-grades and
+  // preferred field of study are the structured, actually-screened half
+  // of Essential Requirements (see VacancyAdvert's own comment on the
+  // same split) - folded into the same numbered list here as the
+  // free-text essentialRequirements bullets, so the Person Specification
+  // table reads as one coherent list.
   const essentialItems = [
     ...(minimumEducationLevel ? [`Minimum education: ${minimumEducationLevel}`] : []),
     ...(minimumExperienceYears ? [`Minimum experience: ${minimumExperienceYears} year(s)`] : []),
+    ...(ageRequirementText ? [`Age: ${ageRequirementText} years`] : []),
+    ...(minimumFlyingHours ? [`Minimum flying hours: ${minimumFlyingHours}`] : []),
+    ...(minimumCGPA ? [`Minimum CGPA: ${minimumCGPA}`] : []),
+    ...((requiredExamGrades || []).map((r) => `${r.level === 'ALevel' ? 'A-Level' : 'O-Level'} ${r.subject}: grade ${r.minGrade} or better`)),
     ...(preferredFieldOfStudy ? [`Preferred field of study: ${preferredFieldOfStudy}`] : []),
     ...(essentialRequirements || [])
   ];
@@ -82,8 +93,11 @@ export default function VacancyAdvertPrintLayout({
   const facts = [
     ['JOB REF', jobRef || 'To be assigned'],
     ['POSITION', (title || '').toUpperCase()],
+    ...(location ? [['LOCATION', location.toUpperCase()]] : []),
     ...(reportsToName ? [['REPORTS TO', reportsToName.toUpperCase()]] : []),
     ...(salaryScale ? [['SALARY LEVEL', salaryScale]] : []),
+    ...(employmentCategory && EMPLOYMENT_CATEGORY_LABELS[employmentCategory]
+      ? [['EMPLOYMENT CATEGORY', EMPLOYMENT_CATEGORY_LABELS[employmentCategory].toUpperCase()]] : []),
     ['VACANCIES', positionsRequired]
   ];
 

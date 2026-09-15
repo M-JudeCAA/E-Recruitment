@@ -8,6 +8,7 @@ const {
   assertPostingTypeEligible, assertVacancyAcceptingApplications, assertBeforeDeadline
 } = require('../utils/applicationEligibility');
 const { isProfileComplete } = require('../utils/profileCompleteness');
+const { countCompleteReferees } = require('../utils/referees');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { notify } = require('../services/notificationService');
 
@@ -47,30 +48,34 @@ async function saveDraft(req, res) {
     return res.status(422).json({ error: err.message });
   }
 
-  const cvFile = req.files?.cv?.[0];
   const coverLetterFile = req.files?.coverLetter?.[0];
 
   // The wizard's Questions step - application-level (unlike the
   // candidate-level profile fields on Candidate, these vary per
   // application) - sent alongside the multipart draft-save request so a
   // single "Save as draft" persists everything the candidate has entered
-  // so far, matching how cv/coverLetter already work.
-  const { desiredSalary, openToRelocate, earliestStartDate, whyThisRole, desirableResponses } = req.body;
+  // so far, matching how coverLetter already works.
+  const { desiredSalary, openToRelocate, earliestStartDate, whyThisRole, desirableResponses, disqualifyingResponses, referees } = req.body;
   const questionsData = {};
   if (desiredSalary !== undefined) questionsData.desiredSalary = desiredSalary || null;
   if (openToRelocate !== undefined) questionsData.openToRelocate = openToRelocate || null;
   if (earliestStartDate !== undefined) questionsData.earliestStartDate = earliestStartDate ? new Date(earliestStartDate) : null;
   if (whyThisRole !== undefined) questionsData.whyThisRole = whyThisRole || null;
-  // Answers to the vacancy's Desirable Requirements Yes/No questions -
-  // arrives as a JSON string (multipart form fields are always strings)
-  // of [{ id, answer }]. Re-derived and snapshotted against the
-  // vacancy's current desirableRequirements here, server-side, rather
-  // than trusting whatever `text` the client sent alongside each answer -
+  // Answers to the vacancy's Desirable Requirements questions - arrives as
+  // a JSON string (multipart form fields are always strings) of [{ id,
+  // answer }]. Re-derived and snapshotted against the vacancy's current
+  // desirableRequirements here, server-side, rather than trusting whatever
+  // `text`/`answerType`/`minValue` the client sent alongside each answer -
   // matches the historical-snapshot principle (see the schema comment on
-  // Application.desirableResponses) while still not letting the client
-  // put words in the vacancy's mouth. Unmatched/malformed rows are
+  // Application.desirableResponses) while still not letting the client put
+  // words in the vacancy's mouth. A 'yesno' requirement (or one with no
+  // answerType, from before 'number' existed) expects a boolean answer; a
+  // 'number' one expects a finite number. Unmatched/malformed rows are
   // dropped rather than rejected, same tolerance as the rest of this
   // form-save endpoint.
+  const answerMatchesType = (requirement, answer) =>
+    requirement.answerType === 'number' ? (typeof answer === 'number' && Number.isFinite(answer)) : typeof answer === 'boolean';
+
   if (desirableResponses !== undefined) {
     let parsed = [];
     try {
@@ -78,10 +83,66 @@ async function saveDraft(req, res) {
     } catch {
       parsed = [];
     }
-    const requirementsById = new Map((vacancy.desirableRequirements || []).map((r) => [r.id, r.text]));
+    const requirementsById = new Map((vacancy.desirableRequirements || []).map((r) => [r.id, r]));
     questionsData.desirableResponses = (Array.isArray(parsed) ? parsed : [])
-      .filter((r) => r && requirementsById.has(r.id) && typeof r.answer === 'boolean')
-      .map((r) => ({ id: r.id, text: requirementsById.get(r.id), answer: r.answer }));
+      .filter((r) => r && requirementsById.has(r.id) && answerMatchesType(requirementsById.get(r.id), r.answer))
+      .map((r) => {
+        const requirement = requirementsById.get(r.id);
+        return {
+          id: r.id, text: requirement.text, answer: r.answer,
+          ...(requirement.answerType === 'number' ? { answerType: 'number', minValue: requirement.minValue } : {})
+        };
+      });
+  }
+  // Same snapshot pattern as desirableResponses above, but also freezing
+  // requiredAnswer (not just text) - see the schema comment on
+  // Application.disqualifyingResponses for why: this is what
+  // screeningService actually reads to decide pass/fail, so a later edit
+  // to the vacancy's required answer (or minValue) must never retroactively
+  // change an already-screened result.
+  if (disqualifyingResponses !== undefined) {
+    let parsed = [];
+    try {
+      parsed = JSON.parse(disqualifyingResponses);
+    } catch {
+      parsed = [];
+    }
+    const requirementsById = new Map((vacancy.disqualifyingRequirements || []).map((r) => [r.id, r]));
+    questionsData.disqualifyingResponses = (Array.isArray(parsed) ? parsed : [])
+      .filter((r) => r && requirementsById.has(r.id) && answerMatchesType(requirementsById.get(r.id), r.answer))
+      .map((r) => {
+        const requirement = requirementsById.get(r.id);
+        return {
+          id: r.id, text: requirement.text, requiredAnswer: requirement.requiredAnswer, answer: r.answer,
+          ...(requirement.answerType === 'number' ? { answerType: 'number', minValue: requirement.minValue } : {})
+        };
+      });
+  }
+
+  // Three referees the candidate names for THIS application (see the
+  // wizard's Referees step) - arrives the same way as
+  // desirableResponses/disqualifyingResponses above (a JSON string, since
+  // multipart form fields are always strings). Trimmed and capped at 3;
+  // an entry with nothing at all in it is dropped rather than stored as an
+  // empty placeholder. submit() below is what actually enforces all three
+  // being complete - this is just parse-and-store.
+  if (referees !== undefined) {
+    let parsed = [];
+    try {
+      parsed = JSON.parse(referees);
+    } catch {
+      parsed = [];
+    }
+    questionsData.referees = (Array.isArray(parsed) ? parsed : [])
+      .slice(0, 3)
+      .map((r) => ({
+        name: (r?.name || '').trim(),
+        relationship: (r?.relationship || '').trim(),
+        organization: (r?.organization || '').trim(),
+        phone: (r?.phone || '').trim(),
+        email: (r?.email || '').trim()
+      }))
+      .filter((r) => r.name || r.relationship || r.organization || r.phone || r.email);
   }
 
   const existing = await applicationModel.findFirst({ vacancyId, candidateId: req.user.id });
@@ -94,7 +155,6 @@ async function saveDraft(req, res) {
       return res.status(409).json({ error: message });
     }
     const data = { ...questionsData };
-    if (cvFile) data.cvUrl = fileUrl(cvFile);
     if (coverLetterFile) data.coverLetterUrl = fileUrl(coverLetterFile);
     const updated = await applicationModel.update(existing.id, data);
     return res.json(updated);
@@ -104,7 +164,6 @@ async function saveDraft(req, res) {
     const application = await applicationModel.create({
       vacancyId,
       candidateId: req.user.id,
-      cvUrl: fileUrl(cvFile),
       coverLetterUrl: fileUrl(coverLetterFile),
       status: 'Draft',
       ...questionsData
@@ -122,7 +181,6 @@ async function saveDraft(req, res) {
       const winner = await applicationModel.findFirst({ vacancyId, candidateId: req.user.id });
       if (winner) {
         const data = { ...questionsData };
-        if (cvFile) data.cvUrl = fileUrl(cvFile);
         if (coverLetterFile) data.coverLetterUrl = fileUrl(coverLetterFile);
         const updated = await applicationModel.update(winner.id, data);
         return res.json(updated);
@@ -149,8 +207,8 @@ async function submit(req, res) {
   if (application.status !== 'Draft') {
     return res.status(422).json({ error: 'Only a draft application can be submitted' });
   }
-  if (!application.cvUrl) {
-    return res.status(400).json({ error: 'A CV upload is required before submitting' });
+  if (countCompleteReferees(application.referees) < 3) {
+    return res.status(400).json({ error: 'Three referees (with name, phone and email) are required before submitting' });
   }
 
   const vacancy = await vacancyModel.findById(application.vacancyId);

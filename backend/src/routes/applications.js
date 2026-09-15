@@ -14,7 +14,7 @@ router.get('/count', authenticate, requireStaffRole('HR_Officer'), controller.co
 // controller.submit). saveDraft() handles both first-save and every
 // subsequent edit to that same draft.
 router.post('/', authenticate, requireCandidate,
-  upload.fields([{ name: 'cv', maxCount: 1 }, { name: 'coverLetter', maxCount: 1 }]),
+  upload.fields([{ name: 'coverLetter', maxCount: 1 }]),
   draftController.saveDraft
 );
 // The explicit "I'm done, submit this" action.

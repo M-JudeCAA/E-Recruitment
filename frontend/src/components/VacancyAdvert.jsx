@@ -14,10 +14,14 @@ import HowToApplyBlock from './HowToApplyBlock';
 // backend/src/utils/htmlSanitizer.js) covering job purpose, principal
 // accountabilities, and anything else HR pastes in as one block, so it's
 // rendered here with dangerouslySetInnerHTML rather than as plain text.
+const EMPLOYMENT_CATEGORY_LABELS = { FullTime: 'Full-time', Contract: 'Contract', FixedTermContract: 'Fixed Term Contract' };
+
 export default function VacancyAdvert({
   jobRef, title, departmentLabel, reportsToName, salaryScale, positionsRequired, deadline,
+  location, employmentCategory,
   jobPurpose, essentialRequirements,
   minimumEducationLevel, minimumExperienceYears, preferredFieldOfStudy,
+  minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
   desirableRequirements, generalKnowledge, specialSkills
 }) {
   const facts = [
@@ -25,12 +29,17 @@ export default function VacancyAdvert({
     ['Position', title],
     ['Reports To', reportsToName],
     ['Department', departmentLabel],
+    ['Location', location],
+    ['Employment Category', EMPLOYMENT_CATEGORY_LABELS[employmentCategory]],
     ['Salary Scale', salaryScale],
     ['Vacancies', positionsRequired],
     ['Application Deadline', deadline ? new Date(deadline).toLocaleDateString() : null],
   ].filter(([, value]) => value);
 
-  const hasEssential = essentialRequirements?.length || minimumEducationLevel || minimumExperienceYears || preferredFieldOfStudy;
+  const ageRequirementText = [minimumAge ? `${minimumAge}+` : null, maximumAge ? `${maximumAge} or under` : null].filter(Boolean).join(', ');
+
+  const hasEssential = essentialRequirements?.length || minimumEducationLevel || minimumExperienceYears ||
+    preferredFieldOfStudy || minimumAge || maximumAge || minimumFlyingHours || minimumCGPA || requiredExamGrades?.length;
 
   return (
     <div>
@@ -71,6 +80,12 @@ export default function VacancyAdvert({
           <ul style={{ marginTop: 6, marginBottom: 0, paddingLeft: 20, fontSize: 13 }}>
             {minimumEducationLevel && <li>Minimum education: {minimumEducationLevel}</li>}
             {minimumExperienceYears ? <li>Minimum experience: {minimumExperienceYears} year(s)</li> : null}
+            {ageRequirementText && <li>Age: {ageRequirementText} years</li>}
+            {minimumFlyingHours ? <li>Minimum flying hours: {minimumFlyingHours}</li> : null}
+            {minimumCGPA ? <li>Minimum CGPA: {minimumCGPA}</li> : null}
+            {(requiredExamGrades || []).map((r) => (
+              <li key={r.id}>{r.level === 'ALevel' ? 'A-Level' : 'O-Level'} {r.subject}: grade {r.minGrade} or better</li>
+            ))}
             {preferredFieldOfStudy && <li>Preferred field of study: {preferredFieldOfStudy}</li>}
             {(essentialRequirements || []).map((r, i) => <li key={i}>{r}</li>)}
           </ul>

@@ -10,16 +10,25 @@ module.exports = {
   // the draft/submit split exists (previously every row was created
   // straight at Submitted, so this filter had nothing to do).
   // candidate uses an explicit select (not include) - whitelisting only
-  // what VacancyDetail.jsx's applicant list actually reads (name, type,
-  // internal verification status) rather than the full Candidate row,
-  // which was otherwise handing every HR officer viewing this list each
-  // applicant's passwordHash. workExperience/education were fetched here
-  // too but never read by that view, so they're dropped rather than
-  // whitelisted.
+  // what VacancyDetail.jsx's applicant list actually reads rather than the
+  // full Candidate row, which was otherwise handing every HR officer
+  // viewing this list each applicant's passwordHash. education/
+  // workExperience/examGrades/certificates ARE whitelisted (unlike before)
+  // since this is also the data source useGeneratedCvDownload.jsx reads to
+  // build the on-demand CV HR generates for an applicant - see
+  // GeneratedCvPrintLayout.jsx.
   findByVacancy: (vacancyId) => prisma.application.findMany({
     where: { vacancyId, status: { not: 'Draft' } },
     include: {
-      candidate: { select: { id: true, fullName: true, candidateType: true, internalProfile: true } },
+      candidate: {
+        select: {
+          id: true, fullName: true, email: true, phone: true, candidateType: true,
+          location: true, linkedinUrl: true, portfolioUrl: true, workAuthorization: true,
+          nationalId: true, idType: true, dateOfBirth: true, flyingHours: true,
+          education: true, workExperience: true, examGrades: true, certificates: true,
+          internalProfile: true
+        }
+      },
       interviewRounds: true,
       offer: true,
       rejectedBy: { select: { name: true } }

@@ -22,12 +22,19 @@ export default function JobDetailsStep({ vacancy }) {
     salaryScale: vacancy.salaryScale,
     positionsRequired: vacancy.positionsRequired,
     deadline: vacancy.deadline,
+    location: vacancy.location,
+    employmentCategory: vacancy.employmentCategory,
     postingType: vacancy.postingType,
     jobPurpose: vacancy.jobPurpose,
     essentialRequirements: vacancy.essentialRequirements,
     minimumEducationLevel: vacancy.minimumEducationLevel,
     minimumExperienceYears: vacancy.minimumExperienceYears,
     preferredFieldOfStudy: vacancy.preferredFieldOfStudy,
+    minimumAge: vacancy.minimumAge,
+    maximumAge: vacancy.maximumAge,
+    minimumFlyingHours: vacancy.minimumFlyingHours,
+    minimumCGPA: vacancy.minimumCGPA,
+    requiredExamGrades: vacancy.requiredExamGrades,
     desirableRequirements: vacancy.desirableRequirements,
     generalKnowledge: vacancy.generalKnowledge,
     specialSkills: vacancy.specialSkills
@@ -79,11 +86,18 @@ export default function JobDetailsStep({ vacancy }) {
         salaryScale={advertProps.salaryScale}
         positionsRequired={advertProps.positionsRequired}
         deadline={advertProps.deadline}
+        location={advertProps.location}
+        employmentCategory={advertProps.employmentCategory}
         jobPurpose={advertProps.jobPurpose}
         essentialRequirements={advertProps.essentialRequirements}
         minimumEducationLevel={advertProps.minimumEducationLevel}
         minimumExperienceYears={advertProps.minimumExperienceYears}
         preferredFieldOfStudy={advertProps.preferredFieldOfStudy}
+        minimumAge={advertProps.minimumAge}
+        maximumAge={advertProps.maximumAge}
+        minimumFlyingHours={advertProps.minimumFlyingHours}
+        minimumCGPA={advertProps.minimumCGPA}
+        requiredExamGrades={advertProps.requiredExamGrades}
         desirableRequirements={advertProps.desirableRequirements}
         generalKnowledge={advertProps.generalKnowledge}
         specialSkills={advertProps.specialSkills}

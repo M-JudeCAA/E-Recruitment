@@ -55,11 +55,20 @@ function AttachmentField({ label, hint, required, name, file, onChange, onClear 
   );
 }
 
-export default function DocumentsStep({ cv, coverLetter, setCv, setCoverLetter, portfolioUrl, setPortfolioUrl }) {
+// No CV upload here - a candidate no longer attaches their own CV file.
+// HR instead generates one on demand from the structured profile/
+// application data already captured across the wizard (education, work
+// experience, exam grades, certificates, the Questions step answers, the
+// Referees step) - see GeneratedCvPrintLayout.jsx and
+// useGeneratedCvDownload.jsx.
+export default function DocumentsStep({ coverLetter, setCoverLetter, portfolioUrl, setPortfolioUrl }) {
   return (
     <div>
-      <AttachmentField label="CV / Resume" required hint="PDF or Word, up to 10MB" name="CV"
-        file={cv} onChange={setCv} onClear={() => setCv(null)} />
+      <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 16 }}>
+        Your CV is generated automatically from the profile and application details you provide elsewhere in
+        this form - there is nothing to attach here. A cover letter is still yours to write and attach, if you'd
+        like to include one.
+      </p>
       <AttachmentField label="Cover letter" hint="Optional" name="cover letter"
         file={coverLetter} onChange={setCoverLetter} onClear={() => setCoverLetter(null)} />
       <TextField label="Portfolio link" hint="Optional - certifications, work samples, personal site"

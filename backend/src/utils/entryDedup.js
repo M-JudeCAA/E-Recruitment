@@ -37,6 +37,15 @@ function certificateKey({ name, issuingOrganization, issueDate }) {
   return [normalizeText(name), normalizeText(issuingOrganization), normalizeDate(issueDate)].join('|');
 }
 
+// grade is deliberately left out, same reasoning as yearCompleted in
+// educationKey - a retake correcting the grade for the same subject/level
+// is still the same entry, not a new one (screeningService.
+// evaluateExamGrades already picks the best grade across any duplicates
+// this leaves in place anyway).
+function examGradeKey({ level, subject }) {
+  return [normalizeText(level), normalizeText(subject)].join('|');
+}
+
 // Preserves the first occurrence's order/values - later duplicates are
 // dropped rather than merged, since this is used on best-effort CV
 // extraction where the first match is no more or less trustworthy than

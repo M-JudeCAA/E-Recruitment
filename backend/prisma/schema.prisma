@@ -12,12 +12,34 @@ enum CandidateType {
   External
 }
 
+// OLevel/ALevel/Postgraduate added below Certificate/above Masters to
+// match the ordered qualification list HR actually uses (confirmed
+// against a real reference "Create Job" form) - Bachelors corresponds to
+// that list's "Degree" entry; kept as Bachelors since that name is
+// already used everywhere in this codebase. Existing rows are unaffected
+// by widening an enum - only new values are added, nothing renamed or
+// removed.
 enum EducationLevel {
+  OLevel
+  ALevel
   Certificate
   Diploma
   Bachelors
+  Postgraduate
   Masters
   PhD
+}
+
+// UNEB's two secondary-school grading scales - genuinely different shapes,
+// not just different labels: UCE (O-Level) grades each subject 1-9,
+// where LOWER is better (1-2 Distinction, 3-6 Credit, 7-8 Pass, 9 Fail).
+// UACE (A-Level) grades each subject A-F (plus O, a subsidiary pass),
+// where HIGHER is better (A best, F fail). ExamGrade.grade stores the raw
+// value as entered ('1'-'9', or 'A'/'B'/'C'/'D'/'E'/'O'/'F') - see
+// examGrading.js for the comparison logic each scale actually needs.
+enum SecondaryLevel {
+  OLevel
+  ALevel
 }
 
 enum PostingType {
@@ -94,6 +116,12 @@ enum DepartmentStatus {
   Pending
   Approved
   Rejected
+}
+
+enum EmploymentCategory {
+  FullTime
+  Contract
+  FixedTermContract
 }
 
 model StaffUser {
@@ -268,14 +296,48 @@ model Vacancy {
   postingTypePreviousValue      PostingType?
 
   // Screening criteria - optional; a vacancy with no minimum set imposes
-  // none. preferredFieldOfStudy is informational only, shown to HR, never
-  // machine-checked (field-of-study matching is too fuzzy to automate
-  // reliably). reviewStartedAt is set once, the first time Begin Review
-  // fires for this vacancy.
+  // none. preferredFieldOfStudy contributes only a soft, non-blocking
+  // signal (see Application.fieldOfStudyMatch/screeningService.
+  // matchesFieldOfStudy) - free-text field-of-study matching is too fuzzy
+  // to ever hard-fail a candidate on. reviewStartedAt is set once, the
+  // first time Begin Review fires for this vacancy.
   minimumExperienceYears Int?
   minimumEducationLevel  EducationLevel?
   preferredFieldOfStudy  String?
+  // Real, machine-checked criteria against structured candidate data
+  // (Candidate.dateOfBirth/flyingHours, ExamGrade) - the same "no minimum
+  // set imposes none" convention as the two fields above, and checked the
+  // same unconditional way (not the self-declared-question mechanism
+  // disqualifyingRequirements below uses), since the underlying candidate
+  // data is now real rather than something only a Yes/No answer could
+  // stand in for. See screeningService.evaluateAge/evaluateFlyingHours/
+  // evaluateExamGrades.
+  minimumAge             Int?
+  maximumAge             Int?
+  minimumFlyingHours     Int?
+  minimumCGPA            Float?          // 0-5 scale, checked against the candidate's best
+                                          // Education.cgpa (see screeningService.evaluateCGPA)
+  // [{ id, level: 'OLevel'|'ALevel', subject, minGrade }] - each checked
+  // against the candidate's best ExamGrade row for that subject+level
+  // (a retake shouldn't count against them). `id` kept stable across
+  // edits for the same reason desirableRequirements/disqualifyingRequirements
+  // keep theirs stable, even though nothing here is candidate-answered -
+  // itemized display rows (evaluateEssentialCriteria) still key on it.
+  requiredExamGrades     Json?
   reviewStartedAt        DateTime?
+
+  // Site/location the role is based at (e.g. a specific aerodrome), and
+  // basic contract metadata - distinct from Department/Directorate, which
+  // is org structure, not a physical place.
+  location               String?
+  employmentCategory     EmploymentCategory?
+  // Real internal budget figure - deliberately separate from salaryScale
+  // above, which candidates DO see (JobDetailsStep.jsx). Read only by
+  // HR-facing views; never included in anything sent to candidates.
+  internalSalaryRange    String?
+  // Free-text guidance for whoever reviews the shortlist - internal only,
+  // same visibility boundary as internalSalaryRange.
+  recruiterNotes         String?  @db.Text
 
   // Structured advert content, matching UCAA's standard job-advertisement
   // layout (Job Purpose / Person Specification). All optional - a vacancy
@@ -292,22 +354,42 @@ model Vacancy {
   // block, rather than re-entering it into a second structured input.
   jobPurpose             String?  @db.Text
   // Person Specification, Essential Requirements: string[] of free-text
-  // bullets (e.g. degree class, age limit) shown to candidates alongside
-  // the structured, actually-screened criteria above
-  // (minimumEducationLevel/minimumExperienceYears) - those two remain the
-  // machine-checked subset of this section, since requirements like "26
-  // years or less" or specific O-level subject credits are too varied to
-  // generalize into a screening rule.
+  // bullets shown to candidates as prose alongside the structured,
+  // actually-screened criteria above (minimumEducationLevel/
+  // minimumExperienceYears). Anything here that genuinely needs to gate a
+  // candidate (an age cutoff, a required O-Level/A-Level credit, a
+  // licence) belongs in disqualifyingRequirements below instead, where it
+  // becomes a real Yes/No eligibility question rather than unenforced
+  // text - this field remains for requirements that are only ever prose.
   essentialRequirements  Json?
   // Person Specification, Desirable Requirements: [{ id: string, text:
-  // string }] - each becomes a Yes/No question candidates answer at
-  // application time (see Application.desirableResponses). `id` is
-  // generated once and kept stable across edits so an application's
-  // snapshotted answer stays correctly attributable even if the wording
-  // is later tweaked. Informational only - a "No" answer is shown to HR
-  // as a flag but never fails automated screening, since these are
-  // explicitly the non-mandatory half of the person specification.
+  // string, answerType?: 'yesno'|'number', minValue?: number }] -
+  // answerType defaults to 'yesno' when absent (every row created before
+  // the 'number' type existed). A 'yesno' row becomes a Yes/No question; a
+  // 'number' row (e.g. "What is your CGPA?") becomes a numeric input and
+  // is "met" once the candidate's answer is >= minValue (see
+  // Application.desirableResponses / screeningService.scoreApplication).
+  // `id` is generated once and kept stable across edits so an
+  // application's snapshotted answer stays correctly attributable even if
+  // the wording is later tweaked. Informational only - failing to meet one
+  // is shown to HR as a flag but never fails automated screening, since
+  // these are explicitly the non-mandatory half of the person
+  // specification. See disqualifyingRequirements below for the mandatory
+  // counterpart.
   desirableRequirements  Json?
+  // Hard eligibility gate, distinct from desirableRequirements above:
+  // [{ id, text, answerType?: 'yesno'|'number', requiredAnswer:
+  // 'Yes'|'No', minValue?: number }] - requiredAnswer only applies to
+  // 'yesno' rows; a 'number' row instead fails whenever the candidate's
+  // answer is below minValue. Each becomes a question candidates answer at
+  // application time (see Application.disqualifyingResponses); not
+  // meeting it DOES fail automated screening (screeningPassed=false),
+  // unlike a desirable miss. Still never blocks submission itself - the
+  // "every application reaches HR regardless of outcome" principle
+  // (screeningService.js) applies here too, this only affects what HR
+  // sees, not what a candidate is allowed to submit. Same stable-id
+  // snapshot principle as desirableRequirements.
+  disqualifyingRequirements Json?
   // General Knowledge and Cognitive Aptitude, and Special Skills and
   // Attributes: string[] each - both purely informational/display, never
   // machine-checked (too subjective to screen automatically).
@@ -355,6 +437,16 @@ model Candidate {
   // Optional avatar, same /api/files/:filename authenticated-serving
   // pattern as Application.cvUrl/coverLetterUrl - never a public URL.
   photoUrl           String?
+  // Self-declared, same trust level as every other profile field here
+  // (no independent verification exists for any of them) - backs real
+  // age screening (Vacancy.minimumAge/maximumAge) instead of the
+  // self-declared-Yes/No-question workaround used before this existed.
+  dateOfBirth        DateTime?
+  // Total logged flying hours, self-declared - backs
+  // Vacancy.minimumFlyingHours. Optional and irrelevant to almost every
+  // role; only aviation operational vacancies are expected to set a
+  // minimum against it.
+  flyingHours        Int?
 
   // Null until the first successful login - distinguishes a brand-new
   // candidate (who should land on the full /profile/complete page) from a
@@ -370,6 +462,7 @@ model Candidate {
 
   workExperience     WorkExperience[]
   education          Education[]
+  examGrades         ExamGrade[]
   certificates       Certificate[]
   applications       Application[]
   internalProfile    InternalProfile?
@@ -402,6 +495,29 @@ model Education {
   qualificationLevel     EducationLevel? // the controlled, ordered value screening actually reads
   fieldOfStudy           String
   yearCompleted          Int?
+  cgpa                   Float?          // optional, self-declared on a 0-5 scale (matches the
+                                          // reference "Create Job" form's Minimum CGPA field) -
+                                          // backs Vacancy.minimumCGPA (see
+                                          // screeningService.evaluateCGPA)
+}
+
+// One row per subject - a UCE/UACE transcript is several subject grades,
+// not one qualification the way Education's rows are. Optional, same as
+// Certificate below - never part of profileCompleteness's required
+// fields, since plenty of roles never ask for these at all. Backs
+// Vacancy.requiredExamGrades (see screeningService.evaluateExamGrades).
+model ExamGrade {
+  id          Int            @id @default(autoincrement())
+  candidateId Int
+  candidate   Candidate      @relation(fields: [candidateId], references: [id])
+  level       SecondaryLevel
+  subject     String
+  // Raw grade as entered - '1'-'9' for OLevel, one of A/B/C/D/E/O/F for
+  // ALevel. Kept as a plain string rather than two differently-typed
+  // columns, same "one field, scale-dependent meaning" tradeoff
+  // Education.qualificationLevelText/qualificationLevel makes for a
+  // different reason - see examGrading.js for how each scale compares.
+  grade       String
 }
 
 // Optional, unlike Education/WorkExperience - never part of
@@ -456,6 +572,12 @@ model Application {
   shortlistScoreReasons String?     @db.Text // JSON array of human-readable strings, same convention as screeningReasons
   rank             Int?
   listStatus       ListStatus?
+  // No longer written by the apply wizard (the Documents step's CV upload
+  // was removed in favor of a CV generated on demand for HR from the
+  // candidate's own structured profile/application data - see referees
+  // below and GeneratedCvPrintLayout.jsx). Left in place, still nullable,
+  // purely so pre-existing rows created before that change keep whatever
+  // uploaded CV they already had.
   cvUrl            String?
   coverLetterUrl   String?
   withdrawalReason String?           // optional - candidate's prerogative, useful for HR reporting
@@ -500,15 +622,39 @@ model Application {
   earliestStartDate DateTime?
   whyThisRole      String?           @db.Text
 
-  // Answers to the vacancy's Desirable Requirements Yes/No questions (see
-  // Vacancy.desirableRequirements): [{ id, text, answer: boolean }].
-  // `text` is snapshotted at answer time - the same historical-accuracy
-  // principle used elsewhere in this schema - so a later edit to the
-  // vacancy's wording never rewrites what the candidate actually saw and
-  // answered. Purely informational for HR (see VacancyDetail.jsx); never
-  // read by screeningService, since a "No" here must not fail automated
-  // screening.
+  // Answers to the vacancy's Desirable Requirements questions (see
+  // Vacancy.desirableRequirements): [{ id, text, answerType?:
+  // 'yesno'|'number', answer: boolean|number, minValue?: number }] -
+  // answerType/minValue are only snapshotted for a 'number' row. `text` is
+  // snapshotted at answer time - the same historical-accuracy principle
+  // used elsewhere in this schema - so a later edit to the vacancy's
+  // wording never rewrites what the candidate actually saw and answered.
+  // Never affects screeningPassed (see disqualifyingResponses below for
+  // the mandatory counterpart), but scoreApplication does credit meeting
+  // one, so this isn't purely a display-only field.
   desirableResponses Json?
+  // Answers to the vacancy's Disqualifying (eligibility) questions (see
+  // Vacancy.disqualifyingRequirements): [{ id, text, answerType?:
+  // 'yesno'|'number', requiredAnswer: 'Yes'|'No', answer: boolean|number,
+  // minValue?: number }] - answerType/minValue are only snapshotted for a
+  // 'number' row. Same snapshot-at-answer-time principle as
+  // desirableResponses (every field screening reads is frozen at answer
+  // time, so a later edit to the vacancy never rewrites what was actually
+  // screened) - and unlike desirableResponses, this IS read by
+  // screenApplication: a 'yesno' answer that doesn't match requiredAnswer,
+  // or a 'number' answer below minValue, fails automated screening.
+  disqualifyingResponses Json?
+
+  // Three referees the candidate names on THIS application (see the
+  // apply wizard's Referees step) - [{ name, relationship, organization,
+  // phone, email }]. Application-level rather than candidate-level (unlike
+  // education/workExperience on Candidate) since who a candidate names as
+  // a reference is naturally job-specific, not something that should
+  // silently carry over unedited to every other application. submit()
+  // requires all three to have at least a name/phone/email before an
+  // application can leave Draft - the same enforced-at-submission role
+  // cvUrl used to play.
+  referees         Json?
 
   interviewRounds  InterviewRound[]
   offer            Offer?

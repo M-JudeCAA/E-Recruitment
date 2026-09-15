@@ -59,6 +59,12 @@ describe('saveDraft', () => {
 });
 
 describe('submit', () => {
+  const completeReferees = [
+    { name: 'A Referee', phone: '0700000001', email: 'a@example.com' },
+    { name: 'B Referee', phone: '0700000002', email: 'b@example.com' },
+    { name: 'C Referee', phone: '0700000003', email: 'c@example.com' }
+  ];
+
   test('returns 404 when the application does not exist', async () => {
     prisma.application.findUnique.mockResolvedValue(null);
     const req = { params: { id: '99' }, user: { id: 5, candidateType: 'External' } };
@@ -72,7 +78,7 @@ describe('submit', () => {
 
   test('returns 403 when the application does not belong to the candidate', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 99, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 99, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
@@ -85,7 +91,7 @@ describe('submit', () => {
 
   test('returns 422 when the application is not a Draft (e.g. already submitted)', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Submitted', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Submitted', referees: completeReferees
     });
     const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
@@ -96,9 +102,10 @@ describe('submit', () => {
     expect(prisma.application.update).not.toHaveBeenCalled();
   });
 
-  test('returns 400 when no CV has been uploaded yet', async () => {
+  test('returns 400 when fewer than three complete referees have been given', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: null
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft',
+      referees: [completeReferees[0], completeReferees[1]]
     });
     const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
@@ -111,7 +118,7 @@ describe('submit', () => {
 
   test('returns 422 when the vacancy is Closed', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Closed', postingType: 'External', deadline: null });
     const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
@@ -125,7 +132,7 @@ describe('submit', () => {
 
   test('returns 422 when the vacancy is Filled', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Filled', postingType: 'External', deadline: null });
     const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
@@ -139,7 +146,7 @@ describe('submit', () => {
 
   test('returns 422 when the application deadline has passed', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({
       id: 10, status: 'Open', postingType: 'External', deadline: new Date('2000-01-01')
@@ -158,7 +165,7 @@ describe('submit', () => {
   // gets that reason, not an unrelated "complete your profile" one.
   test('returns 422 when the candidate profile is incomplete', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Open', postingType: 'External', deadline: null });
     prisma.candidate.findUnique.mockResolvedValue({
@@ -181,7 +188,7 @@ describe('submit', () => {
   // proceeding to capture a snapshot and notify the supervisor.
   test('returns 409 when a concurrent request already submitted this application', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Open', postingType: 'External', deadline: null });
     prisma.candidate.findUnique.mockResolvedValue({
@@ -205,7 +212,7 @@ describe('submit', () => {
   // Internal candidates, via the separate, unrelated notifySupervisor.
   test('notifies both the candidate (confirmation) and the vacancy creator (new application) on a successful submit', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf',
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees,
       // notifySupervisor (workflowService) re-fetches this same application
       // with its own include shape - the mock is include-agnostic, so this
       // needs candidate present too, not just for the top-of-submit read.

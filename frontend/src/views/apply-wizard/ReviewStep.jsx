@@ -1,4 +1,7 @@
-export default function ReviewStep({ profile, cv, coverLetter, profileDetails, questions, internalProfile, candidateType, goTo, stepIndexes, desirableRequirements, desirableAnswers }) {
+export default function ReviewStep({
+  profile, coverLetter, referees, profileDetails, questions, internalProfile, candidateType, goTo, stepIndexes,
+  desirableRequirements, desirableAnswers, disqualifyingRequirements, disqualifyingAnswers
+}) {
   const WORK_AUTH_LABELS = { Yes: 'Yes', No: 'No', Sponsorship: 'Would need sponsorship' };
   const RELOCATE_LABELS = { Yes: 'Yes', No: 'No', Depends: 'Depends on the offer' };
 
@@ -18,10 +21,17 @@ export default function ReviewStep({ profile, cv, coverLetter, profileDetails, q
       i: stepIndexes.documents,
       title: 'Documents',
       rows: [
-        ['CV', cv ? cv.name : 'Not attached'],
+        ['CV', 'Generated automatically from your profile and application details'],
         ['Cover letter', coverLetter ? coverLetter.name : 'Not attached'],
         ['Portfolio', profileDetails.portfolioUrl || '—'],
       ],
+    },
+    {
+      i: stepIndexes.referees,
+      title: 'Referees',
+      rows: (referees || []).map((r, i) => [
+        `Referee ${i + 1}`, r.name ? `${r.name}${r.relationship ? ` (${r.relationship})` : ''} — ${r.phone || '—'}, ${r.email || '—'}` : '—'
+      ]),
     },
     {
       i: stepIndexes.questions,
@@ -31,8 +41,13 @@ export default function ReviewStep({ profile, cv, coverLetter, profileDetails, q
         ['Desired salary', questions.desiredSalary || '—'],
         ['Earliest start', questions.earliestStartDate || '—'],
         ['Why this role', questions.whyThisRole || '—'],
+        ...(disqualifyingRequirements || []).map((req) => [
+          req.text, disqualifyingAnswers[req.id] === undefined ? '—'
+            : req.answerType === 'number' ? disqualifyingAnswers[req.id] : (disqualifyingAnswers[req.id] ? 'Yes' : 'No')
+        ]),
         ...(desirableRequirements || []).map((req) => [
-          req.text, desirableAnswers[req.id] === undefined ? '—' : (desirableAnswers[req.id] ? 'Yes' : 'No')
+          req.text, desirableAnswers[req.id] === undefined ? '—'
+            : req.answerType === 'number' ? desirableAnswers[req.id] : (desirableAnswers[req.id] ? 'Yes' : 'No')
         ]),
       ],
     },

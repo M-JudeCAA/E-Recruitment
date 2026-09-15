@@ -1,9 +1,18 @@
-const EDUCATION_RANK = { Certificate: 1, Diploma: 2, Bachelors: 3, Masters: 4, PhD: 5 };
+const { meetsGrade, A_LEVEL_RANK } = require('../utils/examGrading');
+const { countCompleteReferees } = require('../utils/referees');
+
+// Matches EducationLevel's declared order in schema.prisma exactly.
+const EDUCATION_RANK = {
+  OLevel: 1, ALevel: 2, Certificate: 3, Diploma: 4, Bachelors: 5, Postgraduate: 6, Masters: 7, PhD: 8
+};
 
 // Caps how many points a single very-long-tenured candidate's experience
-// can contribute, so one outlier doesn't dwarf every other factor in the
-// score below.
+// (or, below, an unusually high flying-hours total) can contribute, so one
+// outlier doesn't dwarf every other factor in the score below.
 const EXPERIENCE_SCORE_CAP_YEARS = 5;
+const FLYING_HOURS_SCORE_CAP = 5;
+const CGPA_SCORE_CAP = 2; // CGPA is a 0-5 scale, not years/hours - a smaller cap keeps one
+                          // strong transcript from outweighing every other factor here.
 
 // Merges overlapping/adjacent date ranges before summing, so two
 // concurrent jobs (e.g. a part-time role held alongside a full-time one)
@@ -86,6 +95,86 @@ function evaluateExperience(workRows, minimumExperienceYears) {
   return { status: diff < 0 ? 'below' : diff === 0 ? 'meets' : 'exceeds', years, diff };
 }
 
+// Age in full years as of `asOf` - the deadline if the vacancy has one
+// ("26 years or less at the time of the deadline", matching real UCAA
+// advert wording), otherwise today. Two independent bounds, either or
+// both may be set; each is only checked if set.
+function computeAge(dateOfBirth, asOf) {
+  const dob = new Date(dateOfBirth);
+  let age = asOf.getFullYear() - dob.getFullYear();
+  const hadBirthdayThisYear = asOf.getMonth() > dob.getMonth() ||
+    (asOf.getMonth() === dob.getMonth() && asOf.getDate() >= dob.getDate());
+  if (!hadBirthdayThisYear) age -= 1;
+  return age;
+}
+
+function evaluateAge(candidate, vacancy) {
+  if (!vacancy.minimumAge && !vacancy.maximumAge) return null;
+  if (!candidate.dateOfBirth) return { status: 'missing', age: null };
+  const asOf = vacancy.deadline ? new Date(vacancy.deadline) : new Date();
+  const age = computeAge(candidate.dateOfBirth, asOf);
+  if (vacancy.minimumAge && age < vacancy.minimumAge) return { status: 'below', age };
+  if (vacancy.maximumAge && age > vacancy.maximumAge) return { status: 'above', age };
+  return { status: 'meets', age };
+}
+
+// Same role as evaluateExperience, for flying hours - a separate,
+// aviation-specific minimum most vacancies never set.
+function evaluateFlyingHours(candidate, vacancy) {
+  if (!vacancy.minimumFlyingHours) return null;
+  if (candidate.flyingHours == null) return { status: 'missing', hours: null, diff: null };
+  const diff = candidate.flyingHours - vacancy.minimumFlyingHours;
+  return { status: diff < 0 ? 'below' : diff === 0 ? 'meets' : 'exceeds', hours: candidate.flyingHours, diff };
+}
+
+// Same role as evaluateFlyingHours, for CGPA - takes the best (highest)
+// cgpa across every Education row rather than requiring a specific one,
+// same "don't make HR pick which qualification counts" reasoning as
+// highestEducationLevel above.
+function evaluateCGPA(educationRows, minimumCGPA) {
+  if (!minimumCGPA) return null;
+  // Number(null) and Number(undefined ?? '') coerce to 0 / NaN
+  // respectively, not "absent" - filter on the raw value first so a row
+  // with no cgpa recorded is correctly treated as missing rather than as
+  // a real 0.0.
+  const values = (educationRows || [])
+    .map((e) => e.cgpa)
+    .filter((v) => v !== null && v !== undefined && v !== '')
+    .map(Number)
+    .filter((v) => Number.isFinite(v));
+  if (values.length === 0) return { status: 'missing', cgpa: null, diff: null };
+  const best = Math.max(...values);
+  const diff = best - minimumCGPA;
+  return { status: diff < 0 ? 'below' : diff === 0 ? 'meets' : 'exceeds', cgpa: best, diff };
+}
+
+// One row per required subject, each independently checked against the
+// candidate's ExamGrade rows for that level+subject - a retake shouldn't
+// count against them, so the best grade on file wins regardless of order.
+// Unlike evaluateEducation/evaluateExperience/evaluateAge/
+// evaluateFlyingHours (one comparison in, one status out), this already
+// returns a list, since "required exam grades" is itself a list on the
+// vacancy - screenApplication/evaluateEssentialCriteria both iterate it
+// directly rather than each re-deriving the per-subject shape.
+function evaluateExamGrades(examGradeRows, requiredExamGrades) {
+  return (requiredExamGrades || []).map((req) => {
+    const candidateRows = (examGradeRows || []).filter((g) =>
+      g.level === req.level && g.subject.trim().toLowerCase() === req.subject.trim().toLowerCase()
+    );
+    if (candidateRows.length === 0) return { ...req, status: 'missing', candidateGrade: null };
+
+    const passing = candidateRows.find((g) => meetsGrade(req.level, g.grade, req.minGrade));
+    if (passing) return { ...req, status: 'meets', candidateGrade: passing.grade };
+
+    // Doesn't meet the bar - still report the best grade actually on
+    // file (not just the first row) so HR sees what was achieved.
+    const best = req.level === 'OLevel'
+      ? candidateRows.reduce((b, g) => (Number(g.grade) < Number(b.grade) ? g : b))
+      : candidateRows.reduce((b, g) => (A_LEVEL_RANK[g.grade] > A_LEVEL_RANK[b.grade] ? g : b));
+    return { ...req, status: 'below', candidateGrade: best.grade };
+  });
+}
+
 // Never auto-hides or rejects - always returns a result, never throws.
 // HR sees every application regardless of outcome; this only informs
 // what they see, never what they're allowed to see.
@@ -94,11 +183,12 @@ function screenApplication(application, candidate, vacancy) {
   const educationRows = candidate.education || [];
   const workRows = candidate.workExperience || [];
 
-  // Completeness (#1) - the CV check is expected to always pass, since
-  // submit() already requires a CV before an application can leave Draft.
-  // Kept here anyway for defensive completeness in case this function is
-  // ever reused against data that didn't go through that gate.
-  if (!application.cvUrl) reasons.push('Missing CV');
+  // Completeness (#1) - the referees check is expected to always pass,
+  // since submit() already requires three complete referees before an
+  // application can leave Draft. Kept here anyway for defensive
+  // completeness in case this function is ever reused against data that
+  // didn't go through that gate.
+  if (countCompleteReferees(application.referees) < 3) reasons.push('Missing referees');
   if (educationRows.length === 0) reasons.push('No education record on file');
   if (workRows.length === 0) reasons.push('No work experience record on file');
 
@@ -118,7 +208,55 @@ function screenApplication(application, candidate, vacancy) {
     reasons.push(`Below minimum experience (${experience.years.toFixed(1)} yrs vs ${vacancy.minimumExperienceYears} required)`);
   }
 
-  // Soft signal (#3) - deliberately excluded from `reasons`/`passed` since
+  const age = evaluateAge(candidate, vacancy);
+  if (age) {
+    if (age.status === 'missing') reasons.push('Date of birth not on file - could not verify age requirement');
+    else if (age.status === 'below') reasons.push(`Below minimum age (requires ${vacancy.minimumAge}+, is ${age.age})`);
+    else if (age.status === 'above') reasons.push(`Above maximum age (requires ${vacancy.maximumAge} or under, is ${age.age})`);
+  }
+
+  const flyingHours = evaluateFlyingHours(candidate, vacancy);
+  if (flyingHours) {
+    if (flyingHours.status === 'missing') reasons.push('Flying hours not on file - could not verify minimum flying hours requirement');
+    else if (flyingHours.status === 'below') reasons.push(`Below minimum flying hours (requires ${vacancy.minimumFlyingHours}, has ${flyingHours.hours})`);
+  }
+
+  evaluateExamGrades(candidate.examGrades, vacancy.requiredExamGrades).forEach((r) => {
+    const levelLabel = r.level === 'OLevel' ? 'O-Level' : 'A-Level';
+    if (r.status === 'missing') reasons.push(`No ${levelLabel} grade on file for ${r.subject}`);
+    else if (r.status === 'below') reasons.push(`Below required ${levelLabel} grade in ${r.subject} (requires ${r.minGrade}, has ${r.candidateGrade})`);
+  });
+
+  const cgpa = evaluateCGPA(educationRows, vacancy.minimumCGPA);
+  if (cgpa) {
+    if (cgpa.status === 'missing') reasons.push('CGPA not on file - could not verify minimum CGPA requirement');
+    else if (cgpa.status === 'below') reasons.push(`Below minimum CGPA (requires ${vacancy.minimumCGPA}, has ${cgpa.cgpa})`);
+  }
+
+  // Hard eligibility gate (#3) - unlike desirableResponses, a mismatch
+  // here DOES fail screening. text/requiredAnswer/answerType/minValue are
+  // read off the snapshot taken at answer time (see
+  // Application.disqualifyingResponses' schema comment), not off the
+  // vacancy's current wording, so an already-screened application's result
+  // never silently shifts under a later edit to the question. A 'yesno'
+  // row (or any row from before 'number' existed, which has no
+  // answerType) is compared against requiredAnswer as before; a 'number'
+  // row instead fails whenever the answer is missing or below minValue.
+  for (const response of application.disqualifyingResponses || []) {
+    if (response.answerType === 'number') {
+      const value = Number(response.answer);
+      if (!Number.isFinite(value) || value < Number(response.minValue)) {
+        reasons.push(`Disqualifying requirement not met: "${response.text}"`);
+      }
+    } else {
+      const requiredBool = response.requiredAnswer !== 'No';
+      if (response.answer !== requiredBool) {
+        reasons.push(`Disqualifying requirement not met: "${response.text}"`);
+      }
+    }
+  }
+
+  // Soft signal (#4) - deliberately excluded from `reasons`/`passed` since
   // preferredFieldOfStudy is a preference, not a requirement (see the
   // fieldOfStudyMatch schema comment for why a miss shouldn't flip
   // screeningPassed).
@@ -176,6 +314,80 @@ function evaluateEssentialCriteria(candidate, vacancy) {
     });
   }
 
+  const age = evaluateAge(candidate, vacancy);
+  if (age) {
+    let detail;
+    if (age.status === 'missing') detail = 'Date of birth not on file';
+    else if (age.status === 'below') detail = `Below minimum (is ${age.age})`;
+    else if (age.status === 'above') detail = `Above maximum (is ${age.age})`;
+    else detail = `Meets requirement (is ${age.age})`;
+
+    results.push({
+      key: 'age',
+      label: 'Age',
+      requirement: [vacancy.minimumAge ? `min ${vacancy.minimumAge}` : null, vacancy.maximumAge ? `max ${vacancy.maximumAge}` : null]
+        .filter(Boolean).join(', '),
+      met: age.status === 'meets',
+      detail
+    });
+  }
+
+  const flyingHours = evaluateFlyingHours(candidate, vacancy);
+  if (flyingHours) {
+    let detail;
+    if (flyingHours.status === 'missing') detail = 'No flying hours on file';
+    else if (flyingHours.status === 'below') detail = `Below minimum (has ${flyingHours.hours})`;
+    else if (flyingHours.status === 'meets') detail = `Meets minimum exactly (${flyingHours.hours})`;
+    else {
+      const credited = Math.min(flyingHours.diff, FLYING_HOURS_SCORE_CAP);
+      detail = `Exceeds minimum (${flyingHours.hours}) - +${credited} to shortlist score${credited < flyingHours.diff ? ', capped' : ''}`;
+    }
+
+    results.push({
+      key: 'flyingHours',
+      label: 'Minimum flying hours',
+      requirement: `${vacancy.minimumFlyingHours} hour(s)`,
+      met: flyingHours.status === 'meets' || flyingHours.status === 'exceeds',
+      detail
+    });
+  }
+
+  evaluateExamGrades(candidate.examGrades, vacancy.requiredExamGrades).forEach((r) => {
+    const levelLabel = r.level === 'OLevel' ? 'O-Level' : 'A-Level';
+    let detail;
+    if (r.status === 'missing') detail = `No ${levelLabel} grade on file for ${r.subject}`;
+    else if (r.status === 'below') detail = `Below required grade (has ${r.candidateGrade})`;
+    else detail = `Meets required grade (has ${r.candidateGrade})`;
+
+    results.push({
+      key: `examGrade-${r.id}`,
+      label: `${levelLabel}: ${r.subject}`,
+      requirement: r.minGrade,
+      met: r.status === 'meets',
+      detail
+    });
+  });
+
+  const cgpa = evaluateCGPA(educationRows, vacancy.minimumCGPA);
+  if (cgpa) {
+    let detail;
+    if (cgpa.status === 'missing') detail = 'No CGPA on file';
+    else if (cgpa.status === 'below') detail = `Below minimum (has ${cgpa.cgpa})`;
+    else if (cgpa.status === 'meets') detail = `Meets minimum exactly (${cgpa.cgpa})`;
+    else {
+      const credited = Math.min(cgpa.diff, CGPA_SCORE_CAP);
+      detail = `Exceeds minimum (${cgpa.cgpa}) - +${credited.toFixed(1)} to shortlist score${credited < cgpa.diff ? ', capped' : ''}`;
+    }
+
+    results.push({
+      key: 'cgpa',
+      label: 'Minimum CGPA',
+      requirement: vacancy.minimumCGPA,
+      met: cgpa.status === 'meets' || cgpa.status === 'exceeds',
+      detail
+    });
+  }
+
   return results;
 }
 
@@ -212,11 +424,46 @@ function scoreApplication(application, candidate, vacancy) {
     );
   }
 
+  // Credit for flying hours beyond the stated minimum, same capping
+  // reasoning as experience. Age and exam grades deliberately get no
+  // credit here - a pass/fail bound (age) or a required grade already met
+  // (exam grade) has no "how much better" direction the way years/hours
+  // above a minimum does.
+  const flyingHours = evaluateFlyingHours(candidate, vacancy);
+  if (flyingHours && flyingHours.status === 'exceeds') {
+    const capped = Math.min(flyingHours.diff, FLYING_HOURS_SCORE_CAP);
+    score += capped;
+    reasons.push(
+      `+${capped} flying hours exceed minimum (${flyingHours.hours} vs ${vacancy.minimumFlyingHours} required` +
+      `${capped < flyingHours.diff ? `, capped at ${FLYING_HOURS_SCORE_CAP}` : ''})`
+    );
+  }
+
+  // Credit for CGPA beyond the stated minimum, same capping reasoning as
+  // experience/flying hours. Age and exam grades still get no credit here -
+  // see the comment above flyingHours for why.
+  const cgpa = evaluateCGPA(educationRows, vacancy.minimumCGPA);
+  if (cgpa && cgpa.status === 'exceeds') {
+    const capped = Math.min(cgpa.diff, CGPA_SCORE_CAP);
+    score += capped;
+    reasons.push(
+      `+${capped.toFixed(1)} CGPA exceeds minimum (${cgpa.cgpa} vs ${vacancy.minimumCGPA} required` +
+      `${capped < cgpa.diff ? `, capped at ${CGPA_SCORE_CAP}` : ''})`
+    );
+  }
+
   // Desirable Requirements are preferences the vacancy itself defines, so
   // meeting more of them is a real, direct ranking signal - 1 point per
-  // "Yes", same weight as one level of education or one year of
-  // experience above minimum, deliberately kept simple and explainable.
-  const desirable = (application.desirableResponses || []).filter((r) => r && r.answer === true);
+  // met question, same weight as one level of education or one year of
+  // experience above minimum, deliberately kept simple and explainable. A
+  // 'yesno' row (or any row with no answerType, from before 'number'
+  // existed) counts as met on answer === true; a 'number' row counts as
+  // met once the answer reaches its own snapshotted minValue.
+  const desirable = (application.desirableResponses || []).filter((r) => {
+    if (!r) return false;
+    if (r.answerType === 'number') return typeof r.answer === 'number' && Number.isFinite(r.answer) && r.answer >= Number(r.minValue);
+    return r.answer === true;
+  });
   if (desirable.length > 0) {
     score += desirable.length;
     reasons.push(`+${desirable.length} met ${desirable.length} desirable requirement(s)`);
@@ -235,5 +482,6 @@ function scoreApplication(application, candidate, vacancy) {
 
 module.exports = {
   computeExperienceYears, highestEducationLevel, matchesFieldOfStudy,
+  computeAge, evaluateAge, evaluateFlyingHours, evaluateExamGrades, evaluateCGPA,
   screenApplication, scoreApplication, evaluateEssentialCriteria, EDUCATION_RANK
 };

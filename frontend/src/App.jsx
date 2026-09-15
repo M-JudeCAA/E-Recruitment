@@ -26,6 +26,7 @@ import HRDashboard from "./views/HRDashboard";
 import DepartmentAdmin from "./views/DepartmentAdmin";
 import StaffManagement from "./views/StaffManagement";
 import VacancyDetail from "./views/VacancyDetail";
+import CreateVacancyListing from "./views/CreateVacancyListing";
 import PanelScoreAccess from "./views/PanelScoreAccess";
 import { RequireCandidate, RequireStaff, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
 
@@ -134,6 +135,14 @@ export default function App() {
             element={
               <RequireStaff minRole="Senior_HR_Officer">
                 <StaffManagement />
+              </RequireStaff>
+            }
+          />
+          <Route
+            path="/hr/vacancies/new"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <CreateVacancyListing />
               </RequireStaff>
             }
           />

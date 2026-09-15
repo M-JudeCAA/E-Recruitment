@@ -5,7 +5,7 @@ const profileEntriesModel = require('../models/profileEntriesModel');
 const { validateNationalId } = require('../utils/validators');
 const { checkAndFireCompletionEvent } = require('../services/profileCompletionService');
 const { fileUrl } = require('../middleware/upload');
-const { educationKey, workExperienceKey, certificateKey } = require('../utils/entryDedup');
+const { educationKey, workExperienceKey, certificateKey, examGradeKey } = require('../utils/entryDedup');
 const { normalizeStringList } = require('../utils/vacancyValidation');
 
 // Candidate rows carry passwordHash - fine for the internal auth-check
@@ -19,7 +19,7 @@ function omitPasswordHash(candidate) {
 
 async function me(req, res) {
   const candidate = await candidateModel.findById(req.user.id, {
-    workExperience: true, education: true, certificates: true, internalProfile: true
+    workExperience: true, education: true, examGrades: true, certificates: true, internalProfile: true
   });
   res.json(omitPasswordHash(candidate));
 }
@@ -48,7 +48,12 @@ async function addWorkExperience(req, res) {
   res.status(201).json(entry);
 }
 
-const EDUCATION_LEVELS = ['Certificate', 'Diploma', 'Bachelors', 'Masters', 'PhD'];
+// OLevel/ALevel deliberately excluded here even though EducationLevel's
+// enum now includes them (schema.prisma) - those belong on the dedicated
+// ExamGrade model (subject + grade pairs, see addExamGrade below), not as
+// a single-value "qualification level" on a generic Education entry.
+// Postgraduate added to match the same enum widening.
+const EDUCATION_LEVELS = ['Certificate', 'Diploma', 'Bachelors', 'Postgraduate', 'Masters', 'PhD'];
 
 // qualificationLevel is now a controlled, ordered dropdown (Decision #13
 // in the candidate application workflow spec) rather than free text -
@@ -56,11 +61,23 @@ const EDUCATION_LEVELS = ['Certificate', 'Diploma', 'Bachelors', 'Masters', 'PhD
 // mean anything reliable. qualificationLevelText is kept alongside it,
 // set to the same value at entry time, since it's still what older,
 // unmapped rows are readable from (see scripts/migrateEducationLevels.js).
+// Optional, 0-5 scale (see Vacancy.minimumCGPA) - null is "not provided",
+// not "0.0", so an empty/undefined input is left as null rather than
+// coerced to a number.
+function parseCGPA(cgpa) {
+  if (cgpa === undefined || cgpa === null || cgpa === '') return { value: null };
+  const n = Number(cgpa);
+  if (!Number.isFinite(n) || n <= 0 || n > 5) return { error: 'CGPA must be a number greater than 0 and at most 5' };
+  return { value: n };
+}
+
 async function addEducation(req, res) {
-  const { institution, qualificationLevel, fieldOfStudy, yearCompleted } = req.body;
+  const { institution, qualificationLevel, fieldOfStudy, yearCompleted, cgpa } = req.body;
   if (!EDUCATION_LEVELS.includes(qualificationLevel)) {
     return res.status(400).json({ error: `Qualification level must be one of: ${EDUCATION_LEVELS.join(', ')}` });
   }
+  const parsedCGPA = parseCGPA(cgpa);
+  if (parsedCGPA.error) return res.status(400).json({ error: parsedCGPA.error });
 
   // Idempotent - see addWorkExperience's comment above; same reasoning.
   const existing = await profileEntriesModel.findEducationForCandidate(req.user.id);
@@ -73,7 +90,8 @@ async function addEducation(req, res) {
     qualificationLevelText: qualificationLevel,
     qualificationLevel,
     fieldOfStudy,
-    yearCompleted: yearCompleted ? Number(yearCompleted) : null
+    yearCompleted: yearCompleted ? Number(yearCompleted) : null,
+    cgpa: parsedCGPA.value
   });
   await checkAndFireCompletionEvent(req.user.id);
   res.status(201).json(entry);
@@ -82,13 +100,16 @@ async function addEducation(req, res) {
 async function updateEducation(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid education id' });
-  const { institution, qualificationLevel, fieldOfStudy, yearCompleted } = req.body;
+  const { institution, qualificationLevel, fieldOfStudy, yearCompleted, cgpa } = req.body;
   if (!EDUCATION_LEVELS.includes(qualificationLevel)) {
     return res.status(400).json({ error: `Qualification level must be one of: ${EDUCATION_LEVELS.join(', ')}` });
   }
+  const parsedCGPA = parseCGPA(cgpa);
+  if (parsedCGPA.error) return res.status(400).json({ error: parsedCGPA.error });
   const result = await profileEntriesModel.updateEducation(id, req.user.id, {
     institution, qualificationLevelText: qualificationLevel, qualificationLevel, fieldOfStudy,
-    yearCompleted: yearCompleted ? Number(yearCompleted) : null
+    yearCompleted: yearCompleted ? Number(yearCompleted) : null,
+    cgpa: parsedCGPA.value
   });
   if (result.count === 0) return res.status(404).json({ error: 'Education entry not found' });
   await checkAndFireCompletionEvent(req.user.id);
@@ -173,6 +194,58 @@ async function deleteCertificate(req, res) {
   res.json({ message: 'Certificate entry deleted' });
 }
 
+const SECONDARY_LEVELS = ['OLevel', 'ALevel'];
+const O_LEVEL_GRADES = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
+const A_LEVEL_GRADES = ['A', 'B', 'C', 'D', 'E', 'O', 'F'];
+
+function validateExamGradeInput({ level, subject, grade }) {
+  if (!SECONDARY_LEVELS.includes(level)) return `Level must be one of: ${SECONDARY_LEVELS.join(', ')}`;
+  if (!subject) return 'Subject is required';
+  const validGrades = level === 'OLevel' ? O_LEVEL_GRADES : A_LEVEL_GRADES;
+  if (!validGrades.includes(grade)) return `Grade must be one of: ${validGrades.join(', ')}`;
+  return null;
+}
+
+// Optional, same as Certificate above - never part of
+// profileCompleteness's required fields, so no checkAndFireCompletionEvent
+// call here either.
+async function addExamGrade(req, res) {
+  const { level, subject, grade } = req.body;
+  const validationError = validateExamGradeInput({ level, subject, grade });
+  if (validationError) return res.status(400).json({ error: validationError });
+
+  // Idempotent - see addWorkExperience's comment above; same reasoning.
+  // grade is excluded from the key (see examGradeKey), so a corrected
+  // grade for the same subject/level is a job for the "edit" action, not
+  // a second add.
+  const existing = await profileEntriesModel.findExamGradesForCandidate(req.user.id);
+  const key = examGradeKey({ level, subject });
+  const duplicate = existing.find((g) => examGradeKey(g) === key);
+  if (duplicate) return res.status(200).json(duplicate);
+
+  const entry = await profileEntriesModel.createExamGrade({ candidateId: req.user.id, level, subject, grade });
+  res.status(201).json(entry);
+}
+
+async function updateExamGrade(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid exam grade id' });
+  const { level, subject, grade } = req.body;
+  const validationError = validateExamGradeInput({ level, subject, grade });
+  if (validationError) return res.status(400).json({ error: validationError });
+  const result = await profileEntriesModel.updateExamGrade(id, req.user.id, { level, subject, grade });
+  if (result.count === 0) return res.status(404).json({ error: 'Exam grade entry not found' });
+  res.json({ message: 'Exam grade entry updated' });
+}
+
+async function deleteExamGrade(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid exam grade id' });
+  const result = await profileEntriesModel.deleteExamGrade(id, req.user.id);
+  if (result.count === 0) return res.status(404).json({ error: 'Exam grade entry not found' });
+  res.json({ message: 'Exam grade entry deleted' });
+}
+
 const WORK_AUTHORIZATION_VALUES = ['Yes', 'No', 'Sponsorship'];
 
 // Candidate-level profile fields (location, NIN, work authorization,
@@ -183,7 +256,7 @@ const WORK_AUTHORIZATION_VALUES = ['Yes', 'No', 'Sponsorship'];
 const ID_TYPE_VALUES = ['NationalID', 'Passport'];
 
 async function updateProfile(req, res) {
-  const { nationalId, idType, location, linkedinUrl, portfolioUrl, workAuthorization } = req.body;
+  const { nationalId, idType, location, linkedinUrl, portfolioUrl, workAuthorization, dateOfBirth, flyingHours } = req.body;
   if (workAuthorization !== undefined && workAuthorization !== '' && !WORK_AUTHORIZATION_VALUES.includes(workAuthorization)) {
     return res.status(400).json({ error: `Work authorization must be one of: ${WORK_AUTHORIZATION_VALUES.join(', ')}` });
   }
@@ -208,6 +281,8 @@ async function updateProfile(req, res) {
   if (linkedinUrl !== undefined) data.linkedinUrl = linkedinUrl || null;
   if (portfolioUrl !== undefined) data.portfolioUrl = portfolioUrl || null;
   if (workAuthorization !== undefined) data.workAuthorization = workAuthorization || null;
+  if (dateOfBirth !== undefined) data.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+  if (flyingHours !== undefined) data.flyingHours = flyingHours !== '' && flyingHours != null ? Number(flyingHours) : null;
 
   let candidate;
   try {
@@ -263,5 +338,6 @@ module.exports = {
   me, addWorkExperience, addEducation, updateProfile, updateInternalProfile, myApplications,
   updateEducation, deleteEducation, updateWorkExperience, deleteWorkExperience,
   addCertificate, updateCertificate, deleteCertificate,
+  addExamGrade, updateExamGrade, deleteExamGrade,
   updatePhoto, removePhoto
 };
