@@ -57,7 +57,16 @@ async function recomputeVacancyStatus(vacancyId, client = prisma) {
   else if (acceptedCount > 0) status = 'PartiallyFilled';
 
   if (vacancy.status !== 'Closed') {
-    await client.vacancy.update({ where: { id: vacancyId }, data: { status } });
+    await client.vacancy.update({
+      where: { id: vacancyId },
+      data: {
+        status,
+        // First-fill timestamp for time-to-fill reporting - stamped once,
+        // never overwritten or cleared on a later status change (see the
+        // schema comment on filledAt).
+        ...(status === 'Filled' && !vacancy.filledAt ? { filledAt: new Date() } : {})
+      }
+    });
   }
 }
 
@@ -75,7 +84,10 @@ async function recomputeVacancyStatus(vacancyId, client = prisma) {
  */
 async function acceptOfferTransactionally(offerId) {
   return prisma.$transaction(async (tx) => {
-    const result = await tx.offer.updateMany({ where: { id: offerId, status: 'Approved' }, data: { status: 'Accepted' } });
+    const result = await tx.offer.updateMany({
+      where: { id: offerId, status: 'Approved' },
+      data: { status: 'Accepted', decidedAt: new Date() }
+    });
     if (result.count === 0) return { conflict: true };
 
     const offer = await tx.offer.findUnique({
@@ -98,7 +110,10 @@ async function acceptOfferTransactionally(offerId) {
  */
 async function handleOfferDeclined(offerId) {
   return prisma.$transaction(async (tx) => {
-    const result = await tx.offer.updateMany({ where: { id: offerId, status: 'Approved' }, data: { status: 'Declined' } });
+    const result = await tx.offer.updateMany({
+      where: { id: offerId, status: 'Approved' },
+      data: { status: 'Declined', decidedAt: new Date() }
+    });
     if (result.count === 0) return { conflict: true };
 
     const offer = await tx.offer.findUnique({ where: { id: offerId }, include: { application: true } });

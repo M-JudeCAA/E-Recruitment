@@ -191,6 +191,18 @@ input::placeholder, textarea::placeholder {
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
+/* Sidebar nav links (Sidebar.jsx). Hover lives here rather than inline
+   styles because React inline styles can't express :hover - the active
+   state sets its own inline background, which always wins over this
+   class, so hover only ever shows through on inactive links. */
+.sidebar-link {
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+.sidebar-link:hover {
+  background: var(--color-bg);
+}
+
 /* Clickable Card (see Card.jsx's optional onClick prop) - a subtle hover
    lift so a whole card reads as clickable, not just the buttons inside it. */
 .card-clickable {

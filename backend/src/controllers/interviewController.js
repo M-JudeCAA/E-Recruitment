@@ -3,6 +3,7 @@ const applicationModel = require('../models/applicationModel');
 const panelMemberModel = require('../models/panelMemberModel');
 const interviewService = require('../services/interviewService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
+const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
 // Applications an interview can legitimately be scheduled against - mirrors
 // the frontend's own gate (ApplicationReviewCard.jsx: status in this list
@@ -136,6 +137,7 @@ async function finalizeRecommendation(req, res) {
     // the application move to "Interviewed".
     await applicationModel.update(round.applicationId, { status: 'Interviewed' });
   }
+  broadcastDashboardEvent('InterviewRecommendation', { interviewId, applicationId: round.applicationId, recommendation });
   res.json(round);
 }
 

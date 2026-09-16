@@ -33,7 +33,11 @@ describe('summary', () => {
       return Promise.resolve(0);
     });
     prisma.department.count.mockResolvedValue(3);
-    prisma.offer.count.mockResolvedValue(5);
+    prisma.offer.count.mockImplementation(({ where }) => {
+      if (where.status === 'Recommended') return Promise.resolve(5);
+      if (where.status === 'Accepted') return Promise.resolve(8);
+      return Promise.resolve(0);
+    });
 
     const req = {};
     const res = mockRes();
@@ -42,9 +46,131 @@ describe('summary', () => {
     expect(res.json).toHaveBeenCalledWith({
       vacanciesByStatus: expect.objectContaining({ Open: 4, PendingApproval: 2, Closed: 0 }),
       applicationsByStatus: expect.objectContaining({ Submitted: 7, Rejected: 0 }),
+      offersByStatus: expect.objectContaining({ Recommended: 5, Accepted: 8, Declined: 0 }),
       pendingDepartments: 3,
       offersPendingApproval: 5
     });
+  });
+});
+
+describe('trends', () => {
+  test('buckets each series into one zero-filled count per day over the requested window', async () => {
+    prisma.application.findMany.mockResolvedValue([
+      { createdAt: new Date() }, { createdAt: new Date() } // both today
+    ]);
+    prisma.vacancy.findMany.mockResolvedValue([{ approvedAt: new Date() }]);
+    prisma.offer.findMany.mockResolvedValue([]);
+
+    const req = { query: { days: '7' } };
+    const res = mockRes();
+    await dashboardController.trends(req, res);
+
+    const body = res.json.mock.calls[0][0];
+    expect(body.days).toBe(7);
+    expect(body.applicationsSubmitted).toHaveLength(7);
+    expect(body.applicationsSubmitted.at(-1).count).toBe(2); // today is the last bucket
+    expect(body.vacanciesApproved.at(-1).count).toBe(1);
+    expect(body.offersApproved.every((d) => d.count === 0)).toBe(true);
+  });
+
+  test('falls back to 30 days for an unsupported ?days value', async () => {
+    prisma.application.findMany.mockResolvedValue([]);
+    prisma.vacancy.findMany.mockResolvedValue([]);
+    prisma.offer.findMany.mockResolvedValue([]);
+
+    const req = { query: { days: '9999' } };
+    const res = mockRes();
+    await dashboardController.trends(req, res);
+
+    expect(res.json.mock.calls[0][0].days).toBe(30);
+  });
+});
+
+describe('followUps', () => {
+  test('delegates to slaStatusService and returns its result as-is', async () => {
+    prisma.vacancy.findMany.mockResolvedValue([]);
+    prisma.department.findMany.mockResolvedValue([]);
+    prisma.offer.findMany.mockResolvedValue([]);
+
+    const req = {};
+    const res = mockRes();
+    await dashboardController.followUps(req, res);
+
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+});
+
+describe('slaPolicies', () => {
+  test('returns every configured SLA policy', async () => {
+    prisma.slaPolicy.findMany.mockResolvedValue([{ id: 1, taskType: 'VacancyApproval', tier: 'Manager', durationHours: 48 }]);
+
+    const req = {};
+    const res = mockRes();
+    await dashboardController.slaPolicies(req, res);
+
+    expect(res.json).toHaveBeenCalledWith([{ id: 1, taskType: 'VacancyApproval', tier: 'Manager', durationHours: 48 }]);
+  });
+});
+
+describe('upcomingInterviews', () => {
+  test('shapes rounds scheduled within the window, defaulting to 7 days', async () => {
+    prisma.interviewRound.findMany.mockResolvedValue([{
+      id: 1, scheduledDate: new Date('2026-01-05T10:00:00Z'), mode: 'Virtual', roundNumber: 1,
+      application: { candidate: { fullName: 'Dan Doe' }, vacancy: { id: 3, title: 'Analyst', jobRef: 'UCAA/ADV/EXT/01/2026' } }
+    }]);
+
+    const req = { query: {} };
+    const res = mockRes();
+    await dashboardController.upcomingInterviews(req, res);
+
+    expect(prisma.interviewRound.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { scheduledDate: expect.objectContaining({ gte: expect.any(Date), lte: expect.any(Date) }) }
+    }));
+    expect(res.json).toHaveBeenCalledWith([{
+      id: 1, scheduledDate: new Date('2026-01-05T10:00:00Z'), mode: 'Virtual', roundNumber: 1,
+      candidateName: 'Dan Doe', vacancyId: 3, vacancyTitle: 'Analyst', jobRef: 'UCAA/ADV/EXT/01/2026'
+    }]);
+  });
+
+  test('falls back to 7 days for an invalid ?days value', async () => {
+    prisma.interviewRound.findMany.mockResolvedValue([]);
+    const req = { query: { days: 'not-a-number' } };
+    const res = mockRes();
+    await dashboardController.upcomingInterviews(req, res);
+
+    const call = prisma.interviewRound.findMany.mock.calls[0][0];
+    const spanDays = (call.where.scheduledDate.lte - call.where.scheduledDate.gte) / (24 * 60 * 60 * 1000);
+    expect(spanDays).toBeCloseTo(7, 5);
+  });
+});
+
+describe('screeningBreakdown', () => {
+  test('counts outcomes and categorizes failure reasons', async () => {
+    prisma.application.count.mockImplementation(({ where }) => {
+      if (where.screeningPassed === true) return Promise.resolve(5);
+      if (where.screeningPassed === false) return Promise.resolve(3);
+      if (where.screeningPassed === null) return Promise.resolve(2);
+      return Promise.resolve(0);
+    });
+    prisma.application.findMany.mockResolvedValue([
+      { screeningReasons: JSON.stringify(['Below minimum education level (requires Bachelors, has Diploma)']) },
+      { screeningReasons: JSON.stringify(['Below minimum experience (1.0 yrs vs 3 required)', 'Missing referees']) },
+      { screeningReasons: 'not valid json' } // must not throw
+    ]);
+
+    const req = {};
+    const res = mockRes();
+    await dashboardController.screeningBreakdown(req, res);
+
+    const body = res.json.mock.calls[0][0];
+    expect(body.passed).toBe(5);
+    expect(body.failed).toBe(3);
+    expect(body.notYetScreened).toBe(2);
+    expect(body.topReasons).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'education', count: 1 }),
+      expect.objectContaining({ key: 'experience', count: 1 }),
+      expect.objectContaining({ key: 'referees', count: 1 })
+    ]));
   });
 });
 

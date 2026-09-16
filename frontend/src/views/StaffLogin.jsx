@@ -63,7 +63,12 @@ export default function StaffLogin() {
       const res = await client.post("/api/staff/auth/login", form);
       loginStaff(res.data.token, res.data.role, res.data.name, res.data.email);
       const isExecutive = (ROLE_RANK[res.data.role] || 0) >= ROLE_RANK.Manager;
-      navigate(isExecutive ? "/hr/executive" : "/hr/home");
+      // `replace: true` - this login page must not stay in browser history
+      // once login succeeds, or Back from inside the dashboard lands back
+      // on the (now-stale) login form instead of leaving the app. Every
+      // navigation made *after* this one is normal history, so Back still
+      // steps through those as expected.
+      navigate(isExecutive ? "/hr/executive" : "/hr/home", { replace: true });
     } catch (err) {
       setError(err.response?.data?.error || "Login failed");
     } finally {

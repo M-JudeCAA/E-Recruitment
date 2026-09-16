@@ -9,13 +9,17 @@ import Sidebar from './Sidebar';
 // own "Find Jobs" stop (CandidateJobs.jsx) and profile editing gets its
 // own "My Profile" stop (CandidateProfile.jsx, moved off the top of the
 // Applications page so that page can focus on tracking applications).
+// Grouped ("Opportunities" for browsing/tracking, "Account" for profile
+// editing) mirroring HRSidebar's section pattern, for the same reason:
+// it separates "look for/track work" from "manage my own info" at a
+// glance instead of one undifferentiated list.
 const ITEMS = [
   { key: 'home', label: 'Home', icon: Home, to: '/dashboard' },
-  { key: 'jobs', label: 'Find Jobs', icon: Search, to: '/dashboard/jobs' },
-  { key: 'applications', label: 'My Applications', icon: FileText, to: '/dashboard/applications' },
-  { key: 'profile', label: 'My Profile', icon: User, to: '/dashboard/profile' },
+  { key: 'jobs', label: 'Find Jobs', icon: Search, to: '/dashboard/jobs', section: 'Opportunities' },
+  { key: 'applications', label: 'My Applications', icon: FileText, to: '/dashboard/applications', section: 'Opportunities' },
+  { key: 'profile', label: 'My Profile', icon: User, to: '/dashboard/profile', section: 'Account' },
 ];
 
 export default function CandidateSidebar({ active }) {
-  return <Sidebar items={ITEMS} active={active} storageKey="candidateSidebarCollapsed" width={220} />;
+  return <Sidebar items={ITEMS} active={active} storageKey="candidateSidebarCollapsed" width={220} title="Candidate Portal" />;
 }

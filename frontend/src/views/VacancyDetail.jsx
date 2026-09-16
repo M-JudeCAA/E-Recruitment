@@ -31,6 +31,12 @@ export default function VacancyDetail() {
     ? `${vacancy.department.name}${vacancy.department.directorate?.name ? ', ' + vacancy.department.directorate.name : ''}`
     : null;
   const deadlinePassed = vacancy.deadline && new Date(vacancy.deadline) < new Date();
+  // Only meaningful once this specific vacancy has actually reached Filled
+  // (see the schema comment on Vacancy.filledAt) - a vacancy that's merely
+  // PartiallyFilled has no fill time to report yet.
+  const timeToFillDays = vacancy.filledAt && vacancy.approvedAt
+    ? Math.round((new Date(vacancy.filledAt) - new Date(vacancy.approvedAt)) / 86400000)
+    : null;
 
   return (
     <div>
@@ -48,6 +54,11 @@ export default function VacancyDetail() {
           </span>
         )}
         {vacancy.salaryScale && <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Salary scale: {vacancy.salaryScale}</span>}
+        {timeToFillDays != null && (
+          <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+            Filled in {timeToFillDays} day{timeToFillDays === 1 ? '' : 's'}
+          </span>
+        )}
       </p>
 
       {vacancy.status === 'PendingApproval' ? (

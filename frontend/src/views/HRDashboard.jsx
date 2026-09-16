@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
+import { useDashboardEvents } from '../models/dashboardSocket';
 import HRSidebar from '../components/HRSidebar';
 import Card from '../components/Card';
 import TextField from '../components/TextField';
@@ -13,6 +14,16 @@ import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import VacancyAdvertFields from '../components/VacancyAdvertFields';
 import VacancyAdvert from '../components/VacancyAdvert';
+import LiveIndicator from '../components/LiveIndicator';
+import StatsStrip from '../components/StatsStrip';
+import { urgencyOf } from '../utils/slaUrgency';
+import { debounce } from '../utils/debounce';
+
+function UrgencyBadge({ followUp }) {
+  const urgency = urgencyOf(followUp);
+  if (!urgency) return null;
+  return <span style={{ fontSize: 11, fontWeight: 700, color: urgency.color, whiteSpace: 'nowrap' }}>{urgency.label}</span>;
+}
 
 const VALID_TABS = ['vacancies', 'interviews', 'offers'];
 
@@ -101,9 +112,13 @@ export default function HRDashboard() {
   // uses), so this is a single bounded request instead.
   const [crossApps, setCrossApps] = useState(null);
   const [crossLoading, setCrossLoading] = useState(false);
+  const [followUps, setFollowUps] = useState([]);
 
-  const loadCrossVacancyApplications = async () => {
-    if (crossApps || crossLoading) return;
+  // `force` bypasses the "already loaded" guard - the normal tab-switch
+  // path never needs to re-fetch, but a WS event on the interviews/offers
+  // tab does.
+  const loadCrossVacancyApplications = useCallback(async (force = false) => {
+    if (!force && (crossApps || crossLoading)) return;
     setCrossLoading(true);
     setError('');
     try {
@@ -114,7 +129,8 @@ export default function HRDashboard() {
     } finally {
       setCrossLoading(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [crossApps, crossLoading]);
 
   useEffect(() => {
     if (['interviews', 'offers'].includes(activeSection)) {
@@ -122,6 +138,11 @@ export default function HRDashboard() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection]);
+
+  const loadFollowUps = useCallback(() => {
+    staffClient.get('/api/dashboard/follow-ups').then((res) => setFollowUps(res.data)).catch(() => {});
+  }, []);
+  useEffect(() => { loadFollowUps(); }, [loadFollowUps]);
 
   // Shared preview modal - built from the create form or the edit form,
   // whichever is open, so HR can see exactly what candidates will see
@@ -136,14 +157,27 @@ export default function HRDashboard() {
   const [statusFilter, setStatusFilter] = useState('All');
   const [departmentFilter, setDepartmentFilter] = useState('All');
 
-  const load = () => staffClient.get('/api/vacancies/admin').then((res) => setVacancies(res.data));
+  const load = useCallback(() => staffClient.get('/api/vacancies/admin').then((res) => setVacancies(res.data)), []);
 
   useEffect(() => {
     load();
     staffClient.get('/api/departments/approved')
       .then((res) => setApprovedDepartments(res.data))
       .catch((err) => setError(err.response?.data?.error || 'Could not load departments'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Refetches whichever tab is actually showing (plus the SLA lookup) on
+  // any dashboard-relevant broadcast - re-derived per render since it needs
+  // the current activeSection, but debounced so a burst of events still
+  // only triggers one refetch.
+  const refetchActiveTab = useCallback(debounce(() => {
+    loadFollowUps();
+    if (activeSection === 'vacancies') load();
+    else loadCrossVacancyApplications(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, 500), [activeSection, load, loadCrossVacancyApplications, loadFollowUps]);
+  const { connected } = useDashboardEvents(refetchActiveTab);
 
   const previewEditForm = () => {
     setPreviewData({
@@ -331,6 +365,26 @@ export default function HRDashboard() {
 
   const transitionDeadlinePassed = transitionModal?.vacancy.deadline && new Date(transitionModal.vacancy.deadline) < new Date();
 
+  // Vacancies tab strip - totals over the full (unfiltered) list, same
+  // "always the full picture regardless of the filter bar" convention as
+  // HRHome's own KPI tiles.
+  const vacancyStats = [
+    { label: 'Open', value: vacancies.filter((v) => v.status === 'Open').length, color: 'var(--color-accent)' },
+    { label: 'Pending approval', value: vacancies.filter((v) => v.status === 'PendingApproval').length, color: 'var(--color-warning)' },
+    { label: 'Closed', value: vacancies.filter((v) => v.status === 'Closed').length, color: 'var(--color-text-muted)' }
+  ];
+  const allRounds = (crossApps || []).flatMap((app) => app.interviewRounds || []);
+  const interviewStats = [
+    { label: 'Shortlist', value: allRounds.filter((r) => r.recommendation === 'Shortlist').length, color: 'var(--color-accent)' },
+    { label: 'Hold', value: allRounds.filter((r) => r.recommendation === 'Hold').length, color: 'var(--color-warning)' },
+    { label: 'Reject', value: allRounds.filter((r) => r.recommendation === 'Reject').length, color: 'var(--color-danger)' },
+    { label: 'Awaiting a score', value: allRounds.filter((r) => r.score == null).length, color: 'var(--color-text-muted)' }
+  ];
+  const offerStatuses = (crossApps || []).filter((app) => app.offer).map((app) => app.offer.status);
+  const offerStats = ['Recommended', 'Approved', 'Extended', 'Accepted', 'Declined'].map((status) => ({
+    label: status, value: offerStatuses.filter((s) => s === status).length
+  }));
+
   return (
     <div>
       {/* "HR dashboard" title and "Logged in as ..." now live in the
@@ -345,8 +399,13 @@ export default function HRDashboard() {
             <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
         <h3 style={{ margin: 0 }}>Vacancies</h3>
-        <Button onClick={() => navigate('/hr/vacancies/new')}>+ New Listing</Button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <LiveIndicator connected={connected} />
+          <Button onClick={() => navigate('/hr/vacancies/new')}>+ New Listing</Button>
+        </div>
       </div>
+
+      <StatsStrip stats={vacancyStats} />
 
       <Alert type="success" message={message} />
       <Alert type="error" message={error} />
@@ -395,6 +454,7 @@ export default function HRDashboard() {
               <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 {v.title}
                 {v.readvertisedFromId != null && <StatusBadge status="Readvertised" />}
+                {v.status === 'PendingApproval' && <UrgencyBadge followUp={followUps.find((f) => f.taskType === 'VacancyApproval' && f.taskId === v.id)} />}
               </div>
               <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
                 {v.jobRef}
@@ -640,7 +700,11 @@ export default function HRDashboard() {
 
           {activeSection === 'interviews' && (
             <div>
-              <h3 style={{ marginTop: 0 }}>Interviews</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0 }}>Interviews</h3>
+                <LiveIndicator connected={connected} />
+              </div>
+              <StatsStrip stats={interviewStats} />
               {crossLoading && <p>Loading interviews...</p>}
               {crossApps && crossApps.filter((app) => app.interviewRounds?.length > 0).length === 0 && (
                 <p>No interviews scheduled yet.</p>
@@ -667,7 +731,11 @@ export default function HRDashboard() {
 
           {activeSection === 'offers' && (
             <div>
-              <h3 style={{ marginTop: 0 }}>Offers</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ margin: 0 }}>Offers</h3>
+                <LiveIndicator connected={connected} />
+              </div>
+              <StatsStrip stats={offerStats} />
               {crossLoading && <p>Loading offers...</p>}
               {crossApps && crossApps.filter((app) => app.offer).length === 0 && <p>No offers recommended yet.</p>}
               {crossApps && crossApps.filter((app) => app.offer).map((app) => (

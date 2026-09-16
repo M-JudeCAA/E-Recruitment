@@ -26,6 +26,7 @@ const staffUsersRoutes = require('./routes/staffUsers');
 const delegationRoutes = require('./routes/delegations');
 const notificationRoutes = require('./routes/notifications');
 const dashboardRoutes = require('./routes/dashboard');
+const analyticsRoutes = require('./routes/analytics');
 
 // Express 4 does not forward a rejected promise from an async route
 // handler to the error middleware below on its own - an uncaught
@@ -70,6 +71,7 @@ app.use('/api/staff-users', staffUsersRoutes);
 app.use('/api/delegations', delegationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // Basic error handler - catches Multer file-validation errors etc.
 app.use((err, req, res, next) => {
@@ -78,4 +80,9 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`e-Recruitment API listening on port ${PORT}`));
+const httpServer = app.listen(PORT, () => console.log(`e-Recruitment API listening on port ${PORT}`));
+
+// Push channel for the HR dashboards (see realtime/dashboardSocket.js) -
+// attached to the same HTTP server/port rather than a separate one, so
+// there's nothing extra to open in a firewall/reverse proxy config.
+require('./realtime/dashboardSocket').init(httpServer);

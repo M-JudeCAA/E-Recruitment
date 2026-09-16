@@ -65,15 +65,28 @@ describe('assertNotSelfApproval', () => {
 });
 
 describe('recomputeVacancyStatus', () => {
-  test('sets status to Filled once accepted offers meet positions required', async () => {
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 2, status: 'PartiallyFilled' });
+  test('sets status to Filled once accepted offers meet positions required, stamping filledAt', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 2, status: 'PartiallyFilled', filledAt: null });
     prisma.offer.count.mockResolvedValue(2);
 
     await workflow.recomputeVacancyStatus(1);
 
     expect(prisma.vacancy.update).toHaveBeenCalledWith({
       where: { id: 1 },
-      data: { status: 'Filled' }
+      data: { status: 'Filled', filledAt: expect.any(Date) }
+    });
+  });
+
+  test('does not re-stamp filledAt on a vacancy that was already filled once', async () => {
+    const firstFill = new Date('2026-01-01T00:00:00Z');
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 2, status: 'Filled', filledAt: firstFill });
+    prisma.offer.count.mockResolvedValue(2);
+
+    await workflow.recomputeVacancyStatus(1);
+
+    expect(prisma.vacancy.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { status: 'Filled' } // no filledAt key at all - untouched
     });
   });
 
@@ -113,7 +126,7 @@ describe('handleOfferDeclined', () => {
     const result = await workflow.handleOfferDeclined(10);
 
     expect(prisma.offer.updateMany).toHaveBeenCalledWith({
-      where: { id: 10, status: 'Approved' }, data: { status: 'Declined' }
+      where: { id: 10, status: 'Approved' }, data: { status: 'Declined', decidedAt: expect.any(Date) }
     });
     expect(prisma.application.update).toHaveBeenCalledWith({
       where: { id: 22 },
@@ -167,15 +180,15 @@ describe('acceptOfferTransactionally', () => {
       id: 10, status: 'Accepted',
       application: { vacancyId: 1, candidateId: 7 }
     });
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 1, status: 'Open' });
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 1, status: 'Open', filledAt: null });
     prisma.offer.count.mockResolvedValue(1);
 
     const result = await workflow.acceptOfferTransactionally(10);
 
     expect(prisma.offer.updateMany).toHaveBeenCalledWith({
-      where: { id: 10, status: 'Approved' }, data: { status: 'Accepted' }
+      where: { id: 10, status: 'Approved' }, data: { status: 'Accepted', decidedAt: expect.any(Date) }
     });
-    expect(prisma.vacancy.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { status: 'Filled' } });
+    expect(prisma.vacancy.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { status: 'Filled', filledAt: expect.any(Date) } });
     expect(result.offer.id).toBe(10);
   });
 });

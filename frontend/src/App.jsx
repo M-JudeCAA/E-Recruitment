@@ -22,6 +22,7 @@ import StaffResetPassword from "./views/StaffResetPassword";
 import HRHome from "./views/HRHome";
 import ExecutiveDashboard from "./views/ExecutiveDashboard";
 import ApprovalsCenter from "./views/ApprovalsCenter";
+import Analytics from "./views/Analytics";
 import HRDashboard from "./views/HRDashboard";
 import ApplicationManagement from "./views/ApplicationManagement";
 import DepartmentAdmin from "./views/DepartmentAdmin";
@@ -123,6 +124,14 @@ export default function App() {
             element={
               <RequireStaff minRole="Manager">
                 <ApprovalsCenter />
+              </RequireStaff>
+            }
+          />
+          <Route
+            path="/hr/analytics"
+            element={
+              <RequireStaff minRole="Manager">
+                <Analytics />
               </RequireStaff>
             }
           />

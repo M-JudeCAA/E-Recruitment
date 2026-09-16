@@ -279,6 +279,14 @@ model Vacancy {
   approvedByRole   StaffRole?
   rejectionReason  String?
 
+  // Set once, the first time recomputeVacancyStatus (workflowService.js)
+  // computes status === 'Filled' - never cleared or re-stamped afterward,
+  // even if positionsRequired later increases and status drops back to
+  // PartiallyFilled. This is a "how long did the first fill take" record
+  // for time-to-fill reporting, not a live mirror of current fill state
+  // (that's `status` itself, recomputed on every offer accept/decline).
+  filledAt         DateTime?
+
   // The 5-tier flow's Senior HR Officer review/check-by gate is removed
   // entirely (2-tier now: HR Officer creates, Manager or Director
   // approves directly) - reviewedAt/reviewedById dropped outright, not
@@ -743,6 +751,13 @@ model Offer {
   // for "how long has this been awaiting approval". Set in
   // recommendOffer() alongside recommendedById.
   recommendedDate  DateTime?
+  // Set once, the moment the candidate accepts or declines (status flips
+  // to Accepted/Declined in workflowService.acceptOfferTransactionally/
+  // handleOfferDeclined) - distinct from approvedDate (when Manager
+  // approved the offer, a different event). Powers the offer-outcome
+  // trend on the Analytics page; null for every offer still short of a
+  // candidate decision.
+  decidedAt        DateTime?
 }
 
 model VerificationToken {

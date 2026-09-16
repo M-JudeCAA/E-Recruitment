@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Home, Briefcase, FileText, Building2, CalendarClock, Award, LayoutDashboard, ClipboardCheck, Users } from 'lucide-react';
+import { Home, Briefcase, FileText, Building2, CalendarClock, Award, LayoutDashboard, ClipboardCheck, Users, BarChart3 } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useAuth } from '../models/AuthContext';
 import staffClient from '../models/staffApiClient';
@@ -35,28 +35,32 @@ export default function HRSidebar({ active }) {
       .catch(() => {}); // sidebar badge is a nice-to-have, never worth surfacing an error banner for
   }, [isExecutive]);
 
-  // Vacancies/Applications/Interviews/Offer are tabs on the HR dashboard
-  // itself (driven by /hr's ?tab= query param, read in HRDashboard.jsx),
-  // not separate routes - Departments and Staff Management have their own
-  // existing screens with their own routes, so they link out directly
-  // instead of duplicating that here. Shared by every staff role that
-  // qualifies - a Manager/Director still does everything an HR Officer
-  // (and Senior/Principal HR Officer) does, on top of approving.
+  // Grouped into the actual recruitment funnel order (Vacancies ->
+  // Applications -> Interviews -> Offers) under one "Recruitment" section,
+  // rather than the old flat list that interleaved Departments in the
+  // middle of that pipeline. "Management"/"Center" suffixes dropped from
+  // labels now that the section header already supplies that context.
+  // Departments/Staff & Delegations have their own existing screens with
+  // their own routes, so they link out directly instead of duplicating
+  // page content here. Shared by every staff role that qualifies - a
+  // Manager/Director still does everything an HR Officer (and
+  // Senior/Principal HR Officer) does, on top of approving.
   const operationalItems = [
-    { key: 'vacancies', label: 'Vacancy Management', icon: Briefcase, to: '/hr' },
-    { key: 'applications', label: 'Application Management', icon: FileText, to: '/hr/applications' },
-    { key: 'departments', label: 'Department Management', icon: Building2, to: '/hr/departments' },
+    { key: 'vacancies', label: 'Vacancies', icon: Briefcase, to: '/hr', section: 'Recruitment' },
+    { key: 'applications', label: 'Applications', icon: FileText, to: '/hr/applications', section: 'Recruitment' },
+    { key: 'interviews', label: 'Interviews', icon: CalendarClock, to: '/hr?tab=interviews', section: 'Recruitment' },
+    { key: 'offers', label: 'Offers', icon: Award, to: '/hr?tab=offers', section: 'Recruitment' },
+    { key: 'departments', label: 'Departments', icon: Building2, to: '/hr/departments', section: 'Organization' },
     ...(canManageTeam
-      ? [{ key: 'staff-management', label: 'Staff Management', icon: Users, to: '/hr/staff-management' }]
+      ? [{ key: 'staff-management', label: 'Staff & Delegations', icon: Users, to: '/hr/staff-management', section: 'Organization' }]
       : []),
-    { key: 'interviews', label: 'Interview Management', icon: CalendarClock, to: '/hr?tab=interviews' },
-    { key: 'offers', label: 'Offer Management', icon: Award, to: '/hr?tab=offers' },
   ];
 
   const items = isExecutive
     ? [
         { key: 'executive', label: 'Executive Overview', icon: LayoutDashboard, to: '/hr/executive' },
         { key: 'approvals', label: 'Approvals Center', icon: ClipboardCheck, to: '/hr/approvals', badge: pendingApprovals },
+        { key: 'analytics', label: 'Analytics', icon: BarChart3, to: '/hr/analytics' },
         ...operationalItems,
       ]
     : [
@@ -64,5 +68,5 @@ export default function HRSidebar({ active }) {
         ...operationalItems,
       ];
 
-  return <Sidebar items={items} active={active} storageKey="hrSidebarCollapsed" width={250} />;
+  return <Sidebar items={items} active={active} storageKey="hrSidebarCollapsed" width={250} title="HR Workspace" />;
 }

@@ -77,9 +77,16 @@ export default function CandidateLogin() {
       // a first-ever login - the Advert User path takes over from the
       // New User "go straight to the full profile page" rule in that
       // case (see ApplyForm.jsx, which shows the completion modal itself).
-      if (validReturnTo) navigate(validReturnTo);
-      else if (res.data.firstLogin) navigate("/profile/complete");
-      else navigate("/dashboard");
+      //
+      // `replace: true` on every branch here - this page must never stay
+      // in browser history once login succeeds, or Back from inside the
+      // logged-in app lands back on the login form (still "logged in" per
+      // AuthContext, but showing a stale credentials form) instead of
+      // leaving the app. Everything navigated to *after* this one push is
+      // normal history, so Back still steps through those as expected.
+      if (validReturnTo) navigate(validReturnTo, { replace: true });
+      else if (res.data.firstLogin) navigate("/profile/complete", { replace: true });
+      else navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err.response?.data?.error || "Login failed");
     } finally {

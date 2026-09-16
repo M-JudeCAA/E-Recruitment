@@ -3,6 +3,7 @@ const offerModel = require('../models/offerModel');
 const slaModel = require('../models/slaModel');
 const workflow = require('../services/workflowService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
+const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
 // NOTE: application creation/submission lives in applicationDraftController
 // now (saveDraft/submit/withdraw) - see routes/applications.js. This file
@@ -222,6 +223,7 @@ async function recommendOffer(req, res) {
   }
 
   await applicationModel.update(applicationId, { status: 'Offered' });
+  broadcastDashboardEvent('OfferPendingApproval', { offerId: offer.id });
   res.status(201).json(offer);
 }
 
@@ -275,6 +277,7 @@ async function approveOffer(req, res) {
       `Congratulations! You have received an offer for "${offer.application.vacancy.title}". Please log in to accept or decline.`
     );
   }
+  broadcastDashboardEvent('OfferApproved', { offerId });
   res.json(offer);
 }
 
@@ -311,6 +314,7 @@ async function acceptOffer(req, res) {
   } catch (err) {
     console.error(`Failed to capture hire snapshot for offer ${offerId}:`, err);
   }
+  broadcastDashboardEvent('OfferAccepted', { offerId });
   res.json(offer);
 }
 
@@ -329,6 +333,7 @@ async function declineOffer(req, res) {
   if (result.conflict) {
     return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
   }
+  broadcastDashboardEvent('OfferDeclined', { offerId });
   res.json(result);
 }
 

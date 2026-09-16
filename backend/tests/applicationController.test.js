@@ -754,7 +754,7 @@ describe('acceptOffer / declineOffer ownership check', () => {
         application: { candidateId: 7, vacancyId: 3, vacancy: { positionsRequired: 1 } }
       });
     prisma.offer.updateMany.mockResolvedValue({ count: 1 });
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 3, positionsRequired: 1, status: 'Open' });
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 3, positionsRequired: 1, status: 'Open', filledAt: null });
     prisma.offer.count.mockResolvedValue(1);
 
     const req = { params: { offerId: '20' }, user: { id: 7 } };
@@ -763,11 +763,11 @@ describe('acceptOffer / declineOffer ownership check', () => {
     await applicationController.acceptOffer(req, res);
 
     expect(prisma.offer.updateMany).toHaveBeenCalledWith({
-      where: { id: 20, status: 'Approved' }, data: { status: 'Accepted' }
+      where: { id: 20, status: 'Approved' }, data: { status: 'Accepted', decidedAt: expect.any(Date) }
     });
     // The vacancy fills up (1 accepted of 1 required) - recomputeVacancyStatus
     // ran as part of the same transaction as the offer flip.
-    expect(prisma.vacancy.update).toHaveBeenCalledWith({ where: { id: 3 }, data: { status: 'Filled' } });
+    expect(prisma.vacancy.update).toHaveBeenCalledWith({ where: { id: 3 }, data: { status: 'Filled', filledAt: expect.any(Date) } });
     expect(res.json).toHaveBeenCalled();
   });
 
