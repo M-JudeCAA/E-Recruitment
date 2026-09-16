@@ -23,6 +23,7 @@ import HRHome from "./views/HRHome";
 import ExecutiveDashboard from "./views/ExecutiveDashboard";
 import ApprovalsCenter from "./views/ApprovalsCenter";
 import HRDashboard from "./views/HRDashboard";
+import ApplicationManagement from "./views/ApplicationManagement";
 import DepartmentAdmin from "./views/DepartmentAdmin";
 import StaffManagement from "./views/StaffManagement";
 import VacancyDetail from "./views/VacancyDetail";
@@ -135,6 +136,14 @@ export default function App() {
             element={
               <RequireStaff minRole="Senior_HR_Officer">
                 <StaffManagement />
+              </RequireStaff>
+            }
+          />
+          <Route
+            path="/hr/applications"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <ApplicationManagement />
               </RequireStaff>
             }
           />

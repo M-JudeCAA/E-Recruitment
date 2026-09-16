@@ -1,3 +1,4 @@
+const prisma = require('../config/db');
 const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
 const positionModel = require('../models/positionModel');
@@ -11,18 +12,66 @@ const {
   normalizeStringList, normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades
 } = require('../utils/vacancyValidation');
 
+// Shared by create() and readvertise() below - both construct a full
+// Vacancy row the same way (same fields, same normalization), differing
+// only in where positionId/reportsToPositionId/jobRef/status/
+// readvertisedFromId come from. position and reportsToPositionId are
+// passed in already-resolved/validated by the caller, never re-derived
+// from body here.
+function buildVacancyCreateData(position, reportsToPositionId, body, createdById) {
+  const { postingType, deadline, salaryScale, regulatoryDriver, category, priority,
+    minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy,
+    minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
+    jobPurpose, essentialRequirements, desirableRequirements, disqualifyingRequirements,
+    generalKnowledge, specialSkills,
+    location, employmentCategory, internalSalaryRange, recruiterNotes,
+    positionsRequired } = body;
+
+  return {
+    title: position.name, // immutable snapshot - protects history if Position is renamed later
+    positionId: position.id,
+    departmentId: position.departmentId, // derived, never independently supplied
+    reportsToPositionId,
+    salaryScale: salaryScale || null,
+    minimumExperienceYears: minimumExperienceYears ? Number(minimumExperienceYears) : null,
+    minimumEducationLevel: minimumEducationLevel || null,
+    preferredFieldOfStudy: preferredFieldOfStudy || null,
+    minimumAge: minimumAge ? Number(minimumAge) : null,
+    maximumAge: maximumAge ? Number(maximumAge) : null,
+    minimumFlyingHours: minimumFlyingHours ? Number(minimumFlyingHours) : null,
+    minimumCGPA: minimumCGPA ? Number(minimumCGPA) : null,
+    requiredExamGrades: normalizeRequiredExamGrades(requiredExamGrades) ?? [],
+    positionsRequired: positionsRequired !== undefined ? Number(positionsRequired) : 1,
+    postingType, // required, validated by the caller - no more Open fallback
+    deadline: deadline ? new Date(deadline) : null,
+    regulatoryDriver, category, priority,
+    // Structured advert content (Job Purpose / Person Specification) -
+    // all optional, normalized defensively since these arrive as nested
+    // arrays/objects from the list-editor UI rather than plain scalars.
+    // `?? []` rather than the `|| null` pattern used above, since an
+    // explicit empty array is a valid "no items yet" value, not something
+    // to be coerced to null.
+    jobPurpose: sanitizeJobDescription(jobPurpose),
+    essentialRequirements: normalizeStringList(essentialRequirements) ?? [],
+    desirableRequirements: normalizeDesirableRequirements(desirableRequirements) ?? [],
+    disqualifyingRequirements: normalizeDisqualifyingRequirements(disqualifyingRequirements) ?? [],
+    generalKnowledge: normalizeStringList(generalKnowledge) ?? [],
+    specialSkills: normalizeStringList(specialSkills) ?? [],
+    location: location || null,
+    employmentCategory: employmentCategory || null,
+    internalSalaryRange: internalSalaryRange || null,
+    recruiterNotes: recruiterNotes || null,
+    createdById
+  };
+}
+
 // Title/Department come from the selected Position, not free text -
 // resolved by the Position-table specification. positionsRequired,
 // postingType, and deadline are validated the same way the original
 // edge-case review required.
 async function create(req, res) {
-  const { positionId, reportsToPositionId, positionsRequired, postingType, deadline, salaryScale,
-    regulatoryDriver, category, priority,
-    minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy,
-    minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
-    jobPurpose, essentialRequirements, desirableRequirements, disqualifyingRequirements,
-    generalKnowledge, specialSkills,
-    location, employmentCategory, internalSalaryRange, recruiterNotes } = req.body;
+  const { positionId, reportsToPositionId, postingType, deadline, positionsRequired,
+    employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA } = req.body;
 
   const position = await positionModel.findById(Number(positionId));
   if (!position) {
@@ -65,59 +114,69 @@ async function create(req, res) {
 
   const vacancy = await vacancyModel.create({
     jobRef,
-    title: position.name, // immutable snapshot - protects history if Position is renamed later
-    positionId: position.id,
-    departmentId: position.departmentId, // derived, never independently supplied
-    reportsToPositionId: validatedReportsToId,
-    salaryScale: salaryScale || null,
-    // FIXED - a real gap found by re-checking the screening specification
-    // against itself: screeningService.js reads vacancy.minimumEducationLevel
-    // and vacancy.minimumExperienceYears, the schema declares them, and the
-    // vacancy form collects them - but nothing here ever saved them. Every
-    // vacancy's minimums would have silently stayed null regardless of what
-    // HR entered, and the structured-criteria half of screening would never
-    // have actually run.
-    minimumExperienceYears: minimumExperienceYears ? Number(minimumExperienceYears) : null,
-    minimumEducationLevel: minimumEducationLevel || null,
-    preferredFieldOfStudy: preferredFieldOfStudy || null,
-    minimumAge: minimumAge ? Number(minimumAge) : null,
-    maximumAge: maximumAge ? Number(maximumAge) : null,
-    minimumFlyingHours: minimumFlyingHours ? Number(minimumFlyingHours) : null,
-    minimumCGPA: minimumCGPA ? Number(minimumCGPA) : null,
-    requiredExamGrades: normalizeRequiredExamGrades(requiredExamGrades) ?? [],
-    positionsRequired: positionsRequired !== undefined ? Number(positionsRequired) : 1,
     // FIXED - this was never set at all, so every vacancy defaulted to
     // the schema default (previously 'Open') and was immediately visible
     // to candidates, bypassing approval entirely. The schema default is
     // now also 'PendingApproval' as a second, independent line of
     // defense - this explicit value doesn't rely on that default alone.
     status: 'PendingApproval',
-    postingType, // required, validated above - no more Open fallback
-    deadline: deadline ? new Date(deadline) : null,
-    regulatoryDriver, category, priority,
-    // Structured advert content (Job Purpose / Person Specification) -
-    // all optional, normalized defensively since these arrive as nested
-    // arrays/objects from the list-editor UI rather than plain scalars.
-    // `?? []` rather than the `|| null` pattern used above, since an
-    // explicit empty array is a valid "no items yet" value, not something
-    // to be coerced to null. jobPurpose is sanitized the same way the old
-    // standalone "Job description" field was - it now covers that ground
-    // too (job purpose, principal accountabilities, and any other
-    // narrative), pasted in as one block, so there is no separate
-    // `description` field to also sanitize and save.
-    jobPurpose: sanitizeJobDescription(jobPurpose),
-    essentialRequirements: normalizeStringList(essentialRequirements) ?? [],
-    desirableRequirements: normalizeDesirableRequirements(desirableRequirements) ?? [],
-    disqualifyingRequirements: normalizeDisqualifyingRequirements(disqualifyingRequirements) ?? [],
-    generalKnowledge: normalizeStringList(generalKnowledge) ?? [],
-    specialSkills: normalizeStringList(specialSkills) ?? [],
-    location: location || null,
-    employmentCategory: employmentCategory || null,
-    internalSalaryRange: internalSalaryRange || null,
-    recruiterNotes: recruiterNotes || null,
-    createdById: req.user.id
+    ...buildVacancyCreateData(position, validatedReportsToId, req.body, req.user.id)
   });
   res.status(201).json(vacancy);
+}
+
+// Re-runs a closed vacancy as a brand new Vacancy row (own jobRef, goes
+// through PendingApproval -> approve again) rather than reopening the same
+// row in place - the closed original's applications/offers/rejections stay
+// untouched as a clean historical record, same reasoning as every other
+// snapshot-not-mutation field on this model (see the schema comment on
+// readvertisedFromId). positionId/reportsToPositionId are inherited from
+// the original, never re-picked here - same "fixed at creation" rule the
+// HRDashboard edit modal already documents; everything else (postingType,
+// deadline, salary, the full advert content...) is exactly as editable as
+// it is on a fresh create(), since the frontend pre-fills a form from the
+// closed vacancy's own values and HR can change any of them before
+// submitting.
+async function readvertise(req, res) {
+  const vacancyId = Number(req.params.id);
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+
+  if (vacancy.status !== 'Closed') {
+    return res.status(422).json({ error: 'Only a closed vacancy can be readvertised' });
+  }
+
+  const { postingType, positionsRequired, employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, deadline } = req.body;
+  if (!postingType) {
+    return res.status(400).json({ error: 'Posting type (Internal or External) is required' });
+  }
+  const fieldErrors = validateVacancyEditableFields({
+    positionsRequired, postingType, deadline, employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA
+  });
+  if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
+
+  // Re-fetched rather than trusting the closed row's own title/department -
+  // if the underlying Position was renamed/moved since, the readvertised
+  // posting should snapshot what's true now, exactly as create() does for
+  // any brand new vacancy against this same position.
+  const position = await positionModel.findById(vacancy.positionId);
+  if (!position) {
+    return res.status(400).json({ error: 'The position behind this vacancy no longer exists' });
+  }
+
+  const jobRef = await generateJobRef(
+    postingType,
+    new Date(),
+    (prefix) => vacancyModel.countByJobRefPrefix(prefix)
+  );
+
+  const created = await vacancyModel.create({
+    jobRef,
+    status: 'PendingApproval',
+    readvertisedFromId: vacancy.id,
+    ...buildVacancyCreateData(position, vacancy.reportsToPositionId, req.body, req.user.id)
+  });
+  res.status(201).json(created);
 }
 
 // What CAN be edited after creation: positionsRequired (guarded against
@@ -224,6 +283,14 @@ async function approve(req, res) {
   if (['Open', 'PartiallyFilled', 'Filled'].includes(vacancy.status)) {
     return res.status(422).json({ error: 'This vacancy does not need approval right now' });
   }
+  // Approving (or re-opening) a vacancy whose deadline has already passed
+  // would publish it in a state that can never accept an application -
+  // candidates are blocked from applying the moment the deadline lapses
+  // (see the "deadline passed" handling in applicationEligibility.js),
+  // regardless of Vacancy.status. HR needs to push the deadline out first.
+  if (vacancy.deadline && vacancy.deadline < new Date()) {
+    return res.status(422).json({ error: 'This vacancy\'s deadline has already passed - extend the deadline before approving it' });
+  }
 
   try {
     await workflow.assertNotSelfApproval(vacancyId, req.user.id);
@@ -254,7 +321,7 @@ async function approve(req, res) {
 // full history if a vacancy transitions more than once.
 async function transitionPostingType(req, res) {
   const vacancyId = Number(req.params.id);
-  const { postingType } = req.body;
+  const { postingType, deadline } = req.body;
 
   if (!['Internal', 'External'].includes(postingType)) {
     return res.status(400).json({ error: 'Posting type must be Internal or External' });
@@ -263,12 +330,36 @@ async function transitionPostingType(req, res) {
   const vacancy = await vacancyModel.findById(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
 
+  // Locked once a transition has already been made while the deadline had
+  // already passed - see the schema comment on postingTypeLocked. A
+  // pre-deadline transition never sets this, so this vacancy can still
+  // flip back and forth freely up until the first post-deadline one.
+  if (vacancy.postingTypeLocked) {
+    return res.status(422).json({ error: "This vacancy's posting type is locked and can no longer be changed" });
+  }
   if (!['Open', 'PartiallyFilled'].includes(vacancy.status)) {
     return res.status(422).json({ error: 'Only an actively open vacancy can transition posting type' });
   }
   if (vacancy.postingType === postingType) {
     return res.status(422).json({ error: `This vacancy is already ${postingType}` });
   }
+
+  // Every transition prompts HR (client-side) to extend the deadline or
+  // leave it as-is. Only re-validate "not in the past" when it's actually
+  // being changed - re-sending the vacancy's own already-past deadline
+  // unchanged (the "kept as is" choice) must still be accepted.
+  const currentDeadlineTime = vacancy.deadline ? vacancy.deadline.getTime() : null;
+  const newDeadline = deadline !== undefined ? (deadline ? new Date(deadline) : null) : undefined;
+  const deadlineChanged = newDeadline !== undefined && (newDeadline?.getTime() ?? null) !== currentDeadlineTime;
+  if (deadlineChanged) {
+    const fieldErrors = validateVacancyEditableFields({ deadline });
+    if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
+  }
+
+  // Read before any deadline change this same request makes - a
+  // transition that itself extends a passed deadline still counts as
+  // "made while the deadline had passed" and locks the vacancy.
+  const wasDeadlinePassed = vacancy.deadline && vacancy.deadline < new Date();
 
   // Deliberately NOT regenerating jobRef's INT/EXT segment - jobRef is
   // generated once at creation and never changes, an existing hard rule
@@ -284,7 +375,9 @@ async function transitionPostingType(req, res) {
     postingTypePreviousValue: vacancy.postingType,
     postingTypeChangedAt: new Date(),
     postingTypeChangedById: req.user.id,
-    postingTypeChangedByRole: req.user.role
+    postingTypeChangedByRole: req.user.role,
+    postingTypeLocked: wasDeadlinePassed ? true : vacancy.postingTypeLocked,
+    ...(newDeadline !== undefined ? { deadline: newDeadline } : {})
   });
 
   await workflow.logVacancyPostingTypeTransition(vacancyId, vacancy.postingType, postingType, req.user.id);
@@ -343,18 +436,53 @@ async function getOne(req, res) {
 }
 
 async function listApplications(req, res) {
-  const applications = await applicationModel.findByVacancy(Number(req.params.id));
+  const vacancyId = Number(req.params.id);
+  if (!Number.isInteger(vacancyId)) return res.status(400).json({ error: 'Invalid vacancy id' });
+  const applications = await applicationModel.findByVacancy(vacancyId);
   res.json(applications);
 }
 
 async function saveRanking(req, res) {
   const vacancyId = Number(req.params.id);
-  const { applicationIds } = req.body;
+  const { applicationIds, applicationRankVersions } = req.body;
+
+  if (!Array.isArray(applicationIds) || applicationIds.length === 0 || !applicationIds.every(Number.isInteger)) {
+    return res.status(400).json({ error: 'applicationIds must be a non-empty array of application ids' });
+  }
+  const uniqueIds = [...new Set(applicationIds)];
+  if (uniqueIds.length !== applicationIds.length) {
+    return res.status(400).json({ error: 'applicationIds contains a duplicate application id' });
+  }
+  // applicationRankVersions: { [applicationId]: rankVersion } - the version
+  // of every application the client's own copy of the ranking was built
+  // from. Required (not optional) so there's no silent bypass path - every
+  // id in applicationIds must have a corresponding integer version.
+  if (typeof applicationRankVersions !== 'object' || applicationRankVersions === null
+    || !uniqueIds.every((id) => Number.isInteger(applicationRankVersions[id]))) {
+    return res.status(400).json({ error: 'applicationRankVersions must include an integer rankVersion for every application id' });
+  }
 
   const vacancy = await vacancyModel.findById(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
 
-  const updates = [];
+  // Every id must actually belong to this vacancy - without this, a
+  // crafted/stale request could rank an application that belongs to a
+  // completely different vacancy (assertCanShortlist only checks internal-
+  // verification status, not vacancy ownership).
+  const owned = await prisma.application.findMany({ where: { id: { in: uniqueIds }, vacancyId }, select: { id: true, rankVersion: true } });
+  if (owned.length !== uniqueIds.length) {
+    return res.status(400).json({ error: 'One or more application ids do not belong to this vacancy' });
+  }
+  // Optimistic-concurrency check - if any application's rankVersion has
+  // moved on since the client loaded it (another HR user's ranking write,
+  // a shortlist() call, anything), the whole batch is rejected rather than
+  // silently overwriting a ranking decision made after this client's load.
+  const staleApp = owned.find((a) => a.rankVersion !== applicationRankVersions[a.id]);
+  if (staleApp) {
+    return res.status(409).json({ error: 'The ranking has changed since you loaded it - please refresh and try again' });
+  }
+
+  const rankData = [];
   for (let i = 0; i < applicationIds.length; i++) {
     const appId = applicationIds[i];
     try {
@@ -363,11 +491,18 @@ async function saveRanking(req, res) {
       return res.status(422).json({ error: `Application ${appId}: ${err.message}` });
     }
     const listStatus = i < vacancy.positionsRequired ? 'Primary' : 'Reserve';
-    updates.push(applicationModel.update(appId, { rank: i + 1, listStatus, status: 'Shortlisted' }));
+    rankData.push({ id: appId, rank: i + 1, listStatus });
   }
 
-  const results = await Promise.all(updates);
+  // All-or-nothing - a plain Promise.all of independent updates could leave
+  // the ranking half-committed if one write failed partway through (e.g. a
+  // row deleted between the guard check above and the write itself).
+  const results = await prisma.$transaction(
+    rankData.map(({ id, rank, listStatus }) =>
+      prisma.application.update({ where: { id }, data: { rank, listStatus, status: 'Shortlisted', rankVersion: { increment: 1 } } })
+    )
+  );
   res.json(results);
 }
 
-module.exports = { create, update, close, approve, transitionPostingType, listPublic, listForAdmin, getOne, listApplications, saveRanking };
+module.exports = { create, update, close, approve, transitionPostingType, readvertise, listPublic, listForAdmin, getOne, listApplications, saveRanking };

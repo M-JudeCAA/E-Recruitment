@@ -44,7 +44,7 @@ export default function HRSidebar({ active }) {
   // (and Senior/Principal HR Officer) does, on top of approving.
   const operationalItems = [
     { key: 'vacancies', label: 'Vacancy Management', icon: Briefcase, to: '/hr' },
-    { key: 'applications', label: 'Application Management', icon: FileText, to: '/hr?tab=applications' },
+    { key: 'applications', label: 'Application Management', icon: FileText, to: '/hr/applications' },
     { key: 'departments', label: 'Department Management', icon: Building2, to: '/hr/departments' },
     ...(canManageTeam
       ? [{ key: 'staff-management', label: 'Staff Management', icon: Users, to: '/hr/staff-management' }]

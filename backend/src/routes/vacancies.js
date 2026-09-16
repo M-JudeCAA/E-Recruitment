@@ -23,6 +23,10 @@ router.patch('/:id/approve', authenticate, requireStaffRole('Manager'), controll
 // only Manager/Director can call this at all, which is what makes their
 // call to it constitute the required approval - no separate propose step.
 router.patch('/:id/transition-posting-type', authenticate, requireStaffRole('Manager'), controller.transitionPostingType);
+// NEW - readvertise a closed vacancy as a brand new one. Same tier as
+// create(), since this is functionally "create a new vacancy" (it goes
+// through PendingApproval -> approve again, not a direct reopen).
+router.post('/:id/readvertise', authenticate, requireStaffRole('HR_Officer'), controller.readvertise);
 router.get('/', optionalAuthenticate, controller.listPublic);
 router.get('/admin', authenticate, requireStaffRole('HR_Officer'), controller.listForAdmin);
 router.get('/:id', controller.getOne);

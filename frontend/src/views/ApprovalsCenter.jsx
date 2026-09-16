@@ -38,10 +38,18 @@ function SectionHeader({ icon: Icon, title, count }) {
 // approvals, offer approvals, department approvals - which previously
 // meant checking the Vacancies tab, the Offers tab, and the Departments
 // screen separately with no single "what needs me right now" view.
+const OFFERS_PAGE_SIZE = 10;
+
 export default function ApprovalsCenter() {
   const confirm = useConfirm();
   const [vacancies, setVacancies] = useState(null);
+  // Offers is paginated (GET /api/applications/offers/pending-approval now
+  // returns { data, total, page, limit }, not a bare array) - the backlog
+  // can grow unbounded, unlike vacancies/departments pending approval which
+  // stay small in practice.
   const [offers, setOffers] = useState(null);
+  const [offersTotal, setOffersTotal] = useState(0);
+  const [offersPage, setOffersPage] = useState(1);
   const [departments, setDepartments] = useState(null);
   const [rejectReason, setRejectReason] = useState({});
   const [message, setMessage] = useState('');
@@ -50,14 +58,15 @@ export default function ApprovalsCenter() {
   const loadVacancies = () => staffClient.get('/api/vacancies/admin')
     .then((res) => setVacancies(res.data.filter((v) => v.status === 'PendingApproval')))
     .catch((err) => setError(err.response?.data?.error || 'Could not load vacancies'));
-  const loadOffers = () => staffClient.get('/api/applications/offers/pending-approval')
-    .then((res) => setOffers(res.data))
+  const loadOffers = () => staffClient.get('/api/applications/offers/pending-approval', { params: { page: offersPage, limit: OFFERS_PAGE_SIZE } })
+    .then((res) => { setOffers(res.data.data); setOffersTotal(res.data.total); })
     .catch((err) => setError(err.response?.data?.error || 'Could not load offers'));
   const loadDepartments = () => staffClient.get('/api/departments/pending')
     .then((res) => setDepartments(res.data))
     .catch((err) => setError(err.response?.data?.error || 'Could not load departments'));
 
-  useEffect(() => { loadVacancies(); loadOffers(); loadDepartments(); }, []);
+  useEffect(() => { loadVacancies(); loadDepartments(); }, []);
+  useEffect(() => { loadOffers(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [offersPage]);
 
   const approveVacancy = async (id) => {
     setError(''); setMessage('');
@@ -122,7 +131,8 @@ export default function ApprovalsCenter() {
   };
 
   const loading = vacancies === null || offers === null || departments === null;
-  const totalPending = (vacancies?.length || 0) + (offers?.length || 0) + (departments?.length || 0);
+  const totalPending = (vacancies?.length || 0) + offersTotal + (departments?.length || 0);
+  const offersTotalPages = Math.max(Math.ceil(offersTotal / OFFERS_PAGE_SIZE), 1);
 
   return (
     <div>
@@ -164,7 +174,7 @@ export default function ApprovalsCenter() {
           ))}
 
           <div style={{ marginTop: 'var(--spacing-lg)' }}>
-            <SectionHeader icon={Award} title="Offers" count={offers?.length ?? '—'} />
+            <SectionHeader icon={Award} title="Offers" count={offersTotal ?? '—'} />
           </div>
           {offers?.length === 0 && (
             <Card><p style={{ margin: 0, color: 'var(--color-text-muted)' }}>No offers awaiting approval.</p></Card>
@@ -187,6 +197,13 @@ export default function ApprovalsCenter() {
               </div>
             </Card>
           ))}
+          {offersTotal > OFFERS_PAGE_SIZE && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, margin: '8px 0' }}>
+              <Button variant="ghost" disabled={offersPage <= 1} onClick={() => setOffersPage((p) => p - 1)}>Previous</Button>
+              <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Page {offersPage} of {offersTotalPages}</span>
+              <Button variant="ghost" disabled={offersPage >= offersTotalPages} onClick={() => setOffersPage((p) => p + 1)}>Next</Button>
+            </div>
+          )}
 
           <div style={{ marginTop: 'var(--spacing-lg)' }}>
             <SectionHeader icon={Building2} title="Departments" count={departments?.length ?? '—'} />

@@ -22,6 +22,7 @@ export default function JobDetailsStep({ vacancy }) {
     salaryScale: vacancy.salaryScale,
     positionsRequired: vacancy.positionsRequired,
     deadline: vacancy.deadline,
+    readvertised: vacancy.readvertisedFromId != null,
     location: vacancy.location,
     employmentCategory: vacancy.employmentCategory,
     postingType: vacancy.postingType,

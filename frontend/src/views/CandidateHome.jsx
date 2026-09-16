@@ -244,6 +244,7 @@ export default function CandidateHome() {
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>
                     {v.jobRef ? <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{v.jobRef}: </span> : null}
                     {v.title}
+                    {v.readvertisedFromId != null && <span style={{ marginLeft: 8 }}><StatusBadge status="Readvertised" /></span>}
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
                     {v.department?.name && (

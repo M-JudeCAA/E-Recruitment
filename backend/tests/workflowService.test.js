@@ -101,7 +101,8 @@ describe('recomputeVacancyStatus', () => {
 
 describe('handleOfferDeclined', () => {
   test('promotes the next-ranked reserve candidate to Primary', async () => {
-    prisma.offer.update.mockResolvedValue({
+    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
+    prisma.offer.findUnique.mockResolvedValue({
       id: 10,
       application: { vacancyId: 1, candidateId: 7 }
     });
@@ -111,6 +112,9 @@ describe('handleOfferDeclined', () => {
 
     const result = await workflow.handleOfferDeclined(10);
 
+    expect(prisma.offer.updateMany).toHaveBeenCalledWith({
+      where: { id: 10, status: 'Approved' }, data: { status: 'Declined' }
+    });
     expect(prisma.application.update).toHaveBeenCalledWith({
       where: { id: 22 },
       data: { listStatus: 'Primary' }
@@ -119,7 +123,8 @@ describe('handleOfferDeclined', () => {
   });
 
   test('returns no promotion when the reserve list is exhausted', async () => {
-    prisma.offer.update.mockResolvedValue({
+    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
+    prisma.offer.findUnique.mockResolvedValue({
       id: 10,
       application: { vacancyId: 1, candidateId: 7 }
     });
@@ -131,6 +136,47 @@ describe('handleOfferDeclined', () => {
 
     expect(prisma.application.update).not.toHaveBeenCalled();
     expect(result.promoted).toBeNull();
+  });
+
+  // Atomic guard - an offer that's no longer Approved (already declined by
+  // a prior/concurrent call, or approved-then-accepted in the meantime)
+  // must not re-run the reserve-promotion cascade a second time.
+  test('reports a conflict instead of re-running the cascade when the offer is no longer Approved', async () => {
+    prisma.offer.updateMany.mockResolvedValue({ count: 0 });
+
+    const result = await workflow.handleOfferDeclined(10);
+
+    expect(result.conflict).toBe(true);
+    expect(prisma.application.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe('acceptOfferTransactionally', () => {
+  test('reports a conflict instead of accepting when the offer is no longer Approved', async () => {
+    prisma.offer.updateMany.mockResolvedValue({ count: 0 });
+
+    const result = await workflow.acceptOfferTransactionally(10);
+
+    expect(result.conflict).toBe(true);
+    expect(prisma.offer.findUnique).not.toHaveBeenCalled();
+  });
+
+  test('flips the offer to Accepted and recomputes vacancy status in the same transaction', async () => {
+    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 10, status: 'Accepted',
+      application: { vacancyId: 1, candidateId: 7 }
+    });
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 1, status: 'Open' });
+    prisma.offer.count.mockResolvedValue(1);
+
+    const result = await workflow.acceptOfferTransactionally(10);
+
+    expect(prisma.offer.updateMany).toHaveBeenCalledWith({
+      where: { id: 10, status: 'Approved' }, data: { status: 'Accepted' }
+    });
+    expect(prisma.vacancy.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { status: 'Filled' } });
+    expect(result.offer.id).toBe(10);
   });
 });
 

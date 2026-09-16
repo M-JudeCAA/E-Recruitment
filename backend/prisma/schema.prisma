@@ -294,6 +294,23 @@ model Vacancy {
   postingTypeChangedBy          StaffUser?   @relation("VacancyPostingTypeChangedBy", fields: [postingTypeChangedById], references: [id])
   postingTypeChangedByRole      StaffRole?
   postingTypePreviousValue      PostingType?
+  // Set true the moment a transition happens while the deadline has
+  // already passed - from then on transitionPostingType refuses any
+  // further transition in either direction. A transition made before the
+  // deadline stays freely bidirectional and never sets this.
+  postingTypeLocked             Boolean      @default(false)
+
+  // Readvertising a Closed vacancy creates a brand new Vacancy row (own
+  // jobRef, goes through PendingApproval again) rather than reopening this
+  // one in place - keeps a closed vacancy's applications/offers/rejections
+  // as an untouched historical record, same snapshot-over-mutation
+  // principle as title/approvedByRole/postingTypePreviousValue above.
+  // readvertisedFromId points at the vacancy this one was readvertised
+  // from; readvertisedAs is the reverse (what this one was later
+  // readvertised as, if anything).
+  readvertisedFromId            Int?
+  readvertisedFrom              Vacancy?     @relation("VacancyReadvertisement", fields: [readvertisedFromId], references: [id])
+  readvertisedAs                Vacancy[]    @relation("VacancyReadvertisement")
 
   // Screening criteria - optional; a vacancy with no minimum set imposes
   // none. preferredFieldOfStudy contributes only a soft, non-blocking
@@ -572,6 +589,13 @@ model Application {
   shortlistScoreReasons String?     @db.Text // JSON array of human-readable strings, same convention as screeningReasons
   rank             Int?
   listStatus       ListStatus?
+  // Optimistic-concurrency guard for vacancyController.saveRanking -
+  // incremented on every rank-affecting write (saveRanking, shortlist).
+  // The frontend sends back the version it last saw for every application
+  // in the batch; a mismatch means someone else's ranking write landed in
+  // between, so the whole batch is rejected (409) rather than silently
+  // overwriting it.
+  rankVersion      Int               @default(0)
   // No longer written by the apply wizard (the Documents step's CV upload
   // was removed in favor of a CV generated on demand for HR from the
   // candidate's own structured profile/application data - see referees

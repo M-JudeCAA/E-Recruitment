@@ -38,12 +38,17 @@ async function assertNotSelfApproval(vacancyId, approverId) {
 
 /**
  * Computes Vacancy.status from accepted offers vs positions_required.
+ * Accepts an optional Prisma client/transaction handle so callers that need
+ * this to run atomically alongside an offer-status change (see
+ * acceptOfferTransactionally/handleOfferDeclined below) can pass their `tx`
+ * - every existing caller that doesn't pass one keeps using the plain
+ * top-level `prisma` singleton exactly as before.
  */
-async function recomputeVacancyStatus(vacancyId) {
-  const vacancy = await prisma.vacancy.findUnique({ where: { id: vacancyId } });
+async function recomputeVacancyStatus(vacancyId, client = prisma) {
+  const vacancy = await client.vacancy.findUnique({ where: { id: vacancyId } });
   if (!vacancy) return;
 
-  const acceptedCount = await prisma.offer.count({
+  const acceptedCount = await client.offer.count({
     where: { status: 'Accepted', application: { vacancyId } }
   });
 
@@ -52,44 +57,74 @@ async function recomputeVacancyStatus(vacancyId) {
   else if (acceptedCount > 0) status = 'PartiallyFilled';
 
   if (vacancy.status !== 'Closed') {
-    await prisma.vacancy.update({ where: { id: vacancyId }, data: { status } });
+    await client.vacancy.update({ where: { id: vacancyId }, data: { status } });
   }
+}
+
+/**
+ * Atomically flips an Approved offer to Accepted and recomputes the
+ * vacancy's status in one transaction, rather than as two independent
+ * sequential writes. The offer flip itself is guarded (updateMany scoped to
+ * status: 'Approved') so a second concurrent accept attempt - a double
+ * click, or a race with a decline - can't also succeed; it reports a
+ * conflict instead. Running the vacancy-status recompute inside the same
+ * transaction as the guarded write also narrows (though, absent a DB-level
+ * capacity constraint, doesn't fully eliminate) the window where two
+ * different candidates' offers for the same vacancy could both be accepted
+ * past positionsRequired.
+ */
+async function acceptOfferTransactionally(offerId) {
+  return prisma.$transaction(async (tx) => {
+    const result = await tx.offer.updateMany({ where: { id: offerId, status: 'Approved' }, data: { status: 'Accepted' } });
+    if (result.count === 0) return { conflict: true };
+
+    const offer = await tx.offer.findUnique({
+      where: { id: offerId },
+      include: { application: { include: { vacancy: true } } }
+    });
+    await recomputeVacancyStatus(offer.application.vacancyId, tx);
+    return { offer };
+  });
 }
 
 /**
  * Decline cascade: when an offer is declined, promote the next-ranked
  * reserve candidate to Primary and notify the Principal HR Officer that
  * a fresh offer recommendation is needed - without restarting shortlisting.
+ * Same atomic-guard-inside-a-transaction shape as acceptOfferTransactionally -
+ * the offer flip only applies if it's still Approved, closing the race
+ * where a decline lands at the same moment as an approve/accept, or two
+ * decline attempts race each other.
  */
 async function handleOfferDeclined(offerId) {
-  const offer = await prisma.offer.update({
-    where: { id: offerId },
-    data: { status: 'Declined' },
-    include: { application: true }
-  });
+  return prisma.$transaction(async (tx) => {
+    const result = await tx.offer.updateMany({ where: { id: offerId, status: 'Approved' }, data: { status: 'Declined' } });
+    if (result.count === 0) return { conflict: true };
 
-  const vacancyId = offer.application.vacancyId;
+    const offer = await tx.offer.findUnique({ where: { id: offerId }, include: { application: true } });
+    const vacancyId = offer.application.vacancyId;
 
-  const nextReserve = await prisma.application.findFirst({
-    where: {
-      vacancyId,
-      listStatus: 'Reserve',
-      status: { notIn: ['Rejected', 'Withdrawn'] }
-    },
-    orderBy: { rank: 'asc' }
-  });
-
-  if (nextReserve) {
-    await prisma.application.update({
-      where: { id: nextReserve.id },
-      data: { listStatus: 'Primary' }
+    const nextReserve = await tx.application.findFirst({
+      where: {
+        vacancyId,
+        listStatus: 'Reserve',
+        status: { notIn: ['Rejected', 'Withdrawn'] }
+      },
+      orderBy: { rank: 'asc' }
     });
-    // In a full build: notify the Principal HR Officer that a new
-    // offer recommendation is needed for nextReserve.id.
-  }
 
-  await recomputeVacancyStatus(vacancyId);
-  return { promoted: nextReserve || null };
+    if (nextReserve) {
+      await tx.application.update({
+        where: { id: nextReserve.id },
+        data: { listStatus: 'Primary' }
+      });
+      // In a full build: notify the Principal HR Officer that a new
+      // offer recommendation is needed for nextReserve.id.
+    }
+
+    await recomputeVacancyStatus(vacancyId, tx);
+    return { promoted: nextReserve || null };
+  });
 }
 
 /**
@@ -179,6 +214,7 @@ module.exports = {
   assertCanShortlist,
   assertNotSelfApproval,
   recomputeVacancyStatus,
+  acceptOfferTransactionally,
   handleOfferDeclined,
   captureSnapshot,
   notifySupervisor,

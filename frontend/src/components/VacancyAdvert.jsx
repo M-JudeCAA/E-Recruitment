@@ -1,5 +1,6 @@
 import React from 'react';
 import HowToApplyBlock from './HowToApplyBlock';
+import StatusBadge from './StatusBadge';
 
 // Renders a vacancy in UCAA's standard job-advertisement layout (header
 // facts, Job Purpose, Person Specification, How to Apply). Shared between
@@ -22,7 +23,8 @@ export default function VacancyAdvert({
   jobPurpose, essentialRequirements,
   minimumEducationLevel, minimumExperienceYears, preferredFieldOfStudy,
   minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
-  desirableRequirements, generalKnowledge, specialSkills
+  desirableRequirements, generalKnowledge, specialSkills,
+  readvertised
 }) {
   const facts = [
     ['Job Ref', jobRef || 'Assigned automatically when created'],
@@ -38,12 +40,18 @@ export default function VacancyAdvert({
 
   const ageRequirementText = [minimumAge ? `${minimumAge}+` : null, maximumAge ? `${maximumAge} or under` : null].filter(Boolean).join(', ');
 
-  const hasEssential = essentialRequirements?.length || minimumEducationLevel || minimumExperienceYears ||
-    preferredFieldOfStudy || minimumAge || maximumAge || minimumFlyingHours || minimumCGPA || requiredExamGrades?.length;
+  // Boolean(...) rather than a bare `||` chain - the chain can bottom out
+  // at a numeric 0 (from .length on an empty array), and `{0 && <div>}"`
+  // in JSX renders the literal text "0" instead of nothing.
+  const hasEssential = Boolean(essentialRequirements?.length || minimumEducationLevel || minimumExperienceYears ||
+    preferredFieldOfStudy || minimumAge || maximumAge || minimumFlyingHours || minimumCGPA || requiredExamGrades?.length);
 
   return (
     <div>
-      <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-primary-dark)', marginBottom: 4 }}>{title || 'Untitled position'}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+        <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-primary-dark)' }}>{title || 'Untitled position'}</div>
+        {readvertised && <StatusBadge status="Readvertised" />}
+      </div>
 
       <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0 20px' }}>
         <tbody>

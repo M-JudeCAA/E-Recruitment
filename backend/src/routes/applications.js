@@ -9,6 +9,9 @@ const router = express.Router();
 // Same HR_Officer+ gate as vacancies/:id/applications (the per-vacancy
 // equivalent this aggregates across all vacancies).
 router.get('/count', authenticate, requireStaffRole('HR_Officer'), controller.count);
+// The Application Management cross-vacancy queue - filtered/paginated list,
+// same tier as /count and /api/vacancies/:id/applications.
+router.get('/', authenticate, requireStaffRole('HR_Officer'), controller.list);
 
 // REPLACES the old single-step submit() entirely (was the old one-step
 // controller.submit). saveDraft() handles both first-save and every

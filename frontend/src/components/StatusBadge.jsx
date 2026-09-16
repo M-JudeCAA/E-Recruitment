@@ -23,7 +23,11 @@ export const STATUS_COLORS = {
   Declined: 'var(--color-danger)',
   // Verification
   Pending: 'var(--color-warning)', HR_Verified: 'var(--color-accent)',
-  Discrepancy_Flagged: 'var(--color-danger)'
+  Discrepancy_Flagged: 'var(--color-danger)',
+  // Not a real enum value - a derived tag shown next to a vacancy's title
+  // when it was created via readvertise() (Vacancy.readvertisedFromId is
+  // set). Reuses this same lookup/component rather than a bespoke badge.
+  Readvertised: 'var(--color-accent)'
 };
 
 export default function StatusBadge({ status }) {
