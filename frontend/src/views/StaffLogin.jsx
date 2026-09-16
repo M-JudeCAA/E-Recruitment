@@ -17,6 +17,11 @@ const ucaa = {
   line: "#DCE6EF",
 };
 
+// Matches the same 5-tier ROLE_RANK used everywhere else (auth.js,
+// Navbar.jsx, HRSidebar.jsx) - Manager/Director land on the reimagined
+// Executive Overview, everyone else on the operational Home.
+const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
+
 function validate(values) {
   const errors = {};
 
@@ -57,7 +62,8 @@ export default function StaffLogin() {
     try {
       const res = await client.post("/api/staff/auth/login", form);
       loginStaff(res.data.token, res.data.role, res.data.name, res.data.email);
-      navigate("/hr/home");
+      const isExecutive = (ROLE_RANK[res.data.role] || 0) >= ROLE_RANK.Manager;
+      navigate(isExecutive ? "/hr/executive" : "/hr/home");
     } catch (err) {
       setError(err.response?.data?.error || "Login failed");
     } finally {

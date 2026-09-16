@@ -4,6 +4,7 @@ import { useAuth } from '../models/AuthContext';
 import Avatar from './Avatar';
 import Button from './Button';
 import Alert from './Alert';
+import { useConfirm } from './ConfirmDialog';
 import { candidateFileSrc } from '../utils/fileSrc';
 
 // Optional avatar upload, shown wherever ProfileCompletionForm is (the
@@ -15,6 +16,7 @@ import { candidateFileSrc } from '../utils/fileSrc';
 // the single source of truth - this panel doesn't keep its own copy.
 export default function PhotoUploadPanel({ photoUrl, onChange }) {
   const { updateCandidatePhoto } = useAuth();
+  const confirm = useConfirm();
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -42,7 +44,7 @@ export default function PhotoUploadPanel({ photoUrl, onChange }) {
   };
 
   const handleRemove = async () => {
-    if (!window.confirm('Remove your profile photo?')) return;
+    if (!(await confirm('Remove your profile photo?', { title: 'Remove photo', confirmLabel: 'Remove', danger: true }))) return;
     setError('');
     setRemoving(true);
     try {

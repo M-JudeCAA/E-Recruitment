@@ -26,6 +26,9 @@ router.delete('/me/education/:id', authenticate, requireCandidate, asyncHandler(
 router.post('/me/certificates', authenticate, requireCandidate, asyncHandler(controller.addCertificate));
 router.put('/me/certificates/:id', authenticate, requireCandidate, asyncHandler(controller.updateCertificate));
 router.delete('/me/certificates/:id', authenticate, requireCandidate, asyncHandler(controller.deleteCertificate));
+router.post('/me/exam-grades', authenticate, requireCandidate, asyncHandler(controller.addExamGrade));
+router.put('/me/exam-grades/:id', authenticate, requireCandidate, asyncHandler(controller.updateExamGrade));
+router.delete('/me/exam-grades/:id', authenticate, requireCandidate, asyncHandler(controller.deleteExamGrade));
 router.put('/me/internal-profile', authenticate, requireCandidate, asyncHandler(controller.updateInternalProfile));
 router.put('/me/photo', authenticate, requireCandidate, uploadPhoto.single('photo'), asyncHandler(controller.updatePhoto));
 router.delete('/me/photo', authenticate, requireCandidate, asyncHandler(controller.removePhoto));

@@ -10,6 +10,7 @@ import Button from '../components/Button';
 import Alert from '../components/Alert';
 import StatusBadge from '../components/StatusBadge';
 import LoadingState from '../components/LoadingState';
+import { useConfirm } from '../components/ConfirmDialog';
 
 const CLOSED_STATUSES = ['Rejected', 'Withdrawn'];
 const REVIEW_STATUSES = ['Submitted', 'UnderReview', 'Shortlisted'];
@@ -77,6 +78,7 @@ function OfferPanel({ offer, onRespond, busy }) {
 // were previously left unsurfaced here.
 export default function CandidateApplications() {
   const { candidate } = useAuth();
+  const confirm = useConfirm();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -124,7 +126,7 @@ export default function CandidateApplications() {
   // Withdrawn), and re-applying to that vacancy is refused - it's a real,
   // HR-visible commitment being backed out of, not a form thrown away.
   const cancelDraft = async (applicationId) => {
-    if (!window.confirm('Cancel this draft? You can start a fresh application to this vacancy afterward.')) return;
+    if (!(await confirm('Cancel this draft? You can start a fresh application to this vacancy afterward.', { title: 'Cancel draft', confirmLabel: 'Cancel draft', danger: true }))) return;
     setWithdrawMessage('');
     try {
       await client.patch(`/api/applications/${applicationId}/withdraw`);
@@ -135,7 +137,7 @@ export default function CandidateApplications() {
   };
 
   const withdrawApplication = async (applicationId) => {
-    if (!window.confirm('Withdraw this application? This cannot be undone, and you will not be able to re-apply to this vacancy.')) return;
+    if (!(await confirm('Withdraw this application? This cannot be undone, and you will not be able to re-apply to this vacancy.', { title: 'Withdraw application', confirmLabel: 'Withdraw', danger: true }))) return;
     setWithdrawMessage('');
     try {
       await client.patch(`/api/applications/${applicationId}/withdraw`);

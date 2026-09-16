@@ -9,12 +9,15 @@ const router = express.Router();
 // Same HR_Officer+ gate as vacancies/:id/applications (the per-vacancy
 // equivalent this aggregates across all vacancies).
 router.get('/count', authenticate, requireStaffRole('HR_Officer'), controller.count);
+// The Application Management cross-vacancy queue - filtered/paginated list,
+// same tier as /count and /api/vacancies/:id/applications.
+router.get('/', authenticate, requireStaffRole('HR_Officer'), controller.list);
 
 // REPLACES the old single-step submit() entirely (was the old one-step
 // controller.submit). saveDraft() handles both first-save and every
 // subsequent edit to that same draft.
 router.post('/', authenticate, requireCandidate,
-  upload.fields([{ name: 'cv', maxCount: 1 }, { name: 'coverLetter', maxCount: 1 }]),
+  upload.fields([{ name: 'coverLetter', maxCount: 1 }]),
   draftController.saveDraft
 );
 // The explicit "I'm done, submit this" action.
@@ -32,6 +35,9 @@ router.patch('/:id/shortlist', authenticate, requireStaffRole('Senior_HR_Officer
 router.patch('/:id/reject', authenticate, requireStaffRole('Senior_HR_Officer'), controller.reject);
 router.post('/vacancies/:vacancyId/approve-shortlist', authenticate, requireStaffRole('Principal_HR_Officer'), controller.approveShortlist);
 router.post('/:id/recommend-offer', authenticate, requireStaffRole('Principal_HR_Officer'), controller.recommendOffer);
+// Approvals Center listing - same Manager+ tier as approving one, since
+// this is purely "what's waiting for me to approve".
+router.get('/offers/pending-approval', authenticate, requireStaffRole('Manager'), controller.listOffersPendingApproval);
 // "Approve a final offer" explicitly excludes Principal HR Officer - only
 // Manager and Director can, per the 5-tier permission table (Decision #10:
 // PHRO can recommend but never approve).

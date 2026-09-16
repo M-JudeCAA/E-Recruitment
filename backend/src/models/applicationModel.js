@@ -1,5 +1,56 @@
 const prisma = require('../config/db');
 
+// Shared with findByVacancy and findManyForHr below - whitelisting only what
+// an applicant list actually reads rather than the full Candidate row, which
+// would otherwise hand every HR officer viewing this list each applicant's
+// passwordHash. education/workExperience/examGrades/certificates ARE
+// whitelisted since this is also the data source useGeneratedCvDownload.jsx
+// reads to build the on-demand CV HR generates for an applicant - see
+// GeneratedCvPrintLayout.jsx.
+const CANDIDATE_SELECT = {
+  id: true, fullName: true, email: true, phone: true, candidateType: true,
+  location: true, linkedinUrl: true, portfolioUrl: true, workAuthorization: true,
+  nationalId: true, idType: true, dateOfBirth: true, flyingHours: true,
+  education: true, workExperience: true, examGrades: true, certificates: true,
+  internalProfile: true
+};
+
+// Cross-vacancy include (findManyForHr) - same candidate/interviewRounds/
+// offer/rejectedBy shape as findByVacancy, plus a vacancy select since this
+// spans vacancies instead of being scoped to one already-known vacancy.
+const HR_LIST_INCLUDE = {
+  candidate: { select: CANDIDATE_SELECT },
+  vacancy: {
+    select: {
+      id: true, jobRef: true, title: true, positionsRequired: true, preferredFieldOfStudy: true,
+      department: { select: { name: true, directorate: { select: { name: true } } } }
+    }
+  },
+  interviewRounds: true,
+  offer: true,
+  rejectedBy: { select: { name: true } }
+};
+
+// candidateType/search both narrow on the related Candidate row, so they
+// share one sub-object built here rather than each independently trying to
+// set where.candidate.
+function buildHrWhere({ vacancyId, status, departmentId, candidateType, screeningPassed, search }) {
+  const where = { status: status || { not: 'Draft' } };
+  if (vacancyId) where.vacancyId = vacancyId;
+  if (departmentId) where.vacancy = { departmentId };
+  const candidateWhere = {};
+  if (candidateType) candidateWhere.candidateType = candidateType;
+  if (search) {
+    // No mode: 'insensitive' - this is MySQL, not Postgres, and Prisma
+    // doesn't support that mode there. MySQL's default collation is
+    // already case-insensitive, so plain `contains` is fine.
+    candidateWhere.OR = [{ fullName: { contains: search } }, { email: { contains: search } }];
+  }
+  if (Object.keys(candidateWhere).length > 0) where.candidate = candidateWhere;
+  if (screeningPassed != null) where.screeningPassed = screeningPassed;
+  return where;
+}
+
 module.exports = {
   create: (data) => prisma.application.create({ data }),
   findById: (id, include) => prisma.application.findUnique({ where: { id }, include }),
@@ -9,30 +60,36 @@ module.exports = {
   // actually submits it. Only reachable as a real, populated status once
   // the draft/submit split exists (previously every row was created
   // straight at Submitted, so this filter had nothing to do).
-  // candidate uses an explicit select (not include) - whitelisting only
-  // what VacancyDetail.jsx's applicant list actually reads (name, type,
-  // internal verification status) rather than the full Candidate row,
-  // which was otherwise handing every HR officer viewing this list each
-  // applicant's passwordHash. workExperience/education were fetched here
-  // too but never read by that view, so they're dropped rather than
-  // whitelisted.
   findByVacancy: (vacancyId) => prisma.application.findMany({
     where: { vacancyId, status: { not: 'Draft' } },
     include: {
-      candidate: { select: { id: true, fullName: true, candidateType: true, internalProfile: true } },
+      candidate: { select: CANDIDATE_SELECT },
       interviewRounds: true,
       offer: true,
       rejectedBy: { select: { name: true } }
     },
     orderBy: [{ rank: 'asc' }, { shortlistScore: 'desc' }]
   }),
+  // Cross-vacancy "Application Management" queue - see applicationController.list.
+  // filters is buildHrWhere's param shape; skip/take drive pagination.
+  findManyForHr: ({ skip, take, ...filters }) => prisma.application.findMany({
+    where: buildHrWhere(filters),
+    include: HR_LIST_INCLUDE,
+    orderBy: { submittedDate: 'desc' },
+    skip, take
+  }),
+  countForHr: (filters) => prisma.application.count({ where: buildHrWhere(filters) }),
   findByCandidate: (candidateId) => prisma.application.findMany({
     where: { candidateId },
     include: { vacancy: true, interviewRounds: true, offer: true },
     orderBy: { createdAt: 'desc' }
   }),
-  findOwnedByCandidate: (candidateId, urls) => prisma.application.findFirst({
-    where: { candidateId, OR: [{ cvUrl: urls }, { coverLetterUrl: urls }] }
+  // url is always a single scalar path (see fileController.js's one caller,
+  // built from one filename) - named singular here (it previously read
+  // "urls", misleadingly suggesting array support the OR clause below
+  // doesn't actually provide).
+  findOwnedByCandidate: (candidateId, url) => prisma.application.findFirst({
+    where: { candidateId, OR: [{ cvUrl: url }, { coverLetterUrl: url }] }
   }),
   findByVacancyAndStatus: (vacancyId, status) => prisma.application.findMany({
     where: { vacancyId, status }

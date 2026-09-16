@@ -12,9 +12,11 @@ module.exports = {
   // internalProfile is included alongside education/workExperience so this
   // one query can back isProfileComplete() (which needs all three) as well
   // as screening - not just the two fields screening itself reads.
+  // examGrades added for screeningService.evaluateExamGrades - dateOfBirth/
+  // flyingHours need no include, they're plain scalars on Candidate itself.
   findByIdWithRecords: (id) => prisma.candidate.findUnique({
     where: { id },
-    include: { education: true, workExperience: true, internalProfile: true }
+    include: { education: true, workExperience: true, internalProfile: true, examGrades: true }
   }),
   // Mirrors applicationModel.findOwnedByCandidate's role in
   // fileController.serve - lets a candidate be authorized to view their

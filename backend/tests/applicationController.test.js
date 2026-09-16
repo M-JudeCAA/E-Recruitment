@@ -59,6 +59,12 @@ describe('saveDraft', () => {
 });
 
 describe('submit', () => {
+  const completeReferees = [
+    { name: 'A Referee', phone: '0700000001', email: 'a@example.com' },
+    { name: 'B Referee', phone: '0700000002', email: 'b@example.com' },
+    { name: 'C Referee', phone: '0700000003', email: 'c@example.com' }
+  ];
+
   test('returns 404 when the application does not exist', async () => {
     prisma.application.findUnique.mockResolvedValue(null);
     const req = { params: { id: '99' }, user: { id: 5, candidateType: 'External' } };
@@ -72,7 +78,7 @@ describe('submit', () => {
 
   test('returns 403 when the application does not belong to the candidate', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 99, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 99, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
@@ -85,7 +91,7 @@ describe('submit', () => {
 
   test('returns 422 when the application is not a Draft (e.g. already submitted)', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Submitted', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Submitted', referees: completeReferees
     });
     const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
@@ -96,9 +102,10 @@ describe('submit', () => {
     expect(prisma.application.update).not.toHaveBeenCalled();
   });
 
-  test('returns 400 when no CV has been uploaded yet', async () => {
+  test('returns 400 when fewer than three complete referees have been given', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: null
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft',
+      referees: [completeReferees[0], completeReferees[1]]
     });
     const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
@@ -111,7 +118,7 @@ describe('submit', () => {
 
   test('returns 422 when the vacancy is Closed', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Closed', postingType: 'External', deadline: null });
     const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
@@ -125,7 +132,7 @@ describe('submit', () => {
 
   test('returns 422 when the vacancy is Filled', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Filled', postingType: 'External', deadline: null });
     const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
@@ -139,7 +146,7 @@ describe('submit', () => {
 
   test('returns 422 when the application deadline has passed', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({
       id: 10, status: 'Open', postingType: 'External', deadline: new Date('2000-01-01')
@@ -158,7 +165,7 @@ describe('submit', () => {
   // gets that reason, not an unrelated "complete your profile" one.
   test('returns 422 when the candidate profile is incomplete', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Open', postingType: 'External', deadline: null });
     prisma.candidate.findUnique.mockResolvedValue({
@@ -181,7 +188,7 @@ describe('submit', () => {
   // proceeding to capture a snapshot and notify the supervisor.
   test('returns 409 when a concurrent request already submitted this application', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf'
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Open', postingType: 'External', deadline: null });
     prisma.candidate.findUnique.mockResolvedValue({
@@ -205,7 +212,7 @@ describe('submit', () => {
   // Internal candidates, via the separate, unrelated notifySupervisor.
   test('notifies both the candidate (confirmation) and the vacancy creator (new application) on a successful submit', async () => {
     prisma.application.findUnique.mockResolvedValue({
-      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', cvUrl: '/files/cv.pdf',
+      id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees,
       // notifySupervisor (workflowService) re-fetches this same application
       // with its own include shape - the mock is include-agnostic, so this
       // needs candidate present too, not just for the top-of-submit read.
@@ -248,6 +255,110 @@ describe('count', () => {
 
     expect(prisma.application.count).toHaveBeenCalledWith({ where: { status: { not: 'Draft' } } });
     expect(res.json).toHaveBeenCalledWith({ count: 42 });
+  });
+});
+
+describe('list', () => {
+  test('rejects an invalid status filter', async () => {
+    const req = { query: { status: 'NotARealStatus' } };
+    const res = mockRes();
+
+    await applicationController.list(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.application.findMany).not.toHaveBeenCalled();
+  });
+
+  test('rejects an invalid candidateType filter', async () => {
+    const req = { query: { candidateType: 'Alien' } };
+    const res = mockRes();
+
+    await applicationController.list(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.application.findMany).not.toHaveBeenCalled();
+  });
+
+  test('rejects a non-numeric vacancyId filter', async () => {
+    const req = { query: { vacancyId: 'abc' } };
+    const res = mockRes();
+
+    await applicationController.list(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.application.findMany).not.toHaveBeenCalled();
+  });
+
+  test('rejects a non-numeric departmentId filter', async () => {
+    const req = { query: { departmentId: 'abc' } };
+    const res = mockRes();
+
+    await applicationController.list(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.application.findMany).not.toHaveBeenCalled();
+  });
+
+  test('defaults to excluding Draft, page 1, and a limit of 20', async () => {
+    prisma.application.findMany.mockResolvedValue([]);
+    prisma.application.count.mockResolvedValue(0);
+    const req = { query: {} };
+    const res = mockRes();
+
+    await applicationController.list(req, res);
+
+    expect(prisma.application.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { status: { not: 'Draft' } }, skip: 0, take: 20
+    }));
+    expect(prisma.application.count).toHaveBeenCalledWith({ where: { status: { not: 'Draft' } } });
+    expect(res.json).toHaveBeenCalledWith({ data: [], total: 0, page: 1, limit: 20 });
+  });
+
+  test('clamps an oversized limit to 100', async () => {
+    prisma.application.findMany.mockResolvedValue([]);
+    prisma.application.count.mockResolvedValue(0);
+    const req = { query: { limit: '500' } };
+    const res = mockRes();
+
+    await applicationController.list(req, res);
+
+    expect(prisma.application.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 0, take: 100 }));
+  });
+
+  test('computes skip from page and limit together', async () => {
+    prisma.application.findMany.mockResolvedValue([]);
+    prisma.application.count.mockResolvedValue(0);
+    const req = { query: { page: '3', limit: '10' } };
+    const res = mockRes();
+
+    await applicationController.list(req, res);
+
+    expect(prisma.application.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 20, take: 10 }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ page: 3, limit: 10 }));
+  });
+
+  test('passes vacancyId, status, departmentId, candidateType, screeningPassed, and search through to the where clause', async () => {
+    prisma.application.findMany.mockResolvedValue([]);
+    prisma.application.count.mockResolvedValue(0);
+    const req = {
+      query: {
+        vacancyId: '10', status: 'UnderReview', departmentId: '4',
+        candidateType: 'Internal', screeningPassed: 'false', search: ' jane '
+      }
+    };
+    const res = mockRes();
+
+    await applicationController.list(req, res);
+
+    expect(prisma.application.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        status: 'UnderReview',
+        vacancyId: 10,
+        vacancy: { departmentId: 4 },
+        candidate: { candidateType: 'Internal', OR: [{ fullName: { contains: 'jane' } }, { email: { contains: 'jane' } }] },
+        screeningPassed: false
+      }
+    }));
   });
 });
 
@@ -308,6 +419,44 @@ describe('recommendOffer', () => {
     expect(prisma.offer.create).not.toHaveBeenCalled();
   });
 
+  // A candidate can have multiple rounds - only the MOST RECENT one's
+  // recommendation should count. An earlier round saying Shortlist must not
+  // still qualify once a later round has said otherwise.
+  test('rejects when an earlier round said Shortlist but the most recent round did not', async () => {
+    prisma.application.findUnique.mockResolvedValue({
+      id: 1, status: 'Interviewed',
+      interviewRounds: [
+        { id: 1, roundNumber: 1, score: 90, recommendation: 'Shortlist' },
+        { id: 2, roundNumber: 2, score: 40, recommendation: 'Hold' }
+      ]
+    });
+    const req = { params: { id: '1' }, user: { id: 5 } };
+    const res = mockRes();
+
+    await applicationController.recommendOffer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.offer.create).not.toHaveBeenCalled();
+  });
+
+  test('accepts when the most recent round says Shortlist, regardless of an earlier round', async () => {
+    prisma.application.findUnique.mockResolvedValue({
+      id: 1, status: 'Interviewed',
+      interviewRounds: [
+        { id: 1, roundNumber: 1, score: 40, recommendation: 'Hold' },
+        { id: 2, roundNumber: 2, score: 90, recommendation: 'Shortlist' }
+      ]
+    });
+    prisma.offer.create.mockResolvedValue({ id: 11, applicationId: 1, status: 'Recommended' });
+    const req = { params: { id: '1' }, user: { id: 5 } };
+    const res = mockRes();
+
+    await applicationController.recommendOffer(req, res);
+
+    expect(prisma.offer.create).toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
   test('creates a Recommended offer and moves the application to Offered once a recommendation is finalized', async () => {
     prisma.application.findUnique.mockResolvedValue({
       id: 1, status: 'Interviewed',
@@ -345,6 +494,23 @@ describe('recommendOffer', () => {
   });
 });
 
+describe('listOffersPendingApproval', () => {
+  test('returns a paginated page of what the model finds', async () => {
+    const offers = [{ id: 1, status: 'Recommended' }, { id: 2, status: 'Recommended' }];
+    prisma.offer.findMany.mockResolvedValue(offers);
+    prisma.offer.count.mockResolvedValue(2);
+    const req = { query: {} };
+    const res = mockRes();
+
+    await applicationController.listOffersPendingApproval(req, res);
+
+    expect(prisma.offer.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { status: 'Recommended' }, skip: 0, take: 20
+    }));
+    expect(res.json).toHaveBeenCalledWith({ data: offers, total: 2, page: 1, limit: 20 });
+  });
+});
+
 describe('approveOffer', () => {
   test('returns 404 rather than crashing when the offer does not exist', async () => {
     prisma.offer.findUnique.mockResolvedValue(null);
@@ -357,22 +523,46 @@ describe('approveOffer', () => {
     expect(prisma.offer.update).not.toHaveBeenCalled();
   });
 
-  test('approves an existing offer and notifies the candidate they can now act on it', async () => {
+  test('refuses to approve an offer that is not at Recommended', async () => {
+    prisma.offer.findUnique.mockResolvedValue({ id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 } });
+    const req = { params: { offerId: '20' }, user: { id: 2 } };
+    const res = mockRes();
+
+    await applicationController.approveOffer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('returns 409 when a concurrent request already changed this offer', async () => {
     prisma.offer.findUnique.mockResolvedValue({ id: 20, status: 'Recommended', application: { candidateId: 7, vacancyId: 3 } });
-    prisma.offer.update.mockResolvedValue({
-      id: 20, status: 'Approved',
-      application: { candidateId: 7, vacancyId: 3, vacancy: { title: 'Air Traffic Controller' } }
-    });
+    prisma.offer.updateMany.mockResolvedValue({ count: 0 });
+    const req = { params: { offerId: '20' }, user: { id: 2 } };
+    const res = mockRes();
+
+    await applicationController.approveOffer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+  });
+
+  test('approves an existing offer and notifies the candidate they can now act on it', async () => {
+    prisma.offer.findUnique
+      .mockResolvedValueOnce({ id: 20, status: 'Recommended', application: { candidateId: 7, vacancyId: 3 } })
+      .mockResolvedValueOnce({
+        id: 20, status: 'Approved',
+        application: { candidateId: 7, vacancyId: 3, vacancy: { title: 'Air Traffic Controller' } }
+      });
+    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
     prisma.candidate.findUnique.mockResolvedValue({ id: 7, email: 'candidate@example.com' });
     const req = { params: { offerId: '20' }, user: { id: 2 } };
     const res = mockRes();
 
     await applicationController.approveOffer(req, res);
 
-    expect(prisma.offer.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 20 },
+    expect(prisma.offer.updateMany).toHaveBeenCalledWith({
+      where: { id: 20, status: 'Recommended' },
       data: expect.objectContaining({ status: 'Approved', approvedById: 2 })
-    }));
+    });
     expect(res.json).toHaveBeenCalled();
     // Approving is a resolution - any active OfferApproval escalation for
     // this offer should clear, not sit "active" forever.
@@ -446,16 +636,69 @@ describe('reject', () => {
 });
 
 describe('shortlist', () => {
+  test('rejects a non-integer rank', async () => {
+    const req = { params: { id: '1' }, body: { rank: 'first' }, user: { id: 3 } };
+    const res = mockRes();
+
+    await applicationController.shortlist(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.application.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('rejects an invalid listStatus', async () => {
+    const req = { params: { id: '1' }, body: { listStatus: 'Maybe' }, user: { id: 3 } };
+    const res = mockRes();
+
+    await applicationController.shortlist(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.application.updateMany).not.toHaveBeenCalled();
+  });
+
+  test.each(['Draft', 'Offered', 'Rejected', 'Withdrawn'])('refuses to shortlist an application at status %s', async (status) => {
+    const workflow = require('../src/services/workflowService');
+    jest.spyOn(workflow, 'assertCanShortlist').mockResolvedValue(undefined);
+    prisma.application.findUnique.mockResolvedValue({ id: 1, status, vacancy: { title: 'Role' } });
+    const req = { params: { id: '1' }, body: { rank: 1, listStatus: 'Primary' }, user: { id: 3 } };
+    const res = mockRes();
+
+    await applicationController.shortlist(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.application.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('returns 409 when a concurrent request already changed this application', async () => {
+    const workflow = require('../src/services/workflowService');
+    jest.spyOn(workflow, 'assertCanShortlist').mockResolvedValue(undefined);
+    prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'UnderReview', vacancy: { title: 'Role' } });
+    prisma.application.updateMany.mockResolvedValue({ count: 0 });
+    const req = { params: { id: '1' }, body: { rank: 1, listStatus: 'Primary' }, user: { id: 3 } };
+    const res = mockRes();
+
+    await applicationController.shortlist(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+  });
+
   test('notifies the candidate once shortlisted', async () => {
     const workflow = require('../src/services/workflowService');
     jest.spyOn(workflow, 'assertCanShortlist').mockResolvedValue(undefined);
-    prisma.application.update.mockResolvedValue({ id: 1, candidateId: 7, vacancy: { title: 'Role' } });
+    prisma.application.findUnique
+      .mockResolvedValueOnce({ id: 1, status: 'UnderReview', candidateId: 7, vacancy: { title: 'Role' } })
+      .mockResolvedValueOnce({ id: 1, status: 'Shortlisted', candidateId: 7, vacancy: { title: 'Role' } });
+    prisma.application.updateMany.mockResolvedValue({ count: 1 });
     prisma.candidate.findUnique.mockResolvedValue({ id: 7, email: 'candidate@example.com' });
     const req = { params: { id: '1' }, body: { rank: 1, listStatus: 'Primary' }, user: { id: 3 } };
     const res = mockRes();
 
     await applicationController.shortlist(req, res);
 
+    expect(prisma.application.updateMany).toHaveBeenCalledWith({
+      where: { id: 1, status: 'UnderReview' },
+      data: { status: 'Shortlisted', rank: 1, listStatus: 'Primary', rankVersion: { increment: 1 } }
+    });
     expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ candidateId: 7, type: 'ApplicationShortlisted' })
     }));
@@ -477,13 +720,40 @@ describe('acceptOffer / declineOffer ownership check', () => {
     expect(prisma.offer.update).not.toHaveBeenCalled();
   });
 
-  test('acceptOffer succeeds for the actual owning candidate', async () => {
+  test('acceptOffer refuses an offer that is not Approved', async () => {
     prisma.offer.findUnique.mockResolvedValue({
-      id: 20, application: { candidateId: 7, vacancyId: 3 }
+      id: 20, status: 'Recommended', application: { candidateId: 7, vacancyId: 3 }
     });
-    prisma.offer.update.mockResolvedValue({
-      id: 20, approvedById: 2, application: { candidateId: 7, vacancyId: 3 }
+    const req = { params: { offerId: '20' }, user: { id: 7 } };
+    const res = mockRes();
+
+    await applicationController.acceptOffer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('acceptOffer returns 409 when a concurrent request already changed this offer', async () => {
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 }
     });
+    prisma.offer.updateMany.mockResolvedValue({ count: 0 });
+    const req = { params: { offerId: '20' }, user: { id: 7 } };
+    const res = mockRes();
+
+    await applicationController.acceptOffer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+  });
+
+  test('acceptOffer succeeds for the actual owning candidate', async () => {
+    prisma.offer.findUnique
+      .mockResolvedValueOnce({ id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 } })
+      .mockResolvedValueOnce({
+        id: 20, status: 'Accepted', approvedById: 2,
+        application: { candidateId: 7, vacancyId: 3, vacancy: { positionsRequired: 1 } }
+      });
+    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 3, positionsRequired: 1, status: 'Open' });
     prisma.offer.count.mockResolvedValue(1);
 
@@ -492,7 +762,12 @@ describe('acceptOffer / declineOffer ownership check', () => {
 
     await applicationController.acceptOffer(req, res);
 
-    expect(prisma.offer.update).toHaveBeenCalled();
+    expect(prisma.offer.updateMany).toHaveBeenCalledWith({
+      where: { id: 20, status: 'Approved' }, data: { status: 'Accepted' }
+    });
+    // The vacancy fills up (1 accepted of 1 required) - recomputeVacancyStatus
+    // ran as part of the same transaction as the offer flip.
+    expect(prisma.vacancy.update).toHaveBeenCalledWith({ where: { id: 3 }, data: { status: 'Filled' } });
     expect(res.json).toHaveBeenCalled();
   });
 
@@ -506,5 +781,30 @@ describe('acceptOffer / declineOffer ownership check', () => {
     await applicationController.declineOffer(req, res);
 
     expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  test('declineOffer refuses an offer that is not Approved', async () => {
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 21, status: 'Declined', application: { candidateId: 7, vacancyId: 3 }
+    });
+    const req = { params: { offerId: '21' }, user: { id: 7 } };
+    const res = mockRes();
+
+    await applicationController.declineOffer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
+
+  test('declineOffer returns 409 when a concurrent request already changed this offer', async () => {
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 21, status: 'Approved', application: { candidateId: 7, vacancyId: 3 }
+    });
+    prisma.offer.updateMany.mockResolvedValue({ count: 0 });
+    const req = { params: { offerId: '21' }, user: { id: 7 } };
+    const res = mockRes();
+
+    await applicationController.declineOffer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
   });
 });

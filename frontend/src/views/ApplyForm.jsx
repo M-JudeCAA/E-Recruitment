@@ -13,10 +13,22 @@ import StepperRail from './apply-wizard/StepperRail';
 import JobDetailsStep from './apply-wizard/JobDetailsStep';
 import ProfileStep from './apply-wizard/ProfileStep';
 import DocumentsStep from './apply-wizard/DocumentsStep';
+import RefereesStep from './apply-wizard/RefereesStep';
 import QuestionsStep from './apply-wizard/QuestionsStep';
 import InternalProfileStep from './apply-wizard/InternalProfileStep';
 import ReviewStep from './apply-wizard/ReviewStep';
 import SubmitStep from './apply-wizard/SubmitStep';
+
+// A requirement's answerType (see ScreeningQuestionsEditor.jsx) decides how
+// its raw form-control value should be read: a 'number' row's TextField
+// hands back a numeric string (or '' when cleared, treated as "not
+// answered yet" the same way an unselected Select is), everything else is
+// a Select whose value is the literal string 'Yes'/'No'.
+function parseRequirementAnswer(requirements, id, rawValue) {
+  const req = (requirements || []).find((r) => r.id === id);
+  if (req?.answerType === 'number') return rawValue === '' ? undefined : Number(rawValue);
+  return rawValue === 'Yes';
+}
 
 export default function ApplyForm() {
   const { vacancyId } = useParams();
@@ -30,19 +42,31 @@ export default function ApplyForm() {
   // location, work authorization, LinkedIn/portfolio links. Separate from
   // internalProfileForm below, which is Internal-candidate-only.
   const [profileDetailsForm, setProfileDetailsForm] = useState({
-    nationalId: '', location: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: ''
+    nationalId: '', location: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '',
+    dateOfBirth: '', flyingHours: ''
   });
   const [internalProfileForm, setInternalProfileForm] = useState({});
   // Application-level fields (vary per application) - the Questions step.
   const [questionsForm, setQuestionsForm] = useState({
     desiredSalary: '', openToRelocate: '', earliestStartDate: '', whyThisRole: ''
   });
-  // Answers to the vacancy's Desirable Requirements Yes/No questions -
-  // kept as { [requirementId]: true | false }, one key per question the
-  // candidate has actually answered so far. Converted to the [{id,
-  // answer}] array the backend expects only at save time (see saveDraft).
+  // Answers to the vacancy's Desirable Requirements questions - kept as
+  // { [requirementId]: true | false | number }, one key per question the
+  // candidate has actually answered so far (boolean for a Yes/No row,
+  // number for a 'number' row - see parseRequirementAnswer above).
+  // Converted to the [{id, answer, ...}] array the backend expects only at
+  // save time (see saveDraft).
   const [desirableAnswers, setDesirableAnswers] = useState({});
-  const [cv, setCv] = useState(null);
+  // Same shape/lifecycle as desirableAnswers above, for the vacancy's
+  // mandatory eligibility (disqualifying) questions - see
+  // Vacancy.disqualifyingRequirements.
+  const [disqualifyingAnswers, setDisqualifyingAnswers] = useState({});
+  // Fixed 3-slot array (never fewer, never more) - see RefereesStep.jsx.
+  // Application-level, same lifecycle as questionsForm/desirableAnswers
+  // below - loaded from an existing draft's referees if one exists,
+  // otherwise starts empty.
+  const emptyReferee = { name: '', relationship: '', organization: '', phone: '', email: '' };
+  const [refereesForm, setRefereesForm] = useState([{ ...emptyReferee }, { ...emptyReferee }, { ...emptyReferee }]);
   const [coverLetter, setCoverLetter] = useState(null);
 
   const [stepIndex, setStepIndex] = useState(0);
@@ -78,7 +102,9 @@ export default function ApplyForm() {
       location: res.data.location || '',
       workAuthorization: res.data.workAuthorization || '',
       linkedinUrl: res.data.linkedinUrl || '',
-      portfolioUrl: res.data.portfolioUrl || ''
+      portfolioUrl: res.data.portfolioUrl || '',
+      dateOfBirth: res.data.dateOfBirth ? res.data.dateOfBirth.slice(0, 10) : '',
+      flyingHours: res.data.flyingHours ?? ''
     });
     if (res.data.internalProfile) setInternalProfileForm(res.data.internalProfile);
     if (!isProfileComplete(res.data)) setShowProfileModal(true);
@@ -100,6 +126,15 @@ export default function ApplyForm() {
         setDesirableAnswers(
           Object.fromEntries((existing.desirableResponses || []).map((r) => [r.id, r.answer]))
         );
+        setDisqualifyingAnswers(
+          Object.fromEntries((existing.disqualifyingResponses || []).map((r) => [r.id, r.answer]))
+        );
+        // Padded back out to exactly 3 slots regardless of how many were
+        // actually saved (a candidate who left the step early may have
+        // saved a draft with fewer than 3) - RefereesStep always renders
+        // 3 fixed slots.
+        const savedReferees = existing.referees || [];
+        setRefereesForm([0, 1, 2].map((i) => ({ ...emptyReferee, ...savedReferees[i] })));
       }
       setApplicationsChecked(true);
     });
@@ -108,7 +143,8 @@ export default function ApplyForm() {
   const steps = [
     { key: 'jobDetails', label: 'Job Details', note: 'About this role' },
     { key: 'profile', label: 'Profile', note: 'Who you are' },
-    { key: 'documents', label: 'Documents', note: 'CV & links' },
+    { key: 'documents', label: 'Documents', note: 'Cover letter & links' },
+    { key: 'referees', label: 'Referees', note: '3 references' },
     { key: 'questions', label: 'Questions', note: 'A few specifics' },
     ...(candidate?.candidateType === 'Internal'
       ? [{ key: 'internal', label: 'Internal Profile', note: 'Employment details' }]
@@ -123,6 +159,60 @@ export default function ApplyForm() {
   const back = () => goTo(Math.max(stepIndex - 1, 0));
   const isComplete = (i) => i < stepIndex || (i === steps.length - 1 && ['Submitted', 'UnderReview'].includes(application?.status));
 
+  // What's missing before Continue is allowed to advance past this step -
+  // returns a list of human-readable field names, empty when the step is
+  // satisfied. Gates the Continue button below (and, transitively,
+  // StepperRail's own visited[i]-only navigation - a step can never become
+  // "visited" without going through here first, so there's no separate
+  // bypass to close there). JobDetails/Review/Submit have nothing to
+  // validate - Review is read-only, and Submit has no Continue button at
+  // all (see the footer render below).
+  const stepErrors = (key) => {
+    switch (key) {
+      case 'profile': {
+        const missing = [];
+        if (!profileDetailsForm.location) missing.push('Current location');
+        if (!profileDetailsForm.nationalId) missing.push('National ID number');
+        if (!profileDetailsForm.workAuthorization) missing.push('Work authorization');
+        if (!(profile?.education?.length)) missing.push('At least one education entry');
+        if (!(profile?.workExperience?.length)) missing.push('At least one work experience entry');
+        return missing;
+      }
+      case 'referees': {
+        const missing = [];
+        refereesForm.forEach((r, i) => {
+          if (!r.name || !r.phone || !r.email) missing.push(`Referee ${i + 1} (name, phone, email)`);
+        });
+        return missing;
+      }
+      case 'questions': {
+        const missing = [];
+        if (!questionsForm.openToRelocate) missing.push('Open to relocating?');
+        if (!questionsForm.whyThisRole?.trim()) missing.push('Why this role?');
+        (vacancy.desirableRequirements || []).forEach((r) => {
+          if (desirableAnswers[r.id] === undefined) missing.push(r.text);
+        });
+        (vacancy.disqualifyingRequirements || []).forEach((r) => {
+          if (disqualifyingAnswers[r.id] === undefined) missing.push(r.text);
+        });
+        return missing;
+      }
+      case 'internal': {
+        const missing = [];
+        if (!internalProfileForm.employeeId) missing.push('Employee ID');
+        if (!internalProfileForm.dateJoined) missing.push('Date joined UCAA');
+        if (!internalProfileForm.department) missing.push('Current department');
+        if (!internalProfileForm.position) missing.push('Current position');
+        if (!internalProfileForm.supervisorName) missing.push("Supervisor's name");
+        if (!internalProfileForm.supervisorEmail) missing.push("Supervisor's email");
+        return missing;
+      }
+      default:
+        return [];
+    }
+  };
+  const currentStepErrors = stepErrors(steps[stepIndex].key);
+
   // Application-level - CV/cover letter plus the Questions step answers,
   // all persisted through the same draft-save endpoint so "Save as draft"
   // captures everything entered so far in one request.
@@ -131,7 +221,6 @@ export default function ApplyForm() {
     try {
       const formData = new FormData();
       formData.append('vacancyId', vacancyId);
-      if (cv) formData.append('cv', cv);
       if (coverLetter) formData.append('coverLetter', coverLetter);
       formData.append('desiredSalary', questionsForm.desiredSalary);
       formData.append('openToRelocate', questionsForm.openToRelocate);
@@ -139,9 +228,15 @@ export default function ApplyForm() {
       formData.append('whyThisRole', questionsForm.whyThisRole);
       formData.append('desirableResponses', JSON.stringify(
         Object.entries(desirableAnswers)
-          .filter(([, answer]) => typeof answer === 'boolean')
+          .filter(([, answer]) => typeof answer === 'boolean' || (typeof answer === 'number' && Number.isFinite(answer)))
           .map(([id, answer]) => ({ id, answer }))
       ));
+      formData.append('disqualifyingResponses', JSON.stringify(
+        Object.entries(disqualifyingAnswers)
+          .filter(([, answer]) => typeof answer === 'boolean' || (typeof answer === 'number' && Number.isFinite(answer)))
+          .map(([id, answer]) => ({ id, answer }))
+      ));
+      formData.append('referees', JSON.stringify(refereesForm));
       const res = await client.post('/api/applications', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       setApplication(res.data);
       setMessage('Draft saved.');
@@ -236,10 +331,10 @@ export default function ApplyForm() {
             <StepperRail steps={steps} stepIndex={stepIndex} isComplete={isComplete} visited={visited} goTo={goTo} />
 
             {/* min-w-0 overrides flex's default min-width:auto - without it, an
-                unbreakable long string anywhere inside (e.g. a long CV filename
-                with no spaces) sets this column's minimum content size to the
-                string's full width, forcing the whole wizard layout wider and
-                getting hard-clipped by the card's overflow:hidden above, no
+                unbreakable long string anywhere inside (e.g. a long cover letter
+                filename with no spaces) sets this column's minimum content size
+                to the string's full width, forcing the whole wizard layout wider
+                and getting hard-clipped by the card's overflow:hidden above, no
                 matter what truncation styling exists further down the tree. */}
             <div className="flex-1 min-w-0 px-6 md:px-8 py-6 md:py-8">
               {steps[stepIndex].key === 'jobDetails' && <JobDetailsStep vacancy={vacancy} />}
@@ -249,26 +344,34 @@ export default function ApplyForm() {
                   setProfileDetail={(key) => (e) => setProfileDetailsForm({ ...profileDetailsForm, [key]: e.target.value })} />
               )}
               {steps[stepIndex].key === 'documents' && (
-                <DocumentsStep cv={cv} coverLetter={coverLetter} setCv={setCv} setCoverLetter={setCoverLetter}
+                <DocumentsStep coverLetter={coverLetter} setCoverLetter={setCoverLetter}
                   portfolioUrl={profileDetailsForm.portfolioUrl}
                   setPortfolioUrl={(e) => setProfileDetailsForm({ ...profileDetailsForm, portfolioUrl: e.target.value })} />
+              )}
+              {steps[stepIndex].key === 'referees' && (
+                <RefereesStep referees={refereesForm}
+                  setReferee={(i, key) => (e) => setRefereesForm(refereesForm.map((r, idx) => idx === i ? { ...r, [key]: e.target.value } : r))} />
               )}
               {steps[stepIndex].key === 'questions' && (
                 <QuestionsStep questions={questionsForm}
                   set={(key) => (e) => setQuestionsForm({ ...questionsForm, [key]: e.target.value })}
                   desirableRequirements={vacancy.desirableRequirements}
                   desirableAnswers={desirableAnswers}
-                  setDesirableAnswer={(id) => (e) => setDesirableAnswers({ ...desirableAnswers, [id]: e.target.value === 'Yes' })} />
+                  setDesirableAnswer={(id) => (e) => setDesirableAnswers({ ...desirableAnswers, [id]: parseRequirementAnswer(vacancy.desirableRequirements, id, e.target.value) })}
+                  disqualifyingRequirements={vacancy.disqualifyingRequirements}
+                  disqualifyingAnswers={disqualifyingAnswers}
+                  setDisqualifyingAnswer={(id) => (e) => setDisqualifyingAnswers({ ...disqualifyingAnswers, [id]: parseRequirementAnswer(vacancy.disqualifyingRequirements, id, e.target.value) })} />
               )}
               {steps[stepIndex].key === 'internal' && (
                 <InternalProfileStep internalProfile={internalProfileForm}
                   set={(key) => (e) => setInternalProfileForm({ ...internalProfileForm, [key]: e.target.value })} />
               )}
               {steps[stepIndex].key === 'review' && (
-                <ReviewStep profile={profile} cv={cv} coverLetter={coverLetter}
+                <ReviewStep profile={profile} coverLetter={coverLetter} referees={refereesForm}
                   profileDetails={profileDetailsForm} questions={questionsForm} internalProfile={internalProfileForm}
                   candidateType={candidate?.candidateType} goTo={goTo} stepIndexes={stepIndexes}
-                  desirableRequirements={vacancy.desirableRequirements} desirableAnswers={desirableAnswers} />
+                  desirableRequirements={vacancy.desirableRequirements} desirableAnswers={desirableAnswers}
+                  disqualifyingRequirements={vacancy.disqualifyingRequirements} disqualifyingAnswers={disqualifyingAnswers} />
               )}
               {steps[stepIndex].key === 'submit' && (
                 <SubmitStep vacancy={vacancy} applicationId={application?.id} status={application?.status}
@@ -278,6 +381,17 @@ export default function ApplyForm() {
 
               <Alert type="success" message={message} />
               <Alert type="error" message={error} />
+
+              {/* Told plainly, not just implied by a disabled button - a
+                  disabled Continue with no explanation reads as broken,
+                  not gated. Only ever shown for the step actually being
+                  viewed, so it disappears the moment its own fields are
+                  filled in without needing to click Continue first. */}
+              {currentStepErrors.length > 0 && (
+                <p style={{ fontSize: 13, color: 'var(--color-danger)', marginTop: 16 }}>
+                  Before continuing, please complete: {currentStepErrors.join(', ')}
+                </p>
+              )}
 
               {/* Back/Save/Continue stay visible while viewing the Submit
                   step pre-submission - only hidden once the application has
@@ -297,19 +411,19 @@ export default function ApplyForm() {
                           {saving ? 'Saving...' : 'Save as draft'}
                         </Button>
                       )}
-                      <Button type="button" disabled={continuing} onClick={async () => {
+                      <Button type="button" disabled={continuing || currentStepErrors.length > 0} onClick={async () => {
                         setContinuing(true);
                         try {
                           if (steps[stepIndex].key === 'profile' || steps[stepIndex].key === 'documents') await saveProfileDetails();
                           if (steps[stepIndex].key === 'internal') await saveInternalProfile();
                           // Guarantees an Application draft row exists (with
-                          // whatever cv/cover letter/answers have been entered so
-                          // far) by the time the candidate can reach Review/Submit
-                          // - without this, a candidate who never clicks the
-                          // separate "Save as draft" button reaches Submit with
-                          // applicationId still null, and Send application calls
-                          // PATCH /api/applications/undefined/submit.
-                          if (steps[stepIndex].key === 'documents' || steps[stepIndex].key === 'questions') await saveDraft();
+                          // whatever cover letter/referees/answers have been
+                          // entered so far) by the time the candidate can reach
+                          // Review/Submit - without this, a candidate who never
+                          // clicks the separate "Save as draft" button reaches
+                          // Submit with applicationId still null, and Send
+                          // application calls PATCH /api/applications/undefined/submit.
+                          if (['documents', 'referees', 'questions'].includes(steps[stepIndex].key)) await saveDraft();
                           next();
                         } finally {
                           setContinuing(false);

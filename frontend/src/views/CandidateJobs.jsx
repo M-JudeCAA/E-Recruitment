@@ -156,6 +156,7 @@ export default function CandidateJobs() {
                     <div style={{ fontWeight: 700, marginBottom: 8 }}>
                       {v.jobRef ? <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{v.jobRef}: </span> : null}
                       {v.title}
+                      {v.readvertisedFromId != null && <span style={{ marginLeft: 8 }}><StatusBadge status="Readvertised" /></span>}
                       {v.minimumExperienceYears ? (
                         <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--color-text-muted)' }}>
                           {' '}({v.minimumExperienceYears} Yrs Exp.)
