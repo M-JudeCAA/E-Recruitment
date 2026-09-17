@@ -104,28 +104,30 @@ function ActivityFeed({ items, loading }) {
       ) : items.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No approvals recorded yet.</p>
       ) : (
-        items.map((item, i) => {
-          const Icon = ACTIVITY_ICON[item.type] || CheckCircle2;
-          return (
-            <div key={i} style={{
-              display: 'flex', gap: 10, alignItems: 'flex-start', padding: '8px 0',
-              borderTop: i > 0 ? '1px solid var(--color-border)' : 'none'
-            }}>
-              <span style={{
-                width: 28, height: 28, borderRadius: '50%', background: 'var(--color-bg-subtle)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2
+        <div className="panel-scroll">
+          {items.map((item, i) => {
+            const Icon = ACTIVITY_ICON[item.type] || CheckCircle2;
+            return (
+              <div key={i} style={{
+                display: 'flex', gap: 10, alignItems: 'flex-start', padding: '8px 0',
+                borderTop: i > 0 ? '1px solid var(--color-border)' : 'none'
               }}>
-                <Icon size={14} color="var(--color-primary)" />
-              </span>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13 }}>
-                  <strong>{item.actor || 'Someone'}</strong> {item.text}
+                <span style={{
+                  width: 28, height: 28, borderRadius: '50%', background: 'var(--color-bg-subtle)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2
+                }}>
+                  <Icon size={14} color="var(--color-primary)" />
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13 }}>
+                    <strong>{item.actor || 'Someone'}</strong> {item.text}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>{timeAgo(item.at)}</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>{timeAgo(item.at)}</div>
               </div>
-            </div>
-          );
-        })
+            );
+          })}
+        </div>
       )}
     </Card>
   );

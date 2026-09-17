@@ -54,20 +54,22 @@ function ApprovalTurnaroundTable({ rows, loading }) {
       ) : rows.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No resolved approvals yet.</p>
       ) : (
-        rows.map((r, i) => (
-          <div key={r.approver} style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0',
-            borderTop: i > 0 ? '1px solid var(--color-border)' : 'none'
-          }}>
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{r.approver}</div>
-              <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{r.count} decision{r.count === 1 ? '' : 's'}</div>
+        <div className="panel-scroll">
+          {rows.map((r, i) => (
+            <div key={r.approver} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0',
+              borderTop: i > 0 ? '1px solid var(--color-border)' : 'none'
+            }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{r.approver}</div>
+                <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{r.count} decision{r.count === 1 ? '' : 's'}</div>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)' }}>
+                {r.avgHours >= 24 ? `${(r.avgHours / 24).toFixed(1)}d` : `${r.avgHours}h`} avg
+              </div>
             </div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)' }}>
-              {r.avgHours >= 24 ? `${(r.avgHours / 24).toFixed(1)}d` : `${r.avgHours}h`} avg
-            </div>
-          </div>
-        ))
+          ))}
+        </div>
       )}
     </Card>
   );
@@ -84,16 +86,18 @@ function DelegationActivityList({ rows, loading }) {
       ) : rows.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No delegated actions on record yet.</p>
       ) : (
-        rows.map((r, i) => (
-          <div key={r.id} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
-            <div style={{ fontSize: 13 }}>
-              <strong>{r.delegateName}</strong> acted for <strong>{r.delegatorName}</strong>
+        <div className="panel-scroll">
+          {rows.map((r, i) => (
+            <div key={r.id} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
+              <div style={{ fontSize: 13 }}>
+                <strong>{r.delegateName}</strong> acted for <strong>{r.delegatorName}</strong>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                {r.action} &middot; {new Date(r.usedAt).toLocaleString()}
+              </div>
             </div>
-            <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-              {r.action} &middot; {new Date(r.usedAt).toLocaleString()}
-            </div>
-          </div>
-        ))
+          ))}
+        </div>
       )}
     </Card>
   );
@@ -110,17 +114,19 @@ function PanelWorkloadTable({ rows, loading }) {
       ) : rows.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No scored interview rounds yet.</p>
       ) : (
-        rows.map((r, i) => (
-          <div key={r.name} style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0',
-            borderTop: i > 0 ? '1px solid var(--color-border)' : 'none'
-          }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</div>
-            <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-              {r.roundsScored} scored &middot; avg {r.avgScore}
+        <div className="panel-scroll">
+          {rows.map((r, i) => (
+            <div key={r.name} style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0',
+              borderTop: i > 0 ? '1px solid var(--color-border)' : 'none'
+            }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</div>
+              <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+                {r.roundsScored} scored &middot; avg {r.avgScore}
+              </div>
             </div>
-          </div>
-        ))
+          ))}
+        </div>
       )}
     </Card>
   );

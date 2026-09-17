@@ -215,6 +215,16 @@ input::placeholder, textarea::placeholder {
   background: var(--color-bg-subtle);
 }
 
+/* Fixed-height scroll well for a dashboard panel's list body (HRHome /
+   ExecutiveDashboard cards: ClosingSoon, RecentVacancies, UpcomingInterviews,
+   FollowUpsPanel, ActivityFeed) - keeps every panel in a row the same
+   height regardless of item count, instead of the tallest panel stretching
+   the whole row. */
+.panel-scroll {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 /* Clickable Card (see Card.jsx's optional onClick prop) - a subtle hover
    lift so a whole card reads as clickable, not just the buttons inside it. */
 .card-clickable {
