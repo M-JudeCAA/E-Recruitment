@@ -12,6 +12,7 @@ import Card from '../components/Card';
 import Alert from '../components/Alert';
 import LiveIndicator from '../components/LiveIndicator';
 import FollowUpsPanel from '../components/FollowUpsPanel';
+import Skeleton from '../components/Skeleton';
 import StatusDonutChart from '../components/charts/StatusDonutChart';
 import DirectorateBarChart from '../components/charts/DirectorateBarChart';
 import TrendAreaChart from '../components/charts/TrendAreaChart';
@@ -100,7 +101,14 @@ function ActivityFeed({ items, loading }) {
         Recent approval activity
       </div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <div>
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '8px 0', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
+              <Skeleton width={28} height={28} radius="50%" style={{ flexShrink: 0 }} />
+              <Skeleton width={`${60 - i * 8}%`} height={13} />
+            </div>
+          ))}
+        </div>
       ) : items.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No approvals recorded yet.</p>
       ) : (

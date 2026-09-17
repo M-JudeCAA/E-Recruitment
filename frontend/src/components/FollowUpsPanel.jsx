@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, Clock, CheckCircle2 } from 'lucide-react';
 import Card from './Card';
+import Skeleton from './Skeleton';
 import { urgencyOf, withLiveCountdown } from '../utils/slaUrgency';
 
 const TIER_ICON = { overdue: AlertTriangle, 'due-soon': Clock, 'on-track': CheckCircle2 };
@@ -24,7 +25,14 @@ export default function FollowUpsPanel({ items, loading, actionable, emptyText =
     <Card style={{ marginBottom: 0 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', marginBottom: 10 }}>Follow-ups</div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <div>
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
+              <Skeleton width={15} height={15} radius="50%" style={{ flexShrink: 0 }} />
+              <Skeleton width={`${65 - i * 10}%`} height={13} />
+            </div>
+          ))}
+        </div>
       ) : live.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>{emptyText}</p>
       ) : (

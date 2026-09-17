@@ -8,6 +8,7 @@ import Card from '../components/Card';
 import Alert from '../components/Alert';
 import LiveIndicator from '../components/LiveIndicator';
 import { STATUS_COLORS } from '../components/StatusBadge';
+import Skeleton from '../components/Skeleton';
 import MonthlyMetricChart from '../components/charts/MonthlyMetricChart';
 import MonthlyStackedBarChart from '../components/charts/MonthlyStackedBarChart';
 import { CHART_SERIES } from '../theme/chartPalette';
@@ -43,6 +44,23 @@ const COMPLIANCE_THRESHOLDS = [
   { min: 0, color: 'var(--color-danger)' }
 ];
 
+// Shared by the three small panel-list cards below (turnaround, delegation
+// activity, panel workload) - all three render the same two-line-per-row
+// shape, so one skeleton mimics all of them rather than a plain "Loading…"
+// string per card. See Skeleton.jsx's own comment for why.
+function PanelRowsSkeleton() {
+  return (
+    <div>
+      {[0, 1, 2].map((i) => (
+        <div key={i} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
+          <Skeleton width={`${55 - i * 8}%`} height={13} style={{ marginBottom: 6 }} />
+          <Skeleton width="30%" height={11} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ApprovalTurnaroundTable({ rows, loading }) {
   return (
     <Card style={{ marginBottom: 0 }}>
@@ -50,7 +68,7 @@ function ApprovalTurnaroundTable({ rows, loading }) {
         Approval turnaround by approver
       </div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <PanelRowsSkeleton />
       ) : rows.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No resolved approvals yet.</p>
       ) : (
@@ -82,7 +100,7 @@ function DelegationActivityList({ rows, loading }) {
         Recent delegation activity
       </div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <PanelRowsSkeleton />
       ) : rows.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No delegated actions on record yet.</p>
       ) : (
@@ -110,7 +128,7 @@ function PanelWorkloadTable({ rows, loading }) {
         Panel workload
       </div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <PanelRowsSkeleton />
       ) : rows.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No scored interview rounds yet.</p>
       ) : (

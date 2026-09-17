@@ -1,11 +1,22 @@
 const prisma = require('../config/db');
 const { sendMail } = require('../utils/mailer');
 
+// Mirrors applicationController.NOT_SHORTLISTABLE - kept here too (not
+// imported from a controller, which services never depend on) since this
+// is the one check both shortlist() and saveRanking() need. Before this,
+// only shortlist() enforced it directly; saveRanking() had no status gate
+// at all and could silently write a Draft/Offered/Rejected/Withdrawn
+// application straight back to ShortlistProposed - most easily triggered
+// by a stale ranking UI still holding a since-rejected candidate's id
+// (see ApplicationManagement.jsx's alreadyRanked, which is status-agnostic).
+const NOT_SHORTLISTABLE = ['Draft', 'Offered', 'Rejected', 'Withdrawn'];
+
 /**
- * Mandatory internal-candidate verification gate.
- * Blocks Application -> Shortlisted unless HR has verified employment
- * with either comments or a manager recommendation letter on file.
- * Applies regardless of vacancy posting_type or department match.
+ * Mandatory internal-candidate verification gate, plus a status gate every
+ * shortlisting entry point (single shortlist() and bulk saveRanking()) now
+ * shares. Blocks Application -> Shortlisted unless HR has verified
+ * employment with either comments or a manager recommendation letter on
+ * file. Applies regardless of vacancy posting_type or department match.
  */
 async function assertCanShortlist(applicationId) {
   const application = await prisma.application.findUnique({
@@ -13,6 +24,10 @@ async function assertCanShortlist(applicationId) {
     include: { candidate: { include: { internalProfile: true } } }
   });
   if (!application) throw new Error('Application not found');
+
+  if (NOT_SHORTLISTABLE.includes(application.status)) {
+    throw new Error(`An application at status "${application.status}" cannot be shortlisted here`);
+  }
 
   if (application.candidate.candidateType === 'Internal') {
     const profile = application.candidate.internalProfile;
@@ -33,6 +48,24 @@ async function assertNotSelfApproval(vacancyId, approverId) {
   const vacancy = await prisma.vacancy.findUnique({ where: { id: vacancyId } });
   if (vacancy && vacancy.createdById === approverId) {
     throw new Error('Self-approval blocked: route this approval to DHRA / Manager HR instead');
+  }
+}
+
+/**
+ * Self-approval block for the shortlist propose/approve split: whoever
+ * ran shortlist()/saveRanking for an application (shortlistProposedById)
+ * cannot also be the one who approves that vacancy's proposed shortlist -
+ * must route to a different Principal HR Officer or above. Checked against
+ * every ShortlistProposed application for the vacancy, not just one, since
+ * saveRanking's batch can carry proposals made at different times by
+ * different people.
+ */
+async function assertNotSelfApprovedShortlist(vacancyId, approverId) {
+  const proposed = await prisma.application.findMany({
+    where: { vacancyId, status: 'ShortlistProposed' }
+  });
+  if (proposed.some((a) => a.shortlistProposedById === approverId)) {
+    throw new Error('Self-approval blocked: you proposed this shortlist - a different Principal HR Officer or above must approve it');
   }
 }
 
@@ -82,6 +115,15 @@ async function recomputeVacancyStatus(vacancyId, client = prisma) {
  * different candidates' offers for the same vacancy could both be accepted
  * past positionsRequired.
  */
+// Default Prisma interactive-transaction timeout is 5s, and default maxWait
+// (time to acquire a transaction slot before even starting) is 2s - both
+// too tight for this DB's real-world latency (observed failing with
+// "Transaction API error: Transaction not found" under normal load, not
+// just when overloaded). Widened here and on handleOfferDeclined below,
+// the only two interactive (multi-query, JS-driven) transactions in this
+// file - saveRanking's own $transaction (vacancyController.js) is the
+// simpler array/batch form, which doesn't hold a transaction open across
+// JS-side awaits the way these two do, so it isn't exposed to the same risk.
 async function acceptOfferTransactionally(offerId) {
   return prisma.$transaction(async (tx) => {
     const result = await tx.offer.updateMany({
@@ -96,7 +138,7 @@ async function acceptOfferTransactionally(offerId) {
     });
     await recomputeVacancyStatus(offer.application.vacancyId, tx);
     return { offer };
-  });
+  }, { timeout: 15000, maxWait: 5000 });
 }
 
 /**
@@ -139,7 +181,7 @@ async function handleOfferDeclined(offerId) {
 
     await recomputeVacancyStatus(vacancyId, tx);
     return { promoted: nextReserve || null };
-  });
+  }, { timeout: 15000, maxWait: 5000 });
 }
 
 /**
@@ -228,6 +270,7 @@ async function logVacancyPostingTypeTransition(vacancyId, fromType, toType, perf
 module.exports = {
   assertCanShortlist,
   assertNotSelfApproval,
+  assertNotSelfApprovedShortlist,
   recomputeVacancyStatus,
   acceptOfferTransactionally,
   handleOfferDeclined,

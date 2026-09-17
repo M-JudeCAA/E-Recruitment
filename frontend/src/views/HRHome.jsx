@@ -11,6 +11,7 @@ import StatusBadge from '../components/StatusBadge';
 import LiveIndicator from '../components/LiveIndicator';
 import FollowUpsPanel from '../components/FollowUpsPanel';
 import StatsStrip from '../components/StatsStrip';
+import Skeleton from '../components/Skeleton';
 import StatusDonutChart from '../components/charts/StatusDonutChart';
 import MiniSparkline from '../components/charts/MiniSparkline';
 import { debounce } from '../utils/debounce';
@@ -65,6 +66,23 @@ const VACANCY_STATUS_ORDER = ['PendingApproval', 'Open', 'PartiallyFilled', 'Fil
 
 const MS_PER_DAY = 86400000;
 
+// Shared by ClosingSoon/RecentVacancies/UpcomingInterviews below - all
+// three render the same two-line-per-row link list, so one skeleton mimics
+// all of them rather than a plain "Loading…" string per card. See
+// Skeleton.jsx's own comment for why.
+function PanelRowsSkeleton() {
+  return (
+    <div>
+      {[0, 1, 2].map((i) => (
+        <div key={i} style={{ padding: '8px 0', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
+          <Skeleton width={`${60 - i * 8}%`} height={14} style={{ marginBottom: 6 }} />
+          <Skeleton width="35%" height={12} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Open/PartiallyFilled vacancies with a deadline in the next 7 days,
 // soonest first - derived entirely from the vacancy list HRHome already
 // fetches for the KPI cards, so this costs no extra request.
@@ -83,7 +101,7 @@ function ClosingSoon({ vacancies, loading }) {
         Closing soon
       </div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <PanelRowsSkeleton />
       ) : items.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Nothing closing in the next 7 days.</p>
       ) : (
@@ -123,7 +141,7 @@ function RecentVacancies({ vacancies, loading }) {
         Recent vacancies
       </div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <PanelRowsSkeleton />
       ) : items.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No vacancies created yet.</p>
       ) : (
@@ -164,7 +182,7 @@ function UpcomingInterviews({ items, loading }) {
         Upcoming interviews (7 days)
       </div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <PanelRowsSkeleton />
       ) : items.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Nothing scheduled in the next 7 days.</p>
       ) : (
@@ -216,7 +234,14 @@ function ScreeningBreakdown({ data, loading }) {
         Screening breakdown
       </div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <div style={{ display: 'flex', gap: 10 }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} style={{ flex: 1 }}>
+              <Skeleton width="70%" height={11} style={{ marginBottom: 8 }} />
+              <Skeleton width="45%" height={20} />
+            </div>
+          ))}
+        </div>
       ) : !data || (data.passed + data.failed + data.notYetScreened) === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No applications have entered review yet.</p>
       ) : (

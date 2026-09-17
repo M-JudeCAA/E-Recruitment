@@ -1,6 +1,7 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer } from 'recharts';
 import Card from '../Card';
+import Skeleton from '../Skeleton';
 import { CHART_GRID, CHART_AXIS_TEXT } from '../../theme/chartPalette';
 
 // Generic monthly stacked-bar chart over an arbitrary set of series -
@@ -16,7 +17,7 @@ export default function MonthlyStackedBarChart({ title, data, series, loading, e
     <Card style={{ marginBottom: 0 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', marginBottom: 10 }}>{title}</div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <Skeleton width="100%" height={220} radius={8} />
       ) : !hasData ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>{emptyText}</p>
       ) : (

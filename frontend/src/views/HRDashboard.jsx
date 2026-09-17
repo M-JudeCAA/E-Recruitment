@@ -72,6 +72,23 @@ function daysLeftLabel(deadline) {
   return { text: `in ${daysLeft} days`, urgent: daysLeft <= 7 };
 }
 
+// Mimics the Interviews/Offers tabs' own card rows (name + vacancy line)
+// so the cross-vacancy queue doesn't visibly jump in layout once the real
+// list lands - see Skeleton.jsx's own comment for why this beats a plain
+// "Loading..." string here.
+function CrossQueueRowSkeleton() {
+  return (
+    <>
+      {[0, 1, 2].map((i) => (
+        <Card key={i}>
+          <Skeleton width={`${50 - i * 6}%`} height={15} style={{ marginBottom: 8 }} />
+          <Skeleton width="30%" height={12} />
+        </Card>
+      ))}
+    </>
+  );
+}
+
 export default function HRDashboard() {
   const { staff } = useAuth();
   const location = useLocation();
@@ -1076,7 +1093,7 @@ export default function HRDashboard() {
                   </div>
                 </div>
                 <StatsStrip stats={interviewStats} />
-                {crossLoading && <p>Loading interviews...</p>}
+                {crossLoading && <CrossQueueRowSkeleton />}
                 {interviewApps?.length === 0 && <p>No interviews scheduled yet.</p>}
                 {interviewApps?.length > 0 && view === 'table' && (
                   <>
@@ -1165,7 +1182,7 @@ export default function HRDashboard() {
                   </div>
                 </div>
                 <StatsStrip stats={offerStats} />
-                {crossLoading && <p>Loading offers...</p>}
+                {crossLoading && <CrossQueueRowSkeleton />}
                 {offerApps?.length === 0 && <p>No offers recommended yet.</p>}
                 {offerApps?.length > 0 && view === 'table' && (
                   <>

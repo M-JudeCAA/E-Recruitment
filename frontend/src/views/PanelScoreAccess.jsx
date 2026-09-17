@@ -7,6 +7,7 @@ import TextField from '../components/TextField';
 import TextArea from '../components/TextArea';
 import Button from '../components/Button';
 import Alert from '../components/Alert';
+import Skeleton from '../components/Skeleton';
 
 // Public page - a panelist reaches this via their emailed/shared link,
 // with no account and no login. The token in the URL is the only
@@ -60,7 +61,21 @@ export default function PanelScoreAccess() {
     );
   }
 
-  if (!context) return <p>Loading...</p>;
+  if (!context) {
+    return (
+      <div style={{ maxWidth: 420 }}>
+        <Skeleton width={200} height={22} style={{ marginBottom: 8 }} />
+        <Skeleton width={280} height={14} style={{ marginBottom: 20 }} />
+        <Card>
+          <Skeleton width={220} height={15} style={{ marginBottom: 8 }} />
+          <Skeleton width={160} height={12} />
+        </Card>
+        <Skeleton width="100%" height={38} radius={6} style={{ marginTop: 16, marginBottom: 12 }} />
+        <Skeleton width="100%" height={80} radius={6} style={{ marginBottom: 12 }} />
+        <Skeleton width={130} height={36} radius={6} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: 420 }}>

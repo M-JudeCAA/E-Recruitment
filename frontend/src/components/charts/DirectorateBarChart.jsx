@@ -1,6 +1,7 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer } from 'recharts';
 import Card from '../Card';
+import Skeleton from '../Skeleton';
 import { STATUS_COLORS } from '../StatusBadge';
 import { CHART_GRID, CHART_AXIS_TEXT } from '../../theme/chartPalette';
 
@@ -16,7 +17,14 @@ export default function DirectorateBarChart({ rows, loading }) {
         Headcount by directorate
       </div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Skeleton width={70} height={11} />
+              <Skeleton width={`${70 - i * 12}%`} height={16} radius={4} />
+            </div>
+          ))}
+        </div>
       ) : data.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No active vacancies yet.</p>
       ) : (

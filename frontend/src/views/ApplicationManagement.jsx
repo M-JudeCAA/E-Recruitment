@@ -13,14 +13,35 @@ import Alert from '../components/Alert';
 import Select from '../components/Select';
 import TextField from '../components/TextField';
 import ApplicationReviewCard from '../components/ApplicationReviewCard';
+import ShortlistPipelineBoard from '../components/ShortlistPipelineBoard';
 import ViewSwitcher from '../components/ViewSwitcher';
 import DataTable from '../components/DataTable';
 import BoardView from '../components/BoardView';
 import PageControls from '../components/PageControls';
 import StatusBadge, { STATUS_COLORS } from '../components/StatusBadge';
+import Skeleton from '../components/Skeleton';
 import { useGeneratedCvDownload } from '../utils/useGeneratedCvDownload';
-import { safeJsonParse } from '../utils/safeJsonParse';
 import { debounce } from '../utils/debounce';
+
+// Mimics ApplicationReviewCard's collapsed header row (name + status badge,
+// CV/cover-letter line, score) so the queue doesn't visibly jump in layout
+// once real applications land - see Skeleton.jsx's own comment for why
+// this beats a plain "Loading..." string here.
+function ApplicationRowSkeleton() {
+  return (
+    <>
+      {[0, 1, 2].map((i) => (
+        <Card key={i}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <Skeleton width={`${55 - i * 8}%`} height={15} />
+            <Skeleton width={80} height={20} radius={999} />
+          </div>
+          <Skeleton width="40%" height={12} style={{ marginTop: 10 }} />
+        </Card>
+      ))}
+    </>
+  );
+}
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
@@ -28,7 +49,7 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 // ApplicationStatus minus Draft - HR never filters to a candidate's
 // unsubmitted draft.
 const STATUS_OPTIONS = [
-  'Submitted', 'UnderReview', 'Shortlisted', 'InterviewScheduled',
+  'Submitted', 'UnderReview', 'ShortlistProposed', 'Shortlisted', 'InterviewScheduled',
   'Interviewed', 'Offered', 'Rejected', 'Withdrawn'
 ];
 const QUEUE_PAGE_SIZE = 20;
@@ -118,8 +139,6 @@ export default function ApplicationManagement() {
   // --- Mode B: single-vacancy state (ports VacancyDetail.jsx's own) ---
   const [vacancy, setVacancy] = useState(null);
   const [vacancyApps, setVacancyApps] = useState([]);
-  const [shortlistOrder, setShortlistOrder] = useState([]);
-  const [dragIndex, setDragIndex] = useState(null);
 
   // --- Mode A: cross-vacancy queue state ---
   const [queue, setQueue] = useState(null); // { data, total, page, limit }
@@ -146,21 +165,7 @@ export default function ApplicationManagement() {
       .then((res) => { if (vacancyRequestIdRef.current === requestId) setVacancy(res.data); })
       .catch((err) => { if (vacancyRequestIdRef.current === requestId) setError(err.response?.data?.error || 'Could not load this vacancy'); });
     staffClient.get(`/api/vacancies/${currentVacancyId}/applications`)
-      .then((res) => {
-        if (vacancyRequestIdRef.current !== requestId) return;
-        setVacancyApps(res.data);
-        const alreadyRanked = res.data
-          .filter((a) => a.rank != null)
-          .sort((a, b) => a.rank - b.rank)
-          .map((a) => a.id);
-        // Score-ordered, highest first - adjusts as applications come in;
-        // already-ranked applicants keep their committed rank untouched.
-        const candidates = res.data
-          .filter((a) => a.status === 'UnderReview' && a.rank == null)
-          .sort((a, b) => (b.shortlistScore ?? -Infinity) - (a.shortlistScore ?? -Infinity))
-          .map((a) => a.id);
-        setShortlistOrder([...alreadyRanked, ...candidates]);
-      })
+      .then((res) => { if (vacancyRequestIdRef.current === requestId) setVacancyApps(res.data); })
       .catch((err) => { if (vacancyRequestIdRef.current === requestId) setError(err.response?.data?.error || 'Could not load this vacancy\'s applications'); });
   };
 
@@ -224,15 +229,6 @@ export default function ApplicationManagement() {
   const refetchActiveRef = useRef(debounce(() => activeLoaderRef.current(), 500));
   const { connected } = useDashboardEvents(refetchActiveRef.current);
 
-  const moveInOrder = (fromIndex, toIndex) => {
-    setShortlistOrder((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next;
-    });
-  };
-
   const [beginReviewLoading, setBeginReviewLoading] = useState(false);
   const beginReview = async () => {
     setError(''); setBeginReviewLoading(true);
@@ -245,40 +241,6 @@ export default function ApplicationManagement() {
       setBeginReviewLoading(false);
     }
   };
-
-  const [savingRanking, setSavingRanking] = useState(false);
-  const saveRanking = async () => {
-    setError(''); setSavingRanking(true);
-    // The version of every application this ranking was built from - the
-    // backend rejects (409) if any has moved on since (another HR user's
-    // ranking write, a shortlist() call, etc.), rather than silently
-    // overwriting a decision made after this page was loaded.
-    const applicationRankVersions = Object.fromEntries(
-      shortlistOrder.map((id) => [id, appsById[id]?.rankVersion ?? 0])
-    );
-    try {
-      await staffClient.post(`/api/vacancies/${vacancyId}/rank`, { applicationIds: shortlistOrder, applicationRankVersions });
-      loadVacancyMode();
-    } catch (err) {
-      setError(
-        err.response?.status === 409
-          ? 'This ranking changed elsewhere since you loaded it - reloading the current state now.'
-          : (err.response?.data?.error || 'Could not save ranking')
-      );
-      if (err.response?.status === 409) loadVacancyMode();
-    } finally {
-      setSavingRanking(false);
-    }
-  };
-
-  const appsById = Object.fromEntries(vacancyApps.map((a) => [a.id, a]));
-  const rankedApps = shortlistOrder.map((appId) => appsById[appId]).filter(Boolean);
-  const filteredVacancyApps = vacancyApps.filter((app) => {
-    if (statusFilter && app.status !== statusFilter) return false;
-    if (screeningFilter === 'flagged') return app.screeningPassed === false;
-    if (screeningFilter === 'passed') return app.screeningPassed === true;
-    return true;
-  });
 
   const totalPages = queue ? Math.max(Math.ceil(queue.total / queue.limit), 1) : 1;
 
@@ -321,15 +283,24 @@ export default function ApplicationManagement() {
               <option value="">All vacancies</option>
               {vacancyOptions.map((v) => <option key={v.id} value={v.id}>{v.jobRef} — {v.title}</option>)}
             </Select>
-            <Select label="Status" value={statusFilter} onChange={(e) => applyStatusFilter(e.target.value)} disabled={needsAction} style={{ flex: '1 1 180px' }}>
-              <option value="">All statuses</option>
-              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-            </Select>
-            <Select label="Screening" value={screeningFilter} onChange={(e) => applyScreeningFilter(e.target.value)} disabled={needsAction} style={{ flex: '1 1 180px' }}>
-              <option value="all">All applications</option>
-              <option value="flagged">Flagged only</option>
-              <option value="passed">Meets criteria only</option>
-            </Select>
+            {/* Status/Screening only apply to the cross-vacancy queue below -
+                the single-vacancy pipeline board organizes by status as
+                columns already (that's what the board IS) and has its own
+                search, so a redundant top-level status filter would just
+                silently do nothing once a vacancy is selected. */}
+            {!vacancyId && (
+              <>
+                <Select label="Status" value={statusFilter} onChange={(e) => applyStatusFilter(e.target.value)} disabled={needsAction} style={{ flex: '1 1 180px' }}>
+                  <option value="">All statuses</option>
+                  {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </Select>
+                <Select label="Screening" value={screeningFilter} onChange={(e) => applyScreeningFilter(e.target.value)} disabled={needsAction} style={{ flex: '1 1 180px' }}>
+                  <option value="all">All applications</option>
+                  <option value="flagged">Flagged only</option>
+                  <option value="passed">Meets criteria only</option>
+                </Select>
+              </>
+            )}
             {/* Department/candidate type/search/sort/"needs my action" only
                 make sense browsing across vacancies - a single vacancy
                 already narrows department, and its applicant pool is small
@@ -369,7 +340,7 @@ export default function ApplicationManagement() {
 
         {!vacancyId ? (
           <>
-            {queueLoading && <p>Loading applications...</p>}
+            {queueLoading && <ApplicationRowSkeleton />}
             {queue && queue.data.length === 0 && <p>No applications match these filters.</p>}
             {queue && queue.data.length > 0 && view === 'table' && (
               <Card style={{ padding: 0 }}>
@@ -422,7 +393,17 @@ export default function ApplicationManagement() {
             {queue && <PageControls page={page} totalPages={totalPages} loading={queueLoading} onPrev={() => setPage((p) => p - 1)} onNext={() => setPage((p) => p + 1)} />}
           </>
         ) : !vacancy ? (
-          <p>Loading...</p>
+          <>
+            <div style={{ display: 'flex', gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-md)' }}>
+              {[0, 1, 2, 3].map((i) => (
+                <Card key={i} style={{ flex: 1, marginBottom: 0 }}>
+                  <Skeleton width="60%" height={12} style={{ marginBottom: 8 }} />
+                  <Skeleton width="35%" height={20} />
+                </Card>
+              ))}
+            </div>
+            <ApplicationRowSkeleton />
+          </>
         ) : vacancy.status === 'PendingApproval' ? (
           <Alert type="info" message="This vacancy hasn't been approved and published yet, so there are no applications to review. Approve it from the HR dashboard first." />
         ) : (
@@ -436,46 +417,10 @@ export default function ApplicationManagement() {
               </Card>
             )}
 
-            <h3>Shortlist ranking</h3>
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-              Drag to reorder. The top {vacancy.positionsRequired} become Primary; the rest become Reserve automatically.
-            </p>
-            {rankedApps.map((app, index) => (
-              <Card
-                key={app.id}
-                accent={index < vacancy.positionsRequired ? 'var(--color-accent)' : 'var(--color-warning)'}
-                style={{ cursor: 'grab' }}
-              >
-                <div
-                  draggable
-                  onDragStart={() => setDragIndex(index)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => { if (dragIndex !== null) moveInOrder(dragIndex, index); setDragIndex(null); }}
-                >
-                  #{index + 1} &mdash; {app.candidate.fullName} ({app.candidate.candidateType})
-                  {' '}&middot; {index < vacancy.positionsRequired ? 'Primary' : 'Reserve'}
-                  {app.shortlistScore != null && (
-                    <span title={safeJsonParse(app.shortlistScoreReasons, []).join('; ') || 'No scoring factors applied'}
-                      style={{ color: 'var(--color-text-muted)', marginLeft: 8, fontSize: 12 }}>
-                      &middot; Score: {app.shortlistScore.toFixed(1)}
-                    </span>
-                  )}
-                </div>
-              </Card>
-            ))}
-            {rankedApps.length > 0 && (
-              <Button onClick={saveRanking} disabled={savingRanking}>
-                {savingRanking ? 'Saving...' : 'Save ranking & shortlist'}
-              </Button>
-            )}
-
-            <h3 style={{ marginTop: 24 }}>All applications</h3>
-            {filteredVacancyApps.map((app) => (
-              <ApplicationReviewCard
-                key={app.id} app={app} vacancy={vacancy} staffRole={staff?.role}
-                onUpdated={loadVacancyMode} onDownloadCv={downloadGeneratedCv} downloadingId={downloadingId}
-              />
-            ))}
+            <ShortlistPipelineBoard
+              vacancy={vacancy} applications={vacancyApps} staffRole={staff?.role}
+              onUpdated={loadVacancyMode} onDownloadCv={downloadGeneratedCv} downloadingId={downloadingId}
+            />
           </>
         )}
 

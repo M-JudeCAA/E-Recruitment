@@ -105,8 +105,42 @@ describe('finalizeRecommendation', () => {
     expect(prisma.interviewRound.updateMany).not.toHaveBeenCalled();
   });
 
+  test('returns 404 when the interview round does not exist', async () => {
+    prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 88 }]);
+    prisma.interviewRound.findUnique.mockResolvedValue(null);
+    const req = { params: { interviewId: '1' }, body: { recommendation: 'Shortlist' }, user: { id: 9 } };
+    const res = mockRes();
+
+    await interviewController.finalizeRecommendation(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(prisma.interviewRound.updateMany).not.toHaveBeenCalled();
+  });
+
+  // Guards against finalizing a stale round after its application already
+  // moved on elsewhere since it was scheduled - previously this write was
+  // unconditional and would silently regress a Rejected/Offered
+  // application's status back to Interviewed/Rejected.
+  test.each(['Rejected', 'Offered', 'Draft', 'Withdrawn'])(
+    'refuses to finalize when the application is already at status %s (stale round)',
+    async (status) => {
+      prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 88 }]);
+      prisma.interviewRound.findUnique.mockResolvedValue({ id: 1, applicationId: 1, recommendation: null });
+      prisma.application.findUnique.mockResolvedValue({ id: 1, status });
+      const req = { params: { interviewId: '1' }, body: { recommendation: 'Shortlist' }, user: { id: 9 } };
+      const res = mockRes();
+
+      await interviewController.finalizeRecommendation(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(prisma.interviewRound.updateMany).not.toHaveBeenCalled();
+    }
+  );
+
   test('returns 409 when this round already has a finalized recommendation (double-finalize/race)', async () => {
     prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 88 }]);
+    prisma.interviewRound.findUnique.mockResolvedValue({ id: 1, applicationId: 1, recommendation: null });
+    prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'InterviewScheduled' });
     prisma.interviewRound.updateMany.mockResolvedValue({ count: 0 });
     const req = { params: { interviewId: '1' }, body: { recommendation: 'Shortlist' }, user: { id: 9 } };
     const res = mockRes();
@@ -119,6 +153,7 @@ describe('finalizeRecommendation', () => {
 
   test('a "Shortlist" recommendation moves the application to Interviewed, not Rejected', async () => {
     prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 88 }]);
+    prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'InterviewScheduled' });
     prisma.interviewRound.updateMany.mockResolvedValue({ count: 1 });
     prisma.interviewRound.findUnique.mockResolvedValue({ id: 1, applicationId: 1, recommendation: 'Shortlist' });
     const req = { params: { interviewId: '1' }, body: { recommendation: 'Shortlist' }, user: { id: 9 } };
@@ -137,8 +172,9 @@ describe('finalizeRecommendation', () => {
   // forever with no formal resolution and recommendOffer's old (now
   // tightened) check didn't care which recommendation string was present,
   // so a rejected candidate could still be recommended for an offer.
-  test('a "Reject" recommendation rejects the application and notifies the candidate, instead of leaving it at Interviewed', async () => {
+  test('a "Reject" recommendation rejects the application, clears its rank, and notifies the candidate, instead of leaving it at Interviewed', async () => {
     prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 40 }]);
+    prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'Interviewed' });
     prisma.interviewRound.updateMany.mockResolvedValue({ count: 1 });
     prisma.interviewRound.findUnique.mockResolvedValue({ id: 1, applicationId: 1, recommendation: 'Reject' });
     prisma.application.update.mockResolvedValue({ id: 1, candidateId: 5, vacancy: { title: 'Air Traffic Controller' } });
@@ -149,7 +185,7 @@ describe('finalizeRecommendation', () => {
 
     expect(prisma.application.update).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 1 },
-      data: expect.objectContaining({ status: 'Rejected', rejectedById: 9 })
+      data: expect.objectContaining({ status: 'Rejected', rejectedById: 9, rank: null, listStatus: null })
     }));
     expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ candidateId: 5, type: 'ApplicationRejected' })

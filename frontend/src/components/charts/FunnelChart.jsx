@@ -1,5 +1,6 @@
 import React from 'react';
 import Card from '../Card';
+import Skeleton from '../Skeleton';
 import { STATUS_COLORS } from '../StatusBadge';
 
 // Application pipeline funnel, Submitted -> Accepted. Implemented as
@@ -22,7 +23,14 @@ export default function FunnelChart({ counts, loading }) {
     <Card style={{ marginBottom: 0 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', marginBottom: 10 }}>Application funnel</div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {STAGES.map((stage, i) => (
+            <div key={stage.key}>
+              <Skeleton width={90} height={11} style={{ marginBottom: 4 }} />
+              <Skeleton width={`${Math.max(90 - i * 18, 20)}%`} height={20} radius={6} />
+            </div>
+          ))}
+        </div>
       ) : first === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No applications yet.</p>
       ) : (

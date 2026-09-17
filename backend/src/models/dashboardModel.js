@@ -1,7 +1,7 @@
 const prisma = require('../config/db');
 
 const VACANCY_STATUSES = ['PendingApproval', 'Open', 'PartiallyFilled', 'Filled', 'Closed'];
-const APPLICATION_STATUSES = ['Submitted', 'Shortlisted', 'Interviewed', 'Offered', 'Rejected', 'Withdrawn'];
+const APPLICATION_STATUSES = ['Submitted', 'ShortlistProposed', 'Shortlisted', 'Interviewed', 'Offered', 'Rejected', 'Withdrawn'];
 const OFFER_STATUSES = ['Recommended', 'Approved', 'Extended', 'Accepted', 'Declined'];
 
 module.exports = {

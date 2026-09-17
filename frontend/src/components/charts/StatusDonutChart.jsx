@@ -1,6 +1,7 @@
 import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import Card from '../Card';
+import Skeleton from '../Skeleton';
 import { STATUS_COLORS } from '../StatusBadge';
 
 // Interactive replacement for the old hand-rolled proportional stacked bar
@@ -20,7 +21,12 @@ export default function StatusDonutChart({ title, counts, order, loading, emptyT
     <Card style={{ marginBottom: 0 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', marginBottom: 10 }}>{title}</div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          <Skeleton width={140} height={140} radius="50%" style={{ flexShrink: 0 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0 }}>
+            {[0, 1, 2].map((i) => <Skeleton key={i} width={`${70 - i * 10}%`} height={12} />)}
+          </div>
+        </div>
       ) : total === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>{emptyText}</p>
       ) : (

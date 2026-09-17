@@ -19,8 +19,15 @@ import { useConfirm } from '../components/ConfirmDialog';
 const PAGE_SIZE = 10;
 
 const CLOSED_STATUSES = ['Rejected', 'Withdrawn'];
-const REVIEW_STATUSES = ['Submitted', 'UnderReview', 'Shortlisted'];
+const REVIEW_STATUSES = ['Submitted', 'UnderReview', 'ShortlistProposed', 'Shortlisted'];
 const INTERVIEW_STATUSES = ['InterviewScheduled', 'Interviewed'];
+
+// ShortlistProposed is an internal HR propose/approve step (see
+// workflowService.assertNotSelfApprovedShortlist) - a candidate has no use
+// for "proposed vs. approved" and isn't notified until it's approved, so
+// it displays identically to UnderReview here rather than leaking that
+// internal state.
+const candidateFacingStatus = (status) => (status === 'ShortlistProposed' ? 'UnderReview' : status);
 
 // Client-side only - findByCandidate (applicationModel.js) already returns
 // every application in one call, so filtering a tab doesn't need a new
@@ -220,7 +227,7 @@ export default function CandidateApplications() {
                 rows={visible.slice(0, visibleCount)}
                 columns={[
                   { key: 'vacancy', label: 'Vacancy', render: (app) => <span style={{ fontWeight: 600 }}>{app.vacancy.title}</span> },
-                  { key: 'status', label: 'Status', render: (app) => <StatusBadge status={app.status} /> },
+                  { key: 'status', label: 'Status', render: (app) => <StatusBadge status={candidateFacingStatus(app.status)} /> },
                   {
                     key: 'date', label: 'Date', render: (app) => app.submittedDate
                       ? `Submitted ${new Date(app.submittedDate).toLocaleDateString()}`
@@ -249,7 +256,7 @@ export default function CandidateApplications() {
               renderCard={(app) => (
                 <Card style={{ marginBottom: 0, padding: 10 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{app.vacancy.title}</div>
-                  <StatusBadge status={app.status} />
+                  <StatusBadge status={candidateFacingStatus(app.status)} />
                   {app.offer && <span style={{ marginLeft: 6 }}><StatusBadge status={app.offer.status} /></span>}
                 </Card>
               )}
@@ -280,7 +287,7 @@ export default function CandidateApplications() {
                   )}
                 </div>
                 <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                  <StatusBadge status={app.status} />
+                  <StatusBadge status={candidateFacingStatus(app.status)} />
                   {draftClosed && <StatusBadge status="Closed" />}
                 </span>
               </div>

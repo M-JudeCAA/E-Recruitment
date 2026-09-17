@@ -498,12 +498,28 @@ async function saveRanking(req, res) {
     rankData.push({ id: appId, rank: i + 1, listStatus });
   }
 
+  // Lands at ShortlistProposed, not Shortlisted - same propose/approve
+  // split as applicationController.shortlist. This batch only becomes the
+  // vacancy's effective shortlist once a Principal HR Officer+ (who didn't
+  // propose it) approves it via applicationController.approveShortlist,
+  // which is also the point candidates are notified and interview
+  // scheduling unlocks. Re-ranking an already-Shortlisted application (e.g.
+  // reordering after a prior approval) demotes it back to
+  // ShortlistProposed, requiring fresh approval - the rank/listStatus
+  // changed, so the prior approval no longer covers it.
+  //
   // All-or-nothing - a plain Promise.all of independent updates could leave
   // the ranking half-committed if one write failed partway through (e.g. a
   // row deleted between the guard check above and the write itself).
   const results = await prisma.$transaction(
     rankData.map(({ id, rank, listStatus }) =>
-      prisma.application.update({ where: { id }, data: { rank, listStatus, status: 'Shortlisted', rankVersion: { increment: 1 } } })
+      prisma.application.update({
+        where: { id },
+        data: {
+          rank, listStatus, status: 'ShortlistProposed', rankVersion: { increment: 1 },
+          shortlistProposedAt: new Date(), shortlistProposedById: req.user.id
+        }
+      })
     )
   );
   res.json(results);

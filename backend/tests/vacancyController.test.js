@@ -706,22 +706,33 @@ describe('saveRanking', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  test('ranks every application transactionally, computing Primary/Reserve from positionsRequired, and bumps rankVersion', async () => {
+  // saveRanking only ever proposes a shortlist (ShortlistProposed, stamped
+  // with who ranked it) - approveShortlist is what makes it effective. See
+  // applicationController.approveShortlist / workflowService.assertNotSelfApprovedShortlist.
+  test('ranks every application transactionally as ShortlistProposed, computing Primary/Reserve from positionsRequired, and bumps rankVersion', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 1 });
     prisma.application.findMany.mockResolvedValue([{ id: 1, rankVersion: 0 }, { id: 2, rankVersion: 2 }]);
     jest.spyOn(workflow, 'assertCanShortlist').mockResolvedValue(undefined);
     prisma.application.update.mockResolvedValue({});
-    const req = { params: { id: '1' }, body: { applicationIds: [1, 2], applicationRankVersions: { 1: 0, 2: 2 } } };
+    const req = { params: { id: '1' }, body: { applicationIds: [1, 2], applicationRankVersions: { 1: 0, 2: 2 } }, user: { id: 9 } };
     const res = mockRes();
 
     await vacancyController.saveRanking(req, res);
 
     expect(prisma.$transaction).toHaveBeenCalled();
     expect(prisma.application.update).toHaveBeenCalledWith({
-      where: { id: 1 }, data: { rank: 1, listStatus: 'Primary', status: 'Shortlisted', rankVersion: { increment: 1 } }
+      where: { id: 1 },
+      data: {
+        rank: 1, listStatus: 'Primary', status: 'ShortlistProposed', rankVersion: { increment: 1 },
+        shortlistProposedAt: expect.any(Date), shortlistProposedById: 9
+      }
     });
     expect(prisma.application.update).toHaveBeenCalledWith({
-      where: { id: 2 }, data: { rank: 2, listStatus: 'Reserve', status: 'Shortlisted', rankVersion: { increment: 1 } }
+      where: { id: 2 },
+      data: {
+        rank: 2, listStatus: 'Reserve', status: 'ShortlistProposed', rankVersion: { increment: 1 },
+        shortlistProposedAt: expect.any(Date), shortlistProposedById: 9
+      }
     });
     expect(res.json).toHaveBeenCalled();
   });

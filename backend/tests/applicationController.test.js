@@ -787,14 +787,16 @@ describe('shortlist', () => {
     expect(res.status).toHaveBeenCalledWith(409);
   });
 
-  test('notifies the candidate once shortlisted', async () => {
+  // shortlist() only ever proposes - it lands at ShortlistProposed, stamped
+  // with who proposed it and when, and does NOT notify the candidate. Only
+  // approveShortlist (below) makes it effective and notifies.
+  test('proposes the shortlist (ShortlistProposed, not Shortlisted) without notifying the candidate', async () => {
     const workflow = require('../src/services/workflowService');
     jest.spyOn(workflow, 'assertCanShortlist').mockResolvedValue(undefined);
     prisma.application.findUnique
       .mockResolvedValueOnce({ id: 1, status: 'UnderReview', candidateId: 7, vacancy: { title: 'Role' } })
-      .mockResolvedValueOnce({ id: 1, status: 'Shortlisted', candidateId: 7, vacancy: { title: 'Role' } });
+      .mockResolvedValueOnce({ id: 1, status: 'ShortlistProposed', candidateId: 7, vacancy: { title: 'Role' } });
     prisma.application.updateMany.mockResolvedValue({ count: 1 });
-    prisma.candidate.findUnique.mockResolvedValue({ id: 7, email: 'candidate@example.com' });
     const req = { params: { id: '1' }, body: { rank: 1, listStatus: 'Primary' }, user: { id: 3 } };
     const res = mockRes();
 
@@ -802,12 +804,68 @@ describe('shortlist', () => {
 
     expect(prisma.application.updateMany).toHaveBeenCalledWith({
       where: { id: 1, status: 'UnderReview' },
-      data: { status: 'Shortlisted', rank: 1, listStatus: 'Primary', rankVersion: { increment: 1 } }
+      data: {
+        status: 'ShortlistProposed', rank: 1, listStatus: 'Primary', rankVersion: { increment: 1 },
+        shortlistProposedAt: expect.any(Date), shortlistProposedById: 3
+      }
+    });
+    expect(prisma.candidateNotification.create).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalled();
+  });
+});
+
+describe('approveShortlist', () => {
+  const workflow = require('../src/services/workflowService');
+
+  test('rejects an invalid vacancy id', async () => {
+    const req = { params: { vacancyId: 'abc' }, user: { id: 3 } };
+    const res = mockRes();
+    await applicationController.approveShortlist(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  test('refuses when no proposed shortlist is awaiting approval', async () => {
+    prisma.application.findMany.mockResolvedValue([]);
+    const req = { params: { vacancyId: '5' }, user: { id: 3 } };
+    const res = mockRes();
+    await applicationController.approveShortlist(req, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.application.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('blocks self-approval when the approver proposed one of the applications', async () => {
+    prisma.application.findMany.mockResolvedValue([{ id: 1, candidateId: 7, shortlistProposedById: 3 }]);
+    const req = { params: { vacancyId: '5' }, user: { id: 3 } };
+    const res = mockRes();
+    await applicationController.approveShortlist(req, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.application.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('approves every ShortlistProposed application for the vacancy in one batch and notifies each candidate', async () => {
+    jest.spyOn(workflow, 'assertNotSelfApprovedShortlist').mockResolvedValue(undefined);
+    prisma.application.findMany.mockResolvedValue([
+      { id: 1, candidateId: 7, shortlistProposedById: 9 },
+      { id: 2, candidateId: 8, shortlistProposedById: 9 }
+    ]);
+    prisma.application.updateMany.mockResolvedValue({ count: 2 });
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 5, title: 'Role' });
+    const req = { params: { vacancyId: '5' }, user: { id: 3 } };
+    const res = mockRes();
+
+    await applicationController.approveShortlist(req, res);
+
+    expect(prisma.application.updateMany).toHaveBeenCalledWith({
+      where: { vacancyId: 5, status: 'ShortlistProposed' },
+      data: { status: 'Shortlisted', shortlistApprovedAt: expect.any(Date), shortlistApprovedById: 3 }
     });
     expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ candidateId: 7, type: 'ApplicationShortlisted' })
     }));
-    expect(res.json).toHaveBeenCalled();
+    expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ candidateId: 8, type: 'ApplicationShortlisted' })
+    }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ vacancyId: 5, approvedCount: 2 }));
   });
 });
 

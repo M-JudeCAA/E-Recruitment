@@ -115,6 +115,15 @@ module.exports = {
   findByVacancyAndStatus: (vacancyId, status) => prisma.application.findMany({
     where: { vacancyId, status }
   }),
+  // Bulk-promotes every ShortlistProposed application for a vacancy to
+  // Shortlisted in one statement - see applicationController.approveShortlist.
+  // Scoped to status: 'ShortlistProposed' so it only ever touches rows the
+  // caller already fetched/self-approval-checked, not anything that moved
+  // on in between (e.g. a reject landing on one of them first).
+  approveShortlistForVacancy: (vacancyId, approverId) => prisma.application.updateMany({
+    where: { vacancyId, status: 'ShortlistProposed' },
+    data: { status: 'Shortlisted', shortlistApprovedAt: new Date(), shortlistApprovedById: approverId }
+  }),
   // Same Draft exclusion as findByVacancy - a single query in place of the
   // per-vacancy fetch-and-sum HRHome.jsx used to do.
   countAll: () => prisma.application.count({ where: { status: { not: 'Draft' } } }),

@@ -1,6 +1,7 @@
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Cell, CartesianGrid, ResponsiveContainer } from 'recharts';
 import Card from '../Card';
+import Skeleton from '../Skeleton';
 import { CHART_GRID, CHART_AXIS_TEXT, CHART_SERIES } from '../../theme/chartPalette';
 
 // Generic single-series monthly bar chart - one value per month, with an
@@ -21,7 +22,7 @@ export default function MonthlyMetricChart({ title, data, dataKey, formatValue, 
     <Card style={{ marginBottom: 0 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', marginBottom: 10 }}>{title}</div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <Skeleton width="100%" height={200} radius={8} />
       ) : !hasData ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>{emptyText}</p>
       ) : (

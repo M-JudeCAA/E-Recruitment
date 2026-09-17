@@ -50,6 +50,34 @@ describe('assertCanShortlist', () => {
 
     await expect(workflow.assertCanShortlist(1)).resolves.toBeUndefined();
   });
+
+  test('rejects Application not found', async () => {
+    prisma.application.findUnique.mockResolvedValue(null);
+    await expect(workflow.assertCanShortlist(1)).rejects.toThrow(/Application not found/);
+  });
+
+  // The status gate is shared by both shortlist() and saveRanking() -
+  // saveRanking() previously had no such check at all and could silently
+  // rewrite a Draft/Offered/Rejected/Withdrawn application back to
+  // ShortlistProposed (see the comment on NOT_SHORTLISTABLE above).
+  test.each(['Draft', 'Offered', 'Rejected', 'Withdrawn'])('blocks an application at status %s regardless of candidate type', async (status) => {
+    prisma.application.findUnique.mockResolvedValue({
+      status, candidate: { candidateType: 'External', internalProfile: null }
+    });
+
+    await expect(workflow.assertCanShortlist(1)).rejects.toThrow(/cannot be shortlisted here/);
+  });
+
+  test.each(['Submitted', 'UnderReview', 'ShortlistProposed', 'Shortlisted', 'InterviewScheduled', 'Interviewed'])(
+    'allows an external candidate at status %s',
+    async (status) => {
+      prisma.application.findUnique.mockResolvedValue({
+        status, candidate: { candidateType: 'External', internalProfile: null }
+      });
+
+      await expect(workflow.assertCanShortlist(1)).resolves.toBeUndefined();
+    }
+  );
 });
 
 describe('assertNotSelfApproval', () => {
@@ -61,6 +89,25 @@ describe('assertNotSelfApproval', () => {
   test('allows approval when the approver is a different person', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 5, createdById: 42 });
     await expect(workflow.assertNotSelfApproval(5, 99)).resolves.toBeUndefined();
+  });
+});
+
+describe('assertNotSelfApprovedShortlist', () => {
+  test('blocks approval when the approver proposed one of the vacancy\'s ShortlistProposed applications', async () => {
+    prisma.application.findMany.mockResolvedValue([
+      { id: 1, shortlistProposedById: 7 }, { id: 2, shortlistProposedById: 42 }
+    ]);
+    await expect(workflow.assertNotSelfApprovedShortlist(5, 42)).rejects.toThrow(/Self-approval blocked/);
+  });
+
+  test('allows approval when the approver proposed none of them', async () => {
+    prisma.application.findMany.mockResolvedValue([
+      { id: 1, shortlistProposedById: 7 }, { id: 2, shortlistProposedById: 8 }
+    ]);
+    await expect(workflow.assertNotSelfApprovedShortlist(5, 42)).resolves.toBeUndefined();
+    expect(prisma.application.findMany).toHaveBeenCalledWith({
+      where: { vacancyId: 5, status: 'ShortlistProposed' }
+    });
   });
 });
 

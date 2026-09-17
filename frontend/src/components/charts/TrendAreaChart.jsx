@@ -1,6 +1,7 @@
 import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, Legend, CartesianGrid, ResponsiveContainer } from 'recharts';
 import Card from '../Card';
+import Skeleton from '../Skeleton';
 import { CHART_SERIES, CHART_GRID, CHART_AXIS_TEXT } from '../../theme/chartPalette';
 
 // Generic identity series (no existing status meaning), so this pulls from
@@ -52,7 +53,7 @@ export default function TrendAreaChart({ data, loading, days, onDaysChange }) {
         </div>
       </div>
       {loading ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Loading…</p>
+        <Skeleton width="100%" height={220} radius={8} />
       ) : (
         <div style={{ width: '100%', height: 220 }}>
           <ResponsiveContainer width="100%" height="100%">

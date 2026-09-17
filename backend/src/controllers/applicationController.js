@@ -1,6 +1,7 @@
 const applicationModel = require('../models/applicationModel');
 const offerModel = require('../models/offerModel');
 const slaModel = require('../models/slaModel');
+const vacancyModel = require('../models/vacancyModel');
 const workflow = require('../services/workflowService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
@@ -120,24 +121,21 @@ async function shortlist(req, res) {
     return res.status(422).json({ error: `An application at status "${application.status}" cannot be shortlisted here` });
   }
 
-  // Same atomic-guard pattern as reject() - scoped to the status just read,
-  // so a near-simultaneous action on this application (e.g. a reject
-  // landing at the same moment) can't silently be overwritten by this one.
+  // Lands at ShortlistProposed, not Shortlisted - this is a proposal, not
+  // the effective shortlist. It only takes effect (candidate notified,
+  // interview scheduling unlocked) once a Principal HR Officer+ who isn't
+  // this proposer approves it via approveShortlist, below. Same
+  // atomic-guard pattern as reject() - scoped to the status just read, so a
+  // near-simultaneous action on this application (e.g. a reject landing at
+  // the same moment) can't silently be overwritten by this one.
   const result = await applicationModel.updateIfStatus(applicationId, application.status, {
-    status: 'Shortlisted', rank, listStatus, rankVersion: { increment: 1 }
+    status: 'ShortlistProposed', rank, listStatus, rankVersion: { increment: 1 },
+    shortlistProposedAt: new Date(), shortlistProposedById: req.user.id
   });
   if (result.count === 0) {
     return res.status(409).json({ error: 'This application was already updated - please refresh and try again' });
   }
 
-  try {
-    await notifyCandidate(
-      application.candidateId, 'ApplicationShortlisted',
-      `Good news - you've been shortlisted for "${application.vacancy.title}". We'll be in touch about next steps.`
-    );
-  } catch (err) {
-    console.error(`Failed to notify candidate ${application.candidateId} of shortlisting for application ${applicationId}:`, err);
-  }
   const updated = await applicationModel.findById(applicationId, { vacancy: true });
   res.json(updated);
 }
@@ -165,8 +163,16 @@ async function reject(req, res) {
   // near-simultaneous action on this application (an interview panel's
   // "Reject" recommendation landing at the same moment as this) silently
   // overwriting each other.
+  //
+  // rank/listStatus are cleared (not left dangling from an earlier
+  // shortlist ranking) and rankVersion bumped, same as a real ranking
+  // write - a rejected application has no business still showing a rank,
+  // and bumping the version means a stale ranking UI that still has this
+  // id loaded gets the normal 409 "changed since you loaded it" on its
+  // next save rather than silently re-including a rejected candidate.
   const result = await applicationModel.updateIfStatus(applicationId, application.status, {
-    status: 'Rejected', rejectedAt: new Date(), rejectedById: req.user.id, rejectionReason: reason
+    status: 'Rejected', rejectedAt: new Date(), rejectedById: req.user.id, rejectionReason: reason,
+    rank: null, listStatus: null, rankVersion: { increment: 1 }
   });
   if (result.count === 0) {
     return res.status(409).json({ error: 'This application was already updated - please refresh and try again' });
@@ -190,19 +196,50 @@ async function reject(req, res) {
   res.json(updated);
 }
 
-// NOT a second approval gate on top of shortlist()/saveRanking() - this is
-// only ever the self-approval pre-check, kept as its own endpoint so a
-// caller can find out *before* attempting to shortlist whether they're
-// blocked from doing so on this vacancy (they created it). Shortlisting
-// itself still has to happen via shortlist() or vacancyController.saveRanking.
+// The other half of the propose/approve split - shortlist()/saveRanking
+// only ever get an application to ShortlistProposed. This is what actually
+// makes it effective: every ShortlistProposed application for the vacancy
+// moves to Shortlisted in one batch (so PHRO reviews and approves the whole
+// ranked list as one decision, not application-by-application), candidates
+// are notified only now, and interview scheduling only unlocks now (see
+// interviewController.SCHEDULABLE_STATUSES). Self-approval is blocked
+// against whoever actually proposed each application's shortlisting, not
+// against the vacancy's creator - a different check from
+// assertNotSelfApproval, which guards vacancy/offer approval.
 async function approveShortlist(req, res) {
   const vacancyId = Number(req.params.vacancyId);
+  if (!Number.isInteger(vacancyId)) return res.status(400).json({ error: 'Invalid vacancy id' });
+
+  const proposed = await applicationModel.findByVacancyAndStatus(vacancyId, 'ShortlistProposed');
+  if (proposed.length === 0) {
+    return res.status(422).json({ error: 'No proposed shortlist is awaiting approval for this vacancy' });
+  }
+
   try {
-    await workflow.assertNotSelfApproval(vacancyId, req.user.id);
+    await workflow.assertNotSelfApprovedShortlist(vacancyId, req.user.id);
   } catch (err) {
     return res.status(422).json({ error: err.message });
   }
-  res.json({ message: 'Shortlist approved', vacancyId });
+
+  await applicationModel.approveShortlistForVacancy(vacancyId, req.user.id);
+
+  const vacancy = await vacancyModel.findById(vacancyId);
+  // The approval itself already committed above - a notification failure
+  // for one candidate must not block the others or turn an otherwise-
+  // successful approval into a 500 (same reasoning as reject()/shortlist()
+  // elsewhere in this file).
+  for (const application of proposed) {
+    try {
+      await notifyCandidate(
+        application.candidateId, 'ApplicationShortlisted',
+        `Good news - you've been shortlisted for "${vacancy.title}". We'll be in touch about next steps.`
+      );
+    } catch (err) {
+      console.error(`Failed to notify candidate ${application.candidateId} of shortlisting for application ${application.id}:`, err);
+    }
+  }
+
+  res.json({ message: 'Shortlist approved', vacancyId, approvedCount: proposed.length });
 }
 
 // This was the missing step: Principal HR Officer reviews interview
