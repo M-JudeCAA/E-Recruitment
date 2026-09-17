@@ -203,6 +203,18 @@ input::placeholder, textarea::placeholder {
   background: var(--color-bg);
 }
 
+/* HRDashboard's Vacancies master-detail list rows - same reasoning as
+   .sidebar-link above (inline styles can't express :hover), a lighter
+   tint since these rows sit on a white Card rather than the sidebar's
+   subtle-blue background. */
+.list-row {
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+.list-row:hover {
+  background: var(--color-bg-subtle);
+}
+
 /* Clickable Card (see Card.jsx's optional onClick prop) - a subtle hover
    lift so a whole card reads as clickable, not just the buttons inside it. */
 .card-clickable {

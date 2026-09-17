@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Navigate, Link } from "react-router-dom";
 import client from "../models/apiClient";
 import { useAuth } from "../models/AuthContext";
 import PageHeader from "../components/PageHeader";
@@ -44,8 +44,22 @@ export default function StaffLogin() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { loginStaff } = useAuth();
+  const { loginStaff, staff } = useAuth();
   const navigate = useNavigate();
+
+  // Already signed in - the `replace: true` below on a successful submit
+  // only keeps THIS page from staying reachable by Back after login;
+  // it does nothing to stop this route being reached some other way
+  // (a stale bookmark/tab, a second tab, or - per a real report - Back
+  // still landing here in some sequence) while the session is still
+  // valid. Navbar renders unconditionally on every route (see App.jsx),
+  // so without this an already-authenticated staff member would see
+  // their own logged-in navbar above a fully live login form underneath.
+  // Redirect away before ever rendering that form.
+  if (staff) {
+    const alreadyExecutive = (ROLE_RANK[staff.role] || 0) >= ROLE_RANK.Manager;
+    return <Navigate to={alreadyExecutive ? "/hr/executive" : "/hr/home"} replace />;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();

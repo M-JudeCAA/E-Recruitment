@@ -34,8 +34,16 @@ const HR_LIST_INCLUDE = {
 // candidateType/search both narrow on the related Candidate row, so they
 // share one sub-object built here rather than each independently trying to
 // set where.candidate.
-function buildHrWhere({ vacancyId, status, departmentId, candidateType, screeningPassed, search }) {
+//
+// needsActionOr (see applicationController.list) supersedes the plain
+// status/screeningPassed filters when present - it's still AND-ed with
+// vacancyId/department/candidateType/search, and status: {not: 'Draft'}
+// stays in place underneath it as defense-in-depth (every needsActionOr
+// branch is already non-Draft by construction, so this never excludes
+// anything real).
+function buildHrWhere({ vacancyId, status, departmentId, candidateType, screeningPassed, search, needsActionOr }) {
   const where = { status: status || { not: 'Draft' } };
+  if (needsActionOr) where.OR = needsActionOr;
   if (vacancyId) where.vacancyId = vacancyId;
   if (departmentId) where.vacancy = { departmentId };
   const candidateWhere = {};
@@ -47,9 +55,21 @@ function buildHrWhere({ vacancyId, status, departmentId, candidateType, screenin
     candidateWhere.OR = [{ fullName: { contains: search } }, { email: { contains: search } }];
   }
   if (Object.keys(candidateWhere).length > 0) where.candidate = candidateWhere;
-  if (screeningPassed != null) where.screeningPassed = screeningPassed;
+  if (screeningPassed != null && !needsActionOr) where.screeningPassed = screeningPassed;
   return where;
 }
+
+// sort query param -> Prisma orderBy, for the cross-vacancy queue.
+// 'score' and 'deadline' put nulls last under MySQL's default collation
+// (NULL sorts lowest, so ASC puts them first and DESC puts them last) -
+// exactly what's wanted here: unscored applications / vacancies without a
+// deadline fall to the end rather than dominating the top of the list.
+const HR_SORT_ORDER_BY = {
+  newest: { submittedDate: 'desc' },
+  oldest: { submittedDate: 'asc' },
+  score: { shortlistScore: 'desc' },
+  deadline: { vacancy: { deadline: 'asc' } }
+};
 
 module.exports = {
   create: (data) => prisma.application.create({ data }),
@@ -71,11 +91,12 @@ module.exports = {
     orderBy: [{ rank: 'asc' }, { shortlistScore: 'desc' }]
   }),
   // Cross-vacancy "Application Management" queue - see applicationController.list.
-  // filters is buildHrWhere's param shape; skip/take drive pagination.
-  findManyForHr: ({ skip, take, ...filters }) => prisma.application.findMany({
+  // filters is buildHrWhere's param shape; skip/take drive pagination; sort
+  // is one of HR_SORT_ORDER_BY's keys (undefined/unrecognized -> newest first).
+  findManyForHr: ({ skip, take, sort, ...filters }) => prisma.application.findMany({
     where: buildHrWhere(filters),
     include: HR_LIST_INCLUDE,
-    orderBy: { submittedDate: 'desc' },
+    orderBy: HR_SORT_ORDER_BY[sort] || HR_SORT_ORDER_BY.newest,
     skip, take
   }),
   countForHr: (filters) => prisma.application.count({ where: buildHrWhere(filters) }),

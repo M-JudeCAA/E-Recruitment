@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useNavigate, useSearchParams, Navigate, Link } from "react-router-dom";
 import client from "../models/apiClient";
 import { useAuth } from "../models/AuthContext";
 import PageHeader from "../components/PageHeader";
@@ -53,8 +53,23 @@ export default function CandidateLogin() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { loginCandidate } = useAuth();
+  const { loginCandidate, candidate } = useAuth();
   const navigate = useNavigate();
+
+  // Already signed in - the `replace: true` below on a successful submit
+  // only keeps THIS page from staying reachable by Back after login; it
+  // does nothing to stop this route being reached some other way (a stale
+  // bookmark/tab, a second tab, or - per a real report - Back still
+  // landing here in some sequence) while the session is still valid.
+  // Navbar renders unconditionally on every route (see App.jsx), so
+  // without this an already-authenticated candidate would see their own
+  // logged-in navbar above a fully live login form underneath. Redirect
+  // away before ever rendering that form - same validReturnTo precedence
+  // as a fresh login, just without firstLogin (that flag only ever comes
+  // back in the login response itself, not from an existing session).
+  if (candidate) {
+    return <Navigate to={validReturnTo || "/dashboard"} replace />;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();

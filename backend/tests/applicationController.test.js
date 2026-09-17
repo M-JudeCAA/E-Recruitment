@@ -360,6 +360,111 @@ describe('list', () => {
       }
     }));
   });
+
+  test('rejects an invalid sort', async () => {
+    const req = { query: { sort: 'shuffle' } };
+    const res = mockRes();
+
+    await applicationController.list(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.application.findMany).not.toHaveBeenCalled();
+  });
+
+  test('passes a valid sort through to the orderBy clause', async () => {
+    prisma.application.findMany.mockResolvedValue([]);
+    prisma.application.count.mockResolvedValue(0);
+    const req = { query: { sort: 'score' } };
+    const res = mockRes();
+
+    await applicationController.list(req, res);
+
+    expect(prisma.application.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      orderBy: { shortlistScore: 'desc' }
+    }));
+  });
+
+  test('defaults to newest-first when no sort is given', async () => {
+    prisma.application.findMany.mockResolvedValue([]);
+    prisma.application.count.mockResolvedValue(0);
+    const req = { query: {} };
+    const res = mockRes();
+
+    await applicationController.list(req, res);
+
+    expect(prisma.application.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      orderBy: { submittedDate: 'desc' }
+    }));
+  });
+
+  describe('needsAction', () => {
+    test('a Senior HR Officer only sees Submitted/UnderReview', async () => {
+      prisma.application.findMany.mockResolvedValue([]);
+      prisma.application.count.mockResolvedValue(0);
+      const req = { query: { needsAction: 'true' }, user: { role: 'Senior_HR_Officer' } };
+      const res = mockRes();
+
+      await applicationController.list(req, res);
+
+      expect(prisma.application.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ OR: [{ status: { in: ['Submitted', 'UnderReview'] } }] })
+      }));
+    });
+
+    test('a Manager sees the union of every lower tier\'s actionable statuses plus offers pending their approval', async () => {
+      prisma.application.findMany.mockResolvedValue([]);
+      prisma.application.count.mockResolvedValue(0);
+      const req = { query: { needsAction: 'true' }, user: { role: 'Manager' } };
+      const res = mockRes();
+
+      await applicationController.list(req, res);
+
+      expect(prisma.application.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          OR: [
+            { status: { in: ['Submitted', 'UnderReview'] } },
+            { status: 'Interviewed', offer: null },
+            { offer: { status: 'Recommended' } }
+          ]
+        })
+      }));
+    });
+
+    test('an HR Officer, with no direct decision power in this queue, falls back to flagged applications', async () => {
+      prisma.application.findMany.mockResolvedValue([]);
+      prisma.application.count.mockResolvedValue(0);
+      const req = { query: { needsAction: 'true' }, user: { role: 'HR_Officer' } };
+      const res = mockRes();
+
+      await applicationController.list(req, res);
+
+      expect(prisma.application.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ OR: [{ screeningPassed: false }] })
+      }));
+    });
+
+    test('ignores the plain status/screeningPassed filters while active', async () => {
+      prisma.application.findMany.mockResolvedValue([]);
+      prisma.application.count.mockResolvedValue(0);
+      const req = {
+        query: { needsAction: 'true', status: 'Rejected', screeningPassed: 'true' },
+        user: { role: 'Principal_HR_Officer' }
+      };
+      const res = mockRes();
+
+      await applicationController.list(req, res);
+
+      expect(prisma.application.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: {
+          status: 'Rejected',
+          OR: [
+            { status: { in: ['Submitted', 'UnderReview'] } },
+            { status: 'Interviewed', offer: null }
+          ]
+        }
+      }));
+    });
+  });
 });
 
 describe('recommendOffer', () => {

@@ -2,8 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
+import { useDashboardEvents } from '../models/dashboardSocket';
 import HRSidebar from '../components/HRSidebar';
 import PageHeader from '../components/PageHeader';
+import LiveIndicator from '../components/LiveIndicator';
+import StatsStrip from '../components/StatsStrip';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Alert from '../components/Alert';
@@ -12,6 +15,7 @@ import TextField from '../components/TextField';
 import ApplicationReviewCard from '../components/ApplicationReviewCard';
 import { useGeneratedCvDownload } from '../utils/useGeneratedCvDownload';
 import { safeJsonParse } from '../utils/safeJsonParse';
+import { debounce } from '../utils/debounce';
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
@@ -43,19 +47,28 @@ export default function ApplicationManagement() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const vacancyId = searchParams.get('vacancyId') || '';
-  const selectVacancy = (id) => setSearchParams(id ? { vacancyId: id } : {});
+  // Merges into whatever's already in the URL rather than replacing it
+  // outright - the filter-sync effect below owns the other params, and a
+  // plain setSearchParams({vacancyId}) here would wipe them out from under it.
+  const selectVacancy = (id) => {
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set('vacancyId', id); else next.delete('vacancyId');
+    setSearchParams(next, { replace: true });
+  };
 
   const [vacancyOptions, setVacancyOptions] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [error, setError] = useState('');
 
-  const [statusFilter, setStatusFilter] = useState('');
-  const [candidateTypeFilter, setCandidateTypeFilter] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState('');
-  const [screeningFilter, setScreeningFilter] = useState('all'); // all|flagged|passed
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '');
+  const [candidateTypeFilter, setCandidateTypeFilter] = useState(searchParams.get('candidateType') || '');
+  const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('dept') || '');
+  const [screeningFilter, setScreeningFilter] = useState(searchParams.get('screening') || 'all'); // all|flagged|passed
+  const [searchInput, setSearchInput] = useState(searchParams.get('q') || '');
+  const [search, setSearch] = useState(searchParams.get('q') || '');
+  const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'newest');
+  const [needsAction, setNeedsAction] = useState(searchParams.get('action') === '1');
+  const [page, setPage] = useState(Number(searchParams.get('page')) > 0 ? Number(searchParams.get('page')) : 1);
 
   // setPage(1) alongside every filter change so a narrowed filter never
   // leaves the queue stranded on a page past the new, smaller result set.
@@ -63,6 +76,27 @@ export default function ApplicationManagement() {
   const applyCandidateTypeFilter = (v) => { setCandidateTypeFilter(v); setPage(1); };
   const applyDepartmentFilter = (v) => { setDepartmentFilter(v); setPage(1); };
   const applyScreeningFilter = (v) => { setScreeningFilter(v); setPage(1); };
+  const applySortBy = (v) => { setSortBy(v); setPage(1); };
+  const applyNeedsAction = (v) => { setNeedsAction(v); setPage(1); };
+
+  // Keeps the URL in sync as filters change (replace, not push), the same
+  // pattern HRDashboard.jsx's Vacancies tab uses - merges into whatever's
+  // already there (vacancyId, set separately by selectVacancy above) rather
+  // than fighting over ownership of the query string.
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    const setOrClear = (key, value, blank) => (!value || value === blank ? next.delete(key) : next.set(key, value));
+    setOrClear('status', statusFilter, '');
+    setOrClear('candidateType', candidateTypeFilter, '');
+    setOrClear('dept', departmentFilter, '');
+    setOrClear('screening', screeningFilter, 'all');
+    setOrClear('q', search, '');
+    setOrClear('sort', sortBy, 'newest');
+    setOrClear('action', needsAction ? '1' : '', '');
+    setOrClear('page', !vacancyId && page > 1 ? String(page) : '', '');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, candidateTypeFilter, departmentFilter, screeningFilter, search, sortBy, needsAction, page, vacancyId]);
 
   // No separate Search button - typing runs the search automatically, same
   // as every other filter. Debounced so a full query doesn't fire on every
@@ -121,28 +155,41 @@ export default function ApplicationManagement() {
       .catch((err) => { if (vacancyRequestIdRef.current === requestId) setError(err.response?.data?.error || 'Could not load this vacancy\'s applications'); });
   };
 
+  // Guards the reset branch below against firing on the very first render -
+  // without it, a deep link like ?dept=5&sort=score would be wiped out
+  // immediately on mount (vacancyId starts falsy, same as "just left vacancy
+  // mode" from this effect's point of view).
+  const isFirstVacancyModeRun = useRef(true);
   useEffect(() => {
     if (vacancyId) {
       setVacancy(null);
       loadVacancyMode();
-    } else {
+    } else if (!isFirstVacancyModeRun.current) {
       // These filters are hidden (not stale-but-invisible) once a specific
       // vacancy is selected - reset them so they don't silently carry over
       // and re-apply the moment the vacancy filter is cleared again.
       setDepartmentFilter(''); setCandidateTypeFilter(''); setSearchInput(''); setSearch('');
+      setSortBy('newest'); setNeedsAction(false); setPage(1);
     }
+    isFirstVacancyModeRun.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vacancyId]);
 
   const loadQueue = () => {
     setQueueLoading(true);
     setError('');
-    const params = { page, limit: QUEUE_PAGE_SIZE };
-    if (statusFilter) params.status = statusFilter;
+    const params = { page, limit: QUEUE_PAGE_SIZE, sort: sortBy };
+    if (needsAction) {
+      // Supersedes status/screening server-side (see applicationController.list) -
+      // the Status/Screening selects are disabled in the UI while this is on.
+      params.needsAction = 'true';
+    } else {
+      if (statusFilter) params.status = statusFilter;
+      if (screeningFilter === 'flagged') params.screeningPassed = 'false';
+      if (screeningFilter === 'passed') params.screeningPassed = 'true';
+    }
     if (candidateTypeFilter) params.candidateType = candidateTypeFilter;
     if (departmentFilter) params.departmentId = departmentFilter;
-    if (screeningFilter === 'flagged') params.screeningPassed = 'false';
-    if (screeningFilter === 'passed') params.screeningPassed = 'true';
     if (search) params.search = search;
     staffClient.get('/api/applications', { params })
       .then((res) => setQueue(res.data))
@@ -153,7 +200,20 @@ export default function ApplicationManagement() {
   useEffect(() => {
     if (!vacancyId) loadQueue();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vacancyId, statusFilter, candidateTypeFilter, departmentFilter, screeningFilter, search, page]);
+  }, [vacancyId, statusFilter, candidateTypeFilter, departmentFilter, screeningFilter, search, sortBy, needsAction, page]);
+
+  // Live refresh - whichever mode is currently active (loadQueue/loadVacancyMode
+  // are plain closures redefined every render, capturing the latest filters/
+  // vacancyId, so this ref is kept pointed at the freshest one rather than
+  // baking a stale closure into a memoized callback). A burst of WS events
+  // (e.g. a batch of applications submitted at once) collapses into one
+  // refetch via debounce, same as every other WS-connected dashboard.
+  const activeLoaderRef = useRef(() => {});
+  useEffect(() => {
+    activeLoaderRef.current = vacancyId ? loadVacancyMode : loadQueue;
+  });
+  const refetchActiveRef = useRef(debounce(() => activeLoaderRef.current(), 500));
+  const { connected } = useDashboardEvents(refetchActiveRef.current);
 
   const moveInOrder = (fromIndex, toIndex) => {
     setShortlistOrder((prev) => {
@@ -213,13 +273,35 @@ export default function ApplicationManagement() {
 
   const totalPages = queue ? Math.max(Math.ceil(queue.total / queue.limit), 1) : 1;
 
+  // Derived, client-side, from data already in hand - no dedicated stats
+  // endpoint. The cross-vacancy queue is only ever a loaded page (queue.total
+  // is the true filtered count; flagged/meets-criteria are only known for
+  // the page in view, hence the label), while a selected vacancy's app list
+  // is fetched whole, so those chips reflect the true total for it.
+  const queueStats = queue ? [
+    { label: 'Matching filters', value: queue.total },
+    { label: 'Flagged (this page)', value: queue.data.filter((a) => a.screeningPassed === false).length, color: 'var(--color-warning)' },
+    { label: 'Meets criteria (this page)', value: queue.data.filter((a) => a.screeningPassed === true).length, color: 'var(--color-success)' }
+  ] : null;
+  const vacancyStats = vacancy ? [
+    { label: 'Total applications', value: vacancyApps.length },
+    { label: 'Awaiting review', value: vacancyApps.filter((a) => a.status === 'Submitted').length, color: 'var(--color-warning)' },
+    { label: 'Flagged', value: vacancyApps.filter((a) => a.screeningPassed === false).length, color: 'var(--color-warning)' },
+    { label: 'Shortlisted/ranked', value: vacancyApps.filter((a) => a.rank != null).length, color: 'var(--color-accent)' }
+  ] : null;
+
   return (
     <div style={{ display: 'flex', gap: 'var(--spacing-lg)', alignItems: 'flex-start' }}>
       <HRSidebar active="applications" />
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <PageHeader title="Application Management" subtitle="Review and manage applications across every vacancy" />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <PageHeader title="Application Management" subtitle="Review and manage applications across every vacancy" />
+          <LiveIndicator connected={connected} />
+        </div>
         <Alert type="error" message={error} />
+
+        {(queueStats || vacancyStats) && <StatsStrip stats={vacancyId ? vacancyStats : queueStats} />}
 
         <Card style={{ marginBottom: 'var(--spacing-md)' }}>
           <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -227,19 +309,19 @@ export default function ApplicationManagement() {
               <option value="">All vacancies</option>
               {vacancyOptions.map((v) => <option key={v.id} value={v.id}>{v.jobRef} — {v.title}</option>)}
             </Select>
-            <Select label="Status" value={statusFilter} onChange={(e) => applyStatusFilter(e.target.value)} style={{ flex: '1 1 180px' }}>
+            <Select label="Status" value={statusFilter} onChange={(e) => applyStatusFilter(e.target.value)} disabled={needsAction} style={{ flex: '1 1 180px' }}>
               <option value="">All statuses</option>
               {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
             </Select>
-            <Select label="Screening" value={screeningFilter} onChange={(e) => applyScreeningFilter(e.target.value)} style={{ flex: '1 1 180px' }}>
+            <Select label="Screening" value={screeningFilter} onChange={(e) => applyScreeningFilter(e.target.value)} disabled={needsAction} style={{ flex: '1 1 180px' }}>
               <option value="all">All applications</option>
               <option value="flagged">Flagged only</option>
               <option value="passed">Meets criteria only</option>
             </Select>
-            {/* Department/candidate type/search only make sense browsing
-                across vacancies - a single vacancy already narrows
-                department, and its applicant pool is small enough to
-                scan without a text search. */}
+            {/* Department/candidate type/search/sort/"needs my action" only
+                make sense browsing across vacancies - a single vacancy
+                already narrows department, and its applicant pool is small
+                enough to scan without a text search or a role-aware shortcut. */}
             {!vacancyId && (
               <>
                 <Select label="Department" value={departmentFilter} onChange={(e) => applyDepartmentFilter(e.target.value)} style={{ flex: '1 1 200px' }}>
@@ -251,6 +333,12 @@ export default function ApplicationManagement() {
                   <option value="Internal">Internal</option>
                   <option value="External">External</option>
                 </Select>
+                <Select label="Sort" value={sortBy} onChange={(e) => applySortBy(e.target.value)} disabled={needsAction} style={{ flex: '1 1 170px' }}>
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="score">Highest score</option>
+                  <option value="deadline">Vacancy deadline</option>
+                </Select>
                 <TextField
                   label="Search"
                   placeholder="Candidate name or email"
@@ -258,6 +346,10 @@ export default function ApplicationManagement() {
                   onChange={(e) => setSearchInput(e.target.value)}
                   style={{ flex: '2 1 220px' }}
                 />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, paddingBottom: 9, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  <input type="checkbox" checked={needsAction} onChange={(e) => applyNeedsAction(e.target.checked)} />
+                  Needs my action
+                </label>
               </>
             )}
           </div>
@@ -271,7 +363,7 @@ export default function ApplicationManagement() {
               <ApplicationReviewCard
                 key={app.id} app={app} vacancy={app.vacancy} staffRole={staff?.role}
                 onUpdated={loadQueue} onDownloadCv={downloadGeneratedCv} downloadingId={downloadingId}
-                showVacancyContext
+                showVacancyContext defaultExpanded={false}
               />
             ))}
             {queue && queue.total > queue.limit && (

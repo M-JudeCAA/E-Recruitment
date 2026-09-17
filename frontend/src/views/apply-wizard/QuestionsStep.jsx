@@ -20,12 +20,15 @@ import Select from '../../components/Select';
 // to fail (see backend screeningService.screenApplication). Still never
 // blocks the application itself from being submitted.
 export default function QuestionsStep({
-  questions, set, desirableRequirements, desirableAnswers, setDesirableAnswer,
+  questions, set, vacancyLocation, desirableRequirements, desirableAnswers, setDesirableAnswer,
   disqualifyingRequirements, disqualifyingAnswers, setDisqualifyingAnswer
 }) {
+  // CHANGED - this used to always say "Entebbe" regardless of where the
+  // vacancy actually is, since vacancy.location was never passed in here.
+  const relocateLabel = vacancyLocation ? `Open to relocating to ${vacancyLocation}?` : 'Open to relocating for this role?';
   return (
     <div>
-      <Select label="Open to relocating to Entebbe?" required value={questions.openToRelocate} onChange={set('openToRelocate')}>
+      <Select label={relocateLabel} required value={questions.openToRelocate} onChange={set('openToRelocate')}>
         <option value="">Select one</option>
         <option value="Yes">Yes</option>
         <option value="No">No</option>

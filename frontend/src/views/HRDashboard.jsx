@@ -51,6 +51,21 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 // sense - it's already been resolved one way or the other.
 const isOverdue = (v) => v.deadline && new Date(v.deadline) < new Date() && ['Open', 'PartiallyFilled'].includes(v.status);
 
+const MS_PER_DAY = 86400000;
+
+// "N days left" countdown alongside the deadline date itself - the deadline
+// line previously only spoke up once a vacancy was already overdue; this
+// gives the same "closing soon" signal HRHome's own panel already shows,
+// directly on the card instead of a separate screen. Amber inside a week,
+// muted otherwise; isOverdue's own red "Deadline passed" styling is
+// untouched and takes precedence (this only renders while not overdue).
+function daysLeftLabel(deadline) {
+  const daysLeft = Math.ceil((new Date(deadline).getTime() - Date.now()) / MS_PER_DAY);
+  if (daysLeft === 0) return { text: 'today', urgent: true };
+  if (daysLeft === 1) return { text: 'tomorrow', urgent: true };
+  return { text: `in ${daysLeft} days`, urgent: daysLeft <= 7 };
+}
+
 export default function HRDashboard() {
   const { staff } = useAuth();
   const location = useLocation();
@@ -100,7 +115,7 @@ export default function HRDashboard() {
   // Which tab is showing lives in the URL (?tab=...), not local state, so
   // HRSidebar links from other /hr/* pages (and browser back/forward/reload)
   // land on the right tab instead of always resetting to Vacancies.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const activeSection = VALID_TABS.includes(requestedTab) ? requestedTab : 'vacancies';
 
@@ -152,10 +167,54 @@ export default function HRDashboard() {
 
   // Filter bar (#2) - client-side over the already-loaded admin vacancy
   // list, same tradeoff HRHome's widgets make: no extra request, just a
-  // derived view over data already in hand.
-  const [searchText, setSearchText] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [departmentFilter, setDepartmentFilter] = useState('All');
+  // derived view over data already in hand. Initial values read from the
+  // URL (?q=&status=&dept=&postingType=&directorate=&sort=) so a refresh
+  // or a shared link restores the same view instead of silently resetting
+  // to "All" - kept separate from the `tab` param's own handling above.
+  const [searchText, setSearchText] = useState(searchParams.get('q') || '');
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || 'All');
+  const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('dept') || 'All');
+  const [postingTypeFilter, setPostingTypeFilter] = useState(searchParams.get('postingType') || 'All');
+  const [directorateFilter, setDirectorateFilter] = useState(searchParams.get('directorate') || 'All');
+  const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'urgent');
+  // Which vacancy the master-detail split's detail pane shows - not synced
+  // to the URL (unlike the filters above); it's a within-page focus, not a
+  // navigable destination, and defaults to the first result via
+  // `selectedVacancy` below whenever nothing (or a now-filtered-out id) is
+  // selected, so switching filters never leaves the pane empty.
+  const [selectedVacancyId, setSelectedVacancyId] = useState(null);
+
+  // Keeps the URL in sync as filters change (replace, not push - filtering
+  // isn't a "back button" moment) without disturbing `tab` or any other
+  // param already present. Runs after every filter-state change, not on a
+  // `searchParams` dependency, to avoid a set-triggers-rerun-triggers-set
+  // loop; the effect always reads the latest `searchParams` from the
+  // render closure regardless.
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    const setOrClear = (key, value, blank) => (!value || value === blank ? next.delete(key) : next.set(key, value));
+    setOrClear('q', searchText, '');
+    setOrClear('status', statusFilter, 'All');
+    setOrClear('dept', departmentFilter, 'All');
+    setOrClear('postingType', postingTypeFilter, 'All');
+    setOrClear('directorate', directorateFilter, 'All');
+    setOrClear('sort', sortBy, 'urgent');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchText, statusFilter, departmentFilter, postingTypeFilter, directorateFilter, sortBy]);
+
+  // Display-only cap on how many filtered/sorted results render at once,
+  // with a "Load more" step rather than true server-side pagination -
+  // GET /api/vacancies/admin already returns the full list in one bounded
+  // request (the same tradeoff this file's other widgets make), so this
+  // only needs to bound the DOM, not the fetch. Resets to the first page
+  // whenever a filter changes, so a narrower result set is never hidden
+  // behind a stale "load more" position from a wider one.
+  const VACANCY_PAGE_SIZE = 20;
+  const [visibleCount, setVisibleCount] = useState(VACANCY_PAGE_SIZE);
+  useEffect(() => {
+    setVisibleCount(VACANCY_PAGE_SIZE);
+  }, [searchText, statusFilter, departmentFilter, postingTypeFilter, directorateFilter, sortBy]);
 
   const load = useCallback(() => staffClient.get('/api/vacancies/admin').then((res) => setVacancies(res.data)), []);
 
@@ -349,19 +408,43 @@ export default function HRDashboard() {
     }
   };
 
+  // Directorate options derived from the vacancy list itself (already
+  // includes department.directorate via findManyForAdmin's include) rather
+  // than a separate fetch - same "no extra request" tradeoff as the rest
+  // of this filter bar.
+  const directorateOptions = [...new Set(
+    vacancies.map((v) => v.department?.directorate?.name).filter(Boolean)
+  )].sort();
+
   const filteredVacancies = vacancies.filter((v) => {
     if (statusFilter !== 'All' && v.status !== statusFilter) return false;
     if (departmentFilter !== 'All' && String(v.departmentId) !== departmentFilter) return false;
+    if (postingTypeFilter !== 'All' && v.postingType !== postingTypeFilter) return false;
+    if (directorateFilter !== 'All' && v.department?.directorate?.name !== directorateFilter) return false;
     const q = searchText.trim().toLowerCase();
     if (q && !v.title.toLowerCase().includes(q) && !v.jobRef.toLowerCase().includes(q)) return false;
     return true;
   });
 
-  // Display-only ordering over the filtered results - overdue-and-still-
-  // active vacancies surface first so they aren't missed among newer
-  // ones, without disturbing findManyForAdmin's createdAt-desc order for
-  // everything else.
-  const sortedVacancies = [...filteredVacancies].sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a)));
+  // "Most urgent" (default) surfaces overdue-and-still-active vacancies
+  // first, same as before; the other options are a flat re-sort. `Array.sort`
+  // is spec-stable, so "Newest first" (already findManyForAdmin's own
+  // createdAt-desc order) is a true no-op comparator rather than a second
+  // sort key to maintain.
+  const SORTERS = {
+    urgent: (a, b) => Number(isOverdue(b)) - Number(isOverdue(a)),
+    newest: () => 0,
+    deadline: (a, b) => {
+      if (!a.deadline && !b.deadline) return 0;
+      if (!a.deadline) return 1;
+      if (!b.deadline) return -1;
+      return new Date(a.deadline) - new Date(b.deadline);
+    },
+    applications: (a, b) => (b._count?.applications ?? 0) - (a._count?.applications ?? 0)
+  };
+  const sortedVacancies = [...filteredVacancies].sort(SORTERS[sortBy] || SORTERS.urgent);
+  const visibleVacancies = sortedVacancies.slice(0, visibleCount);
+  const selectedVacancy = sortedVacancies.find((v) => v.id === selectedVacancyId) || sortedVacancies[0] || null;
 
   const transitionDeadlinePassed = transitionModal?.vacancy.deadline && new Date(transitionModal.vacancy.deadline) < new Date();
 
@@ -410,8 +493,10 @@ export default function HRDashboard() {
       <Alert type="success" message={message} />
       <Alert type="error" message={error} />
 
-      {/* Filter bar (#2) - text search plus status/department filters over
-          the already-loaded admin vacancy list. */}
+      {/* Filter bar (#2) - text search plus status/department/posting-type/
+          directorate filters and a sort order, all over the already-loaded
+          admin vacancy list, and synced to the URL (see the effect above)
+          so a refresh or a shared link keeps the same view. */}
       <Card style={{ marginBottom: 'var(--spacing-md)' }}>
         <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
           <TextField
@@ -433,6 +518,21 @@ export default function HRDashboard() {
             <option value="All">All departments</option>
             {approvedDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
           </Select>
+          <Select label="Directorate" value={directorateFilter} onChange={(e) => setDirectorateFilter(e.target.value)} style={{ flex: '1 1 170px' }}>
+            <option value="All">All directorates</option>
+            {directorateOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+          </Select>
+          <Select label="Posting type" value={postingTypeFilter} onChange={(e) => setPostingTypeFilter(e.target.value)} style={{ flex: '1 1 150px' }}>
+            <option value="All">Internal & External</option>
+            <option value="Internal">Internal only</option>
+            <option value="External">External only</option>
+          </Select>
+          <Select label="Sort" value={sortBy} onChange={(e) => setSortBy(e.target.value)} style={{ flex: '1 1 170px' }}>
+            <option value="urgent">Most urgent first</option>
+            <option value="newest">Newest first</option>
+            <option value="deadline">Deadline soonest</option>
+            <option value="applications">Most applications</option>
+          </Select>
         </div>
       </Card>
 
@@ -443,106 +543,209 @@ export default function HRDashboard() {
           </p>
         </Card>
       ) : (
-      sortedVacancies.map((v) => (
-        <Card key={v.id} accent={isOverdue(v) ? 'var(--color-danger)' : undefined}>
-          {/* Header: title reads as the actual heading (was buried mid-
-              sentence after the jobRef); status + application count form
-              a right-aligned cluster instead of running into the title
-              line, so both are scannable at a glance down a long list. */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--color-text)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                {v.title}
-                {v.readvertisedFromId != null && <StatusBadge status="Readvertised" />}
-                {v.status === 'PendingApproval' && <UrgencyBadge followUp={followUps.find((f) => f.taskType === 'VacancyApproval' && f.taskId === v.id)} />}
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
-                {v.jobRef}
-                {' '}&middot; {v.department?.directorate?.name} &mdash; {v.department?.name}
-                {v.reportsToPosition && <> &middot; Reports to {v.reportsToPosition.name}</>}
-                {v.deadline && (
-                  <span style={{ fontWeight: isOverdue(v) ? 600 : 400, color: isOverdue(v) ? 'var(--color-danger)' : 'inherit' }}>
-                    {' '}&middot; {isOverdue(v) ? 'Deadline passed' : 'Deadline'} {new Date(v.deadline).toLocaleDateString()}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <StatusBadge status={v.status} />
-              <span style={{ fontSize: 12, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-                {v._count?.applications ?? 0} application{v._count?.applications === 1 ? '' : 's'}
-              </span>
-            </div>
-          </div>
-
-          {/* Action toolbar: right-aligned, every action the same size/
-              spacing, separated from the header by a rule - was a left-
-              flowing mix of a plain Link and several differently-spaced
-              Buttons that visually competed with each other. */}
-          <div
+      // Master-detail split, not a vertical stack of full cards - a long
+      // filtered list used to mean scrolling past six action toolbars to
+      // compare two vacancies. The list stays a dense, scannable column;
+      // the detail pane (still the exact same header/meta/action-toolbar
+      // markup a card used to render inline) shows whichever one is
+      // selected, defaulting to the first result. Stacks to one column
+      // below the `md` breakpoint, same responsive convention Sidebar.jsx
+      // already establishes elsewhere in this app.
+      <div className="flex flex-col md:flex-row" style={{ gap: 'var(--spacing-md)', alignItems: 'flex-start' }}>
+        {/* w-full/md:w-[380px] via className only, deliberately no inline
+            `width` alongside it - an inline style always wins over a class
+            regardless of breakpoint, which would silently pin this to one
+            width at every viewport size (the same lesson Sidebar.jsx's own
+            hidden/md:block split already documents). */}
+        <div className="w-full md:w-[380px]" style={{ flexShrink: 0 }}>
+          <Card
             style={{
-              display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 8,
-              marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)'
+              marginBottom: 0, padding: 0, overflow: 'hidden',
+              position: 'sticky',
+              top: 'calc(var(--navbar-height) + var(--breadcrumb-height) + var(--spacing-md))'
             }}
           >
-            {/* Inactive while PendingApproval - the vacancy hasn't been
-                published yet, so there is nothing legitimate to review
-                (see applicationEligibility.js's status gate, which candidates
-                are meant to be blocked by before ever reaching this vacancy).
-                Every other status has been published at least once. */}
-            {v.status === 'PendingApproval' ? (
-              <span
-                title="Applications become viewable once this vacancy is approved and published"
-                style={{ padding: '4px 10px', fontSize: 13, color: 'var(--color-text-muted)', cursor: 'not-allowed' }}
-              >
-                View applications
-              </span>
-            ) : (
-              <Link to={`/hr/applications?vacancyId=${v.id}`} style={{ padding: '4px 10px', fontSize: 13 }}>View applications</Link>
-            )}
-            <Button variant="ghost" style={{ padding: '4px 10px' }} onClick={() => openEdit(v)}>Edit</Button>
-            {/* SIMPLIFIED - the Senior HR Officer review stage and its
-                "awaiting review" status line are both removed entirely,
-                not just hidden. The 2-tier flow goes straight from
-                PendingApproval to a Manager/Director's direct approval. */}
-            {v.status === 'PendingApproval' && canApprove && (
-              <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => approve(v.id)}>Approve</Button>
-            )}
-            {v.status === 'Closed' && canApprove && (
-              <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => approve(v.id)}>Re-open</Button>
-            )}
-            {v.status === 'Closed' && (
-              <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => openReadvertise(v)}>Readvertise</Button>
-            )}
-            {/* Internal <-> External transition, restricted to the same
-                Manager/Director tier as approval, and only while the
-                vacancy is actually live (Open/PartiallyFilled) - matches
-                the server-side guard in transitionPostingType() exactly,
-                so this button never appears somewhere the backend would
-                refuse it anyway. Locked once a transition was made while
-                the deadline had already passed (postingTypeLocked) - no
-                further transitions allowed on this vacancy at all. */}
-            {['Open', 'PartiallyFilled'].includes(v.status) && canTransition && (
-              v.postingTypeLocked ? (
-                <span
-                  title="This vacancy's posting type was changed after its deadline had passed, and is now locked"
-                  style={{ padding: '4px 10px', fontSize: 13, color: 'var(--color-text-muted)', cursor: 'not-allowed' }}
-                >
-                  Posting type locked
-                </span>
-              ) : (
-                <Button variant="ghost" style={{ padding: '4px 10px' }} onClick={() => openTransitionModal(v)}>
-                  Transition to {v.postingType === 'Internal' ? 'External' : 'Internal'}
+            <div style={{ maxHeight: 'calc(100vh - var(--navbar-height) - var(--breadcrumb-height) - 220px)', minHeight: 160, overflowY: 'auto' }}>
+              {visibleVacancies.map((v, i) => {
+                const isSelected = v.id === selectedVacancy?.id;
+                const overdue = isOverdue(v);
+                const deadlineInfo = v.deadline && !overdue ? daysLeftLabel(v.deadline) : null;
+                return (
+                  <button
+                    key={v.id}
+                    onClick={() => setSelectedVacancyId(v.id)}
+                    className="list-row"
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left', padding: '10px 12px',
+                      border: 'none', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
+                      cursor: 'pointer', font: 'inherit',
+                      // Only set inline when selected - leaving it unset
+                      // otherwise lets the .list-row:hover rule in
+                      // theme.css show through (an inline `background`,
+                      // even 'transparent', always wins over a CSS class).
+                      ...(isSelected
+                        ? { background: 'var(--color-primary-light)', boxShadow: 'inset 3px 0 0 0 var(--color-primary)' }
+                        : {})
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                      <div style={{
+                        fontSize: 14, fontWeight: 600, color: 'var(--color-text)', minWidth: 0,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                      }}>
+                        {v.title}
+                      </div>
+                      <StatusBadge status={v.status} />
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {v.department?.name} &middot; {v.postingType}
+                      {overdue && <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}> &middot; overdue</span>}
+                      {deadlineInfo && (
+                        <span style={{ color: deadlineInfo.urgent ? 'var(--color-warning)' : 'var(--color-text-muted)', fontWeight: deadlineInfo.urgent ? 600 : 400 }}>
+                          {' '}&middot; {deadlineInfo.text}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                      {v._count?.applications ?? 0} application{v._count?.applications === 1 ? '' : 's'}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {sortedVacancies.length > visibleCount && (
+              <div style={{ padding: 10, borderTop: '1px solid var(--color-border)' }}>
+                <Button variant="ghost" style={{ width: '100%' }} onClick={() => setVisibleCount((c) => c + VACANCY_PAGE_SIZE)}>
+                  Load more ({sortedVacancies.length - visibleCount} remaining)
                 </Button>
-              )
+              </div>
             )}
-            {v.status !== 'Closed' && canApprove && (
-              <Button variant="ghost" style={{ padding: '4px 10px', color: 'var(--color-danger)' }}
-                onClick={() => closeVacancy(v.id)}>Close vacancy</Button>
-            )}
-          </div>
-        </Card>
-      ))
+          </Card>
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {selectedVacancy && (() => {
+            const v = selectedVacancy;
+            return (
+              <Card accent={isOverdue(v) ? 'var(--color-danger)' : undefined} style={{ marginBottom: 0 }}>
+                {/* Header: title reads as the actual heading (was buried mid-
+                    sentence after the jobRef); status + application count form
+                    a right-aligned cluster instead of running into the title
+                    line, so both are scannable at a glance. */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--color-text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {v.title}
+                      {/* Outlined, not filled - a first-class attribute (Internal/
+                          External is a hard eligibility gate elsewhere) but
+                          shouldn't compete visually with the colored Status/
+                          Readvertised/urgency badges next to it. */}
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, padding: '1px 8px', borderRadius: 999,
+                        border: '1px solid var(--color-border)', color: 'var(--color-text-muted)'
+                      }}>
+                        {v.postingType}
+                      </span>
+                      {v.readvertisedFromId != null && <StatusBadge status="Readvertised" />}
+                      {v.status === 'PendingApproval' && <UrgencyBadge followUp={followUps.find((f) => f.taskType === 'VacancyApproval' && f.taskId === v.id)} />}
+                    </div>
+                    <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                      {v.jobRef}
+                      {' '}&middot; {v.department?.directorate?.name} &mdash; {v.department?.name}
+                      {v.reportsToPosition && <> &middot; Reports to {v.reportsToPosition.name}</>}
+                      {v.createdBy?.name && <> &middot; Created by {v.createdBy.name}</>}
+                      {v.deadline && (
+                        <span style={{ fontWeight: isOverdue(v) ? 600 : 400, color: isOverdue(v) ? 'var(--color-danger)' : 'inherit' }}>
+                          {' '}&middot; {isOverdue(v) ? 'Deadline passed' : 'Deadline'} {new Date(v.deadline).toLocaleDateString()}
+                          {!isOverdue(v) && (() => {
+                            const { text, urgent } = daysLeftLabel(v.deadline);
+                            return (
+                              <span style={{ color: urgent ? 'var(--color-warning)' : 'var(--color-text-muted)', fontWeight: urgent ? 600 : 400 }}>
+                                {' '}({text})
+                              </span>
+                            );
+                          })()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    <StatusBadge status={v.status} />
+                    <span style={{ fontSize: 12, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                      {v._count?.applications ?? 0} application{v._count?.applications === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action toolbar: right-aligned, every action the same size/
+                    spacing, separated from the header by a rule. */}
+                <div
+                  style={{
+                    display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', gap: 8,
+                    marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--color-border)'
+                  }}
+                >
+                  {/* Inactive while PendingApproval - the vacancy hasn't been
+                      published yet, so there is nothing legitimate to review
+                      (see applicationEligibility.js's status gate, which candidates
+                      are meant to be blocked by before ever reaching this vacancy).
+                      Every other status has been published at least once. */}
+                  {v.status === 'PendingApproval' ? (
+                    <span
+                      title="Applications become viewable once this vacancy is approved and published"
+                      style={{ padding: '4px 10px', fontSize: 13, color: 'var(--color-text-muted)', cursor: 'not-allowed' }}
+                    >
+                      View applications
+                    </span>
+                  ) : (
+                    <Link to={`/hr/applications?vacancyId=${v.id}`} style={{ padding: '4px 10px', fontSize: 13 }}>View applications</Link>
+                  )}
+                  <Button variant="ghost" style={{ padding: '4px 10px' }} onClick={() => openEdit(v)}>Edit</Button>
+                  {/* SIMPLIFIED - the Senior HR Officer review stage and its
+                      "awaiting review" status line are both removed entirely,
+                      not just hidden. The 2-tier flow goes straight from
+                      PendingApproval to a Manager/Director's direct approval. */}
+                  {v.status === 'PendingApproval' && canApprove && (
+                    <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => approve(v.id)}>Approve</Button>
+                  )}
+                  {v.status === 'Closed' && canApprove && (
+                    <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => approve(v.id)}>Re-open</Button>
+                  )}
+                  {v.status === 'Closed' && (
+                    <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => openReadvertise(v)}>Readvertise</Button>
+                  )}
+                  {/* Internal <-> External transition, restricted to the same
+                      Manager/Director tier as approval, and only while the
+                      vacancy is actually live (Open/PartiallyFilled) - matches
+                      the server-side guard in transitionPostingType() exactly,
+                      so this button never appears somewhere the backend would
+                      refuse it anyway. Locked once a transition was made while
+                      the deadline had already passed (postingTypeLocked) - no
+                      further transitions allowed on this vacancy at all. */}
+                  {['Open', 'PartiallyFilled'].includes(v.status) && canTransition && (
+                    v.postingTypeLocked ? (
+                      <span
+                        title="This vacancy's posting type was changed after its deadline had passed, and is now locked"
+                        style={{ padding: '4px 10px', fontSize: 13, color: 'var(--color-text-muted)', cursor: 'not-allowed' }}
+                      >
+                        Posting type locked
+                      </span>
+                    ) : (
+                      <Button variant="ghost" style={{ padding: '4px 10px' }} onClick={() => openTransitionModal(v)}>
+                        Transition to {v.postingType === 'Internal' ? 'External' : 'Internal'}
+                      </Button>
+                    )
+                  )}
+                  {v.status !== 'Closed' && canApprove && (
+                    <Button variant="ghost" style={{ padding: '4px 10px', color: 'var(--color-danger)' }}
+                      onClick={() => closeVacancy(v.id)}>Close vacancy</Button>
+                  )}
+                </div>
+              </Card>
+            );
+          })()}
+        </div>
+      </div>
       )}
 
       {editModal && (

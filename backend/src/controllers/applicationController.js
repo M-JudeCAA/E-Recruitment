@@ -4,6 +4,7 @@ const slaModel = require('../models/slaModel');
 const workflow = require('../services/workflowService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
+const { ROLE_RANK } = require('../middleware/auth');
 
 // NOTE: application creation/submission lives in applicationDraftController
 // now (saveDraft/submit/withdraw) - see routes/applications.js. This file
@@ -23,12 +24,13 @@ const VALID_STATUSES = [
 const VALID_CANDIDATE_TYPES = ['Internal', 'External'];
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
+const VALID_SORTS = ['newest', 'oldest', 'score', 'deadline'];
 
 // The Application Management queue - a real cross-vacancy list backed by
 // server-side filtering/pagination, replacing the old client-side N+1
 // (fetch every vacancy's applications, flatten) HRDashboard.jsx used to do.
 async function list(req, res) {
-  const { vacancyId, status, departmentId, candidateType, screeningPassed, search, page, limit } = req.query;
+  const { vacancyId, status, departmentId, candidateType, screeningPassed, search, page, limit, sort, needsAction } = req.query;
   if (status && !VALID_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'Invalid status filter' });
   }
@@ -43,6 +45,30 @@ async function list(req, res) {
   if (departmentId !== undefined && !Number.isInteger(Number(departmentId))) {
     return res.status(400).json({ error: 'Invalid departmentId filter' });
   }
+  if (sort && !VALID_SORTS.includes(sort)) {
+    return res.status(400).json({ error: 'Invalid sort' });
+  }
+
+  // "Needs my action" - a role-aware shortcut through the queue, not a new
+  // authorization gate: it narrows to whatever THIS viewer's own rank can
+  // actually act on next, using the same cumulative ROLE_RANK hierarchy
+  // requireStaffRole checks (see middleware/auth.js). Deliberately not
+  // delegation-aware - unlike requireStaffRole's gate, this only shapes a
+  // query and authorizes nothing, so a plain own-rank check is enough.
+  // Supersedes the plain status/screeningPassed filters below when active
+  // (the frontend disables those controls while this is on).
+  let needsActionOr;
+  if (needsAction === 'true') {
+    const rank = ROLE_RANK[req.user.role] || 0;
+    needsActionOr = [];
+    if (rank >= ROLE_RANK.Senior_HR_Officer) needsActionOr.push({ status: { in: ['Submitted', 'UnderReview'] } });
+    if (rank >= ROLE_RANK.Principal_HR_Officer) needsActionOr.push({ status: 'Interviewed', offer: null });
+    if (rank >= ROLE_RANK.Manager) needsActionOr.push({ offer: { status: 'Recommended' } });
+    // An HR Officer has no direct decision power in this queue - their one
+    // lever is reviewing what automated screening flagged for someone
+    // else's attention, so that's what "needs my action" falls back to.
+    if (needsActionOr.length === 0) needsActionOr.push({ screeningPassed: false });
+  }
 
   const filters = {
     vacancyId: vacancyId ? Number(vacancyId) : undefined,
@@ -50,14 +76,15 @@ async function list(req, res) {
     departmentId: departmentId ? Number(departmentId) : undefined,
     candidateType: candidateType || undefined,
     screeningPassed: screeningPassed === 'true' ? true : screeningPassed === 'false' ? false : undefined,
-    search: search?.trim() || undefined
+    search: search?.trim() || undefined,
+    needsActionOr
   };
   const take = Math.min(Number(limit) || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const pageNum = Math.max(Number(page) || 1, 1);
   const skip = (pageNum - 1) * take;
 
   const [data, total] = await Promise.all([
-    applicationModel.findManyForHr({ ...filters, skip, take }),
+    applicationModel.findManyForHr({ ...filters, skip, take, sort }),
     applicationModel.countForHr(filters)
   ]);
   res.json({ data, total, page: pageNum, limit: take });
