@@ -87,24 +87,26 @@ function ClosingSoon({ vacancies, loading }) {
       ) : items.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Nothing closing in the next 7 days.</p>
       ) : (
-        items.map((v, i) => (
-          <Link
-            key={v.id}
-            to={`/hr/vacancy/${v.id}`}
-            style={{
-              display: 'block', padding: '8px 0',
-              borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
-              textDecoration: 'none', color: 'inherit'
-            }}
-          >
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{v.title}</div>
-            <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
-              {v.department?.name}
-              {' '}&middot;{' '}
-              {v.daysLeft === 0 ? 'Closes today' : v.daysLeft === 1 ? 'Closes tomorrow' : `Closes in ${v.daysLeft} days`}
-            </div>
-          </Link>
-        ))
+        <div className="panel-scroll">
+          {items.map((v, i) => (
+            <Link
+              key={v.id}
+              to={`/hr/vacancy/${v.id}`}
+              style={{
+                display: 'block', padding: '8px 0',
+                borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
+                textDecoration: 'none', color: 'inherit'
+              }}
+            >
+              <div style={{ fontWeight: 600, fontSize: 14 }}>{v.title}</div>
+              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                {v.department?.name}
+                {' '}&middot;{' '}
+                {v.daysLeft === 0 ? 'Closes today' : v.daysLeft === 1 ? 'Closes tomorrow' : `Closes in ${v.daysLeft} days`}
+              </div>
+            </Link>
+          ))}
+        </div>
       )}
     </Card>
   );
@@ -125,25 +127,27 @@ function RecentVacancies({ vacancies, loading }) {
       ) : items.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No vacancies created yet.</p>
       ) : (
-        items.map((v, i) => (
-          <Link
-            key={v.id}
-            to={`/hr/vacancy/${v.id}`}
-            style={{
-              display: 'block', padding: '8px 0',
-              borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
-              textDecoration: 'none', color: 'inherit'
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>{v.title}</div>
-              <StatusBadge status={v.status} />
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
-              {v.department?.name} &middot; {v._count?.applications ?? 0} application{v._count?.applications === 1 ? '' : 's'}
-            </div>
-          </Link>
-        ))
+        <div className="panel-scroll">
+          {items.map((v, i) => (
+            <Link
+              key={v.id}
+              to={`/hr/vacancy/${v.id}`}
+              style={{
+                display: 'block', padding: '8px 0',
+                borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
+                textDecoration: 'none', color: 'inherit'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{v.title}</div>
+                <StatusBadge status={v.status} />
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                {v.department?.name} &middot; {v._count?.applications ?? 0} application{v._count?.applications === 1 ? '' : 's'}
+              </div>
+            </Link>
+          ))}
+        </div>
       )}
     </Card>
   );
@@ -164,30 +168,32 @@ function UpcomingInterviews({ items, loading }) {
       ) : items.length === 0 ? (
         <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>Nothing scheduled in the next 7 days.</p>
       ) : (
-        items.slice(0, 5).map((r, i) => (
-          <Link
-            key={r.id}
-            to={`/hr/applications?vacancyId=${r.vacancyId}`}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',
-              borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
-              textDecoration: 'none', color: 'inherit'
-            }}
-          >
-            <CalendarClock size={15} color="var(--color-primary)" style={{ flexShrink: 0 }} />
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {r.candidateName} &middot; {r.vacancyTitle}
+        <div className="panel-scroll">
+          {items.map((r, i) => (
+            <Link
+              key={r.id}
+              to={`/hr/applications?vacancyId=${r.vacancyId}`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',
+                borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
+                textDecoration: 'none', color: 'inherit'
+              }}
+            >
+              <CalendarClock size={15} color="var(--color-primary)" style={{ flexShrink: 0 }} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {r.candidateName} &middot; {r.vacancyTitle}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                  Round {r.roundNumber} &middot; {r.mode || 'mode TBC'}
+                </div>
               </div>
-              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                Round {r.roundNumber} &middot; {r.mode || 'mode TBC'}
+              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', flexShrink: 0, textAlign: 'right' }}>
+                {r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'unscheduled'}
               </div>
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--color-text-muted)', flexShrink: 0, textAlign: 'right' }}>
-              {r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'unscheduled'}
-            </div>
-          </Link>
-        ))
+            </Link>
+          ))}
+        </div>
       )}
     </Card>
   );
