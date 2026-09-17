@@ -85,6 +85,8 @@ export default function CreateVacancyListing() {
   const [approvedDepartments, setApprovedDepartments] = useState([]);
   const [departmentPositions, setDepartmentPositions] = useState([]);
   const [reportsToOptions, setReportsToOptions] = useState([]);
+  const [loadingPositions, setLoadingPositions] = useState(false);
+  const [loadingReportsTo, setLoadingReportsTo] = useState(false);
   const [form, setForm] = useState(emptyForm);
   // Separate from form.location itself - lets "Other" stay selected (and
   // its text input visible) while the candidate types, even though the
@@ -115,16 +117,26 @@ export default function CreateVacancyListing() {
     setForm({ ...form, departmentId, positionId: '', reportsToPositionId: '' });
     setReportsToOptions([]);
     if (!departmentId) { setDepartmentPositions([]); return; }
-    const res = await staffClient.get(`/api/departments/${departmentId}/positions`);
-    setDepartmentPositions(res.data);
+    setLoadingPositions(true);
+    try {
+      const res = await staffClient.get(`/api/departments/${departmentId}/positions`);
+      setDepartmentPositions(res.data);
+    } finally {
+      setLoadingPositions(false);
+    }
   };
 
   // Step 2: Position (Title) chosen - loads senior positions for Reports To.
   const handlePositionChange = async (positionId) => {
     setForm({ ...form, positionId, reportsToPositionId: '' });
     if (!positionId) { setReportsToOptions([]); return; }
-    const res = await staffClient.get(`/api/positions/${positionId}/senior-options`);
-    setReportsToOptions(res.data);
+    setLoadingReportsTo(true);
+    try {
+      const res = await staffClient.get(`/api/positions/${positionId}/senior-options`);
+      setReportsToOptions(res.data);
+    } finally {
+      setLoadingReportsTo(false);
+    }
   };
 
   // Resolves the currently-selected department/position/reports-to ids
@@ -199,11 +211,11 @@ export default function CreateVacancyListing() {
 
           <div style={fieldGrid}>
             <div>
-              <Select label="Title" required value={form.positionId} onChange={(e) => handlePositionChange(e.target.value)} disabled={!form.departmentId}>
-                <option value="">{form.departmentId ? 'Select a position' : 'Select a department first'}</option>
+              <Select label="Title" required value={form.positionId} onChange={(e) => handlePositionChange(e.target.value)} disabled={!form.departmentId || loadingPositions}>
+                <option value="">{loadingPositions ? 'Loading positions...' : form.departmentId ? 'Select a position' : 'Select a department first'}</option>
                 {departmentPositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </Select>
-              {form.departmentId && departmentPositions.length === 0 && (
+              {form.departmentId && !loadingPositions && departmentPositions.length === 0 && (
                 <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -14 }}>
                   No positions yet. <Link to="/hr/departments">Add one</Link>.
                 </p>
@@ -211,11 +223,11 @@ export default function CreateVacancyListing() {
             </div>
             <div>
               <Select label="Reports to" value={form.reportsToPositionId}
-                onChange={(e) => setForm({ ...form, reportsToPositionId: e.target.value })} disabled={!form.positionId}>
-                <option value="">{form.positionId ? 'Select a position (optional)' : 'Select a title first'}</option>
+                onChange={(e) => setForm({ ...form, reportsToPositionId: e.target.value })} disabled={!form.positionId || loadingReportsTo}>
+                <option value="">{loadingReportsTo ? 'Loading...' : form.positionId ? 'Select a position (optional)' : 'Select a title first'}</option>
                 {reportsToOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </Select>
-              {form.positionId && reportsToOptions.length === 0 && (
+              {form.positionId && !loadingReportsTo && reportsToOptions.length === 0 && (
                 <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -14 }}>
                   No senior position exists yet in this department.
                 </p>

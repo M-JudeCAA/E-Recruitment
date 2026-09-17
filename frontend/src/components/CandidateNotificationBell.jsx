@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 import client from '../models/apiClient';
+import Spinner from './Spinner';
+import Skeleton from './Skeleton';
 
 const POLL_MS = 30000;
 
@@ -9,13 +11,19 @@ const POLL_MS = 30000;
 // /api/candidates/me/notifications routes instead.
 export default function CandidateNotificationBell() {
   const [notifications, setNotifications] = useState([]);
+  // Only ever gates the FIRST load - the 30s poll after that updates the
+  // list in place without re-showing a loading state over data already on
+  // screen.
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
+  const [markingReadId, setMarkingReadId] = useState(null);
   const containerRef = useRef(null);
 
   const load = () => client.get('/api/candidates/me/notifications')
     .then((res) => setNotifications(res.data))
-    .catch((err) => setError(err.response?.data?.error || 'Could not load notifications'));
+    .catch((err) => setError(err.response?.data?.error || 'Could not load notifications'))
+    .finally(() => setLoading(false));
 
   useEffect(() => {
     load();
@@ -32,11 +40,14 @@ export default function CandidateNotificationBell() {
   }, []);
 
   const markRead = async (id) => {
+    setMarkingReadId(id);
     try {
       await client.patch(`/api/candidates/me/notifications/${id}/read`);
       setNotifications((prev) => prev.filter((n) => n.id !== id));
     } catch (err) {
       setError(err.response?.data?.error || 'Could not mark notification read');
+    } finally {
+      setMarkingReadId(null);
     }
   };
 
@@ -70,11 +81,17 @@ export default function CandidateNotificationBell() {
           border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.15)', zIndex: 20
         }}>
-          {error && <div style={{ padding: 12, fontSize: 13, color: 'var(--color-danger)' }}>{error}</div>}
-          {notifications.length === 0 && !error && (
+          {loading && [0, 1, 2].map((i) => (
+            <div key={i} style={{ padding: 12, borderBottom: '1px solid var(--color-border)' }}>
+              <Skeleton width={`${85 - i * 10}%`} height={13} style={{ marginBottom: 8 }} />
+              <Skeleton width="35%" height={11} />
+            </div>
+          ))}
+          {!loading && error && <div style={{ padding: 12, fontSize: 13, color: 'var(--color-danger)' }}>{error}</div>}
+          {!loading && notifications.length === 0 && !error && (
             <div style={{ padding: 12, fontSize: 13, color: 'var(--color-text-muted)' }}>No unread notifications.</div>
           )}
-          {notifications.map((n) => (
+          {!loading && notifications.map((n) => (
             <div key={n.id} style={{ padding: 12, borderBottom: '1px solid var(--color-border)' }}>
               <div style={{ fontSize: 13 }}>{n.message}</div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
@@ -83,9 +100,11 @@ export default function CandidateNotificationBell() {
                 </span>
                 <button
                   onClick={() => markRead(n.id)}
-                  style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: 12, cursor: 'pointer' }}
+                  disabled={markingReadId === n.id}
+                  style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: 12, cursor: markingReadId === n.id ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
                 >
-                  Mark read
+                  {markingReadId === n.id && <Spinner size={10} color="currentColor" />}
+                  {markingReadId === n.id ? 'Marking...' : 'Mark read'}
                 </button>
               </div>
             </div>

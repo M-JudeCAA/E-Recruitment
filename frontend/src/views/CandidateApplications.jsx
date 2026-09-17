@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CalendarClock, Video, MapPin, Award, ClipboardList } from 'lucide-react';
 import client from '../models/apiClient';
 import { useAuth } from '../models/AuthContext';
@@ -10,7 +10,13 @@ import Button from '../components/Button';
 import Alert from '../components/Alert';
 import StatusBadge from '../components/StatusBadge';
 import LoadingState from '../components/LoadingState';
+import ViewSwitcher from '../components/ViewSwitcher';
+import DataTable from '../components/DataTable';
+import BoardView from '../components/BoardView';
+import LoadMoreControl from '../components/LoadMoreControl';
 import { useConfirm } from '../components/ConfirmDialog';
+
+const PAGE_SIZE = 10;
 
 const CLOSED_STATUSES = ['Rejected', 'Withdrawn'];
 const REVIEW_STATUSES = ['Submitted', 'UnderReview', 'Shortlisted'];
@@ -85,6 +91,17 @@ export default function CandidateApplications() {
   const [offerMessage, setOfferMessage] = useState('');
   const [withdrawMessage, setWithdrawMessage] = useState('');
   const [busyOfferId, setBusyOfferId] = useState(null);
+  const [withdrawingId, setWithdrawingId] = useState(null);
+  const [urlParams, setUrlParams] = useSearchParams();
+  const [view, setView] = useState(urlParams.get('view') || 'list');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  useEffect(() => {
+    const next = new URLSearchParams(urlParams);
+    if (view === 'list') next.delete('view'); else next.set('view', view);
+    setUrlParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+  useEffect(() => { setVisibleCount(PAGE_SIZE); }, [filter]);
 
   const loadApplications = () => client.get('/api/candidates/me/applications')
     .then((res) => setApplications(res.data))
@@ -127,23 +144,27 @@ export default function CandidateApplications() {
   // HR-visible commitment being backed out of, not a form thrown away.
   const cancelDraft = async (applicationId) => {
     if (!(await confirm('Cancel this draft? You can start a fresh application to this vacancy afterward.', { title: 'Cancel draft', confirmLabel: 'Cancel draft', danger: true }))) return;
-    setWithdrawMessage('');
+    setWithdrawMessage(''); setWithdrawingId(applicationId);
     try {
       await client.patch(`/api/applications/${applicationId}/withdraw`);
       loadApplications();
     } catch (err) {
       setWithdrawMessage(err.response?.data?.error || 'Could not cancel draft');
+    } finally {
+      setWithdrawingId(null);
     }
   };
 
   const withdrawApplication = async (applicationId) => {
     if (!(await confirm('Withdraw this application? This cannot be undone, and you will not be able to re-apply to this vacancy.', { title: 'Withdraw application', confirmLabel: 'Withdraw', danger: true }))) return;
-    setWithdrawMessage('');
+    setWithdrawMessage(''); setWithdrawingId(applicationId);
     try {
       await client.patch(`/api/applications/${applicationId}/withdraw`);
       loadApplications();
     } catch (err) {
       setWithdrawMessage(err.response?.data?.error || 'Could not withdraw');
+    } finally {
+      setWithdrawingId(null);
     }
   };
 
@@ -158,17 +179,20 @@ export default function CandidateApplications() {
           <Alert type="info" message={offerMessage} />
           <Alert type="info" message={withdrawMessage} />
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 'var(--spacing-md)' }}>
-            {FILTERS.map(({ key, label }) => (
-              <Button
-                key={key}
-                variant={filter === key ? 'primary' : 'ghost'}
-                style={{ padding: '6px 14px', fontSize: 13 }}
-                onClick={() => setFilter(key)}
-              >
-                {label} {applications.length > 0 && <span style={{ opacity: 0.75 }}>({counts[key]})</span>}
-              </Button>
-            ))}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 'var(--spacing-md)', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {FILTERS.map(({ key, label }) => (
+                <Button
+                  key={key}
+                  variant={filter === key ? 'primary' : 'ghost'}
+                  style={{ padding: '6px 14px', fontSize: 13 }}
+                  onClick={() => setFilter(key)}
+                >
+                  {label} {applications.length > 0 && <span style={{ opacity: 0.75 }}>({counts[key]})</span>}
+                </Button>
+              ))}
+            </div>
+            {applications.length > 0 && <ViewSwitcher view={view} onChange={setView} />}
           </div>
 
           {loading && <LoadingState label="Loading your applications..." />}
@@ -189,7 +213,50 @@ export default function CandidateApplications() {
             <p style={{ color: 'var(--color-text-muted)' }}>No applications in this category.</p>
           )}
 
-          {visible.map((app) => {
+          {visible.length > 0 && view === 'table' && (
+            <Card style={{ padding: 0 }}>
+              <DataTable
+                getRowKey={(app) => app.id}
+                rows={visible.slice(0, visibleCount)}
+                columns={[
+                  { key: 'vacancy', label: 'Vacancy', render: (app) => <span style={{ fontWeight: 600 }}>{app.vacancy.title}</span> },
+                  { key: 'status', label: 'Status', render: (app) => <StatusBadge status={app.status} /> },
+                  {
+                    key: 'date', label: 'Date', render: (app) => app.submittedDate
+                      ? `Submitted ${new Date(app.submittedDate).toLocaleDateString()}`
+                      : app.status === 'Draft' ? `Started ${new Date(app.createdAt).toLocaleDateString()}` : '—'
+                  },
+                  { key: 'offer', label: 'Offer', render: (app) => app.offer ? <StatusBadge status={app.offer.status} /> : '—' },
+                  {
+                    key: 'actions', label: '', align: 'right', render: (app) => app.status === 'Draft'
+                      ? <Link to={`/apply/${app.vacancy.id}`} style={{ fontSize: 12 }}>Continue draft</Link>
+                      : null
+                  }
+                ]}
+              />
+            </Card>
+          )}
+
+          {visible.length > 0 && view === 'board' && (
+            // Same buckets as the filter tabs above (minus "All") - a
+            // candidate already thinks of their applications this way, so
+            // the board reuses that taxonomy instead of inventing another.
+            <BoardView
+              getItemKey={(app) => app.id}
+              items={visible.slice(0, visibleCount)}
+              groupBy={(app) => FILTERS.slice(1).find((f) => f.test(app))?.key || 'closed'}
+              columns={FILTERS.slice(1).map((f) => ({ key: f.key, label: f.label }))}
+              renderCard={(app) => (
+                <Card style={{ marginBottom: 0, padding: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{app.vacancy.title}</div>
+                  <StatusBadge status={app.status} />
+                  {app.offer && <span style={{ marginLeft: 6 }}><StatusBadge status={app.offer.status} /></span>}
+                </Card>
+              )}
+            />
+          )}
+
+          {view !== 'table' && view !== 'board' && visible.slice(0, visibleCount).map((app) => {
             // A Draft's vacancy can close (deadline passes) out from under
             // it without the Draft row itself changing status - it stays
             // listed here exactly as before, it just can't be continued any
@@ -235,7 +302,7 @@ export default function CandidateApplications() {
                     <Link to={`/apply/${app.vacancy.id}`} style={{ marginRight: 8 }}>Continue draft</Link>
                   )}
                   <Button variant="ghost" style={{ padding: '2px 10px', color: 'var(--color-danger)' }}
-                    onClick={() => cancelDraft(app.id)}>Cancel</Button>
+                    loading={withdrawingId === app.id} loadingText="Cancelling..." onClick={() => cancelDraft(app.id)}>Cancel</Button>
                 </div>
               )}
 
@@ -259,12 +326,14 @@ export default function CandidateApplications() {
               {app.status === 'Submitted' && (
                 <div style={{ marginTop: 10 }}>
                   <Button variant="ghost" style={{ padding: '2px 10px', color: 'var(--color-danger)' }}
-                    onClick={() => withdrawApplication(app.id)}>Withdraw</Button>
+                    loading={withdrawingId === app.id} loadingText="Withdrawing..." onClick={() => withdrawApplication(app.id)}>Withdraw</Button>
                 </div>
               )}
             </Card>
             );
           })}
+
+          {visible.length > 0 && <LoadMoreControl total={visible.length} visibleCount={visibleCount} onLoadMore={() => setVisibleCount((c) => c + PAGE_SIZE)} />}
         </div>
       </div>
     </div>

@@ -16,6 +16,12 @@ import VacancyAdvertFields from '../components/VacancyAdvertFields';
 import VacancyAdvert from '../components/VacancyAdvert';
 import LiveIndicator from '../components/LiveIndicator';
 import StatsStrip from '../components/StatsStrip';
+import Skeleton from '../components/Skeleton';
+import ViewSwitcher from '../components/ViewSwitcher';
+import DataTable from '../components/DataTable';
+import BoardView from '../components/BoardView';
+import LoadMoreControl from '../components/LoadMoreControl';
+import { STATUS_COLORS } from '../components/StatusBadge';
 import { urgencyOf } from '../utils/slaUrgency';
 import { debounce } from '../utils/debounce';
 
@@ -80,7 +86,18 @@ export default function HRDashboard() {
   const canTransition = canApprove; // same tier - their call to it IS the required approval
 
   const [vacancies, setVacancies] = useState([]);
+  const [loadingVacancies, setLoadingVacancies] = useState(true);
   const [approvedDepartments, setApprovedDepartments] = useState([]);
+  // Which per-row action (if any) is currently in flight for the selected
+  // vacancy's detail panel - a single key rather than one flag per action
+  // is enough since only one vacancy's actions render at a time (the
+  // master-detail layout), but it still has to be a key, not a bare
+  // boolean, since Approve and Close vacancy can both be visible on the
+  // same PendingApproval vacancy at once.
+  const [rowActionBusy, setRowActionBusy] = useState(null); // 'approve' | 'close' | null
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [readvertising, setReadvertising] = useState(false);
 
   // Set once, on arrival back here from the (now standalone)
   // /hr/vacancies/new page after a successful create - see
@@ -177,6 +194,10 @@ export default function HRDashboard() {
   const [postingTypeFilter, setPostingTypeFilter] = useState(searchParams.get('postingType') || 'All');
   const [directorateFilter, setDirectorateFilter] = useState(searchParams.get('directorate') || 'All');
   const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'urgent');
+  // List/Table/Board - shared across every tab (Vacancies/Interviews/
+  // Offers) that offers a ViewSwitcher, same as `tab` itself, since only
+  // one tab's content is ever on screen to read it.
+  const [view, setView] = useState(searchParams.get('view') || 'list');
   // Which vacancy the master-detail split's detail pane shows - not synced
   // to the URL (unlike the filters above); it's a within-page focus, not a
   // navigable destination, and defaults to the first result via
@@ -199,9 +220,10 @@ export default function HRDashboard() {
     setOrClear('postingType', postingTypeFilter, 'All');
     setOrClear('directorate', directorateFilter, 'All');
     setOrClear('sort', sortBy, 'urgent');
+    setOrClear('view', view, 'list');
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchText, statusFilter, departmentFilter, postingTypeFilter, directorateFilter, sortBy]);
+  }, [searchText, statusFilter, departmentFilter, postingTypeFilter, directorateFilter, sortBy, view]);
 
   // Display-only cap on how many filtered/sorted results render at once,
   // with a "Load more" step rather than true server-side pagination -
@@ -216,7 +238,23 @@ export default function HRDashboard() {
     setVisibleCount(VACANCY_PAGE_SIZE);
   }, [searchText, statusFilter, departmentFilter, postingTypeFilter, directorateFilter, sortBy]);
 
-  const load = useCallback(() => staffClient.get('/api/vacancies/admin').then((res) => setVacancies(res.data)), []);
+  // Same "Load more" cap as Vacancies' own visibleCount above, applied to
+  // the Interviews/Offers tabs - crossApps is already fetched whole (one
+  // bounded request, up to 500), so this only bounds the DOM, not another
+  // fetch. Separate from visibleCount since either tab's scroll position
+  // shouldn't reset the other's.
+  const CROSS_PAGE_SIZE = 20;
+  const [interviewsVisibleCount, setInterviewsVisibleCount] = useState(CROSS_PAGE_SIZE);
+  const [offersVisibleCount, setOffersVisibleCount] = useState(CROSS_PAGE_SIZE);
+
+  // setLoadingVacancies(true) is deliberately NOT reset to true on every
+  // call - only the initial mount call should show the full-page
+  // LoadingState; a background refetch (filter-driven reload, the
+  // WS-triggered refetchActiveTab below) should update the list in place
+  // without flashing the loading view over data that's already on screen.
+  const load = useCallback(() => staffClient.get('/api/vacancies/admin')
+    .then((res) => setVacancies(res.data))
+    .finally(() => setLoadingVacancies(false)), []);
 
   useEffect(() => {
     load();
@@ -259,12 +297,14 @@ export default function HRDashboard() {
   };
 
   const approve = async (id) => {
-    setError('');
+    setError(''); setRowActionBusy('approve');
     try {
       await staffClient.patch(`/api/vacancies/${id}/approve`);
       load();
     } catch (err) {
       setError(err.response?.data?.error || 'Approval failed');
+    } finally {
+      setRowActionBusy(null);
     }
   };
 
@@ -291,7 +331,7 @@ export default function HRDashboard() {
   };
 
   const confirmTransition = async () => {
-    setError('');
+    setError(''); setTransitioning(true);
     try {
       await staffClient.patch(`/api/vacancies/${transitionModal.vacancy.id}/transition-posting-type`, {
         postingType: transitionModal.target, deadline: transitionModal.deadline || null
@@ -301,16 +341,20 @@ export default function HRDashboard() {
     } catch (err) {
       const errs = err.response?.data?.errors;
       setError(errs ? errs.join('; ') : (err.response?.data?.error || 'Transition failed'));
+    } finally {
+      setTransitioning(false);
     }
   };
 
   const closeVacancy = async (id) => {
-    setError('');
+    setError(''); setRowActionBusy('close');
     try {
       await staffClient.patch(`/api/vacancies/${id}/close`);
       load();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not close vacancy');
+    } finally {
+      setRowActionBusy(null);
     }
   };
 
@@ -352,6 +396,7 @@ export default function HRDashboard() {
   };
 
   const saveEdit = async () => {
+    setSavingEdit(true);
     try {
       await staffClient.patch(`/api/vacancies/${editModal.id}`, editForm);
       setEditModal(null);
@@ -359,6 +404,8 @@ export default function HRDashboard() {
     } catch (err) {
       const errs = err.response?.data?.errors;
       setError(errs ? errs.join('; ') : (err.response?.data?.error || 'Could not save changes'));
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -396,7 +443,7 @@ export default function HRDashboard() {
   };
 
   const submitReadvertise = async () => {
-    setError('');
+    setError(''); setReadvertising(true);
     try {
       await staffClient.post(`/api/vacancies/${readvertiseModal.id}/readvertise`, readvertiseForm);
       setReadvertiseModal(null);
@@ -405,6 +452,8 @@ export default function HRDashboard() {
     } catch (err) {
       const errs = err.response?.data?.errors;
       setError(errs ? errs.join('; ') : (err.response?.data?.error || 'Could not readvertise this vacancy'));
+    } finally {
+      setReadvertising(false);
     }
   };
 
@@ -480,10 +529,11 @@ export default function HRDashboard() {
 
           {activeSection === 'vacancies' && (
             <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)', flexWrap: 'wrap', gap: 12 }}>
         <h3 style={{ margin: 0 }}>Vacancies</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <LiveIndicator connected={connected} />
+          <ViewSwitcher view={view} onChange={setView} />
           <Button onClick={() => navigate('/hr/vacancies/new')}>+ New Listing</Button>
         </div>
       </div>
@@ -536,12 +586,121 @@ export default function HRDashboard() {
         </div>
       </Card>
 
-      {sortedVacancies.length === 0 ? (
+      {loadingVacancies ? (
+        // Mimics the actual master-detail shape below (list rows + a
+        // selected-detail panel) rather than a generic spinner, so the
+        // page doesn't visibly jump in layout once the real data lands -
+        // see Skeleton.jsx's own comment for when to prefer this over
+        // LoadingState.
+        <div className="flex flex-col md:flex-row" style={{ gap: 'var(--spacing-md)', alignItems: 'flex-start' }}>
+          <div className="w-full md:w-[380px]" style={{ flexShrink: 0 }}>
+            <Card style={{ marginBottom: 0, padding: 0, overflow: 'hidden' }}>
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} style={{ padding: '10px 12px', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 7 }}>
+                    <Skeleton width={`${60 - i * 5}%`} height={14} />
+                    <Skeleton width={58} height={18} radius={999} />
+                  </div>
+                  <Skeleton width="75%" height={11} style={{ marginBottom: 5 }} />
+                  <Skeleton width="35%" height={10} />
+                </div>
+              ))}
+            </Card>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Card style={{ marginBottom: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
+                <Skeleton width="55%" height={22} />
+                <Skeleton width={90} height={22} radius={999} />
+              </div>
+              <Skeleton width="85%" height={12} style={{ marginBottom: 8 }} />
+              <Skeleton width="60%" height={12} style={{ marginBottom: 24 }} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Skeleton width={100} height={32} radius={6} />
+                <Skeleton width={70} height={32} radius={6} />
+                <Skeleton width={130} height={32} radius={6} />
+              </div>
+            </Card>
+          </div>
+        </div>
+      ) : sortedVacancies.length === 0 ? (
         <Card>
           <p style={{ margin: 0, color: 'var(--color-text-muted)' }}>
             {vacancies.length === 0 ? 'No vacancies yet.' : 'No vacancies match these filters.'}
           </p>
         </Card>
+      ) : view === 'table' ? (
+        // Dense grid alternative to the master-detail list - a row click
+        // selects that vacancy and drops back to List view, so Table never
+        // needs its own copy of the action toolbar.
+        <>
+        <Card style={{ padding: 0 }}>
+          <DataTable
+            getRowKey={(v) => v.id}
+            onRowClick={(v) => { setSelectedVacancyId(v.id); setView('list'); }}
+            rows={visibleVacancies}
+            columns={[
+              { key: 'title', label: 'Title', render: (v) => <span style={{ fontWeight: 600 }}>{v.title}</span> },
+              { key: 'status', label: 'Status', render: (v) => <StatusBadge status={v.status} /> },
+              { key: 'department', label: 'Department', render: (v) => v.department?.name || '—' },
+              { key: 'postingType', label: 'Type', render: (v) => v.postingType },
+              {
+                key: 'deadline', label: 'Deadline', render: (v) => {
+                  if (!v.deadline) return '—';
+                  const overdue = isOverdue(v);
+                  const info = !overdue && daysLeftLabel(v.deadline);
+                  return (
+                    <span style={{ color: overdue ? 'var(--color-danger)' : info?.urgent ? 'var(--color-warning)' : 'var(--color-text)' }}>
+                      {overdue ? 'Overdue' : info.text}
+                    </span>
+                  );
+                }
+              },
+              { key: 'apps', label: 'Apps', align: 'right', render: (v) => v._count?.applications ?? 0 }
+            ]}
+          />
+        </Card>
+        <LoadMoreControl total={sortedVacancies.length} visibleCount={visibleCount} onLoadMore={() => setVisibleCount((c) => c + VACANCY_PAGE_SIZE)} />
+        </>
+      ) : view === 'board' ? (
+        // Grouped by status - vacancies are naturally pipeline-shaped
+        // (PendingApproval -> Open/PartiallyFilled -> Filled/Closed), so a
+        // board reads at a glance the way the master-detail list can't.
+        // Same "click selects + drops to List" interaction as Table.
+        <>
+        <BoardView
+          getItemKey={(v) => v.id}
+          items={visibleVacancies}
+          groupBy={(v) => v.status}
+          columns={[
+            { key: 'PendingApproval', label: 'Pending approval', color: STATUS_COLORS.PendingApproval },
+            { key: 'Open', label: 'Open', color: STATUS_COLORS.Open },
+            { key: 'PartiallyFilled', label: 'Partially filled', color: STATUS_COLORS.PartiallyFilled },
+            { key: 'Filled', label: 'Filled', color: STATUS_COLORS.Filled },
+            { key: 'Closed', label: 'Closed', color: STATUS_COLORS.Closed }
+          ]}
+          renderCard={(v) => {
+            const overdue = isOverdue(v);
+            return (
+              <Card
+                onClick={() => { setSelectedVacancyId(v.id); setView('list'); }}
+                style={{ marginBottom: 0, padding: 10 }}
+                accent={overdue ? 'var(--color-danger)' : undefined}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{v.title}</div>
+                <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                  {v.department?.name} &middot; {v.postingType}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                  {v._count?.applications ?? 0} application{v._count?.applications === 1 ? '' : 's'}
+                  {overdue && <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}> &middot; overdue</span>}
+                </div>
+              </Card>
+            );
+          }}
+        />
+        <LoadMoreControl total={sortedVacancies.length} visibleCount={visibleCount} onLoadMore={() => setVisibleCount((c) => c + VACANCY_PAGE_SIZE)} />
+        </>
       ) : (
       // Master-detail split, not a vertical stack of full cards - a long
       // filtered list used to mean scrolling past six action toolbars to
@@ -706,10 +865,12 @@ export default function HRDashboard() {
                       not just hidden. The 2-tier flow goes straight from
                       PendingApproval to a Manager/Director's direct approval. */}
                   {v.status === 'PendingApproval' && canApprove && (
-                    <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => approve(v.id)}>Approve</Button>
+                    <Button variant="secondary" style={{ padding: '4px 10px' }} disabled={rowActionBusy != null}
+                      loading={rowActionBusy === 'approve'} loadingText="Approving..." onClick={() => approve(v.id)}>Approve</Button>
                   )}
                   {v.status === 'Closed' && canApprove && (
-                    <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => approve(v.id)}>Re-open</Button>
+                    <Button variant="secondary" style={{ padding: '4px 10px' }} disabled={rowActionBusy != null}
+                      loading={rowActionBusy === 'approve'} loadingText="Re-opening..." onClick={() => approve(v.id)}>Re-open</Button>
                   )}
                   {v.status === 'Closed' && (
                     <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => openReadvertise(v)}>Readvertise</Button>
@@ -737,8 +898,8 @@ export default function HRDashboard() {
                     )
                   )}
                   {v.status !== 'Closed' && canApprove && (
-                    <Button variant="ghost" style={{ padding: '4px 10px', color: 'var(--color-danger)' }}
-                      onClick={() => closeVacancy(v.id)}>Close vacancy</Button>
+                    <Button variant="ghost" style={{ padding: '4px 10px', color: 'var(--color-danger)' }} disabled={rowActionBusy != null}
+                      loading={rowActionBusy === 'close'} loadingText="Closing..." onClick={() => closeVacancy(v.id)}>Close vacancy</Button>
                   )}
                 </div>
               </Card>
@@ -754,9 +915,9 @@ export default function HRDashboard() {
           onClose={() => setEditModal(null)}
           maxWidth={640}
           footer={<>
-            <Button variant="ghost" onClick={() => setEditModal(null)}>Cancel</Button>
-            <Button variant="secondary" onClick={previewEditForm}>Preview advert</Button>
-            <Button onClick={saveEdit}>Save changes</Button>
+            <Button variant="ghost" disabled={savingEdit} onClick={() => setEditModal(null)}>Cancel</Button>
+            <Button variant="secondary" disabled={savingEdit} onClick={previewEditForm}>Preview advert</Button>
+            <Button loading={savingEdit} loadingText="Saving..." onClick={saveEdit}>Save changes</Button>
           </>}
         >
           <Alert type="error" message={error} />
@@ -811,9 +972,9 @@ export default function HRDashboard() {
           onClose={() => setReadvertiseModal(null)}
           maxWidth={640}
           footer={<>
-            <Button variant="ghost" onClick={() => setReadvertiseModal(null)}>Cancel</Button>
-            <Button variant="secondary" onClick={previewReadvertiseForm}>Preview advert</Button>
-            <Button onClick={submitReadvertise}>Publish for approval</Button>
+            <Button variant="ghost" disabled={readvertising} onClick={() => setReadvertiseModal(null)}>Cancel</Button>
+            <Button variant="secondary" disabled={readvertising} onClick={previewReadvertiseForm}>Preview advert</Button>
+            <Button loading={readvertising} loadingText="Publishing..." onClick={submitReadvertise}>Publish for approval</Button>
           </>}
         >
           <Alert type="error" message={error} />
@@ -864,8 +1025,8 @@ export default function HRDashboard() {
           title={`Transition posting type — ${transitionModal.vacancy.jobRef}`}
           onClose={() => setTransitionModal(null)}
           footer={<>
-            <Button variant="ghost" onClick={() => setTransitionModal(null)}>Cancel</Button>
-            <Button onClick={confirmTransition}>Transition to {transitionModal.target}</Button>
+            <Button variant="ghost" disabled={transitioning} onClick={() => setTransitionModal(null)}>Cancel</Button>
+            <Button loading={transitioning} loadingText="Transitioning..." onClick={confirmTransition}>Transition to {transitionModal.target}</Button>
           </>}
         >
           <Alert type="error" message={error} />
@@ -901,57 +1062,168 @@ export default function HRDashboard() {
             </>
           )}
 
-          {activeSection === 'interviews' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0 }}>Interviews</h3>
-                <LiveIndicator connected={connected} />
-              </div>
-              <StatsStrip stats={interviewStats} />
-              {crossLoading && <p>Loading interviews...</p>}
-              {crossApps && crossApps.filter((app) => app.interviewRounds?.length > 0).length === 0 && (
-                <p>No interviews scheduled yet.</p>
-              )}
-              {crossApps && crossApps.filter((app) => app.interviewRounds?.length > 0).map((app) => (
-                <Card key={app.id}>
-                  <strong>{app.candidate.fullName}</strong> &mdash; {app.vacancy.jobRef} ({app.vacancy.title})
-                  <div style={{ marginTop: 6 }}>
-                    {app.interviewRounds.map((r) => (
-                      <div key={r.id} style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-                        Round {r.roundNumber}
-                        {' '}&middot; {r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString() : 'unscheduled'}
-                        {' '}&middot; {r.mode}
-                        {r.score != null && <> &middot; average {r.score.toFixed(1)}</>}
-                        {r.recommendation && <> &middot; <StatusBadge status={r.recommendation} /></>}
-                      </div>
+          {activeSection === 'interviews' && (() => {
+            const interviewApps = crossApps ? crossApps.filter((app) => app.interviewRounds?.length > 0) : null;
+            const latestRound = (app) => [...app.interviewRounds].sort((a, b) => b.roundNumber - a.roundNumber)[0];
+            const visibleInterviewApps = interviewApps ? interviewApps.slice(0, interviewsVisibleCount) : [];
+            return (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                  <h3 style={{ margin: 0 }}>Interviews</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <LiveIndicator connected={connected} />
+                    {interviewApps?.length > 0 && <ViewSwitcher view={view} onChange={setView} />}
+                  </div>
+                </div>
+                <StatsStrip stats={interviewStats} />
+                {crossLoading && <p>Loading interviews...</p>}
+                {interviewApps?.length === 0 && <p>No interviews scheduled yet.</p>}
+                {interviewApps?.length > 0 && view === 'table' && (
+                  <>
+                    <Card style={{ padding: 0 }}>
+                      <DataTable
+                        getRowKey={(app) => app.id}
+                        rows={visibleInterviewApps}
+                        columns={[
+                          { key: 'candidate', label: 'Candidate', render: (app) => <span style={{ fontWeight: 600 }}>{app.candidate.fullName}</span> },
+                          { key: 'vacancy', label: 'Vacancy', render: (app) => `${app.vacancy.jobRef} — ${app.vacancy.title}` },
+                          { key: 'round', label: 'Round', render: (app) => `Round ${latestRound(app).roundNumber}` },
+                          { key: 'date', label: 'Date', render: (app) => latestRound(app).scheduledDate ? new Date(latestRound(app).scheduledDate).toLocaleDateString() : 'unscheduled' },
+                          { key: 'score', label: 'Score', render: (app) => latestRound(app).score != null ? latestRound(app).score.toFixed(1) : '—' },
+                          { key: 'recommendation', label: 'Recommendation', render: (app) => latestRound(app).recommendation ? <StatusBadge status={latestRound(app).recommendation} /> : '—' },
+                          { key: 'actions', label: '', render: (app) => <Link to={`/hr/applications?vacancyId=${app.vacancy.id}`} style={{ fontSize: 12 }}>Manage &rarr;</Link> }
+                        ]}
+                      />
+                    </Card>
+                    <LoadMoreControl total={interviewApps.length} visibleCount={interviewsVisibleCount} onLoadMore={() => setInterviewsVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
+                  </>
+                )}
+                {interviewApps?.length > 0 && view === 'board' && (
+                  <>
+                    <BoardView
+                      getItemKey={(app) => app.id}
+                      items={visibleInterviewApps}
+                      groupBy={(app) => latestRound(app).recommendation || 'Pending'}
+                      columns={[
+                        { key: 'Pending', label: 'Pending', color: 'var(--color-text-muted)' },
+                        { key: 'Shortlist', label: 'Shortlist', color: STATUS_COLORS.Shortlist },
+                        { key: 'Hold', label: 'Hold', color: STATUS_COLORS.Hold },
+                        { key: 'Reject', label: 'Reject', color: STATUS_COLORS.Reject }
+                      ]}
+                      renderCard={(app) => {
+                        const r = latestRound(app);
+                        return (
+                          <Card onClick={() => navigate(`/hr/applications?vacancyId=${app.vacancy.id}`)} style={{ marginBottom: 0, padding: 10 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{app.candidate.fullName}</div>
+                            <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{app.vacancy.jobRef} &middot; {app.vacancy.title}</div>
+                            <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                              Round {r.roundNumber}{r.score != null && <> &middot; {r.score.toFixed(1)}</>}
+                            </div>
+                          </Card>
+                        );
+                      }}
+                    />
+                    <LoadMoreControl total={interviewApps.length} visibleCount={interviewsVisibleCount} onLoadMore={() => setInterviewsVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
+                  </>
+                )}
+                {interviewApps?.length > 0 && view !== 'table' && view !== 'board' && (
+                  <>
+                    {visibleInterviewApps.map((app) => (
+                      <Card key={app.id}>
+                        <strong>{app.candidate.fullName}</strong> &mdash; {app.vacancy.jobRef} ({app.vacancy.title})
+                        <div style={{ marginTop: 6 }}>
+                          {app.interviewRounds.map((r) => (
+                            <div key={r.id} style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>
+                              Round {r.roundNumber}
+                              {' '}&middot; {r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString() : 'unscheduled'}
+                              {' '}&middot; {r.mode}
+                              {r.score != null && <> &middot; average {r.score.toFixed(1)}</>}
+                              {r.recommendation && <> &middot; <StatusBadge status={r.recommendation} /></>}
+                            </div>
+                          ))}
+                        </div>
+                        <Link to={`/hr/applications?vacancyId=${app.vacancy.id}`}>Manage in Application Management &rarr;</Link>
+                      </Card>
                     ))}
-                  </div>
-                  <Link to={`/hr/applications?vacancyId=${app.vacancy.id}`}>Manage in Application Management &rarr;</Link>
-                </Card>
-              ))}
-            </div>
-          )}
-
-          {activeSection === 'offers' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ margin: 0 }}>Offers</h3>
-                <LiveIndicator connected={connected} />
+                    <LoadMoreControl total={interviewApps.length} visibleCount={interviewsVisibleCount} onLoadMore={() => setInterviewsVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
+                  </>
+                )}
               </div>
-              <StatsStrip stats={offerStats} />
-              {crossLoading && <p>Loading offers...</p>}
-              {crossApps && crossApps.filter((app) => app.offer).length === 0 && <p>No offers recommended yet.</p>}
-              {crossApps && crossApps.filter((app) => app.offer).map((app) => (
-                <Card key={app.id}>
-                  <strong>{app.candidate.fullName}</strong> &mdash; {app.vacancy.jobRef} ({app.vacancy.title})
-                  {' '}&middot; Offer: <StatusBadge status={app.offer.status} />
-                  <div style={{ marginTop: 6 }}>
-                    <Link to={`/hr/applications?vacancyId=${app.vacancy.id}`}>Manage in Application Management &rarr;</Link>
+            );
+          })()}
+
+          {activeSection === 'offers' && (() => {
+            const offerApps = crossApps ? crossApps.filter((app) => app.offer) : null;
+            const visibleOfferApps = offerApps ? offerApps.slice(0, offersVisibleCount) : [];
+            return (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                  <h3 style={{ margin: 0 }}>Offers</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <LiveIndicator connected={connected} />
+                    {offerApps?.length > 0 && <ViewSwitcher view={view} onChange={setView} />}
                   </div>
-                </Card>
-              ))}
-            </div>
-          )}
+                </div>
+                <StatsStrip stats={offerStats} />
+                {crossLoading && <p>Loading offers...</p>}
+                {offerApps?.length === 0 && <p>No offers recommended yet.</p>}
+                {offerApps?.length > 0 && view === 'table' && (
+                  <>
+                    <Card style={{ padding: 0 }}>
+                      <DataTable
+                        getRowKey={(app) => app.id}
+                        rows={visibleOfferApps}
+                        columns={[
+                          { key: 'candidate', label: 'Candidate', render: (app) => <span style={{ fontWeight: 600 }}>{app.candidate.fullName}</span> },
+                          { key: 'vacancy', label: 'Vacancy', render: (app) => `${app.vacancy.jobRef} — ${app.vacancy.title}` },
+                          { key: 'status', label: 'Offer status', render: (app) => <StatusBadge status={app.offer.status} /> },
+                          { key: 'actions', label: '', render: (app) => <Link to={`/hr/applications?vacancyId=${app.vacancy.id}`} style={{ fontSize: 12 }}>Manage &rarr;</Link> }
+                        ]}
+                      />
+                    </Card>
+                    <LoadMoreControl total={offerApps.length} visibleCount={offersVisibleCount} onLoadMore={() => setOffersVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
+                  </>
+                )}
+                {offerApps?.length > 0 && view === 'board' && (
+                  <>
+                    <BoardView
+                      getItemKey={(app) => app.id}
+                      items={visibleOfferApps}
+                      groupBy={(app) => app.offer.status}
+                      columns={[
+                        { key: 'Recommended', label: 'Recommended', color: STATUS_COLORS.Recommended },
+                        { key: 'Approved', label: 'Approved', color: STATUS_COLORS.Approved },
+                        { key: 'Extended', label: 'Extended', color: STATUS_COLORS.Extended },
+                        { key: 'Accepted', label: 'Accepted', color: STATUS_COLORS.Accepted },
+                        { key: 'Declined', label: 'Declined', color: STATUS_COLORS.Declined }
+                      ]}
+                      renderCard={(app) => (
+                        <Card onClick={() => navigate(`/hr/applications?vacancyId=${app.vacancy.id}`)} style={{ marginBottom: 0, padding: 10 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{app.candidate.fullName}</div>
+                          <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{app.vacancy.jobRef} &middot; {app.vacancy.title}</div>
+                        </Card>
+                      )}
+                    />
+                    <LoadMoreControl total={offerApps.length} visibleCount={offersVisibleCount} onLoadMore={() => setOffersVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
+                  </>
+                )}
+                {offerApps?.length > 0 && view !== 'table' && view !== 'board' && (
+                  <>
+                    {visibleOfferApps.map((app) => (
+                      <Card key={app.id}>
+                        <strong>{app.candidate.fullName}</strong> &mdash; {app.vacancy.jobRef} ({app.vacancy.title})
+                        {' '}&middot; Offer: <StatusBadge status={app.offer.status} />
+                        <div style={{ marginTop: 6 }}>
+                          <Link to={`/hr/applications?vacancyId=${app.vacancy.id}`}>Manage in Application Management &rarr;</Link>
+                        </div>
+                      </Card>
+                    ))}
+                    <LoadMoreControl total={offerApps.length} visibleCount={offersVisibleCount} onLoadMore={() => setOffersVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
+                  </>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>

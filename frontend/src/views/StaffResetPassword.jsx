@@ -10,9 +10,11 @@ export default function StaffResetPassword() {
   const [params] = useSearchParams();
   const [newPassword, setNewPassword] = useState('');
   const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
     try {
       const res = await client.post('/api/staff/auth/reset-password', {
         token: params.get('token'), newPassword
@@ -20,6 +22,8 @@ export default function StaffResetPassword() {
       setMessage(res.data.message);
     } catch (err) {
       setMessage(err.response?.data?.error || 'Reset failed');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -29,7 +33,7 @@ export default function StaffResetPassword() {
       <form onSubmit={handleSubmit}>
         <TextField label="New password" type="password" value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)} />
-        <Button type="submit">Reset password</Button>
+        <Button type="submit" loading={submitting} loadingText="Resetting...">Reset password</Button>
       </form>
       <Alert type="info" message={message} />
       <p><Link to="/staff/login">Back to login</Link></p>

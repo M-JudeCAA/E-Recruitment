@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Briefcase, Award, Building2 } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useDashboardEvents } from '../models/dashboardSocket';
@@ -9,6 +9,12 @@ import Button from '../components/Button';
 import Alert from '../components/Alert';
 import StatusBadge from '../components/StatusBadge';
 import LiveIndicator from '../components/LiveIndicator';
+import Spinner from '../components/Spinner';
+import Skeleton from '../components/Skeleton';
+import ViewSwitcher from '../components/ViewSwitcher';
+import DataTable from '../components/DataTable';
+import BoardView from '../components/BoardView';
+import PageControls from '../components/PageControls';
 import { useConfirm } from '../components/ConfirmDialog';
 import { urgencyOf } from '../utils/slaUrgency';
 import { debounce } from '../utils/debounce';
@@ -37,6 +43,31 @@ function UrgencyBadge({ followUp }) {
     }}>
       {urgency.label}
     </span>
+  );
+}
+
+// Mimics a queue row's title+meta+action shape (Vacancies/Offers) while
+// vacancies/offers is still null - the exact count (2) is arbitrary, just
+// enough to read as "a short list is coming" without overcommitting to a
+// specific number that might visibly shrink once the real data lands.
+function QueueRowSkeleton() {
+  return (
+    <>
+      {[0, 1].map((i) => (
+        <Card key={i}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 0 }}>
+              <Skeleton width={220} height={15} style={{ marginBottom: 8 }} />
+              <Skeleton width={320} height={12} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <Skeleton width={60} height={26} radius={6} />
+              <Skeleton width={80} height={26} radius={6} />
+            </div>
+          </div>
+        </Card>
+      ))}
+    </>
   );
 }
 
@@ -76,13 +107,30 @@ export default function ApprovalsCenter() {
   const [rejectReason, setRejectReason] = useState({});
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  // Keyed by `${action}-${id}` - several cards render their own
+  // Approve/Decline/Reject buttons at once, so a single shared flag would
+  // incorrectly spin/disable every card instead of just the one clicked.
+  const [busy, setBusy] = useState({});
+  const [offersLoading, setOffersLoading] = useState(false);
+  const [urlParams, setUrlParams] = useSearchParams();
+  const [view, setView] = useState(urlParams.get('view') || 'list');
+  useEffect(() => {
+    const next = new URLSearchParams(urlParams);
+    if (view === 'list') next.delete('view'); else next.set('view', view);
+    setUrlParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   const loadVacancies = useCallback(() => staffClient.get('/api/vacancies/admin')
     .then((res) => setVacancies(res.data.filter((v) => v.status === 'PendingApproval')))
     .catch((err) => setError(err.response?.data?.error || 'Could not load vacancies')), []);
-  const loadOffers = useCallback(() => staffClient.get('/api/applications/offers/pending-approval', { params: { page: offersPage, limit: OFFERS_PAGE_SIZE } })
-    .then((res) => { setOffers(res.data.data); setOffersTotal(res.data.total); })
-    .catch((err) => setError(err.response?.data?.error || 'Could not load offers')), [offersPage]);
+  const loadOffers = useCallback(() => {
+    setOffersLoading(true);
+    return staffClient.get('/api/applications/offers/pending-approval', { params: { page: offersPage, limit: OFFERS_PAGE_SIZE } })
+      .then((res) => { setOffers(res.data.data); setOffersTotal(res.data.total); })
+      .catch((err) => setError(err.response?.data?.error || 'Could not load offers'))
+      .finally(() => setOffersLoading(false));
+  }, [offersPage]);
   const loadDepartments = useCallback(() => staffClient.get('/api/departments/pending')
     .then((res) => setDepartments(res.data))
     .catch((err) => setError(err.response?.data?.error || 'Could not load departments')), []);
@@ -123,7 +171,16 @@ export default function ApprovalsCenter() {
   const sortedDepartments = departments ? sortByUrgency(departments, 'DepartmentApproval') : null;
   const overdueCount = followUps.filter((f) => f.isOverdue).length;
 
-  const approveVacancy = async (id) => {
+  const runBusy = async (key, fn) => {
+    setBusy((b) => ({ ...b, [key]: true }));
+    try {
+      await fn();
+    } finally {
+      setBusy((b) => ({ ...b, [key]: false }));
+    }
+  };
+
+  const approveVacancy = (id) => runBusy(`vacancy-approve-${id}`, async () => {
     setError(''); setMessage('');
     try {
       await staffClient.patch(`/api/vacancies/${id}/approve`);
@@ -132,7 +189,7 @@ export default function ApprovalsCenter() {
     } catch (err) {
       setError(err.response?.data?.error || 'Approval failed');
     }
-  };
+  });
 
   // Declining a still-pending vacancy reuses the existing close() action -
   // the same mechanism HRDashboard already offers ("Close vacancy" is
@@ -140,17 +197,19 @@ export default function ApprovalsCenter() {
   // a separate reject endpoint.
   const declineVacancy = async (id) => {
     if (!(await confirm('Decline this vacancy? It will be closed without ever opening.', { title: 'Decline vacancy', confirmLabel: 'Decline', danger: true }))) return;
-    setError(''); setMessage('');
-    try {
-      await staffClient.patch(`/api/vacancies/${id}/close`);
-      setMessage('Vacancy declined and closed.');
-      loadVacancies();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not decline vacancy');
-    }
+    await runBusy(`vacancy-decline-${id}`, async () => {
+      setError(''); setMessage('');
+      try {
+        await staffClient.patch(`/api/vacancies/${id}/close`);
+        setMessage('Vacancy declined and closed.');
+        loadVacancies();
+      } catch (err) {
+        setError(err.response?.data?.error || 'Could not decline vacancy');
+      }
+    });
   };
 
-  const approveOffer = async (id) => {
+  const approveOffer = (id) => runBusy(`offer-approve-${id}`, async () => {
     setError(''); setMessage('');
     try {
       await staffClient.patch(`/api/applications/offers/${id}/approve`);
@@ -159,9 +218,9 @@ export default function ApprovalsCenter() {
     } catch (err) {
       setError(err.response?.data?.error || 'Approval failed');
     }
-  };
+  });
 
-  const approveDepartment = async (id) => {
+  const approveDepartment = (id) => runBusy(`dept-approve-${id}`, async () => {
     setError(''); setMessage('');
     try {
       await staffClient.patch(`/api/departments/${id}/approve`);
@@ -170,9 +229,9 @@ export default function ApprovalsCenter() {
     } catch (err) {
       setError(err.response?.data?.error || 'Approval failed');
     }
-  };
+  });
 
-  const rejectDepartment = async (id) => {
+  const rejectDepartment = (id) => runBusy(`dept-reject-${id}`, async () => {
     setError(''); setMessage('');
     const reason = rejectReason[id];
     if (!reason || !reason.trim()) { setError('A rejection reason is required'); return; }
@@ -183,11 +242,23 @@ export default function ApprovalsCenter() {
     } catch (err) {
       setError(err.response?.data?.error || 'Could not reject department');
     }
-  };
+  });
 
   const loading = vacancies === null || offers === null || departments === null;
   const totalPending = (vacancies?.length || 0) + offersTotal + (departments?.length || 0);
   const offersTotalPages = Math.max(Math.ceil(offersTotal / OFFERS_PAGE_SIZE), 1);
+
+  // Board view here groups by urgency, not status - every item in this
+  // page is already the same status (PendingApproval, or an offer at
+  // Recommended), so a status board would be one crowded column. Urgency
+  // is the dimension that actually varies and that HR cares about here.
+  const URGENCY_COLUMNS = [
+    { key: 'overdue', label: 'Overdue', color: 'var(--color-danger)' },
+    { key: 'due-soon', label: 'Due soon', color: 'var(--color-warning)' },
+    { key: 'on-track', label: 'On track', color: 'var(--color-accent)' },
+    { key: 'not-tracked', label: 'Not tracked', color: 'var(--color-text-muted)' }
+  ];
+  const urgencyTier = (taskType, id) => urgencyOf(followUpFor(taskType, id))?.tier || 'not-tracked';
 
   return (
     <div>
@@ -202,17 +273,67 @@ export default function ApprovalsCenter() {
                 {loading ? 'Loading…' : totalPending === 0 ? 'Nothing waiting on you right now.' : `${totalPending} item${totalPending === 1 ? '' : 's'} waiting on your decision${overdueCount > 0 ? `, ${overdueCount} overdue` : ''}.`}
               </p>
             </div>
-            <LiveIndicator connected={connected} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <LiveIndicator connected={connected} />
+              <ViewSwitcher view={view} onChange={setView} />
+            </div>
           </div>
 
           <Alert type="success" message={message} />
           <Alert type="error" message={error} />
 
           <SectionHeader icon={Briefcase} title="Vacancies" count={vacancies?.length ?? '—'} />
+          {vacancies === null && <QueueRowSkeleton />}
           {sortedVacancies?.length === 0 && (
             <Card><p style={{ margin: 0, color: 'var(--color-text-muted)' }}>No vacancies awaiting approval.</p></Card>
           )}
-          {sortedVacancies?.map((v) => (
+          {sortedVacancies?.length > 0 && view === 'table' && (
+            <Card style={{ padding: 0, marginBottom: 'var(--spacing-lg)' }}>
+              <DataTable
+                getRowKey={(v) => v.id}
+                rows={sortedVacancies}
+                columns={[
+                  { key: 'title', label: 'Title', render: (v) => <span style={{ fontWeight: 600 }}>{v.title}</span> },
+                  { key: 'dept', label: 'Department', render: (v) => `${v.department?.directorate?.name} — ${v.department?.name}` },
+                  { key: 'type', label: 'Type', render: (v) => v.postingType },
+                  { key: 'urgency', label: 'Urgency', render: (v) => <UrgencyBadge followUp={followUpFor('VacancyApproval', v.id)} /> },
+                  {
+                    key: 'actions', label: '', align: 'right', render: (v) => (
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <Link to={`/hr/vacancy/${v.id}`} style={{ fontSize: 12 }}>View</Link>
+                        <Button variant="ghost" style={{ padding: '2px 8px', fontSize: 12, color: 'var(--color-danger)' }} disabled={!!busy[`vacancy-approve-${v.id}`]}
+                          loading={!!busy[`vacancy-decline-${v.id}`]} loadingText="…" onClick={() => declineVacancy(v.id)}>Decline</Button>
+                        <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 12 }} disabled={!!busy[`vacancy-decline-${v.id}`]}
+                          loading={!!busy[`vacancy-approve-${v.id}`]} loadingText="…" onClick={() => approveVacancy(v.id)}>Approve</Button>
+                      </div>
+                    )
+                  }
+                ]}
+              />
+            </Card>
+          )}
+          {sortedVacancies?.length > 0 && view === 'board' && (
+            <div style={{ marginBottom: 'var(--spacing-lg)' }}>
+              <BoardView
+                getItemKey={(v) => v.id}
+                items={sortedVacancies}
+                columns={URGENCY_COLUMNS}
+                groupBy={(v) => urgencyTier('VacancyApproval', v.id)}
+                renderCard={(v) => (
+                  <Card style={{ marginBottom: 0, padding: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{v.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{v.jobRef} &middot; {v.postingType}</div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                      <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 11 }} disabled={!!busy[`vacancy-decline-${v.id}`]}
+                        loading={!!busy[`vacancy-approve-${v.id}`]} loadingText="…" onClick={() => approveVacancy(v.id)}>Approve</Button>
+                      <Link to={`/hr/vacancy/${v.id}`} style={{ fontSize: 11, alignSelf: 'center' }}>View</Link>
+                    </div>
+                  </Card>
+                )}
+              />
+            </div>
+          )}
+          {sortedVacancies?.length > 0 && view !== 'table' && view !== 'board' && sortedVacancies.map((v) => (
             <Card key={v.id}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ minWidth: 0 }}>
@@ -227,8 +348,10 @@ export default function ApprovalsCenter() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                   <Link to={`/hr/vacancy/${v.id}`} style={{ padding: '4px 10px', fontSize: 13 }}>View</Link>
-                  <Button variant="ghost" style={{ padding: '4px 10px', color: 'var(--color-danger)' }} onClick={() => declineVacancy(v.id)}>Decline</Button>
-                  <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => approveVacancy(v.id)}>Approve</Button>
+                  <Button variant="ghost" style={{ padding: '4px 10px', color: 'var(--color-danger)' }} disabled={!!busy[`vacancy-approve-${v.id}`]}
+                    loading={!!busy[`vacancy-decline-${v.id}`]} loadingText="Declining..." onClick={() => declineVacancy(v.id)}>Decline</Button>
+                  <Button variant="secondary" style={{ padding: '4px 10px' }} disabled={!!busy[`vacancy-decline-${v.id}`]}
+                    loading={!!busy[`vacancy-approve-${v.id}`]} loadingText="Approving..." onClick={() => approveVacancy(v.id)}>Approve</Button>
                 </div>
               </div>
             </Card>
@@ -237,10 +360,53 @@ export default function ApprovalsCenter() {
           <div style={{ marginTop: 'var(--spacing-lg)' }}>
             <SectionHeader icon={Award} title="Offers" count={offersTotal ?? '—'} />
           </div>
+          {offers === null && <QueueRowSkeleton />}
           {offers?.length === 0 && (
             <Card><p style={{ margin: 0, color: 'var(--color-text-muted)' }}>No offers awaiting approval.</p></Card>
           )}
-          {offers?.map((o) => (
+          {offers?.length > 0 && view === 'table' && (
+            <Card style={{ padding: 0 }}>
+              <DataTable
+                getRowKey={(o) => o.id}
+                rows={offers}
+                columns={[
+                  { key: 'candidate', label: 'Candidate', render: (o) => <span style={{ fontWeight: 600 }}>{o.application.candidate.fullName}</span> },
+                  { key: 'vacancy', label: 'Vacancy', render: (o) => `${o.application.vacancy.jobRef} — ${o.application.vacancy.title}` },
+                  { key: 'by', label: 'Recommended by', render: (o) => o.recommendedBy?.name || 'HR' },
+                  { key: 'urgency', label: 'Urgency', render: (o) => <UrgencyBadge followUp={followUpFor('OfferApproval', o.id)} /> },
+                  {
+                    key: 'actions', label: '', align: 'right', render: (o) => (
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <Link to={`/hr/vacancy/${o.application.vacancy.id}`} style={{ fontSize: 12 }}>View</Link>
+                        <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 12 }}
+                          loading={!!busy[`offer-approve-${o.id}`]} loadingText="…" onClick={() => approveOffer(o.id)}>Approve</Button>
+                      </div>
+                    )
+                  }
+                ]}
+              />
+            </Card>
+          )}
+          {offers?.length > 0 && view === 'board' && (
+            <BoardView
+              getItemKey={(o) => o.id}
+              items={offers}
+              columns={URGENCY_COLUMNS}
+              groupBy={(o) => urgencyTier('OfferApproval', o.id)}
+              renderCard={(o) => (
+                <Card style={{ marginBottom: 0, padding: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{o.application.candidate.fullName}</div>
+                  <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{o.application.vacancy.jobRef} &middot; {o.application.vacancy.title}</div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                    <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 11 }}
+                      loading={!!busy[`offer-approve-${o.id}`]} loadingText="…" onClick={() => approveOffer(o.id)}>Approve</Button>
+                    <Link to={`/hr/vacancy/${o.application.vacancy.id}`} style={{ fontSize: 11, alignSelf: 'center' }}>View</Link>
+                  </div>
+                </Card>
+              )}
+            />
+          )}
+          {offers?.length > 0 && view !== 'table' && view !== 'board' && offers.map((o) => (
             <Card key={o.id}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ minWidth: 0 }}>
@@ -256,39 +422,87 @@ export default function ApprovalsCenter() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                   <Link to={`/hr/vacancy/${o.application.vacancy.id}`} style={{ padding: '4px 10px', fontSize: 13 }}>View</Link>
-                  <Button variant="secondary" style={{ padding: '4px 10px' }} onClick={() => approveOffer(o.id)}>Approve</Button>
+                  <Button variant="secondary" style={{ padding: '4px 10px' }}
+                    loading={!!busy[`offer-approve-${o.id}`]} loadingText="Approving..." onClick={() => approveOffer(o.id)}>Approve</Button>
                 </div>
               </div>
             </Card>
           ))}
-          {offersTotal > OFFERS_PAGE_SIZE && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, margin: '8px 0' }}>
-              <Button variant="ghost" disabled={offersPage <= 1} onClick={() => setOffersPage((p) => p - 1)}>Previous</Button>
-              <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Page {offersPage} of {offersTotalPages}</span>
-              <Button variant="ghost" disabled={offersPage >= offersTotalPages} onClick={() => setOffersPage((p) => p + 1)}>Next</Button>
-            </div>
-          )}
+          <PageControls page={offersPage} totalPages={offersTotalPages} loading={offersLoading} onPrev={() => setOffersPage((p) => p - 1)} onNext={() => setOffersPage((p) => p + 1)} />
 
           <div style={{ marginTop: 'var(--spacing-lg)' }}>
             <SectionHeader icon={Building2} title="Departments" count={departments?.length ?? '—'} />
           </div>
+          {departments === null && [0, 1].map((i) => (
+            <Card key={i}>
+              <Skeleton width={240} height={15} style={{ marginBottom: 10 }} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <Skeleton width={80} height={24} radius={6} />
+                <Skeleton width="100%" height={24} radius={6} style={{ flex: 1 }} />
+                <Skeleton width={70} height={24} radius={6} />
+              </div>
+            </Card>
+          ))}
           {departments?.length === 0 && (
             <Card><p style={{ margin: 0, color: 'var(--color-text-muted)' }}>No departments awaiting approval.</p></Card>
           )}
-          {sortedDepartments?.map((d) => (
+          {sortedDepartments?.length > 0 && view === 'table' && (
+            <Card style={{ padding: 0 }}>
+              <DataTable
+                getRowKey={(d) => d.id}
+                rows={sortedDepartments}
+                columns={[
+                  { key: 'name', label: 'Department', render: (d) => <span style={{ fontWeight: 600 }}>{d.directorate.name} — {d.name}</span> },
+                  { key: 'by', label: 'Proposed by', render: (d) => d.createdBy?.name || '—' },
+                  { key: 'urgency', label: 'Urgency', render: (d) => <UrgencyBadge followUp={followUpFor('DepartmentApproval', d.id)} /> },
+                  {
+                    key: 'actions', label: '', align: 'right', render: (d) => (
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                        <Button variant="ghost" style={{ padding: '2px 8px', fontSize: 12, color: 'var(--color-danger)' }} onClick={() => setView('list')}>Reject…</Button>
+                        <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 12 }} disabled={!!busy[`dept-reject-${d.id}`]}
+                          loading={!!busy[`dept-approve-${d.id}`]} loadingText="…" onClick={() => approveDepartment(d.id)}>Approve</Button>
+                      </div>
+                    )
+                  }
+                ]}
+              />
+            </Card>
+          )}
+          {sortedDepartments?.length > 0 && view === 'board' && (
+            <BoardView
+              getItemKey={(d) => d.id}
+              items={sortedDepartments}
+              columns={URGENCY_COLUMNS}
+              groupBy={(d) => urgencyTier('DepartmentApproval', d.id)}
+              renderCard={(d) => (
+                <Card style={{ marginBottom: 0, padding: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{d.directorate.name} &mdash; {d.name}</div>
+                  {d.createdBy?.name && <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>proposed by {d.createdBy.name}</div>}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                    <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 11 }} disabled={!!busy[`dept-reject-${d.id}`]}
+                      loading={!!busy[`dept-approve-${d.id}`]} loadingText="…" onClick={() => approveDepartment(d.id)}>Approve</Button>
+                    <Button variant="ghost" style={{ padding: '2px 8px', fontSize: 11, color: 'var(--color-danger)' }} onClick={() => setView('list')}>Reject…</Button>
+                  </div>
+                </Card>
+              )}
+            />
+          )}
+          {sortedDepartments?.length > 0 && view !== 'table' && view !== 'board' && sortedDepartments.map((d) => (
             <Card key={d.id}>
               <strong>{d.directorate.name} &mdash; {d.name}</strong> <StatusBadge status={d.status} />
               {' '}<UrgencyBadge followUp={followUpFor('DepartmentApproval', d.id)} />
               {d.createdBy?.name && <span style={{ marginLeft: 8, fontSize: 13, color: 'var(--color-text-muted)' }}>proposed by {d.createdBy.name}</span>}
               <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-                <Button style={{ padding: '2px 10px' }} onClick={() => approveDepartment(d.id)}>Approve</Button>
+                <Button style={{ padding: '2px 10px' }} disabled={!!busy[`dept-reject-${d.id}`]}
+                  loading={!!busy[`dept-approve-${d.id}`]} loadingText="Approving..." onClick={() => approveDepartment(d.id)}>Approve</Button>
                 <input
                   placeholder="Rejection reason"
                   value={rejectReason[d.id] || ''}
                   onChange={(e) => setRejectReason({ ...rejectReason, [d.id]: e.target.value })}
                   style={{ flex: '1 1 220px', padding: 8, border: '1px solid var(--color-border)', borderRadius: 'var(--radius)' }}
                 />
-                <Button variant="ghost" style={{ padding: '2px 10px', color: 'var(--color-danger)' }} onClick={() => rejectDepartment(d.id)}>Reject</Button>
+                <Button variant="ghost" style={{ padding: '2px 10px', color: 'var(--color-danger)' }} disabled={!!busy[`dept-approve-${d.id}`]}
+                  loading={!!busy[`dept-reject-${d.id}`]} loadingText="Rejecting..." onClick={() => rejectDepartment(d.id)}>Reject</Button>
               </div>
             </Card>
           ))}

@@ -13,6 +13,11 @@ import Alert from '../components/Alert';
 import Select from '../components/Select';
 import TextField from '../components/TextField';
 import ApplicationReviewCard from '../components/ApplicationReviewCard';
+import ViewSwitcher from '../components/ViewSwitcher';
+import DataTable from '../components/DataTable';
+import BoardView from '../components/BoardView';
+import PageControls from '../components/PageControls';
+import StatusBadge, { STATUS_COLORS } from '../components/StatusBadge';
 import { useGeneratedCvDownload } from '../utils/useGeneratedCvDownload';
 import { safeJsonParse } from '../utils/safeJsonParse';
 import { debounce } from '../utils/debounce';
@@ -69,6 +74,9 @@ export default function ApplicationManagement() {
   const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'newest');
   const [needsAction, setNeedsAction] = useState(searchParams.get('action') === '1');
   const [page, setPage] = useState(Number(searchParams.get('page')) > 0 ? Number(searchParams.get('page')) : 1);
+  // List/Table/Board - queue mode only (a single selected vacancy's
+  // shortlist-ranking view has its own fixed layout, not a list).
+  const [view, setView] = useState(searchParams.get('view') || 'list');
 
   // setPage(1) alongside every filter change so a narrowed filter never
   // leaves the queue stranded on a page past the new, smaller result set.
@@ -94,9 +102,10 @@ export default function ApplicationManagement() {
     setOrClear('sort', sortBy, 'newest');
     setOrClear('action', needsAction ? '1' : '', '');
     setOrClear('page', !vacancyId && page > 1 ? String(page) : '', '');
+    setOrClear('view', view, 'list');
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, candidateTypeFilter, departmentFilter, screeningFilter, search, sortBy, needsAction, page, vacancyId]);
+  }, [statusFilter, candidateTypeFilter, departmentFilter, screeningFilter, search, sortBy, needsAction, page, vacancyId, view]);
 
   // No separate Search button - typing runs the search automatically, same
   // as every other filter. Debounced so a full query doesn't fire on every
@@ -295,9 +304,12 @@ export default function ApplicationManagement() {
       <HRSidebar active="applications" />
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
           <PageHeader title="Application Management" subtitle="Review and manage applications across every vacancy" />
-          <LiveIndicator connected={connected} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <LiveIndicator connected={connected} />
+            {!vacancyId && <ViewSwitcher view={view} onChange={setView} />}
+          </div>
         </div>
         <Alert type="error" message={error} />
 
@@ -359,20 +371,55 @@ export default function ApplicationManagement() {
           <>
             {queueLoading && <p>Loading applications...</p>}
             {queue && queue.data.length === 0 && <p>No applications match these filters.</p>}
-            {queue?.data.map((app) => (
+            {queue && queue.data.length > 0 && view === 'table' && (
+              <Card style={{ padding: 0 }}>
+                <DataTable
+                  getRowKey={(app) => app.id}
+                  onRowClick={() => setView('list')}
+                  rows={queue.data}
+                  columns={[
+                    { key: 'candidate', label: 'Candidate', render: (app) => <span style={{ fontWeight: 600 }}>{app.candidate.fullName}</span> },
+                    { key: 'type', label: 'Type', render: (app) => app.candidate.candidateType },
+                    { key: 'vacancy', label: 'Vacancy', render: (app) => app.vacancy ? `${app.vacancy.jobRef} — ${app.vacancy.title}` : '—' },
+                    { key: 'status', label: 'Status', render: (app) => <StatusBadge status={app.status} /> },
+                    {
+                      key: 'screening', label: 'Screening', render: (app) => app.screeningPassed === false
+                        ? <span style={{ color: 'var(--color-warning)' }}>Flagged</span>
+                        : app.screeningPassed === true ? <span style={{ color: 'var(--color-success)' }}>Meets criteria</span> : '—'
+                    },
+                    { key: 'score', label: 'Score', align: 'right', render: (app) => app.shortlistScore != null ? app.shortlistScore.toFixed(1) : '—' },
+                    { key: 'submitted', label: 'Submitted', render: (app) => app.submittedDate ? new Date(app.submittedDate).toLocaleDateString() : '—' }
+                  ]}
+                />
+              </Card>
+            )}
+            {queue && queue.data.length > 0 && view === 'board' && (
+              <BoardView
+                getItemKey={(app) => app.id}
+                items={queue.data}
+                groupBy={(app) => app.status}
+                columns={STATUS_OPTIONS.map((s) => ({ key: s, label: s.replace(/([a-z])([A-Z])/g, '$1 $2'), color: STATUS_COLORS[s] }))}
+                renderCard={(app) => (
+                  <Card onClick={() => setView('list')} style={{ marginBottom: 0, padding: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{app.candidate.fullName}</div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                      {app.vacancy ? `${app.vacancy.jobRef} · ${app.vacancy.title}` : '—'}
+                    </div>
+                    {app.screeningPassed === false && (
+                      <div style={{ fontSize: 11, color: 'var(--color-warning)', marginTop: 2 }}>&#9888; Flagged</div>
+                    )}
+                  </Card>
+                )}
+              />
+            )}
+            {queue && queue.data.length > 0 && view !== 'table' && view !== 'board' && queue.data.map((app) => (
               <ApplicationReviewCard
                 key={app.id} app={app} vacancy={app.vacancy} staffRole={staff?.role}
                 onUpdated={loadQueue} onDownloadCv={downloadGeneratedCv} downloadingId={downloadingId}
                 showVacancyContext defaultExpanded={false}
               />
             ))}
-            {queue && queue.total > queue.limit && (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16 }}>
-                <Button variant="ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
-                <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Page {queue.page} of {totalPages}</span>
-                <Button variant="ghost" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
-              </div>
-            )}
+            {queue && <PageControls page={page} totalPages={totalPages} loading={queueLoading} onPrev={() => setPage((p) => p - 1)} onNext={() => setPage((p) => p + 1)} />}
           </>
         ) : !vacancy ? (
           <p>Loading...</p>
