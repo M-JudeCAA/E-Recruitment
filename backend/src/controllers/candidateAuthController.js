@@ -1,3 +1,4 @@
+const { sendError } = require('../utils/errorResponse');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const candidateModel = require('../models/candidateModel');
@@ -133,7 +134,7 @@ async function confirmEmail(req, res) {
         error: 'This National ID or Passport number is already registered on another account. Please register again with the correct details.'
       });
     }
-    res.status(400).json({ error: err.message });
+    sendError(res, err, 400);
   }
 }
 
@@ -191,7 +192,7 @@ async function resetPassword(req, res) {
     await candidateModel.update(record.candidateId, { passwordHash });
     res.json({ message: 'Password updated. You can now log in.' });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err, 400);
   }
 }
 

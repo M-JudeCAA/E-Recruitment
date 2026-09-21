@@ -1,3 +1,4 @@
+const { sendError, classifyError } = require('../utils/errorResponse');
 const prisma = require('../config/db');
 const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
@@ -298,7 +299,7 @@ async function approve(req, res) {
   try {
     await workflow.assertNotSelfApproval(vacancyId, req.user.id);
   } catch (err) {
-    return res.status(422).json({ error: err.message });
+    return sendError(res, err, 422);
   }
 
   const updated = await vacancyModel.update(vacancyId, {
@@ -492,7 +493,11 @@ async function saveRanking(req, res) {
     try {
       await workflow.assertCanShortlist(appId);
     } catch (err) {
-      return res.status(422).json({ error: `Application ${appId}: ${err.message}` });
+      // Only prefix a genuine business-rule message with the application id;
+      // a masked infrastructure error (e.g. database unreachable) goes out as-is.
+      const { status, message } = classifyError(err, 422);
+      if (status >= 500) return sendError(res, err, 422);
+      return res.status(status).json({ error: `Application ${appId}: ${message}` });
     }
     const listStatus = i < vacancy.positionsRequired ? 'Primary' : 'Reserve';
     rankData.push({ id: appId, rank: i + 1, listStatus });

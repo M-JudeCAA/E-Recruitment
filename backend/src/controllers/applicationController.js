@@ -1,3 +1,4 @@
+const { sendError } = require('../utils/errorResponse');
 const applicationModel = require('../models/applicationModel');
 const offerModel = require('../models/offerModel');
 const slaModel = require('../models/slaModel');
@@ -112,7 +113,7 @@ async function shortlist(req, res) {
   try {
     await workflow.assertCanShortlist(applicationId);
   } catch (err) {
-    return res.status(422).json({ error: err.message });
+    return sendError(res, err, 422);
   }
 
   const application = await applicationModel.findById(applicationId, { vacancy: true });
@@ -218,7 +219,7 @@ async function approveShortlist(req, res) {
   try {
     await workflow.assertNotSelfApprovedShortlist(vacancyId, req.user.id);
   } catch (err) {
-    return res.status(422).json({ error: err.message });
+    return sendError(res, err, 422);
   }
 
   await applicationModel.approveShortlistForVacancy(vacancyId, req.user.id);
