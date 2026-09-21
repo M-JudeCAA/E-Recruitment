@@ -191,6 +191,49 @@ input::placeholder, textarea::placeholder {
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
+/* Attention pulse for a single primary call-to-action (Home.jsx's "Find
+   Jobs"). Two staggered expanding rings plus a scale bump, not a hard
+   on/off blink - a ~1.6s cycle stays well under the WCAG flash threshold
+   and reads as "look here" without being irritating. The inner ring is
+   primary-dark (visible on a white surface) and the outer ring is white
+   (visible on the blue hero the button sits over) - a single primary-blue
+   ring vanished against that gradient once it grew past the form's white
+   padding. Stops on hover/focus (the user has found it) and for
+   prefers-reduced-motion users. Use on one button per page at most, or it
+   stops standing out. */
+.btn-attention {
+  animation: btn-attention-pulse 1.6s ease-out infinite;
+}
+.btn-attention:hover,
+.btn-attention:focus-visible {
+  animation: none;
+}
+@keyframes btn-attention-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--color-primary-dark) 85%, transparent),
+      0 0 0 0 rgba(255, 255, 255, 0.9);
+  }
+  55% {
+    transform: scale(1.08);
+    box-shadow:
+      0 0 0 10px color-mix(in srgb, var(--color-primary-dark) 0%, transparent),
+      0 0 0 0 rgba(255, 255, 255, 0.9);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 10px color-mix(in srgb, var(--color-primary-dark) 0%, transparent),
+      0 0 0 26px rgba(255, 255, 255, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-attention {
+    animation: none;
+  }
+}
+
 /* Sidebar nav links (Sidebar.jsx). Hover lives here rather than inline
    styles because React inline styles can't express :hover - the active
    state sets its own inline background, which always wins over this

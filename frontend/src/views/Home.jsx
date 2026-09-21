@@ -164,7 +164,7 @@ export default function Home() {
                 fontSize: 'inherit', fontFamily: 'inherit', color: 'var(--color-text)', minWidth: 0
               }}
             />
-            <Button type="submit" style={{ padding: '10px 18px' }}>
+            <Button type="submit" className="btn-attention" style={{ padding: '10px 18px', fontWeight: 700 }}>
               <Search size={16} /> Find Jobs
             </Button>
           </form>
