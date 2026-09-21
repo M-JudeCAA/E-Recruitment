@@ -1,8 +1,11 @@
 const applicationModel = require('../models/applicationModel');
 const offerModel = require('../models/offerModel');
 const slaModel = require('../models/slaModel');
+const vacancyModel = require('../models/vacancyModel');
 const workflow = require('../services/workflowService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
+const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
+const { ROLE_RANK } = require('../middleware/auth');
 
 // NOTE: application creation/submission lives in applicationDraftController
 // now (saveDraft/submit/withdraw) - see routes/applications.js. This file
@@ -22,12 +25,13 @@ const VALID_STATUSES = [
 const VALID_CANDIDATE_TYPES = ['Internal', 'External'];
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
+const VALID_SORTS = ['newest', 'oldest', 'score', 'deadline'];
 
 // The Application Management queue - a real cross-vacancy list backed by
 // server-side filtering/pagination, replacing the old client-side N+1
 // (fetch every vacancy's applications, flatten) HRDashboard.jsx used to do.
 async function list(req, res) {
-  const { vacancyId, status, departmentId, candidateType, screeningPassed, search, page, limit } = req.query;
+  const { vacancyId, status, departmentId, candidateType, screeningPassed, search, page, limit, sort, needsAction } = req.query;
   if (status && !VALID_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'Invalid status filter' });
   }
@@ -42,6 +46,30 @@ async function list(req, res) {
   if (departmentId !== undefined && !Number.isInteger(Number(departmentId))) {
     return res.status(400).json({ error: 'Invalid departmentId filter' });
   }
+  if (sort && !VALID_SORTS.includes(sort)) {
+    return res.status(400).json({ error: 'Invalid sort' });
+  }
+
+  // "Needs my action" - a role-aware shortcut through the queue, not a new
+  // authorization gate: it narrows to whatever THIS viewer's own rank can
+  // actually act on next, using the same cumulative ROLE_RANK hierarchy
+  // requireStaffRole checks (see middleware/auth.js). Deliberately not
+  // delegation-aware - unlike requireStaffRole's gate, this only shapes a
+  // query and authorizes nothing, so a plain own-rank check is enough.
+  // Supersedes the plain status/screeningPassed filters below when active
+  // (the frontend disables those controls while this is on).
+  let needsActionOr;
+  if (needsAction === 'true') {
+    const rank = ROLE_RANK[req.user.role] || 0;
+    needsActionOr = [];
+    if (rank >= ROLE_RANK.Senior_HR_Officer) needsActionOr.push({ status: { in: ['Submitted', 'UnderReview'] } });
+    if (rank >= ROLE_RANK.Principal_HR_Officer) needsActionOr.push({ status: 'Interviewed', offer: null });
+    if (rank >= ROLE_RANK.Manager) needsActionOr.push({ offer: { status: 'Recommended' } });
+    // An HR Officer has no direct decision power in this queue - their one
+    // lever is reviewing what automated screening flagged for someone
+    // else's attention, so that's what "needs my action" falls back to.
+    if (needsActionOr.length === 0) needsActionOr.push({ screeningPassed: false });
+  }
 
   const filters = {
     vacancyId: vacancyId ? Number(vacancyId) : undefined,
@@ -49,14 +77,15 @@ async function list(req, res) {
     departmentId: departmentId ? Number(departmentId) : undefined,
     candidateType: candidateType || undefined,
     screeningPassed: screeningPassed === 'true' ? true : screeningPassed === 'false' ? false : undefined,
-    search: search?.trim() || undefined
+    search: search?.trim() || undefined,
+    needsActionOr
   };
   const take = Math.min(Number(limit) || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const pageNum = Math.max(Number(page) || 1, 1);
   const skip = (pageNum - 1) * take;
 
   const [data, total] = await Promise.all([
-    applicationModel.findManyForHr({ ...filters, skip, take }),
+    applicationModel.findManyForHr({ ...filters, skip, take, sort }),
     applicationModel.countForHr(filters)
   ]);
   res.json({ data, total, page: pageNum, limit: take });
@@ -92,24 +121,21 @@ async function shortlist(req, res) {
     return res.status(422).json({ error: `An application at status "${application.status}" cannot be shortlisted here` });
   }
 
-  // Same atomic-guard pattern as reject() - scoped to the status just read,
-  // so a near-simultaneous action on this application (e.g. a reject
-  // landing at the same moment) can't silently be overwritten by this one.
+  // Lands at ShortlistProposed, not Shortlisted - this is a proposal, not
+  // the effective shortlist. It only takes effect (candidate notified,
+  // interview scheduling unlocked) once a Principal HR Officer+ who isn't
+  // this proposer approves it via approveShortlist, below. Same
+  // atomic-guard pattern as reject() - scoped to the status just read, so a
+  // near-simultaneous action on this application (e.g. a reject landing at
+  // the same moment) can't silently be overwritten by this one.
   const result = await applicationModel.updateIfStatus(applicationId, application.status, {
-    status: 'Shortlisted', rank, listStatus, rankVersion: { increment: 1 }
+    status: 'ShortlistProposed', rank, listStatus, rankVersion: { increment: 1 },
+    shortlistProposedAt: new Date(), shortlistProposedById: req.user.id
   });
   if (result.count === 0) {
     return res.status(409).json({ error: 'This application was already updated - please refresh and try again' });
   }
 
-  try {
-    await notifyCandidate(
-      application.candidateId, 'ApplicationShortlisted',
-      `Good news - you've been shortlisted for "${application.vacancy.title}". We'll be in touch about next steps.`
-    );
-  } catch (err) {
-    console.error(`Failed to notify candidate ${application.candidateId} of shortlisting for application ${applicationId}:`, err);
-  }
   const updated = await applicationModel.findById(applicationId, { vacancy: true });
   res.json(updated);
 }
@@ -137,8 +163,16 @@ async function reject(req, res) {
   // near-simultaneous action on this application (an interview panel's
   // "Reject" recommendation landing at the same moment as this) silently
   // overwriting each other.
+  //
+  // rank/listStatus are cleared (not left dangling from an earlier
+  // shortlist ranking) and rankVersion bumped, same as a real ranking
+  // write - a rejected application has no business still showing a rank,
+  // and bumping the version means a stale ranking UI that still has this
+  // id loaded gets the normal 409 "changed since you loaded it" on its
+  // next save rather than silently re-including a rejected candidate.
   const result = await applicationModel.updateIfStatus(applicationId, application.status, {
-    status: 'Rejected', rejectedAt: new Date(), rejectedById: req.user.id, rejectionReason: reason
+    status: 'Rejected', rejectedAt: new Date(), rejectedById: req.user.id, rejectionReason: reason,
+    rank: null, listStatus: null, rankVersion: { increment: 1 }
   });
   if (result.count === 0) {
     return res.status(409).json({ error: 'This application was already updated - please refresh and try again' });
@@ -162,19 +196,50 @@ async function reject(req, res) {
   res.json(updated);
 }
 
-// NOT a second approval gate on top of shortlist()/saveRanking() - this is
-// only ever the self-approval pre-check, kept as its own endpoint so a
-// caller can find out *before* attempting to shortlist whether they're
-// blocked from doing so on this vacancy (they created it). Shortlisting
-// itself still has to happen via shortlist() or vacancyController.saveRanking.
+// The other half of the propose/approve split - shortlist()/saveRanking
+// only ever get an application to ShortlistProposed. This is what actually
+// makes it effective: every ShortlistProposed application for the vacancy
+// moves to Shortlisted in one batch (so PHRO reviews and approves the whole
+// ranked list as one decision, not application-by-application), candidates
+// are notified only now, and interview scheduling only unlocks now (see
+// interviewController.SCHEDULABLE_STATUSES). Self-approval is blocked
+// against whoever actually proposed each application's shortlisting, not
+// against the vacancy's creator - a different check from
+// assertNotSelfApproval, which guards vacancy/offer approval.
 async function approveShortlist(req, res) {
   const vacancyId = Number(req.params.vacancyId);
+  if (!Number.isInteger(vacancyId)) return res.status(400).json({ error: 'Invalid vacancy id' });
+
+  const proposed = await applicationModel.findByVacancyAndStatus(vacancyId, 'ShortlistProposed');
+  if (proposed.length === 0) {
+    return res.status(422).json({ error: 'No proposed shortlist is awaiting approval for this vacancy' });
+  }
+
   try {
-    await workflow.assertNotSelfApproval(vacancyId, req.user.id);
+    await workflow.assertNotSelfApprovedShortlist(vacancyId, req.user.id);
   } catch (err) {
     return res.status(422).json({ error: err.message });
   }
-  res.json({ message: 'Shortlist approved', vacancyId });
+
+  await applicationModel.approveShortlistForVacancy(vacancyId, req.user.id);
+
+  const vacancy = await vacancyModel.findById(vacancyId);
+  // The approval itself already committed above - a notification failure
+  // for one candidate must not block the others or turn an otherwise-
+  // successful approval into a 500 (same reasoning as reject()/shortlist()
+  // elsewhere in this file).
+  for (const application of proposed) {
+    try {
+      await notifyCandidate(
+        application.candidateId, 'ApplicationShortlisted',
+        `Good news - you've been shortlisted for "${vacancy.title}". We'll be in touch about next steps.`
+      );
+    } catch (err) {
+      console.error(`Failed to notify candidate ${application.candidateId} of shortlisting for application ${application.id}:`, err);
+    }
+  }
+
+  res.json({ message: 'Shortlist approved', vacancyId, approvedCount: proposed.length });
 }
 
 // This was the missing step: Principal HR Officer reviews interview
@@ -222,6 +287,7 @@ async function recommendOffer(req, res) {
   }
 
   await applicationModel.update(applicationId, { status: 'Offered' });
+  broadcastDashboardEvent('OfferPendingApproval', { offerId: offer.id });
   res.status(201).json(offer);
 }
 
@@ -275,6 +341,7 @@ async function approveOffer(req, res) {
       `Congratulations! You have received an offer for "${offer.application.vacancy.title}". Please log in to accept or decline.`
     );
   }
+  broadcastDashboardEvent('OfferApproved', { offerId });
   res.json(offer);
 }
 
@@ -311,6 +378,7 @@ async function acceptOffer(req, res) {
   } catch (err) {
     console.error(`Failed to capture hire snapshot for offer ${offerId}:`, err);
   }
+  broadcastDashboardEvent('OfferAccepted', { offerId });
   res.json(offer);
 }
 
@@ -329,6 +397,7 @@ async function declineOffer(req, res) {
   if (result.conflict) {
     return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
   }
+  broadcastDashboardEvent('OfferDeclined', { offerId });
   res.json(result);
 }
 

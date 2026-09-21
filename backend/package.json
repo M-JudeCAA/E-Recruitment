@@ -27,7 +27,8 @@
     "nodemailer": "^6.9.14",
     "pdf-parse": "^1.1.1",
     "sanitize-html": "2.17.5",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "jest": "^29.7.0",

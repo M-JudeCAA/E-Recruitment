@@ -3,64 +3,15 @@
 // logic belongs outside the request-serving Node process, not competing
 // with it for the event loop.
 // 0 * * * * cd /path/to/backend && node scripts/checkSlaEscalations.js
-const prisma = require('../src/config/db');
 const slaModel = require('../src/models/slaModel');
 const { notifyAllWithRole } = require('../src/services/notificationService');
-const { ROLE_RANK } = require('../src/middleware/auth');
-
-// The role exactly one rank above the given one, or null at the top of
-// the hierarchy. NOT reused from delegationController - that module's
-// tierBelow() answers a different question (self-service delegation:
-// who can I delegate DOWN to) since the delegation redesign removed its
-// third-party "tier above authorizes" concept entirely. Escalation
-// still genuinely needs "who is ABOVE the current tier", so it gets its
-// own small copy here rather than depending on a controller whose
-// tier-direction no longer matches.
-function tierAbove(role) {
-  const targetRank = ROLE_RANK[role] + 1;
-  return Object.keys(ROLE_RANK).find((r) => ROLE_RANK[r] === targetRank) || null;
-}
-
-// The tier a task is FIRST assigned to, before any escalation - matches
-// the role permission table exactly (PHRO can recommend an offer but
-// never approve it, so OfferApproval starts at Manager).
-//
-// CHANGED - VacancyApproval was Principal_HR_Officer, matching the old
-// 5-tier flow (create -> SHRO review -> PHRO approve). The vacancy
-// workflow simplified to 2-tier (HR Officer creates, Manager or Director
-// approves directly), so this now starts at Manager, matching who is
-// actually assigned the task from the moment a vacancy needs approval.
-const INITIAL_TIER = {
-  VacancyApproval: 'Manager',
-  DepartmentApproval: 'Principal_HR_Officer',
-  OfferApproval: 'Manager'
-};
-
-// VacancyApproval is now live, unblocked by the fix to
-// Vacancy.create()/approve() - approvedAt gives this a clean, unambiguous
-// "awaiting approval" signal for the first time: a vacancy is pending
-// exactly when approvedAt is still null and it has not been manually
-// withdrawn (status !== 'Closed'). A vacancy Rejected outright would also
-// have a null approvedAt, but nothing in this codebase currently sets
-// that status on a Vacancy (see the schema comment on VacancyStatus), so
-// there is no live path that would wrongly keep escalating a rejected one.
-async function getPendingTasks(taskType) {
-  if (taskType === 'VacancyApproval') {
-    const rows = await prisma.vacancy.findMany({
-      where: { approvedAt: null, status: { not: 'Closed' } }
-    });
-    return rows.map((v) => ({ id: v.id, since: v.createdAt }));
-  }
-  if (taskType === 'DepartmentApproval') {
-    const rows = await prisma.department.findMany({ where: { status: 'Pending' } });
-    return rows.map((d) => ({ id: d.id, since: d.createdAt }));
-  }
-  if (taskType === 'OfferApproval') {
-    const rows = await prisma.offer.findMany({ where: { status: 'Recommended' } });
-    return rows.map((o) => ({ id: o.id, since: o.recommendedDate }));
-  }
-  return [];
-}
+// getPendingTasks/INITIAL_TIER/tierAbove now live in slaStatusService,
+// shared with the read-only GET /api/dashboard/follow-ups endpoint so the
+// two can never disagree on "who owns this task right now" or "is it
+// overdue" - this script is the only one of the two with side effects
+// (it's what actually creates the escalation + fires the notification).
+const { INITIAL_TIER, tierAbove, getPendingTasks } = require('../src/services/slaStatusService');
+const prisma = require('../src/config/db');
 
 async function main() {
   const now = new Date();

@@ -71,6 +71,12 @@ enum ApplicationStatus {
   Draft
   Submitted
   UnderReview
+  // A shortlist ranking (single shortlist() call or a saveRanking batch) - Senior_HR_Officer+
+  // can reach this, but it isn't the effective/candidate-visible shortlist yet: no interview
+  // can be scheduled from here (see interviewController.SCHEDULABLE_STATUSES) and the candidate
+  // isn't notified. Only applicationController.approveShortlist (Principal_HR_Officer+, and not
+  // the same person who proposed it) promotes these to Shortlisted.
+  ShortlistProposed
   Shortlisted
   InterviewScheduled
   Interviewed
@@ -160,6 +166,8 @@ model StaffUser {
   departmentsApproved Department[]  @relation("DepartmentApprovedBy")
   positionsCreated    Position[]    @relation("PositionCreatedBy")
   applicationsRejected Application[] @relation("ApplicationRejectedBy")
+  applicationsShortlistProposed Application[] @relation("ApplicationShortlistProposedBy")
+  applicationsShortlistApproved Application[] @relation("ApplicationShortlistApprovedBy")
 
   // Real, time-bounded, audited delegation - distinct from the older
   // static `actingAsId` field above, which predates this and is left
@@ -278,6 +286,14 @@ model Vacancy {
   // ApplicationSnapshot.
   approvedByRole   StaffRole?
   rejectionReason  String?
+
+  // Set once, the first time recomputeVacancyStatus (workflowService.js)
+  // computes status === 'Filled' - never cleared or re-stamped afterward,
+  // even if positionsRequired later increases and status drops back to
+  // PartiallyFilled. This is a "how long did the first fill take" record
+  // for time-to-fill reporting, not a live mirror of current fill state
+  // (that's `status` itself, recomputed on every offer accept/decline).
+  filledAt         DateTime?
 
   // The 5-tier flow's Senior HR Officer review/check-by gate is removed
   // entirely (2-tier now: HR Officer creates, Manager or Director
@@ -638,6 +654,20 @@ model Application {
   rejectedBy       StaffUser?        @relation("ApplicationRejectedBy", fields: [rejectedById], references: [id])
   rejectionReason  String?           @db.Text
 
+  // Propose/approve shortlist split - see the ShortlistProposed comment on
+  // ApplicationStatus above. shortlistProposedById is who ran shortlist()/
+  // saveRanking (checked against the approver in
+  // workflowService.assertNotSelfApprovedShortlist so the same person can't
+  // do both); shortlistApprovedById is who actually approved it into effect.
+  // Both nullable/independent of rejectedAt/rejectedById above - a proposed
+  // shortlist can still be rejected outright without ever being approved.
+  shortlistProposedAt    DateTime?
+  shortlistProposedById  Int?
+  shortlistProposedBy    StaffUser?  @relation("ApplicationShortlistProposedBy", fields: [shortlistProposedById], references: [id])
+  shortlistApprovedAt    DateTime?
+  shortlistApprovedById  Int?
+  shortlistApprovedBy    StaffUser?  @relation("ApplicationShortlistApprovedBy", fields: [shortlistApprovedById], references: [id])
+
   // Application-level answers (vary per application, unlike the
   // candidate-level profile fields on Candidate) - the wizard's Questions
   // step, persisted for real rather than kept as local-only state.
@@ -743,6 +773,13 @@ model Offer {
   // for "how long has this been awaiting approval". Set in
   // recommendOffer() alongside recommendedById.
   recommendedDate  DateTime?
+  // Set once, the moment the candidate accepts or declines (status flips
+  // to Accepted/Declined in workflowService.acceptOfferTransactionally/
+  // handleOfferDeclined) - distinct from approvedDate (when Manager
+  // approved the offer, a different event). Powers the offer-outcome
+  // trend on the Analytics page; null for every offer still short of a
+  // candidate decision.
+  decidedAt        DateTime?
 }
 
 model VerificationToken {

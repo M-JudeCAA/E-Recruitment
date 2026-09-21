@@ -7,6 +7,7 @@ import TextField from '../components/TextField';
 import TextArea from '../components/TextArea';
 import Button from '../components/Button';
 import Alert from '../components/Alert';
+import Skeleton from '../components/Skeleton';
 
 // Public page - a panelist reaches this via their emailed/shared link,
 // with no account and no login. The token in the URL is the only
@@ -18,6 +19,10 @@ export default function PanelScoreAccess() {
   const [score, setScore] = useState('');
   const [comments, setComments] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  // A single-use link with no server-side guard against a double-click
+  // beyond rejecting the second attempt outright - this is the local
+  // first line of defense, same reasoning as ApplyForm.jsx's `continuing`.
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     client.get(`/api/panel-access/${token}`)
@@ -27,12 +32,14 @@ export default function PanelScoreAccess() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError(''); setSubmitting(true);
     try {
       await client.patch(`/api/panel-access/${token}/score`, { score: Number(score), comments });
       setSubmitted(true);
     } catch (err) {
       setError(err.response?.data?.error || 'Could not submit your score.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -54,7 +61,21 @@ export default function PanelScoreAccess() {
     );
   }
 
-  if (!context) return <p>Loading...</p>;
+  if (!context) {
+    return (
+      <div style={{ maxWidth: 420 }}>
+        <Skeleton width={200} height={22} style={{ marginBottom: 8 }} />
+        <Skeleton width={280} height={14} style={{ marginBottom: 20 }} />
+        <Card>
+          <Skeleton width={220} height={15} style={{ marginBottom: 8 }} />
+          <Skeleton width={160} height={12} />
+        </Card>
+        <Skeleton width="100%" height={38} radius={6} style={{ marginTop: 16, marginBottom: 12 }} />
+        <Skeleton width="100%" height={80} radius={6} style={{ marginBottom: 12 }} />
+        <Skeleton width={130} height={36} radius={6} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: 420 }}>
@@ -76,7 +97,7 @@ export default function PanelScoreAccess() {
         <TextField label="Score (0-100)" type="number" min="0" max="100" value={score}
           onChange={(e) => setScore(e.target.value)} required />
         <TextArea label="Comments" value={comments} onChange={(e) => setComments(e.target.value)} />
-        <Button type="submit">Submit score</Button>
+        <Button type="submit" loading={submitting} loadingText="Submitting...">Submit score</Button>
       </form>
       <Alert type="error" message={error} />
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>

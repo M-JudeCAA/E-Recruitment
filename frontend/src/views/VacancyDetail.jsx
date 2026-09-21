@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
 import Alert from '../components/Alert';
 import StatusBadge from '../components/StatusBadge';
+import Skeleton from '../components/Skeleton';
 
 // Vacancy-info only - the applicant review workflow (screening, shortlist
 // ranking, verification, reject, interview scheduling/scoring, offer
@@ -22,7 +23,20 @@ export default function VacancyDetail() {
     staffClient.get(`/api/vacancies/${id}`).then((res) => setVacancy(res.data));
   }, [id]);
 
-  if (!vacancy) return <p>Loading...</p>;
+  if (!vacancy) {
+    return (
+      <div>
+        <Skeleton width={320} height={26} style={{ marginBottom: 10 }} />
+        <Skeleton width={220} height={14} style={{ marginBottom: 20 }} />
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+          <Skeleton width={90} height={22} radius={999} />
+          <Skeleton width={110} height={22} radius={999} />
+          <Skeleton width={140} height={14} style={{ alignSelf: 'center' }} />
+        </div>
+        <Skeleton width={180} height={36} radius={6} />
+      </div>
+    );
+  }
 
   // vacancy.department is an object ({ name, directorate }, see
   // vacancyModel.findByIdWithDetails' include) - interpolating it directly
@@ -31,6 +45,12 @@ export default function VacancyDetail() {
     ? `${vacancy.department.name}${vacancy.department.directorate?.name ? ', ' + vacancy.department.directorate.name : ''}`
     : null;
   const deadlinePassed = vacancy.deadline && new Date(vacancy.deadline) < new Date();
+  // Only meaningful once this specific vacancy has actually reached Filled
+  // (see the schema comment on Vacancy.filledAt) - a vacancy that's merely
+  // PartiallyFilled has no fill time to report yet.
+  const timeToFillDays = vacancy.filledAt && vacancy.approvedAt
+    ? Math.round((new Date(vacancy.filledAt) - new Date(vacancy.approvedAt)) / 86400000)
+    : null;
 
   return (
     <div>
@@ -48,6 +68,11 @@ export default function VacancyDetail() {
           </span>
         )}
         {vacancy.salaryScale && <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Salary scale: {vacancy.salaryScale}</span>}
+        {timeToFillDays != null && (
+          <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+            Filled in {timeToFillDays} day{timeToFillDays === 1 ? '' : 's'}
+          </span>
+        )}
       </p>
 
       {vacancy.status === 'PendingApproval' ? (

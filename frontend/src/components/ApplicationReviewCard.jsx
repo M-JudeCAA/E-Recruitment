@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import Card from './Card';
 import Button from './Button';
@@ -37,9 +38,18 @@ const NOT_REJECTABLE = ['Draft', 'Offered', 'Rejected', 'Withdrawn'];
 // belongs to, which only makes sense when applications from several
 // vacancies are mixed together in one list (the cross-vacancy queue).
 export default function ApplicationReviewCard({
-  app, vacancy, staffRole, onUpdated, onDownloadCv, downloadingId, showVacancyContext = false
+  app, vacancy, staffRole, onUpdated, onDownloadCv, downloadingId, showVacancyContext = false,
+  defaultExpanded = true
 }) {
   const rank = ROLE_RANK[staffRole] || 0;
+  // The cross-vacancy queue (ApplicationManagement.jsx's "All vacancies"
+  // mode) passes defaultExpanded={false} - up to 20 of these render at once
+  // there, each with essential/desirable/eligibility criteria and interview
+  // rounds, so collapsed-by-default keeps the list scannable. The
+  // single-vacancy "All applications" list keeps the old always-expanded
+  // behavior, since comparing candidates side-by-side there benefits from
+  // full detail up front.
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [error, setError] = useState('');
   const [linkMessage, setLinkMessage] = useState('');
   // One flag for every mutating action on this card - a slow network plus
@@ -233,17 +243,34 @@ export default function ApplicationReviewCard({
         </div>
       )}
 
-      <strong>{app.candidate.fullName}</strong> ({app.candidate.candidateType}) &mdash; <StatusBadge status={app.status} />
-      {app.rank && <span> &middot; Rank {app.rank} ({app.listStatus})</span>}
-      {app.screeningPassed === false && (
-        <span title={safeJsonParse(app.screeningReasons, []).join('; ')}
-          style={{ color: 'var(--color-warning)', marginLeft: 8, fontSize: 13 }}>
-          &#9888; {safeJsonParse(app.screeningReasons, []).length} flag(s)
-        </span>
-      )}
-      {app.screeningPassed === true && (
-        <span style={{ color: 'var(--color-success)', marginLeft: 8, fontSize: 13 }}>&#10003; Meets criteria</span>
-      )}
+      {/* Header doubles as the collapse toggle - the only thing always
+          visible per card in a long queue, so it carries every scan-worthy
+          signal (status, rank, score, screening) up front rather than
+          making HR expand each one just to triage. */}
+      <div onClick={() => setExpanded((v) => !v)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, cursor: 'pointer' }}>
+        <div>
+          <strong>{app.candidate.fullName}</strong> ({app.candidate.candidateType}) &mdash; <StatusBadge status={app.status} />
+          {app.rank && <span> &middot; Rank {app.rank} ({app.listStatus})</span>}
+          {app.shortlistScore != null && (
+            <span style={{ color: 'var(--color-text-muted)', marginLeft: 8, fontSize: 13 }}>&middot; Score {app.shortlistScore.toFixed(1)}</span>
+          )}
+          {app.screeningPassed === false && (
+            <span title={safeJsonParse(app.screeningReasons, []).join('; ')}
+              style={{ color: 'var(--color-warning)', marginLeft: 8, fontSize: 13 }}>
+              &#9888; {safeJsonParse(app.screeningReasons, []).length} flag(s)
+            </span>
+          )}
+          {app.screeningPassed === true && (
+            <span style={{ color: 'var(--color-success)', marginLeft: 8, fontSize: 13 }}>&#10003; Meets criteria</span>
+          )}
+        </div>
+        <button type="button" onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+          aria-label={expanded ? 'Collapse details' : 'Expand details'}
+          style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--color-text-muted)', flexShrink: 0 }}>
+          {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </button>
+      </div>
+
       <div style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '6px 0', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
         <span>
           CV:{' '}
@@ -257,89 +284,6 @@ export default function ApplicationReviewCard({
         </span>
       </div>
 
-      {/* Minimum required specifications (Essential Requirements) -
-          the mandatory counterpart to the Desirable Requirements list
-          below: every minimum the vacancy actually sets is itemized
-          with its own met/not-met status and the specific reason,
-          instead of only the collapsed flag-count/"Meets criteria"
-          badge above. */}
-      {safeJsonParse(app.essentialCriteriaResults, []).length > 0 && (
-        <div style={{ fontSize: 13, margin: '6px 0' }}>
-          <strong>Minimum required specifications:</strong>{' '}
-          {safeJsonParse(app.essentialCriteriaResults, []).filter((r) => r.met).length} of {safeJsonParse(app.essentialCriteriaResults, []).length} met
-          <ul style={{ margin: '4px 0 0', paddingLeft: 18, listStyle: 'none' }}>
-            {safeJsonParse(app.essentialCriteriaResults, []).map((r) => (
-              <li key={r.key} style={{ color: r.met ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                {r.met ? '✓' : '✗'} {r.label} (requires {r.requirement}) &mdash; {r.detail}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Eligibility questions (disqualifying) - unlike Desirable
-          Requirements below, a "wrong" answer here DOES fail
-          screeningPassed (see screeningService.screenApplication), so
-          this is styled as a real gate (danger, not warning) rather
-          than a soft flag. met/not-met is derived here from the
-          snapshotted answer vs. requiredAnswer, same values
-          screenApplication itself compared at screening time. */}
-      {app.disqualifyingResponses?.length > 0 && (() => {
-        // A 'number' row (see ScreeningQuestionsEditor.jsx) is met once
-        // the answer reaches its own snapshotted minValue - same
-        // comparison screenApplication itself used at screening time.
-        // Every other row (including one with no answerType, from
-        // before 'number' existed) keeps the original Yes/No compare.
-        const isMet = (r) => r.answerType === 'number'
-          ? typeof r.answer === 'number' && r.answer >= r.minValue
-          : r.answer === (r.requiredAnswer !== 'No');
-        return (
-          <div style={{ fontSize: 13, margin: '6px 0' }}>
-            <strong>Eligibility questions:</strong>{' '}
-            {app.disqualifyingResponses.filter(isMet).length} of {app.disqualifyingResponses.length} met
-            <ul style={{ margin: '4px 0 0', paddingLeft: 18, listStyle: 'none' }}>
-              {app.disqualifyingResponses.map((r) => {
-                const met = isMet(r);
-                return (
-                  <li key={r.id} style={{ color: met ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                    {met ? '✓' : '✗'} {r.text} {r.answerType === 'number'
-                      ? `(must be at least ${r.minValue}, answered ${r.answer ?? '—'})`
-                      : `(must answer ${r.requiredAnswer}, answered ${r.answer ? 'Yes' : 'No'})`}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        );
-      })()}
-
-      {/* Shortlist score - a ranking signal, not a gate (see
-          scoreApplication's comment): additive credit for exceeding a
-          minimum or matching a preference, shown with the specific
-          reasons behind it rather than a bare number, so HR can see
-          exactly what earned it. */}
-      {app.shortlistScore != null && (
-        <div style={{ fontSize: 13, margin: '6px 0' }}>
-          <strong>Score: {app.shortlistScore.toFixed(1)}</strong>
-          {safeJsonParse(app.shortlistScoreReasons, []).length > 0 ? (
-            <ul style={{ margin: '4px 0 0', paddingLeft: 18, color: 'var(--color-text-muted)' }}>
-              {safeJsonParse(app.shortlistScoreReasons, []).map((r, i) => <li key={i}>{r}</li>)}
-            </ul>
-          ) : (
-            <span style={{ color: 'var(--color-text-muted)' }}> &mdash; no factors above the vacancy's stated minimums/preferences</span>
-          )}
-        </div>
-      )}
-
-      {/* Field-of-study is a preference, not a requirement (free text,
-          no controlled vocabulary) - kept out of screeningPassed, shown
-          as its own worth-a-glance flag instead. */}
-      {app.fieldOfStudyMatch === false && (
-        <div style={{ fontSize: 13, color: 'var(--color-warning)', margin: '6px 0' }}>
-          &#9888; Field of study may not match the preferred field ({vacancy?.preferredFieldOfStudy}) - worth a second look, not part of screening
-        </div>
-      )}
-
       {app.status === 'Rejected' && (
         <div style={{ fontSize: 13, color: 'var(--color-danger)', margin: '6px 0' }}>
           Rejected{app.rejectedBy?.name ? ` by ${app.rejectedBy.name}` : ''}{app.rejectedAt ? ` on ${new Date(app.rejectedAt).toLocaleDateString()}` : ''}
@@ -347,94 +291,181 @@ export default function ApplicationReviewCard({
         </div>
       )}
 
-      {/* Desirable Requirements - preferred, not mandatory, criteria:
-          informational only, never part of screeningPassed (a "No"
-          here doesn't fail screening). Every requirement is listed
-          individually with its own answer rather than collapsing a
-          clean sweep into one generic line, so HR can see exactly
-          which preferences a candidate does and doesn't meet. Each
-          "Yes" here is also what scoreApplication credits in the
-          shortlist score above. */}
-      {app.desirableResponses?.length > 0 && (() => {
-        const isMet = (r) => r.answerType === 'number'
-          ? typeof r.answer === 'number' && r.answer >= r.minValue
-          : r.answer === true;
-        return (
-          <div style={{ fontSize: 13, margin: '6px 0' }}>
-            <strong>Desirable (preferred) requirements:</strong>{' '}
-            {app.desirableResponses.filter(isMet).length} of {app.desirableResponses.length} met
-            <ul style={{ margin: '4px 0 0', paddingLeft: 18, listStyle: 'none' }}>
-              {app.desirableResponses.map((r) => {
-                const met = isMet(r);
-                return (
-                  <li key={r.id} style={{ color: met ? 'var(--color-success)' : 'var(--color-warning)' }}>
-                    {met ? '✓' : '⚠'} {r.text}{r.answerType === 'number' ? ` (answered ${r.answer ?? '—'}, needs ${r.minValue})` : ''}
+      {expanded && (
+        <>
+          {/* Minimum required specifications (Essential Requirements) -
+              the mandatory counterpart to the Desirable Requirements list
+              below: every minimum the vacancy actually sets is itemized
+              with its own met/not-met status and the specific reason,
+              instead of only the collapsed flag-count/"Meets criteria"
+              badge above. */}
+          {safeJsonParse(app.essentialCriteriaResults, []).length > 0 && (
+            <div style={{ fontSize: 13, margin: '6px 0' }}>
+              <strong>Minimum required specifications:</strong>{' '}
+              {safeJsonParse(app.essentialCriteriaResults, []).filter((r) => r.met).length} of {safeJsonParse(app.essentialCriteriaResults, []).length} met
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, listStyle: 'none' }}>
+                {safeJsonParse(app.essentialCriteriaResults, []).map((r) => (
+                  <li key={r.key} style={{ color: r.met ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                    {r.met ? '✓' : '✗'} {r.label} (requires {r.requirement}) &mdash; {r.detail}
                   </li>
-                );
-              })}
-            </ul>
-          </div>
-        );
-      })()}
-
-      {app.candidate.candidateType === 'Internal' && app.candidate.internalProfile && (
-        <Card accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)', marginBottom: 8 }}>
-          <strong>Internal verification:</strong> <StatusBadge status={app.candidate.internalProfile.verificationStatus} />
-          {app.candidate.internalProfile.verificationStatus !== 'HR_Verified' && (
-            <div style={{ marginTop: 8 }}>
-              <Button variant="secondary" onClick={() => openVerify('HR_Verified')}>Mark HR Verified</Button>{' '}
-              <Button variant="ghost" onClick={() => openVerify('Discrepancy_Flagged')}>Flag discrepancy</Button>
+                ))}
+              </ul>
             </div>
           )}
-        </Card>
-      )}
 
-      {app.interviewRounds.map((r) => (
-        <Card key={r.id} accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)' }}>
-          <strong>Round {r.roundNumber}</strong>
-          {' · '}{r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString() : 'unscheduled'}
-          {' · '}{r.mode}
-          {r.score != null && <span> &middot; Panel average: {r.score.toFixed(1)}</span>}
-          {r.recommendation && <span> &middot; Recommendation: <StatusBadge status={r.recommendation} /></span>}
-
-          <div style={{ marginTop: 8 }}>
-            {(r.panelMembers || []).map((p) => (
-              <div key={p.id} style={{ fontSize: 13, marginBottom: 4 }}>
-                {p.name}{p.trade ? ` (${p.trade})` : ''}
-                {p.score != null ? (
-                  <span>
-                    {' '}&mdash; scored {p.score}{p.comments ? `: "${p.comments}"` : ''}
-                    {' '}<span style={{ color: 'var(--color-text-muted)' }}>
-                      ({p.selfSubmitted ? 'submitted by panelist' : 'recorded by HR'})
-                    </span>
-                  </span>
-                ) : (
-                  <>
-                    <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 8px' }} onClick={() => openScore(p.id, p.name)}>
-                      Record score
-                    </Button>
-                    <Button variant="ghost" style={{ marginLeft: 4, padding: '2px 8px' }}
-                      onClick={() => sendAccessLink(p.id, p.name)} disabled={linkSubmittingId === p.id}>
-                      {linkSubmittingId === p.id ? 'Sending...' : 'Send/regenerate scoring link'}
-                    </Button>
-                  </>
-                )}
+          {/* Eligibility questions (disqualifying) - unlike Desirable
+              Requirements below, a "wrong" answer here DOES fail
+              screeningPassed (see screeningService.screenApplication), so
+              this is styled as a real gate (danger, not warning) rather
+              than a soft flag. met/not-met is derived here from the
+              snapshotted answer vs. requiredAnswer, same values
+              screenApplication itself compared at screening time. */}
+          {app.disqualifyingResponses?.length > 0 && (() => {
+            // A 'number' row (see ScreeningQuestionsEditor.jsx) is met once
+            // the answer reaches its own snapshotted minValue - same
+            // comparison screenApplication itself used at screening time.
+            // Every other row (including one with no answerType, from
+            // before 'number' existed) keeps the original Yes/No compare.
+            const isMet = (r) => r.answerType === 'number'
+              ? typeof r.answer === 'number' && r.answer >= r.minValue
+              : r.answer === (r.requiredAnswer !== 'No');
+            return (
+              <div style={{ fontSize: 13, margin: '6px 0' }}>
+                <strong>Eligibility questions:</strong>{' '}
+                {app.disqualifyingResponses.filter(isMet).length} of {app.disqualifyingResponses.length} met
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18, listStyle: 'none' }}>
+                  {app.disqualifyingResponses.map((r) => {
+                    const met = isMet(r);
+                    return (
+                      <li key={r.id} style={{ color: met ? 'var(--color-success)' : 'var(--color-danger)' }}>
+                        {met ? '✓' : '✗'} {r.text} {r.answerType === 'number'
+                          ? `(must be at least ${r.minValue}, answered ${r.answer ?? '—'})`
+                          : `(must answer ${r.requiredAnswer}, answered ${r.answer ? 'Yes' : 'No'})`}
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
-            ))}
-          </div>
+            );
+          })()}
 
-          {!r.recommendation && (
-            <Button
-              variant="secondary"
-              style={{ marginTop: 8 }}
-              disabled={r.score == null}
-              onClick={() => openFinalize(r.id)}
-            >
-              Finalize recommendation
-            </Button>
+          {/* Shortlist score - a ranking signal, not a gate (see
+              scoreApplication's comment): additive credit for exceeding a
+              minimum or matching a preference, shown with the specific
+              reasons behind it rather than a bare number, so HR can see
+              exactly what earned it. The score itself is already in the
+              header above - this is just the reasons behind it. */}
+          {app.shortlistScore != null && (
+            <div style={{ fontSize: 13, margin: '6px 0' }}>
+              {safeJsonParse(app.shortlistScoreReasons, []).length > 0 ? (
+                <ul style={{ margin: 0, paddingLeft: 18, color: 'var(--color-text-muted)' }}>
+                  {safeJsonParse(app.shortlistScoreReasons, []).map((r, i) => <li key={i}>{r}</li>)}
+                </ul>
+              ) : (
+                <span style={{ color: 'var(--color-text-muted)' }}>No factors above the vacancy's stated minimums/preferences</span>
+              )}
+            </div>
           )}
-        </Card>
-      ))}
+
+          {/* Field-of-study is a preference, not a requirement (free text,
+              no controlled vocabulary) - kept out of screeningPassed, shown
+              as its own worth-a-glance flag instead. */}
+          {app.fieldOfStudyMatch === false && (
+            <div style={{ fontSize: 13, color: 'var(--color-warning)', margin: '6px 0' }}>
+              &#9888; Field of study may not match the preferred field ({vacancy?.preferredFieldOfStudy}) - worth a second look, not part of screening
+            </div>
+          )}
+
+          {/* Desirable Requirements - preferred, not mandatory, criteria:
+              informational only, never part of screeningPassed (a "No"
+              here doesn't fail screening). Every requirement is listed
+              individually with its own answer rather than collapsing a
+              clean sweep into one generic line, so HR can see exactly
+              which preferences a candidate does and doesn't meet. Each
+              "Yes" here is also what scoreApplication credits in the
+              shortlist score above. */}
+          {app.desirableResponses?.length > 0 && (() => {
+            const isMet = (r) => r.answerType === 'number'
+              ? typeof r.answer === 'number' && r.answer >= r.minValue
+              : r.answer === true;
+            return (
+              <div style={{ fontSize: 13, margin: '6px 0' }}>
+                <strong>Desirable (preferred) requirements:</strong>{' '}
+                {app.desirableResponses.filter(isMet).length} of {app.desirableResponses.length} met
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18, listStyle: 'none' }}>
+                  {app.desirableResponses.map((r) => {
+                    const met = isMet(r);
+                    return (
+                      <li key={r.id} style={{ color: met ? 'var(--color-success)' : 'var(--color-warning)' }}>
+                        {met ? '✓' : '⚠'} {r.text}{r.answerType === 'number' ? ` (answered ${r.answer ?? '—'}, needs ${r.minValue})` : ''}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })()}
+
+          {app.candidate.candidateType === 'Internal' && app.candidate.internalProfile && (
+            <Card accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)', marginBottom: 8 }}>
+              <strong>Internal verification:</strong> <StatusBadge status={app.candidate.internalProfile.verificationStatus} />
+              {app.candidate.internalProfile.verificationStatus !== 'HR_Verified' && (
+                <div style={{ marginTop: 8 }}>
+                  <Button variant="secondary" onClick={() => openVerify('HR_Verified')}>Mark HR Verified</Button>{' '}
+                  <Button variant="ghost" onClick={() => openVerify('Discrepancy_Flagged')}>Flag discrepancy</Button>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {app.interviewRounds.map((r) => (
+            <Card key={r.id} accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)' }}>
+              <strong>Round {r.roundNumber}</strong>
+              {' · '}{r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString() : 'unscheduled'}
+              {' · '}{r.mode}
+              {r.score != null && <span> &middot; Panel average: {r.score.toFixed(1)}</span>}
+              {r.recommendation && <span> &middot; Recommendation: <StatusBadge status={r.recommendation} /></span>}
+
+              <div style={{ marginTop: 8 }}>
+                {(r.panelMembers || []).map((p) => (
+                  <div key={p.id} style={{ fontSize: 13, marginBottom: 4 }}>
+                    {p.name}{p.trade ? ` (${p.trade})` : ''}
+                    {p.score != null ? (
+                      <span>
+                        {' '}&mdash; scored {p.score}{p.comments ? `: "${p.comments}"` : ''}
+                        {' '}<span style={{ color: 'var(--color-text-muted)' }}>
+                          ({p.selfSubmitted ? 'submitted by panelist' : 'recorded by HR'})
+                        </span>
+                      </span>
+                    ) : (
+                      <>
+                        <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 8px' }} onClick={() => openScore(p.id, p.name)}>
+                          Record score
+                        </Button>
+                        <Button variant="ghost" style={{ marginLeft: 4, padding: '2px 8px' }}
+                          onClick={() => sendAccessLink(p.id, p.name)} disabled={linkSubmittingId === p.id}>
+                          {linkSubmittingId === p.id ? 'Sending...' : 'Send/regenerate scoring link'}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {!r.recommendation && (
+                <Button
+                  variant="secondary"
+                  style={{ marginTop: 8 }}
+                  disabled={r.score == null}
+                  onClick={() => openFinalize(r.id)}
+                >
+                  Finalize recommendation
+                </Button>
+              )}
+            </Card>
+          ))}
+        </>
+      )}
 
       <div style={{ marginTop: 8 }}>
         {['Shortlisted', 'InterviewScheduled', 'Interviewed'].includes(app.status) && !app.offer && (

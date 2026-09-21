@@ -10,5 +10,7 @@ module.exports = {
   resolveEscalations: (taskType, taskId) => prisma.taskEscalation.updateMany({
     where: { taskType, taskId, resolvedAt: null },
     data: { resolvedAt: new Date() }
-  })
+  }),
+  countEscalations: (taskType, taskId) => prisma.taskEscalation.count({ where: { taskType, taskId } }),
+  listPolicies: () => prisma.slaPolicy.findMany()
 };

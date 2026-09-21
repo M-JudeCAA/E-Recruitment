@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Search, MapPin, Users, Calendar, ChevronLeft, ChevronRight, Download, CheckCircle2, FileEdit } from 'lucide-react';
 import client from '../models/apiClient';
 import { useAuth } from '../models/AuthContext';
@@ -11,6 +11,9 @@ import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import VacancyAdvert from '../components/VacancyAdvert';
 import LoadingState from '../components/LoadingState';
+import ViewSwitcher from '../components/ViewSwitcher';
+import DataTable from '../components/DataTable';
+import BoardView from '../components/BoardView';
 import { useVacancyPdfDownload } from '../utils/useVacancyPdfDownload';
 
 // A vacancy whose deadline has passed is still shown (never apply-able
@@ -57,6 +60,14 @@ export default function CandidateJobs() {
   const [page, setPage] = useState(1);
   const [detailsVacancy, setDetailsVacancy] = useState(null);
   const { download, hiddenPrintArea, downloadingId } = useVacancyPdfDownload();
+  const [urlParams, setUrlParams] = useSearchParams();
+  const [view, setView] = useState(urlParams.get('view') || 'list');
+  useEffect(() => {
+    const next = new URLSearchParams(urlParams);
+    if (view === 'list') next.delete('view'); else next.set('view', view);
+    setUrlParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
 
   useEffect(() => {
     const params = candidate ? { candidateType: candidate.candidateType } : {};
@@ -126,6 +137,9 @@ export default function CandidateJobs() {
               <Button type="submit" style={{ display: 'flex', alignItems: 'center', gap: 6, height: 42 }}>
                 <Search size={16} /> Find Jobs
               </Button>
+              <span style={{ marginLeft: 'auto' }}>
+                <ViewSwitcher view={view} onChange={setView} />
+              </span>
             </form>
           </Card>
 
@@ -134,7 +148,42 @@ export default function CandidateJobs() {
             <p style={{ color: 'var(--color-text-muted)' }}>No open vacancies match your search.</p>
           )}
 
-          {!loadingJobs && filtered.length > 0 && (
+          {!loadingJobs && filtered.length > 0 && view === 'table' && (
+            <Card style={{ padding: 0, marginBottom: 'var(--spacing-md)' }}>
+              <DataTable
+                getRowKey={(v) => v.id}
+                onRowClick={(v) => setDetailsVacancy(v)}
+                rows={pageItems}
+                columns={[
+                  { key: 'title', label: 'Title', render: (v) => <span style={{ fontWeight: 600 }}>{v.title}</span> },
+                  { key: 'department', label: 'Department', render: (v) => v.department?.name || '—' },
+                  { key: 'type', label: 'Type', render: (v) => v.postingType },
+                  { key: 'deadline', label: 'Deadline', render: (v) => v.deadline ? new Date(v.deadline).toLocaleDateString() : '—' },
+                  { key: 'status', label: 'Status', render: (v) => isClosed(v) ? <StatusBadge status="Closed" /> : <StatusBadge status={v.status} /> }
+                ]}
+              />
+            </Card>
+          )}
+
+          {!loadingJobs && filtered.length > 0 && view === 'board' && (
+            <div style={{ marginBottom: 'var(--spacing-md)' }}>
+              <BoardView
+                getItemKey={(v) => v.id}
+                items={pageItems}
+                groupBy={(v) => v.department?.name || 'Other'}
+                columns={[...new Set(pageItems.map((v) => v.department?.name || 'Other'))].sort().map((name) => ({ key: name, label: name }))}
+                renderCard={(v) => (
+                  <Card onClick={() => setDetailsVacancy(v)} style={{ marginBottom: 0, padding: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{v.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{v.postingType}</div>
+                    {v.deadline && <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>Deadline {new Date(v.deadline).toLocaleDateString()}</div>}
+                  </Card>
+                )}
+              />
+            </div>
+          )}
+
+          {!loadingJobs && filtered.length > 0 && view !== 'table' && view !== 'board' && (
             <>
               <div
                 style={{
@@ -232,24 +281,26 @@ export default function CandidateJobs() {
                   );
                 })}
               </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-                <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-                  Showing page <strong>{currentPage}</strong> of <strong>{totalPages}</strong> pages.
-                </span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <Button variant="ghost" style={{ padding: '6px 10px' }}
-                    disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
-                    <ChevronLeft size={16} />
-                  </Button>
-                  <Button variant="secondary" style={{ padding: '6px 12px' }} disabled>{currentPage}</Button>
-                  <Button variant="ghost" style={{ padding: '6px 10px' }}
-                    disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>
-                    <ChevronRight size={16} />
-                  </Button>
-                </div>
-              </div>
             </>
+          )}
+
+          {!loadingJobs && filtered.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+                Showing page <strong>{currentPage}</strong> of <strong>{totalPages}</strong> pages.
+              </span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Button variant="ghost" style={{ padding: '6px 10px' }}
+                  disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
+                  <ChevronLeft size={16} />
+                </Button>
+                <Button variant="secondary" style={{ padding: '6px 12px' }} disabled>{currentPage}</Button>
+                <Button variant="ghost" style={{ padding: '6px 10px' }}
+                  disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}>
+                  <ChevronRight size={16} />
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       </div>

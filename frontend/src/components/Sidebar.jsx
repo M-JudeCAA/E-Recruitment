@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react';
 
@@ -25,15 +25,22 @@ import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react';
 // classes below must never also set `display` in their inline `style` -
 // an inline style's `display` always wins over any class (media query or
 // not), which would silently defeat the responsive switch.
-export default function Sidebar({ items, active, storageKey, width = 250 }) {
-  const [collapsed, setCollapsed] = useState(() => {
+//
+// `items` entries: { key, label, icon, to, badge?, section? }. Consecutive
+// items sharing the same `section` get one header rendered above the
+// first of them (or a plain divider in icon-only mode, since there's no
+// room for the label text) - items with no `section` render as a flat,
+// ungrouped list at the top, for the one or two links (Home, Approvals
+// Center) that don't belong to any functional group.
+export default function Sidebar({ items, active, storageKey, width = 250, title }) {
+  const [collapsed, setCollapsed] = React.useState(() => {
     try {
       return localStorage.getItem(storageKey) === '1';
     } catch {
       return false;
     }
   });
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = React.useState(false);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -48,6 +55,63 @@ export default function Sidebar({ items, active, storageKey, width = 250 }) {
     });
   };
 
+  // Header row: sidebar title (hidden once collapsed - no room) plus the
+  // collapse toggle, always in the same spot at the top rather than
+  // buried at the bottom, matching the collapse-affordance placement most
+  // users already know from VS Code/Slack/Linear-style sidebars.
+  function renderHeader() {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          gap: 8,
+          paddingBottom: 10,
+          marginBottom: 6,
+          borderBottom: '1px solid var(--color-border)',
+        }}
+      >
+        {!collapsed && title && (
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              color: 'var(--color-text-muted)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {title}
+          </span>
+        )}
+        <button
+          onClick={toggleCollapsed}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            width: 26,
+            height: 26,
+            background: 'transparent',
+            border: 'none',
+            borderRadius: 'var(--radius-sm)',
+            cursor: 'pointer',
+            color: 'var(--color-text-muted)',
+          }}
+        >
+          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
+      </div>
+    );
+  }
+
   // `forceExpanded` lets the mobile drawer always show full labels
   // regardless of the desktop icon-rail preference - `collapsed` is a
   // desktop-only concept (an inline sidebar sitting there permanently),
@@ -57,17 +121,48 @@ export default function Sidebar({ items, active, storageKey, width = 250 }) {
   // - a small pill after the label when expanded, or a dot over the icon
   // when collapsed/icon-only, so the "something needs you" signal survives
   // the fold instead of disappearing with the label.
-  function renderLinks(onNavigate, forceExpanded) {
+  function renderNav(onNavigate, forceExpanded) {
     const iconOnly = collapsed && !forceExpanded;
-    return items.map(({ key, label, icon: Icon, to, badge }) => {
+    const nodes = [];
+    let prevSection;
+    items.forEach(({ key, label, icon: Icon, to, badge, section }) => {
+      if (section && section !== prevSection) {
+        nodes.push(
+          iconOnly ? (
+            <div key={`div-${section}`} style={{ height: 1, background: 'var(--color-border)', margin: '8px 6px' }} />
+          ) : (
+            <div
+              key={`hdr-${section}`}
+              style={{
+                padding: '14px 10px 6px',
+                fontSize: 11,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--color-text-muted)',
+              }}
+            >
+              {section}
+            </div>
+          )
+        );
+      }
+      prevSection = section;
+
       const isActive = active === key;
       const showBadge = badge != null && badge > 0;
-      return (
+      nodes.push(
         <Link
           key={key}
           to={to}
           title={iconOnly ? (showBadge ? `${label} (${badge})` : label) : undefined}
           onClick={onNavigate}
+          // Hover tint lives in theme.css's .sidebar-link rule, not inline
+          // styles - inline `background` always wins over a CSS class, so
+          // the active state below only sets it inline when true and
+          // leaves it unset otherwise, letting the CSS hover rule show
+          // through on inactive links.
+          className="sidebar-link"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -76,39 +171,60 @@ export default function Sidebar({ items, active, storageKey, width = 250 }) {
             width: '100%',
             boxSizing: 'border-box',
             textDecoration: 'none',
-            padding: iconOnly ? '10px 0' : '10px 12px',
-            marginBottom: 4,
+            padding: iconOnly ? '10px 0' : '9px 12px',
+            marginBottom: 2,
             borderRadius: 'var(--radius-sm)',
             fontSize: 14,
             fontWeight: isActive ? 600 : 500,
-            background: isActive ? 'var(--color-primary)' : 'transparent',
-            color: isActive ? '#FFFFFF' : 'var(--color-text)',
+            color: isActive ? 'var(--color-primary-dark)' : 'var(--color-text)',
+            ...(isActive
+              ? {
+                  background: 'var(--color-primary-light)',
+                  // Left accent bar reads as "you are here" without the
+                  // heavier full-fill treatment the old design used -
+                  // inset box-shadow instead of a border so it doesn't
+                  // shift the row's padding/width.
+                  boxShadow: iconOnly ? 'none' : 'inset 3px 0 0 0 var(--color-primary)',
+                }
+              : {}),
             position: 'relative',
           }}
         >
-          <span style={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
+          <span
+            style={{
+              position: 'relative',
+              display: 'flex',
+              flexShrink: 0,
+              color: isActive ? 'var(--color-primary)' : 'var(--color-text-muted)',
+            }}
+          >
             <Icon size={16} />
             {showBadge && iconOnly && (
-              <span style={{
-                position: 'absolute', top: -4, right: -4, width: 8, height: 8, borderRadius: '50%',
-                background: isActive ? '#FFFFFF' : 'var(--color-danger)',
-              }} />
+              <span
+                style={{
+                  position: 'absolute', top: -4, right: -4, width: 8, height: 8, borderRadius: '50%',
+                  background: 'var(--color-danger)',
+                }}
+              />
             )}
           </span>
           {!iconOnly && <span style={{ flex: 1, minWidth: 0 }}>{label}</span>}
           {!iconOnly && showBadge && (
-            <span style={{
-              flexShrink: 0, minWidth: 18, padding: '0 5px', borderRadius: 999, textAlign: 'center',
-              fontSize: 11, fontWeight: 700, lineHeight: '17px',
-              background: isActive ? 'rgba(255,255,255,0.25)' : 'var(--color-danger)',
-              color: '#FFFFFF',
-            }}>
+            <span
+              style={{
+                flexShrink: 0, minWidth: 18, padding: '0 5px', borderRadius: 999, textAlign: 'center',
+                fontSize: 11, fontWeight: 700, lineHeight: '17px',
+                background: 'var(--color-danger)',
+                color: '#FFFFFF',
+              }}
+            >
               {badge}
             </span>
           )}
         </Link>
       );
     });
+    return nodes;
   }
 
   return (
@@ -135,30 +251,8 @@ export default function Sidebar({ items, active, storageKey, width = 250 }) {
           transition: 'width 0.15s ease',
         }}
       >
-        {renderLinks()}
-        <button
-          onClick={toggleCollapsed}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            gap: 8,
-            width: '100%',
-            marginTop: 8,
-            padding: '8px 12px',
-            background: 'transparent',
-            border: 'none',
-            borderTop: '1px solid var(--color-border)',
-            cursor: 'pointer',
-            color: 'var(--color-text-muted)',
-            fontSize: 13,
-          }}
-        >
-          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-          {!collapsed && 'Collapse'}
-        </button>
+        {renderHeader()}
+        {renderNav()}
       </aside>
 
       {/* Mobile - floating trigger; the inline aside above is hidden below
@@ -212,7 +306,17 @@ export default function Sidebar({ items, active, storageKey, width = 250 }) {
               boxShadow: '4px 0 16px rgba(0,0,0,0.15)',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                paddingBottom: 10,
+                marginBottom: 6,
+                borderBottom: '1px solid var(--color-border)',
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-text)' }}>{title || 'Menu'}</span>
               <button
                 onClick={() => setMobileOpen(false)}
                 aria-label="Close menu"
@@ -221,7 +325,7 @@ export default function Sidebar({ items, active, storageKey, width = 250 }) {
                 <X size={18} />
               </button>
             </div>
-            {renderLinks(() => setMobileOpen(false), true)}
+            {renderNav(() => setMobileOpen(false), true)}
           </aside>
         </div>
       )}

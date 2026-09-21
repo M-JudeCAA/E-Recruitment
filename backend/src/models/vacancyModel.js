@@ -42,6 +42,7 @@ module.exports = {
       // HRHome both display this figure).
       _count: { select: { applications: { where: { status: { not: 'Draft' } } } } },
       department: { include: { directorate: true } },
+      createdBy: { select: { name: true } },
       approvedBy: { select: { name: true } },
       postingTypeChangedBy: { select: { name: true } }
     },

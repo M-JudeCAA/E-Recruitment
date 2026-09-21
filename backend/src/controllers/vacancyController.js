@@ -5,6 +5,7 @@ const positionModel = require('../models/positionModel');
 const offerModel = require('../models/offerModel');
 const workflow = require('../services/workflowService');
 const slaModel = require('../models/slaModel');
+const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { generateJobRef } = require('../utils/jobRefGenerator');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
 const {
@@ -122,6 +123,7 @@ async function create(req, res) {
     status: 'PendingApproval',
     ...buildVacancyCreateData(position, validatedReportsToId, req.body, req.user.id)
   });
+  broadcastDashboardEvent('VacancyPendingApproval', { vacancyId: vacancy.id });
   res.status(201).json(vacancy);
 }
 
@@ -176,6 +178,7 @@ async function readvertise(req, res) {
     readvertisedFromId: vacancy.id,
     ...buildVacancyCreateData(position, vacancy.reportsToPositionId, req.body, req.user.id)
   });
+  broadcastDashboardEvent('VacancyPendingApproval', { vacancyId: created.id });
   res.status(201).json(created);
 }
 
@@ -307,6 +310,7 @@ async function approve(req, res) {
   // since approvedAt finally gives it a clean "resolved" signal.
   await slaModel.resolveEscalations('VacancyApproval', vacancyId);
 
+  broadcastDashboardEvent('VacancyApproved', { vacancyId });
   res.json(updated);
 }
 
@@ -494,12 +498,28 @@ async function saveRanking(req, res) {
     rankData.push({ id: appId, rank: i + 1, listStatus });
   }
 
+  // Lands at ShortlistProposed, not Shortlisted - same propose/approve
+  // split as applicationController.shortlist. This batch only becomes the
+  // vacancy's effective shortlist once a Principal HR Officer+ (who didn't
+  // propose it) approves it via applicationController.approveShortlist,
+  // which is also the point candidates are notified and interview
+  // scheduling unlocks. Re-ranking an already-Shortlisted application (e.g.
+  // reordering after a prior approval) demotes it back to
+  // ShortlistProposed, requiring fresh approval - the rank/listStatus
+  // changed, so the prior approval no longer covers it.
+  //
   // All-or-nothing - a plain Promise.all of independent updates could leave
   // the ranking half-committed if one write failed partway through (e.g. a
   // row deleted between the guard check above and the write itself).
   const results = await prisma.$transaction(
     rankData.map(({ id, rank, listStatus }) =>
-      prisma.application.update({ where: { id }, data: { rank, listStatus, status: 'Shortlisted', rankVersion: { increment: 1 } } })
+      prisma.application.update({
+        where: { id },
+        data: {
+          rank, listStatus, status: 'ShortlistProposed', rankVersion: { increment: 1 },
+          shortlistProposedAt: new Date(), shortlistProposedById: req.user.id
+        }
+      })
     )
   );
   res.json(results);

@@ -9,6 +9,7 @@ import LoadingState from '../components/LoadingState';
 import Modal from '../components/Modal';
 import ProfileCompletionForm from '../components/ProfileCompletionForm';
 import { isProfileComplete } from '../utils/profileCompleteness';
+import ucaaLogo from '../assets/ucaa-logo.png';
 import StepperRail from './apply-wizard/StepperRail';
 import JobDetailsStep from './apply-wizard/JobDetailsStep';
 import ProfileStep from './apply-wizard/ProfileStep';
@@ -28,6 +29,31 @@ function parseRequirementAnswer(requirements, id, rawValue) {
   const req = (requirements || []).find((r) => r.id === id);
   if (req?.answerType === 'number') return rawValue === '' ? undefined : Number(rawValue);
   return rawValue === 'Yes';
+}
+
+// /apply/:vacancyId is a full-bleed route with no Navbar (see App.jsx's
+// PaddedLayout split) - without this, there is no way to leave the wizard
+// at all short of the browser's own back button or closing the tab.
+// onSaveExit is omitted on the loading/deadline-blocked screens, which
+// have nothing of the candidate's to save yet (deadline-blocked already
+// offers its own "Browse open positions"/"View my applications" links).
+function WizardExitHeader({ candidate, onSaveExit, saving }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+      <Link to={candidate ? '/dashboard' : '/'} style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+        <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, flexShrink: 0, borderRadius: 7, background: '#FFFFFF', padding: 3, boxSizing: 'border-box' }}>
+          <img src={ucaaLogo} alt="UCAA logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--color-primary-dark)' }}>UCAA e-Recruitment</span>
+      </Link>
+      {onSaveExit && (
+        <button type="button" onClick={onSaveExit} disabled={saving}
+          style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-primary-dark)', background: 'none', border: 'none', cursor: saving ? 'default' : 'pointer' }}>
+          {saving ? 'Saving...' : 'Save & exit'}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export default function ApplyForm() {
@@ -74,6 +100,13 @@ export default function ApplyForm() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  // True once any field has been edited since the last successful save -
+  // drives the beforeunload warning below. Set explicitly by each field's
+  // onChange wrapper (not inferred from a blanket state-change watcher),
+  // since loadProfile/the existing-draft load below also populate this same
+  // state on mount and would otherwise be indistinguishable from a real edit.
+  const [dirty, setDirty] = useState(false);
+  const [exiting, setExiting] = useState(false);
   // Disables Continue while its own save(s) are in flight - awaiting them
   // before calling next() means a real double-click can't fire a second
   // overlapping saveDraft() call while the first is still pending (the
@@ -106,7 +139,19 @@ export default function ApplyForm() {
       dateOfBirth: res.data.dateOfBirth ? res.data.dateOfBirth.slice(0, 10) : '',
       flyingHours: res.data.flyingHours ?? ''
     });
-    if (res.data.internalProfile) setInternalProfileForm(res.data.internalProfile);
+    // CHANGED - dateJoined is a full ISO datetime string from the server,
+    // but InternalProfileStep's field is a native <input type="date">,
+    // which silently renders blank for anything but an exact YYYY-MM-DD
+    // value. A returning internal candidate (continuing a draft, or
+    // applying to a second vacancy) previously saw an empty date here even
+    // though it was already on file - same .slice(0, 10) fix already
+    // applied to dateOfBirth above.
+    if (res.data.internalProfile) {
+      setInternalProfileForm({
+        ...res.data.internalProfile,
+        dateJoined: res.data.internalProfile.dateJoined ? res.data.internalProfile.dateJoined.slice(0, 10) : ''
+      });
+    }
     if (!isProfileComplete(res.data)) setShowProfileModal(true);
   });
 
@@ -139,6 +184,21 @@ export default function ApplyForm() {
       setApplicationsChecked(true);
     });
   }, [vacancyId]);
+
+  // Warns before an accidental tab close/navigation-away drops unsaved
+  // edits - "Save as draft"/Continue/"Save & exit" all clear `dirty` on a
+  // successful save, so this only fires when there's genuinely something
+  // not yet persisted. Native browsers ignore the custom message text and
+  // show their own generic prompt; setting returnValue is what triggers it.
+  useEffect(() => {
+    const handler = (e) => {
+      if (!dirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
 
   const steps = [
     { key: 'jobDetails', label: 'Job Details', note: 'About this role' },
@@ -183,6 +243,22 @@ export default function ApplyForm() {
         refereesForm.forEach((r, i) => {
           if (!r.name || !r.phone || !r.email) missing.push(`Referee ${i + 1} (name, phone, email)`);
         });
+        // Same person listed twice adds no real value as a second,
+        // independent reference - compared by email/phone (trimmed,
+        // case-insensitive) rather than name, since two different people
+        // can share a name but never a phone or email.
+        const flagged = new Set();
+        for (let i = 0; i < refereesForm.length; i++) {
+          for (let j = i + 1; j < refereesForm.length; j++) {
+            const a = refereesForm[i], b = refereesForm[j];
+            const sameEmail = a.email && b.email && a.email.trim().toLowerCase() === b.email.trim().toLowerCase();
+            const samePhone = a.phone && b.phone && a.phone.trim() === b.phone.trim();
+            if ((sameEmail || samePhone) && !flagged.has(j)) {
+              missing.push(`Referee ${j + 1} looks like the same person as Referee ${i + 1} - please provide three different referees`);
+              flagged.add(j);
+            }
+          }
+        }
         return missing;
       }
       case 'questions': {
@@ -266,12 +342,40 @@ export default function ApplyForm() {
     }
   };
 
+  // Persists everything currently entered, regardless of which step is
+  // active - Continue, the "Save as draft" button, and "Save & exit" all
+  // call this instead of each needing its own step-aware subset of what to
+  // save. That step-aware approach used to mean a field only covered by one
+  // of these (e.g. Documents' portfolioUrl, only ever sent by
+  // saveProfileDetails) could go unsaved if the candidate used a different
+  // button than the logic anticipated. All three calls are cheap, idempotent
+  // PUTs/an upsert-style POST, so saving all of them on every click is safe.
+  const persistAll = async () => {
+    await saveProfileDetails();
+    if (candidate?.candidateType === 'Internal') await saveInternalProfile();
+    if (!['Submitted', 'UnderReview'].includes(application?.status)) await saveDraft();
+    setDirty(false);
+  };
+
+  const saveAndExit = async () => {
+    setExiting(true);
+    try {
+      await persistAll();
+    } finally {
+      setExiting(false);
+    }
+    navigate(application ? '/dashboard/applications' : '/dashboard/jobs');
+  };
+
   if (!vacancy || !applicationsChecked) {
     return (
       <div style={{ background: 'var(--color-primary-light)', minHeight: '100%', width: '100%' }}>
         <div className="p-4 md:p-8">
-          <div className="max-w-3xl mx-auto" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)' }}>
-            <LoadingState label="Loading this vacancy..." />
+          <div className="max-w-3xl mx-auto">
+            <WizardExitHeader candidate={candidate} />
+            <div style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)' }}>
+              <LoadingState label="Loading this vacancy..." />
+            </div>
           </div>
         </div>
       </div>
@@ -293,7 +397,9 @@ export default function ApplyForm() {
     return (
       <div style={{ background: 'var(--color-primary-light)', minHeight: '100%', width: '100%' }}>
         <div className="p-4 md:p-8">
-          <div className="max-w-3xl mx-auto" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 32, textAlign: 'center' }}>
+          <div className="max-w-3xl mx-auto">
+          <WizardExitHeader candidate={candidate} />
+          <div style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 32, textAlign: 'center' }}>
             <h2 style={{ color: 'var(--color-primary-dark)', marginTop: 0 }}>Applications closed</h2>
             <p style={{ color: 'var(--color-text-muted)', maxWidth: 480, margin: '0 auto 20px' }}>
               The application deadline for <strong>{vacancy.title}</strong> ({vacancy.jobRef}) was{' '}
@@ -311,6 +417,7 @@ export default function ApplyForm() {
               )}
             </div>
           </div>
+          </div>
         </div>
       </div>
     );
@@ -326,7 +433,9 @@ export default function ApplyForm() {
         </Modal>
       )}
       <div className="p-4 md:p-8">
-        <div className="max-w-3xl mx-auto" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
+        <div className="max-w-3xl mx-auto">
+        <WizardExitHeader candidate={candidate} onSaveExit={saveAndExit} saving={exiting} />
+        <div style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>
           <div className="flex flex-col md:flex-row">
             <StepperRail steps={steps} stepIndex={stepIndex} isComplete={isComplete} visited={visited} goTo={goTo} />
 
@@ -341,33 +450,34 @@ export default function ApplyForm() {
               {steps[stepIndex].key === 'profile' && (
                 <ProfileStep profile={profile} onProfileChange={loadProfile}
                   profileDetails={profileDetailsForm}
-                  setProfileDetail={(key) => (e) => setProfileDetailsForm({ ...profileDetailsForm, [key]: e.target.value })} />
+                  setProfileDetail={(key) => (e) => { setDirty(true); setProfileDetailsForm({ ...profileDetailsForm, [key]: e.target.value }); }} />
               )}
               {steps[stepIndex].key === 'documents' && (
-                <DocumentsStep coverLetter={coverLetter} setCoverLetter={setCoverLetter}
+                <DocumentsStep coverLetter={coverLetter} setCoverLetter={(file) => { setDirty(true); setCoverLetter(file); }}
                   portfolioUrl={profileDetailsForm.portfolioUrl}
-                  setPortfolioUrl={(e) => setProfileDetailsForm({ ...profileDetailsForm, portfolioUrl: e.target.value })} />
+                  setPortfolioUrl={(e) => { setDirty(true); setProfileDetailsForm({ ...profileDetailsForm, portfolioUrl: e.target.value }); }} />
               )}
               {steps[stepIndex].key === 'referees' && (
                 <RefereesStep referees={refereesForm}
-                  setReferee={(i, key) => (e) => setRefereesForm(refereesForm.map((r, idx) => idx === i ? { ...r, [key]: e.target.value } : r))} />
+                  setReferee={(i, key) => (e) => { setDirty(true); setRefereesForm(refereesForm.map((r, idx) => idx === i ? { ...r, [key]: e.target.value } : r)); }} />
               )}
               {steps[stepIndex].key === 'questions' && (
                 <QuestionsStep questions={questionsForm}
-                  set={(key) => (e) => setQuestionsForm({ ...questionsForm, [key]: e.target.value })}
+                  vacancyLocation={vacancy.location}
+                  set={(key) => (e) => { setDirty(true); setQuestionsForm({ ...questionsForm, [key]: e.target.value }); }}
                   desirableRequirements={vacancy.desirableRequirements}
                   desirableAnswers={desirableAnswers}
-                  setDesirableAnswer={(id) => (e) => setDesirableAnswers({ ...desirableAnswers, [id]: parseRequirementAnswer(vacancy.desirableRequirements, id, e.target.value) })}
+                  setDesirableAnswer={(id) => (e) => { setDirty(true); setDesirableAnswers({ ...desirableAnswers, [id]: parseRequirementAnswer(vacancy.desirableRequirements, id, e.target.value) }); }}
                   disqualifyingRequirements={vacancy.disqualifyingRequirements}
                   disqualifyingAnswers={disqualifyingAnswers}
-                  setDisqualifyingAnswer={(id) => (e) => setDisqualifyingAnswers({ ...disqualifyingAnswers, [id]: parseRequirementAnswer(vacancy.disqualifyingRequirements, id, e.target.value) })} />
+                  setDisqualifyingAnswer={(id) => (e) => { setDirty(true); setDisqualifyingAnswers({ ...disqualifyingAnswers, [id]: parseRequirementAnswer(vacancy.disqualifyingRequirements, id, e.target.value) }); }} />
               )}
               {steps[stepIndex].key === 'internal' && (
                 <InternalProfileStep internalProfile={internalProfileForm}
-                  set={(key) => (e) => setInternalProfileForm({ ...internalProfileForm, [key]: e.target.value })} />
+                  set={(key) => (e) => { setDirty(true); setInternalProfileForm({ ...internalProfileForm, [key]: e.target.value }); }} />
               )}
               {steps[stepIndex].key === 'review' && (
-                <ReviewStep profile={profile} coverLetter={coverLetter} referees={refereesForm}
+                <ReviewStep profile={profile} coverLetter={coverLetter} referees={refereesForm} vacancy={vacancy}
                   profileDetails={profileDetailsForm} questions={questionsForm} internalProfile={internalProfileForm}
                   candidateType={candidate?.candidateType} goTo={goTo} stepIndexes={stepIndexes}
                   desirableRequirements={vacancy.desirableRequirements} desirableAnswers={desirableAnswers}
@@ -407,29 +517,35 @@ export default function ApplyForm() {
                   {steps[stepIndex].key !== 'submit' && (
                     <div style={{ display: 'flex', gap: 12 }}>
                       {!alreadyDecided && steps[stepIndex].key !== 'jobDetails' && (
-                        <Button type="button" variant="ghost" onClick={saveDraft} disabled={saving}>
+                        <Button type="button" variant="ghost" onClick={async () => { setSaving(true); try { await persistAll(); } finally { setSaving(false); } }} disabled={saving}>
                           {saving ? 'Saving...' : 'Save as draft'}
                         </Button>
                       )}
                       <Button type="button" disabled={continuing || currentStepErrors.length > 0} onClick={async () => {
                         setContinuing(true);
                         try {
-                          if (steps[stepIndex].key === 'profile' || steps[stepIndex].key === 'documents') await saveProfileDetails();
-                          if (steps[stepIndex].key === 'internal') await saveInternalProfile();
-                          // Guarantees an Application draft row exists (with
-                          // whatever cover letter/referees/answers have been
-                          // entered so far) by the time the candidate can reach
-                          // Review/Submit - without this, a candidate who never
-                          // clicks the separate "Save as draft" button reaches
-                          // Submit with applicationId still null, and Send
-                          // application calls PATCH /api/applications/undefined/submit.
-                          if (['documents', 'referees', 'questions'].includes(steps[stepIndex].key)) await saveDraft();
+                          // persistAll guarantees an Application draft row
+                          // exists (with whatever cover letter/referees/
+                          // answers have been entered so far) by the time the
+                          // candidate can reach Review/Submit - without this,
+                          // a candidate who never clicks the separate "Save
+                          // as draft" button reaches Submit with
+                          // applicationId still null, and Send application
+                          // calls PATCH /api/applications/undefined/submit.
+                          await persistAll();
                           next();
                         } finally {
                           setContinuing(false);
                         }
                       }}>
-                        Continue <ChevronRight size={15} />
+                        {/* persistAll now always saves everything (profile
+                            details + internal profile + the draft) instead
+                            of a step-specific subset, so this click can take
+                            a couple of sequential round-trips - worth its
+                            own "Continuing..." label rather than just a
+                            disabled button with no explanation, same as
+                            "Save as draft" already does. */}
+                        {continuing ? 'Continuing...' : <>Continue <ChevronRight size={15} /></>}
                       </Button>
                     </div>
                   )}
@@ -437,6 +553,7 @@ export default function ApplyForm() {
               )}
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

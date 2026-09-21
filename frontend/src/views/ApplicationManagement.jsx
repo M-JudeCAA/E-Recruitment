@@ -2,16 +2,46 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
+import { useDashboardEvents } from '../models/dashboardSocket';
 import HRSidebar from '../components/HRSidebar';
 import PageHeader from '../components/PageHeader';
+import LiveIndicator from '../components/LiveIndicator';
+import StatsStrip from '../components/StatsStrip';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Alert from '../components/Alert';
 import Select from '../components/Select';
 import TextField from '../components/TextField';
 import ApplicationReviewCard from '../components/ApplicationReviewCard';
+import ShortlistPipelineBoard from '../components/ShortlistPipelineBoard';
+import ViewSwitcher from '../components/ViewSwitcher';
+import DataTable from '../components/DataTable';
+import BoardView from '../components/BoardView';
+import PageControls from '../components/PageControls';
+import StatusBadge, { STATUS_COLORS } from '../components/StatusBadge';
+import Skeleton from '../components/Skeleton';
 import { useGeneratedCvDownload } from '../utils/useGeneratedCvDownload';
-import { safeJsonParse } from '../utils/safeJsonParse';
+import { debounce } from '../utils/debounce';
+
+// Mimics ApplicationReviewCard's collapsed header row (name + status badge,
+// CV/cover-letter line, score) so the queue doesn't visibly jump in layout
+// once real applications land - see Skeleton.jsx's own comment for why
+// this beats a plain "Loading..." string here.
+function ApplicationRowSkeleton() {
+  return (
+    <>
+      {[0, 1, 2].map((i) => (
+        <Card key={i}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+            <Skeleton width={`${55 - i * 8}%`} height={15} />
+            <Skeleton width={80} height={20} radius={999} />
+          </div>
+          <Skeleton width="40%" height={12} style={{ marginTop: 10 }} />
+        </Card>
+      ))}
+    </>
+  );
+}
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
@@ -19,7 +49,7 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 // ApplicationStatus minus Draft - HR never filters to a candidate's
 // unsubmitted draft.
 const STATUS_OPTIONS = [
-  'Submitted', 'UnderReview', 'Shortlisted', 'InterviewScheduled',
+  'Submitted', 'UnderReview', 'ShortlistProposed', 'Shortlisted', 'InterviewScheduled',
   'Interviewed', 'Offered', 'Rejected', 'Withdrawn'
 ];
 const QUEUE_PAGE_SIZE = 20;
@@ -43,19 +73,31 @@ export default function ApplicationManagement() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const vacancyId = searchParams.get('vacancyId') || '';
-  const selectVacancy = (id) => setSearchParams(id ? { vacancyId: id } : {});
+  // Merges into whatever's already in the URL rather than replacing it
+  // outright - the filter-sync effect below owns the other params, and a
+  // plain setSearchParams({vacancyId}) here would wipe them out from under it.
+  const selectVacancy = (id) => {
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set('vacancyId', id); else next.delete('vacancyId');
+    setSearchParams(next, { replace: true });
+  };
 
   const [vacancyOptions, setVacancyOptions] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [error, setError] = useState('');
 
-  const [statusFilter, setStatusFilter] = useState('');
-  const [candidateTypeFilter, setCandidateTypeFilter] = useState('');
-  const [departmentFilter, setDepartmentFilter] = useState('');
-  const [screeningFilter, setScreeningFilter] = useState('all'); // all|flagged|passed
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '');
+  const [candidateTypeFilter, setCandidateTypeFilter] = useState(searchParams.get('candidateType') || '');
+  const [departmentFilter, setDepartmentFilter] = useState(searchParams.get('dept') || '');
+  const [screeningFilter, setScreeningFilter] = useState(searchParams.get('screening') || 'all'); // all|flagged|passed
+  const [searchInput, setSearchInput] = useState(searchParams.get('q') || '');
+  const [search, setSearch] = useState(searchParams.get('q') || '');
+  const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'newest');
+  const [needsAction, setNeedsAction] = useState(searchParams.get('action') === '1');
+  const [page, setPage] = useState(Number(searchParams.get('page')) > 0 ? Number(searchParams.get('page')) : 1);
+  // List/Table/Board - queue mode only (a single selected vacancy's
+  // shortlist-ranking view has its own fixed layout, not a list).
+  const [view, setView] = useState(searchParams.get('view') || 'list');
 
   // setPage(1) alongside every filter change so a narrowed filter never
   // leaves the queue stranded on a page past the new, smaller result set.
@@ -63,6 +105,28 @@ export default function ApplicationManagement() {
   const applyCandidateTypeFilter = (v) => { setCandidateTypeFilter(v); setPage(1); };
   const applyDepartmentFilter = (v) => { setDepartmentFilter(v); setPage(1); };
   const applyScreeningFilter = (v) => { setScreeningFilter(v); setPage(1); };
+  const applySortBy = (v) => { setSortBy(v); setPage(1); };
+  const applyNeedsAction = (v) => { setNeedsAction(v); setPage(1); };
+
+  // Keeps the URL in sync as filters change (replace, not push), the same
+  // pattern HRDashboard.jsx's Vacancies tab uses - merges into whatever's
+  // already there (vacancyId, set separately by selectVacancy above) rather
+  // than fighting over ownership of the query string.
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    const setOrClear = (key, value, blank) => (!value || value === blank ? next.delete(key) : next.set(key, value));
+    setOrClear('status', statusFilter, '');
+    setOrClear('candidateType', candidateTypeFilter, '');
+    setOrClear('dept', departmentFilter, '');
+    setOrClear('screening', screeningFilter, 'all');
+    setOrClear('q', search, '');
+    setOrClear('sort', sortBy, 'newest');
+    setOrClear('action', needsAction ? '1' : '', '');
+    setOrClear('page', !vacancyId && page > 1 ? String(page) : '', '');
+    setOrClear('view', view, 'list');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, candidateTypeFilter, departmentFilter, screeningFilter, search, sortBy, needsAction, page, vacancyId, view]);
 
   // No separate Search button - typing runs the search automatically, same
   // as every other filter. Debounced so a full query doesn't fire on every
@@ -75,8 +139,6 @@ export default function ApplicationManagement() {
   // --- Mode B: single-vacancy state (ports VacancyDetail.jsx's own) ---
   const [vacancy, setVacancy] = useState(null);
   const [vacancyApps, setVacancyApps] = useState([]);
-  const [shortlistOrder, setShortlistOrder] = useState([]);
-  const [dragIndex, setDragIndex] = useState(null);
 
   // --- Mode A: cross-vacancy queue state ---
   const [queue, setQueue] = useState(null); // { data, total, page, limit }
@@ -103,46 +165,45 @@ export default function ApplicationManagement() {
       .then((res) => { if (vacancyRequestIdRef.current === requestId) setVacancy(res.data); })
       .catch((err) => { if (vacancyRequestIdRef.current === requestId) setError(err.response?.data?.error || 'Could not load this vacancy'); });
     staffClient.get(`/api/vacancies/${currentVacancyId}/applications`)
-      .then((res) => {
-        if (vacancyRequestIdRef.current !== requestId) return;
-        setVacancyApps(res.data);
-        const alreadyRanked = res.data
-          .filter((a) => a.rank != null)
-          .sort((a, b) => a.rank - b.rank)
-          .map((a) => a.id);
-        // Score-ordered, highest first - adjusts as applications come in;
-        // already-ranked applicants keep their committed rank untouched.
-        const candidates = res.data
-          .filter((a) => a.status === 'UnderReview' && a.rank == null)
-          .sort((a, b) => (b.shortlistScore ?? -Infinity) - (a.shortlistScore ?? -Infinity))
-          .map((a) => a.id);
-        setShortlistOrder([...alreadyRanked, ...candidates]);
-      })
+      .then((res) => { if (vacancyRequestIdRef.current === requestId) setVacancyApps(res.data); })
       .catch((err) => { if (vacancyRequestIdRef.current === requestId) setError(err.response?.data?.error || 'Could not load this vacancy\'s applications'); });
   };
 
+  // Guards the reset branch below against firing on the very first render -
+  // without it, a deep link like ?dept=5&sort=score would be wiped out
+  // immediately on mount (vacancyId starts falsy, same as "just left vacancy
+  // mode" from this effect's point of view).
+  const isFirstVacancyModeRun = useRef(true);
   useEffect(() => {
     if (vacancyId) {
       setVacancy(null);
       loadVacancyMode();
-    } else {
+    } else if (!isFirstVacancyModeRun.current) {
       // These filters are hidden (not stale-but-invisible) once a specific
       // vacancy is selected - reset them so they don't silently carry over
       // and re-apply the moment the vacancy filter is cleared again.
       setDepartmentFilter(''); setCandidateTypeFilter(''); setSearchInput(''); setSearch('');
+      setSortBy('newest'); setNeedsAction(false); setPage(1);
     }
+    isFirstVacancyModeRun.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vacancyId]);
 
   const loadQueue = () => {
     setQueueLoading(true);
     setError('');
-    const params = { page, limit: QUEUE_PAGE_SIZE };
-    if (statusFilter) params.status = statusFilter;
+    const params = { page, limit: QUEUE_PAGE_SIZE, sort: sortBy };
+    if (needsAction) {
+      // Supersedes status/screening server-side (see applicationController.list) -
+      // the Status/Screening selects are disabled in the UI while this is on.
+      params.needsAction = 'true';
+    } else {
+      if (statusFilter) params.status = statusFilter;
+      if (screeningFilter === 'flagged') params.screeningPassed = 'false';
+      if (screeningFilter === 'passed') params.screeningPassed = 'true';
+    }
     if (candidateTypeFilter) params.candidateType = candidateTypeFilter;
     if (departmentFilter) params.departmentId = departmentFilter;
-    if (screeningFilter === 'flagged') params.screeningPassed = 'false';
-    if (screeningFilter === 'passed') params.screeningPassed = 'true';
     if (search) params.search = search;
     staffClient.get('/api/applications', { params })
       .then((res) => setQueue(res.data))
@@ -153,16 +214,20 @@ export default function ApplicationManagement() {
   useEffect(() => {
     if (!vacancyId) loadQueue();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vacancyId, statusFilter, candidateTypeFilter, departmentFilter, screeningFilter, search, page]);
+  }, [vacancyId, statusFilter, candidateTypeFilter, departmentFilter, screeningFilter, search, sortBy, needsAction, page]);
 
-  const moveInOrder = (fromIndex, toIndex) => {
-    setShortlistOrder((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      next.splice(toIndex, 0, moved);
-      return next;
-    });
-  };
+  // Live refresh - whichever mode is currently active (loadQueue/loadVacancyMode
+  // are plain closures redefined every render, capturing the latest filters/
+  // vacancyId, so this ref is kept pointed at the freshest one rather than
+  // baking a stale closure into a memoized callback). A burst of WS events
+  // (e.g. a batch of applications submitted at once) collapses into one
+  // refetch via debounce, same as every other WS-connected dashboard.
+  const activeLoaderRef = useRef(() => {});
+  useEffect(() => {
+    activeLoaderRef.current = vacancyId ? loadVacancyMode : loadQueue;
+  });
+  const refetchActiveRef = useRef(debounce(() => activeLoaderRef.current(), 500));
+  const { connected } = useDashboardEvents(refetchActiveRef.current);
 
   const [beginReviewLoading, setBeginReviewLoading] = useState(false);
   const beginReview = async () => {
@@ -177,49 +242,40 @@ export default function ApplicationManagement() {
     }
   };
 
-  const [savingRanking, setSavingRanking] = useState(false);
-  const saveRanking = async () => {
-    setError(''); setSavingRanking(true);
-    // The version of every application this ranking was built from - the
-    // backend rejects (409) if any has moved on since (another HR user's
-    // ranking write, a shortlist() call, etc.), rather than silently
-    // overwriting a decision made after this page was loaded.
-    const applicationRankVersions = Object.fromEntries(
-      shortlistOrder.map((id) => [id, appsById[id]?.rankVersion ?? 0])
-    );
-    try {
-      await staffClient.post(`/api/vacancies/${vacancyId}/rank`, { applicationIds: shortlistOrder, applicationRankVersions });
-      loadVacancyMode();
-    } catch (err) {
-      setError(
-        err.response?.status === 409
-          ? 'This ranking changed elsewhere since you loaded it - reloading the current state now.'
-          : (err.response?.data?.error || 'Could not save ranking')
-      );
-      if (err.response?.status === 409) loadVacancyMode();
-    } finally {
-      setSavingRanking(false);
-    }
-  };
-
-  const appsById = Object.fromEntries(vacancyApps.map((a) => [a.id, a]));
-  const rankedApps = shortlistOrder.map((appId) => appsById[appId]).filter(Boolean);
-  const filteredVacancyApps = vacancyApps.filter((app) => {
-    if (statusFilter && app.status !== statusFilter) return false;
-    if (screeningFilter === 'flagged') return app.screeningPassed === false;
-    if (screeningFilter === 'passed') return app.screeningPassed === true;
-    return true;
-  });
-
   const totalPages = queue ? Math.max(Math.ceil(queue.total / queue.limit), 1) : 1;
+
+  // Derived, client-side, from data already in hand - no dedicated stats
+  // endpoint. The cross-vacancy queue is only ever a loaded page (queue.total
+  // is the true filtered count; flagged/meets-criteria are only known for
+  // the page in view, hence the label), while a selected vacancy's app list
+  // is fetched whole, so those chips reflect the true total for it.
+  const queueStats = queue ? [
+    { label: 'Matching filters', value: queue.total },
+    { label: 'Flagged (this page)', value: queue.data.filter((a) => a.screeningPassed === false).length, color: 'var(--color-warning)' },
+    { label: 'Meets criteria (this page)', value: queue.data.filter((a) => a.screeningPassed === true).length, color: 'var(--color-success)' }
+  ] : null;
+  const vacancyStats = vacancy ? [
+    { label: 'Total applications', value: vacancyApps.length },
+    { label: 'Awaiting review', value: vacancyApps.filter((a) => a.status === 'Submitted').length, color: 'var(--color-warning)' },
+    { label: 'Flagged', value: vacancyApps.filter((a) => a.screeningPassed === false).length, color: 'var(--color-warning)' },
+    { label: 'Shortlisted/ranked', value: vacancyApps.filter((a) => a.rank != null).length, color: 'var(--color-accent)' }
+  ] : null;
 
   return (
     <div style={{ display: 'flex', gap: 'var(--spacing-lg)', alignItems: 'flex-start' }}>
       <HRSidebar active="applications" />
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <PageHeader title="Application Management" subtitle="Review and manage applications across every vacancy" />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <PageHeader title="Application Management" subtitle="Review and manage applications across every vacancy" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <LiveIndicator connected={connected} />
+            {!vacancyId && <ViewSwitcher view={view} onChange={setView} />}
+          </div>
+        </div>
         <Alert type="error" message={error} />
+
+        {(queueStats || vacancyStats) && <StatsStrip stats={vacancyId ? vacancyStats : queueStats} />}
 
         <Card style={{ marginBottom: 'var(--spacing-md)' }}>
           <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
@@ -227,19 +283,28 @@ export default function ApplicationManagement() {
               <option value="">All vacancies</option>
               {vacancyOptions.map((v) => <option key={v.id} value={v.id}>{v.jobRef} — {v.title}</option>)}
             </Select>
-            <Select label="Status" value={statusFilter} onChange={(e) => applyStatusFilter(e.target.value)} style={{ flex: '1 1 180px' }}>
-              <option value="">All statuses</option>
-              {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-            </Select>
-            <Select label="Screening" value={screeningFilter} onChange={(e) => applyScreeningFilter(e.target.value)} style={{ flex: '1 1 180px' }}>
-              <option value="all">All applications</option>
-              <option value="flagged">Flagged only</option>
-              <option value="passed">Meets criteria only</option>
-            </Select>
-            {/* Department/candidate type/search only make sense browsing
-                across vacancies - a single vacancy already narrows
-                department, and its applicant pool is small enough to
-                scan without a text search. */}
+            {/* Status/Screening only apply to the cross-vacancy queue below -
+                the single-vacancy pipeline board organizes by status as
+                columns already (that's what the board IS) and has its own
+                search, so a redundant top-level status filter would just
+                silently do nothing once a vacancy is selected. */}
+            {!vacancyId && (
+              <>
+                <Select label="Status" value={statusFilter} onChange={(e) => applyStatusFilter(e.target.value)} disabled={needsAction} style={{ flex: '1 1 180px' }}>
+                  <option value="">All statuses</option>
+                  {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                </Select>
+                <Select label="Screening" value={screeningFilter} onChange={(e) => applyScreeningFilter(e.target.value)} disabled={needsAction} style={{ flex: '1 1 180px' }}>
+                  <option value="all">All applications</option>
+                  <option value="flagged">Flagged only</option>
+                  <option value="passed">Meets criteria only</option>
+                </Select>
+              </>
+            )}
+            {/* Department/candidate type/search/sort/"needs my action" only
+                make sense browsing across vacancies - a single vacancy
+                already narrows department, and its applicant pool is small
+                enough to scan without a text search or a role-aware shortcut. */}
             {!vacancyId && (
               <>
                 <Select label="Department" value={departmentFilter} onChange={(e) => applyDepartmentFilter(e.target.value)} style={{ flex: '1 1 200px' }}>
@@ -251,6 +316,12 @@ export default function ApplicationManagement() {
                   <option value="Internal">Internal</option>
                   <option value="External">External</option>
                 </Select>
+                <Select label="Sort" value={sortBy} onChange={(e) => applySortBy(e.target.value)} disabled={needsAction} style={{ flex: '1 1 170px' }}>
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="score">Highest score</option>
+                  <option value="deadline">Vacancy deadline</option>
+                </Select>
                 <TextField
                   label="Search"
                   placeholder="Candidate name or email"
@@ -258,6 +329,10 @@ export default function ApplicationManagement() {
                   onChange={(e) => setSearchInput(e.target.value)}
                   style={{ flex: '2 1 220px' }}
                 />
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, paddingBottom: 9, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  <input type="checkbox" checked={needsAction} onChange={(e) => applyNeedsAction(e.target.checked)} />
+                  Needs my action
+                </label>
               </>
             )}
           </div>
@@ -265,25 +340,70 @@ export default function ApplicationManagement() {
 
         {!vacancyId ? (
           <>
-            {queueLoading && <p>Loading applications...</p>}
+            {queueLoading && <ApplicationRowSkeleton />}
             {queue && queue.data.length === 0 && <p>No applications match these filters.</p>}
-            {queue?.data.map((app) => (
+            {queue && queue.data.length > 0 && view === 'table' && (
+              <Card style={{ padding: 0 }}>
+                <DataTable
+                  getRowKey={(app) => app.id}
+                  onRowClick={() => setView('list')}
+                  rows={queue.data}
+                  columns={[
+                    { key: 'candidate', label: 'Candidate', render: (app) => <span style={{ fontWeight: 600 }}>{app.candidate.fullName}</span> },
+                    { key: 'type', label: 'Type', render: (app) => app.candidate.candidateType },
+                    { key: 'vacancy', label: 'Vacancy', render: (app) => app.vacancy ? `${app.vacancy.jobRef} — ${app.vacancy.title}` : '—' },
+                    { key: 'status', label: 'Status', render: (app) => <StatusBadge status={app.status} /> },
+                    {
+                      key: 'screening', label: 'Screening', render: (app) => app.screeningPassed === false
+                        ? <span style={{ color: 'var(--color-warning)' }}>Flagged</span>
+                        : app.screeningPassed === true ? <span style={{ color: 'var(--color-success)' }}>Meets criteria</span> : '—'
+                    },
+                    { key: 'score', label: 'Score', align: 'right', render: (app) => app.shortlistScore != null ? app.shortlistScore.toFixed(1) : '—' },
+                    { key: 'submitted', label: 'Submitted', render: (app) => app.submittedDate ? new Date(app.submittedDate).toLocaleDateString() : '—' }
+                  ]}
+                />
+              </Card>
+            )}
+            {queue && queue.data.length > 0 && view === 'board' && (
+              <BoardView
+                getItemKey={(app) => app.id}
+                items={queue.data}
+                groupBy={(app) => app.status}
+                columns={STATUS_OPTIONS.map((s) => ({ key: s, label: s.replace(/([a-z])([A-Z])/g, '$1 $2'), color: STATUS_COLORS[s] }))}
+                renderCard={(app) => (
+                  <Card onClick={() => setView('list')} style={{ marginBottom: 0, padding: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{app.candidate.fullName}</div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                      {app.vacancy ? `${app.vacancy.jobRef} · ${app.vacancy.title}` : '—'}
+                    </div>
+                    {app.screeningPassed === false && (
+                      <div style={{ fontSize: 11, color: 'var(--color-warning)', marginTop: 2 }}>&#9888; Flagged</div>
+                    )}
+                  </Card>
+                )}
+              />
+            )}
+            {queue && queue.data.length > 0 && view !== 'table' && view !== 'board' && queue.data.map((app) => (
               <ApplicationReviewCard
                 key={app.id} app={app} vacancy={app.vacancy} staffRole={staff?.role}
                 onUpdated={loadQueue} onDownloadCv={downloadGeneratedCv} downloadingId={downloadingId}
-                showVacancyContext
+                showVacancyContext defaultExpanded={false}
               />
             ))}
-            {queue && queue.total > queue.limit && (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 16 }}>
-                <Button variant="ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Previous</Button>
-                <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Page {queue.page} of {totalPages}</span>
-                <Button variant="ghost" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
-              </div>
-            )}
+            {queue && <PageControls page={page} totalPages={totalPages} loading={queueLoading} onPrev={() => setPage((p) => p - 1)} onNext={() => setPage((p) => p + 1)} />}
           </>
         ) : !vacancy ? (
-          <p>Loading...</p>
+          <>
+            <div style={{ display: 'flex', gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-md)' }}>
+              {[0, 1, 2, 3].map((i) => (
+                <Card key={i} style={{ flex: 1, marginBottom: 0 }}>
+                  <Skeleton width="60%" height={12} style={{ marginBottom: 8 }} />
+                  <Skeleton width="35%" height={20} />
+                </Card>
+              ))}
+            </div>
+            <ApplicationRowSkeleton />
+          </>
         ) : vacancy.status === 'PendingApproval' ? (
           <Alert type="info" message="This vacancy hasn't been approved and published yet, so there are no applications to review. Approve it from the HR dashboard first." />
         ) : (
@@ -297,46 +417,10 @@ export default function ApplicationManagement() {
               </Card>
             )}
 
-            <h3>Shortlist ranking</h3>
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-              Drag to reorder. The top {vacancy.positionsRequired} become Primary; the rest become Reserve automatically.
-            </p>
-            {rankedApps.map((app, index) => (
-              <Card
-                key={app.id}
-                accent={index < vacancy.positionsRequired ? 'var(--color-accent)' : 'var(--color-warning)'}
-                style={{ cursor: 'grab' }}
-              >
-                <div
-                  draggable
-                  onDragStart={() => setDragIndex(index)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={() => { if (dragIndex !== null) moveInOrder(dragIndex, index); setDragIndex(null); }}
-                >
-                  #{index + 1} &mdash; {app.candidate.fullName} ({app.candidate.candidateType})
-                  {' '}&middot; {index < vacancy.positionsRequired ? 'Primary' : 'Reserve'}
-                  {app.shortlistScore != null && (
-                    <span title={safeJsonParse(app.shortlistScoreReasons, []).join('; ') || 'No scoring factors applied'}
-                      style={{ color: 'var(--color-text-muted)', marginLeft: 8, fontSize: 12 }}>
-                      &middot; Score: {app.shortlistScore.toFixed(1)}
-                    </span>
-                  )}
-                </div>
-              </Card>
-            ))}
-            {rankedApps.length > 0 && (
-              <Button onClick={saveRanking} disabled={savingRanking}>
-                {savingRanking ? 'Saving...' : 'Save ranking & shortlist'}
-              </Button>
-            )}
-
-            <h3 style={{ marginTop: 24 }}>All applications</h3>
-            {filteredVacancyApps.map((app) => (
-              <ApplicationReviewCard
-                key={app.id} app={app} vacancy={vacancy} staffRole={staff?.role}
-                onUpdated={loadVacancyMode} onDownloadCv={downloadGeneratedCv} downloadingId={downloadingId}
-              />
-            ))}
+            <ShortlistPipelineBoard
+              vacancy={vacancy} applications={vacancyApps} staffRole={staff?.role}
+              onUpdated={loadVacancyMode} onDownloadCv={downloadGeneratedCv} downloadingId={downloadingId}
+            />
           </>
         )}
 

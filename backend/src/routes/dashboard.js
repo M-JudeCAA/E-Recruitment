@@ -13,5 +13,17 @@ const router = express.Router();
 router.get('/summary', authenticate, requireStaffRole('Manager'), controller.summary);
 router.get('/activity', authenticate, requireStaffRole('Manager'), controller.activity);
 router.get('/headcount-by-directorate', authenticate, requireStaffRole('Manager'), controller.headcountByDirectorate);
+router.get('/sla-policies', authenticate, requireStaffRole('Manager'), controller.slaPolicies);
+
+// Open to every HR tier (not just Manager+), unlike the Manager-only
+// endpoints above - the pending-task queues /follow-ups reports on are
+// already org-wide visibility on ApprovalsCenter, and both HRHome's
+// "Follow-ups" panel and its applications-sparkline (fed by /trends) need
+// this data read-only for tiers below Manager. Only the approve/reject
+// actions themselves stay Manager+/tier-gated.
+router.get('/trends', authenticate, requireStaffRole('HR_Officer'), controller.trends);
+router.get('/follow-ups', authenticate, requireStaffRole('HR_Officer'), controller.followUps);
+router.get('/upcoming-interviews', authenticate, requireStaffRole('HR_Officer'), controller.upcomingInterviews);
+router.get('/screening-breakdown', authenticate, requireStaffRole('HR_Officer'), controller.screeningBreakdown);
 
 module.exports = router;

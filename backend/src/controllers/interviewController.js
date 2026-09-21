@@ -3,12 +3,20 @@ const applicationModel = require('../models/applicationModel');
 const panelMemberModel = require('../models/panelMemberModel');
 const interviewService = require('../services/interviewService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
+const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
 // Applications an interview can legitimately be scheduled against - mirrors
 // the frontend's own gate (ApplicationReviewCard.jsx: status in this list
 // AND no offer yet) so a stale UI or a direct API call can't schedule a
 // round on a Rejected/Offered/Withdrawn application.
 const SCHEDULABLE_STATUSES = ['Shortlisted', 'InterviewScheduled', 'Interviewed'];
+
+// Statuses an application may still validly be in when a round against it
+// is finalized. Guards finalizeRecommendation below against a stale round
+// (scheduled a while ago, never finalized) being resolved after the
+// application already moved on elsewhere - an explicit HR reject, or an
+// offer recommended off a different, later round.
+const FINALIZABLE_STATUSES = ['InterviewScheduled', 'Interviewed'];
 
 // Round number is computed server-side from existing rounds for this
 // application, not taken from the client - avoids every round being
@@ -103,6 +111,25 @@ async function finalizeRecommendation(req, res) {
     return res.status(422).json({ error: 'At least one panel member score is required before finalizing a recommendation' });
   }
 
+  const existingRound = await interviewModel.findById(interviewId);
+  if (!existingRound) return res.status(404).json({ error: 'Interview round not found' });
+
+  // Guards against finalizing a stale round after its application already
+  // moved on elsewhere since it was scheduled - an explicit HR reject, or
+  // an offer recommended off a different, later round. The writes below
+  // are otherwise unconditional and would silently regress a terminal/
+  // later status back to Interviewed or Rejected. Read-then-write, same
+  // rigor as recommendOffer's own status check just below in this file -
+  // not airtight against a genuinely simultaneous race the way
+  // updateIfNoRecommendation's DB-level guard is, but closes the
+  // realistic window (these are minutes-to-days apart, not the same request).
+  const application = await applicationModel.findById(existingRound.applicationId);
+  if (!FINALIZABLE_STATUSES.includes(application.status)) {
+    return res.status(409).json({
+      error: `This application is at status "${application.status}" and can no longer have an interview finalized against it`
+    });
+  }
+
   // Atomic guard - scoped to recommendation: null, so a second finalize call
   // on the same round (double-click, or two HR officers racing) can't
   // silently overwrite an already-finalized recommendation.
@@ -123,19 +150,25 @@ async function finalizeRecommendation(req, res) {
   // through the same status/notification path as applicationController's
   // own reject() closes both at once.
   if (recommendation === 'Reject') {
-    const application = await applicationModel.update(round.applicationId, {
+    // rank/listStatus cleared and rankVersion bumped - same reasoning as
+    // applicationController.reject(): a rejected application shouldn't
+    // still show a stale shortlist rank, and the version bump means a
+    // stale ranking UI still holding this id gets a 409 on its next save.
+    const updatedApplication = await applicationModel.update(round.applicationId, {
       status: 'Rejected', rejectedAt: new Date(), rejectedById: req.user.id,
-      rejectionReason: 'Not recommended for offer following the interview panel\'s review.'
+      rejectionReason: 'Not recommended for offer following the interview panel\'s review.',
+      rank: null, listStatus: null, rankVersion: { increment: 1 }
     }, { vacancy: true });
     await notifyCandidate(
-      application.candidateId, 'ApplicationRejected',
-      `We're sorry to let you know your application for "${application.vacancy.title}" was not successful this time.`
+      updatedApplication.candidateId, 'ApplicationRejected',
+      `We're sorry to let you know your application for "${updatedApplication.vacancy.title}" was not successful this time.`
     );
   } else {
     // Only now, once a recommendation has actually been finalized, does
     // the application move to "Interviewed".
     await applicationModel.update(round.applicationId, { status: 'Interviewed' });
   }
+  broadcastDashboardEvent('InterviewRecommendation', { interviewId, applicationId: round.applicationId, recommendation });
   res.json(round);
 }
 

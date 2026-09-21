@@ -13,7 +13,7 @@ export const STATUS_COLORS = {
   Filled: 'var(--color-primary)', Closed: 'var(--color-text-muted)',
   // Application
   Draft: 'var(--color-text-muted)', Submitted: 'var(--color-primary)',
-  UnderReview: 'var(--color-warning)', Shortlisted: 'var(--color-accent)',
+  UnderReview: 'var(--color-warning)', ShortlistProposed: 'var(--color-warning)', Shortlisted: 'var(--color-accent)',
   Interviewed: 'var(--color-accent)', Offered: 'var(--color-accent)',
   InterviewScheduled: 'var(--color-warning)',
   Rejected: 'var(--color-danger)', Withdrawn: 'var(--color-text-muted)',

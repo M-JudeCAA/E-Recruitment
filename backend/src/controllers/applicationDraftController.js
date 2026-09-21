@@ -8,6 +8,7 @@ const {
   assertPostingTypeEligible, assertVacancyAcceptingApplications, assertBeforeDeadline
 } = require('../utils/applicationEligibility');
 const { isProfileComplete } = require('../utils/profileCompleteness');
+const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { countCompleteReferees } = require('../utils/referees');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { notify } = require('../services/notificationService');
@@ -287,6 +288,7 @@ async function submit(req, res) {
     `${candidate.fullName} applied for "${vacancy.title}" (${vacancy.jobRef}).`
   );
 
+  broadcastDashboardEvent('ApplicationSubmitted', { applicationId, vacancyId: vacancy.id });
   res.json(updated);
 }
 

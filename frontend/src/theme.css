@@ -191,6 +191,40 @@ input::placeholder, textarea::placeholder {
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
+/* Sidebar nav links (Sidebar.jsx). Hover lives here rather than inline
+   styles because React inline styles can't express :hover - the active
+   state sets its own inline background, which always wins over this
+   class, so hover only ever shows through on inactive links. */
+.sidebar-link {
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+.sidebar-link:hover {
+  background: var(--color-bg);
+}
+
+/* HRDashboard's Vacancies master-detail list rows - same reasoning as
+   .sidebar-link above (inline styles can't express :hover), a lighter
+   tint since these rows sit on a white Card rather than the sidebar's
+   subtle-blue background. */
+.list-row {
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+.list-row:hover {
+  background: var(--color-bg-subtle);
+}
+
+/* Fixed-height scroll well for a dashboard panel's list body (HRHome /
+   ExecutiveDashboard cards: ClosingSoon, RecentVacancies, UpcomingInterviews,
+   FollowUpsPanel, ActivityFeed) - keeps every panel in a row the same
+   height regardless of item count, instead of the tallest panel stretching
+   the whole row. */
+.panel-scroll {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 /* Clickable Card (see Card.jsx's optional onClick prop) - a subtle hover
    lift so a whole card reads as clickable, not just the buttons inside it. */
 .card-clickable {
@@ -201,4 +235,24 @@ input::placeholder, textarea::placeholder {
 }
 .card-clickable:active {
   transform: translateY(1px);
+}
+
+/* Skeleton.jsx - a moving gradient sweep rather than a flat pulse, reads
+   more clearly as "loading" than "broken/disabled" at a glance. Colors are
+   two existing neutral tokens (never a new hardcoded gray) so it matches
+   light/dark surfaces the same way every other themed element does. */
+.skeleton-block {
+  background: linear-gradient(90deg, var(--color-bg-subtle) 25%, var(--color-border) 37%, var(--color-bg-subtle) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-block {
+    animation: none;
+    background: var(--color-bg-subtle);
+  }
 }
