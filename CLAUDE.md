@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-UCAA e-Recruitment System: React (frontend) + Node.js/Express (API) + MySQL via Prisma. Two independent npm projects, `backend/` and `frontend/`, no root-level package.json or monorepo tooling.
+UCAA e-Recruitment System: React (frontend) + Node.js/Express (API) + MySQL via Prisma. Two independent npm projects, `backend/` and `frontend/`, no monorepo tooling. (A root `package.json` exists but only declares `playwright-core` — nothing in the repo uses it; ignore it, run everything from `backend/` or `frontend/`.)
 
 ## Commands
 
@@ -12,7 +12,7 @@ UCAA e-Recruitment System: React (frontend) + Node.js/Express (API) + MySQL via 
 
 ```bash
 npm install
-npm run dev              # nodemon, http://localhost:4000
+npm run dev              # nodemon, http://localhost:4000 (predev/prestart hooks auto-run `prisma generate`)
 npm start                # plain node, no watch
 npm test                 # jest, all suites, mocked Prisma client (no DB needed)
 npx jest tests/workflowService.test.js   # single suite
@@ -28,16 +28,19 @@ Seeded staff accounts (password for all: `ChangeMe123!`): `hro@caa.co.ug` (HR Of
 
 `backend/.env` is gitignored; required vars are documented in [SETUP.md](SETUP.md) (`DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `INTERNAL_EMAIL_DOMAIN`, `PORT`, `FRONTEND_URL`, `SMTP_*`, `UPLOAD_DIR`). SMTP misconfiguration fails silently (`sendMail` logs and returns `null`) rather than crashing request handling — expect emails to silently not arrive if SMTP env vars are wrong.
 
-One-off maintenance scripts live in `backend/scripts/` (`node scripts/<name>.js`): `cleanupPendingRegistrations.js`, `checkSlaEscalations.js`, `checkVacancyDeadlines.js`, `seedDepartments.js`, `seedSlaPolicies.js`, `migrateEducationLevels.js`.
+One-off maintenance scripts live in `backend/scripts/` (`node scripts/<name>.js`): `cleanupPendingRegistrations.js`, `checkSlaEscalations.js`, `checkVacancyDeadlines.js`, `seedDepartments.js`, `seedSlaPolicies.js`, `migrateEducationLevels.js`, plus two demo-data seeders, `seedPreShortlistDemoData.js` and `seedFullWorkflowDemoData.js`, for populating a dev DB at a given workflow stage.
 
 ### Frontend (`frontend/`)
 
 ```bash
 npm install
-npm run dev       # vite, http://localhost:5173
+npm run dev       # vite, http://localhost:5173 (candidate-facing; staff login is blocked here)
 npm run build     # vite build -> dist/
 npm run preview   # preview a production build
+npm run preview:staff  # same build on http://localhost:4174 — the only port staff can sign in from
 ```
+
+**Staff vs. candidate port**: it's one SPA build, but `/staff/login`, `/staff/forgot-password` and `/staff/reset-password` only render when `window.location.port` equals `STAFF_PORT` (`4174`, override with `VITE_STAFF_PORT`; see `staffPort.js` and `RequireStaffPort`/`GuestPortGate` in `ProtectedRoute.jsx`). To exercise staff screens locally you must `npm run build` then `npm run preview:staff` — the `:5173` dev server will bounce staff routes back to `/`. Details in [SETUP.md](SETUP.md).
 
 No frontend test suite exists yet.
 
@@ -52,6 +55,12 @@ No frontend test suite exists yet.
 - **Backend** (`backend/src/`): classic MVC — `routes/` (thin URL→controller wiring only) → `controllers/` (request handling) → `models/` (data access, one file per entity, wraps Prisma) → `config/db.js` (the single shared `PrismaClient` instance, imported everywhere as `prisma`).
 - **Frontend** (`frontend/src/`): `views/` (page-level screens, one per route, registered in `App.jsx`) use `components/` (reusable UI: `Navbar`, `Button`, `TextField`, `TextArea`, `Select`, `Card`, `StatusBadge`, `Alert`, `PageHeader`, `Modal`, `ProtectedRoute`) and read/write through `models/` (`apiClient.js` for candidate-facing calls, `staffApiClient.js` for HR-facing calls, `AuthContext.jsx` for session state). "Models" here means the data/state layer, not a UI component.
 - **`services/` on the backend** is a layer between controllers and models for business logic that spans multiple models — not classic MVC, but load-bearing here: `workflowService.js` (verification gate, self-approval block, vacancy status computation, offer-decline cascade, qualification snapshots, posting-type transition audit), `interviewService.js` (panel score averaging), `panelAccessService.js` (panelist self-service token lifecycle), `screeningService.js` (automated applicant screening against vacancy criteria), `tokenService.js` (verification/reset token issuance), `notificationService.js` (in-app/email notification dispatch).
+
+### Request handling & realtime
+
+- **Async errors**: `server.js` loads `express-async-errors` (so a rejected async handler reaches the error middleware as a 500) and installs process-level `unhandledRejection`/`uncaughtException` handlers that log and keep the server alive. `utils/asyncHandler.js` is the older explicit per-route wrapper (used in `routes/candidates.js`); both patterns are live, don't assume one or the other.
+- **Dashboard push channel**: `realtime/dashboardSocket.js` attaches a `ws` WebSocket server (`/ws/dashboard`) to the same HTTP server. It carries *signals, not data* — `broadcastDashboardEvent(event, payload)` tells connected HR dashboards to re-run their own REST fetch (`dashboardController`/`analyticsController` remain the source of truth). Auth is a first-message `{type:'auth', token}` handshake (staff JWTs only), deliberately **not** a `?token=` query param — see the file-access rule below. Frontend counterpart: `useDashboardEvents` in `frontend/src/models/dashboardSocket.js`, which degrades silently if the socket can't connect.
+- **CV autofill** (`POST /api/candidates/me/parse-cv`, `cvParser.js` + `cvHeuristics.js` using `pdf-parse`/`mammoth`): parses an uploaded CV into suggested profile fields via `uploadMemory` and persists nothing. It's unrelated to the application-level CV upload in `applicationDraftController.js`, which does store the file.
 
 ### Auth & RBAC
 
@@ -90,6 +99,8 @@ Candidate-facing application is a multi-step wizard (`frontend/src/views/apply-w
 `ProtectedRoute.jsx` exports `RequireCandidate` and `RequireStaff` (the latter taking `minRole`, checked against the same `ROLE_RANK` hierarchy as the backend) — client-side gating only; the backend middleware is the real enforcement.
 
 ### Theming
+
+Tailwind is present but **`preflight` is disabled** (`tailwind.config.js`) — older pages were built against plain browser defaults plus `theme.css`, so only Tailwind's utility classes apply (used mainly in newer markup like the apply wizard). Don't re-enable preflight; it would restyle every page. Tailwind directives are imported at the top of `theme.css`.
 
 All brand tokens (colors, spacing, radius, font) live in `frontend/src/theme.css` as CSS variables. Every reusable component reads from these variables rather than hardcoding values, and every view uses these components instead of one-off inline styles or browser dialogs (use themed `Modal`, never `window.prompt`/`window.confirm`). `StatusBadge` centralizes color-per-status-enum (vacancy/application/offer/verification status) in one lookup table — add new status colors there, not per-view. To rebrand: edit `theme.css` variables only.
 
