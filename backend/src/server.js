@@ -27,6 +27,7 @@ const delegationRoutes = require('./routes/delegations');
 const notificationRoutes = require('./routes/notifications');
 const dashboardRoutes = require('./routes/dashboard');
 const analyticsRoutes = require('./routes/analytics');
+const { errorHandler } = require('./utils/errorResponse');
 
 // Express 4 does not forward a rejected promise from an async route
 // handler to the error middleware below on its own - an uncaught
@@ -73,11 +74,10 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/analytics', analyticsRoutes);
 
-// Basic error handler - catches Multer file-validation errors etc.
-app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
-});
+// Catch-all error handler - logs the full error server-side but only ever
+// sends the client a sanitized message (never Prisma query text, database
+// host names, or stack details). See utils/errorResponse.js.
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 4000;
 const httpServer = app.listen(PORT, () => console.log(`e-Recruitment API listening on port ${PORT}`));

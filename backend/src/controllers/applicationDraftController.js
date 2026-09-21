@@ -1,3 +1,4 @@
+const { sendError } = require('../utils/errorResponse');
 const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
 const candidateModel = require('../models/candidateModel');
@@ -46,7 +47,7 @@ async function saveDraft(req, res) {
     // working "Continue draft" link once its vacancy has closed.
     assertBeforeDeadline(vacancy);
   } catch (err) {
-    return res.status(422).json({ error: err.message });
+    return sendError(res, err, 422);
   }
 
   const coverLetterFile = req.files?.coverLetter?.[0];
@@ -218,7 +219,7 @@ async function submit(req, res) {
     assertVacancyAcceptingApplications(vacancy);
     assertBeforeDeadline(vacancy); // the one check draft-save deliberately skipped
   } catch (err) {
-    return res.status(422).json({ error: err.message });
+    return sendError(res, err, 422);
   }
 
   // Checked after the vacancy-level eligibility above, deliberately - if

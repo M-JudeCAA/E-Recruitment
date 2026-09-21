@@ -1,3 +1,4 @@
+const { sendError } = require('../utils/errorResponse');
 const panelMemberModel = require('../models/panelMemberModel');
 const panelAccessService = require('../services/panelAccessService');
 const interviewService = require('../services/interviewService');
@@ -63,7 +64,7 @@ async function viewByToken(req, res) {
       mode: round.mode
     });
   } catch (err) {
-    res.status(410).json({ error: err.message });
+    sendError(res, err, 410);
   }
 }
 
@@ -81,7 +82,7 @@ async function submitByToken(req, res) {
 
     res.json({ message: 'Score submitted. Thank you.' });
   } catch (err) {
-    res.status(410).json({ error: err.message });
+    sendError(res, err, 410);
   }
 }
 
