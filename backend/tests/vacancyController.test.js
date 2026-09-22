@@ -600,6 +600,53 @@ describe('listPublic', () => {
   });
 });
 
+describe('getOne', () => {
+  const fullVacancy = { id: 5, title: 'Officer', internalSalaryRange: '10-12M', recruiterNotes: 'prefers internal' };
+
+  test('returns 404 for a vacancy id that does not exist', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue(null);
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: '999' }, user: undefined }, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('strips internalSalaryRange/recruiterNotes for an anonymous request', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy });
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: '5' }, user: undefined }, res);
+
+    const returned = res.json.mock.calls[0][0];
+    expect(returned.internalSalaryRange).toBeUndefined();
+    expect(returned.recruiterNotes).toBeUndefined();
+    expect(returned.title).toBe('Officer');
+  });
+
+  test('strips internalSalaryRange/recruiterNotes for a candidate request', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy });
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: '5' }, user: { type: 'candidate' } }, res);
+
+    const returned = res.json.mock.calls[0][0];
+    expect(returned.internalSalaryRange).toBeUndefined();
+    expect(returned.recruiterNotes).toBeUndefined();
+  });
+
+  test('includes internalSalaryRange/recruiterNotes for an authenticated staff request', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy });
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: '5' }, user: { type: 'staff' } }, res);
+
+    const returned = res.json.mock.calls[0][0];
+    expect(returned.internalSalaryRange).toBe('10-12M');
+    expect(returned.recruiterNotes).toBe('prefers internal');
+  });
+});
+
 describe('listForAdmin', () => {
   // Every staff role that can reach this route is the same DHRA HR team -
   // not department-specific business partners siloed to their own

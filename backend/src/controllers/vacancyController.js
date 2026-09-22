@@ -434,9 +434,21 @@ async function listForAdmin(req, res) {
   res.json(vacancies);
 }
 
+// Shared by staff (VacancyDetail.jsx, ApplicationManagement.jsx - via
+// staffApiClient, which always attaches a staff Bearer token) and
+// candidates/guests (ApplyForm.jsx, the public JobDetails.jsx - no token).
+// findByIdWithDetails has no `select`, so it returns every scalar column
+// including internalSalaryRange/recruiterNotes - fields CreateVacancyListing.jsx's
+// own comment already documents as "HR only, never sent to the candidate-facing
+// API". Strip them for anyone who isn't authenticated staff, same
+// req.user?.type check listPublic uses just above.
 async function getOne(req, res) {
   const vacancy = await vacancyModel.findByIdWithDetails(Number(req.params.id));
   if (!vacancy) return res.status(404).json({ error: 'Not found' });
+  if (req.user?.type !== 'staff') {
+    delete vacancy.internalSalaryRange;
+    delete vacancy.recruiterNotes;
+  }
   res.json(vacancy);
 }
 
