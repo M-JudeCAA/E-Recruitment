@@ -3,7 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import {
   Search, MapPin, Users, Calendar, ArrowRight, UserPlus, LogIn, Download,
   FileEdit, Send, ListChecks, ShieldCheck, TrendingUp, HeartHandshake, GraduationCap,
-  AlertTriangle, RotateCw, X, Clock, ChevronDown, ShieldAlert
+  AlertTriangle, RotateCw, X, Clock, ChevronDown, ShieldAlert, Briefcase, Building2, Plane, Sparkles
 } from 'lucide-react';
 import client from '../models/apiClient';
 import Button from '../components/Button';
@@ -102,11 +102,62 @@ const STEPS = [
   { icon: ListChecks, title: 'Track your status', text: 'Follow your application from review through to an offer, from your dashboard.' }
 ];
 
-function Stat({ value, label }) {
+// Counts up from 0 to `target` once `active` flips true (the moment
+// loading finishes) - a static number that was "—" a moment ago landing
+// all at once reads as inert; counting up to it reads as alive. Skips the
+// animation outright under prefers-reduced-motion, same convention as the
+// skeleton shimmer in theme.css.
+function useCountUp(target, active) {
+  const [display, setDisplay] = useState(0);
+  useEffect(() => {
+    if (!active) return undefined;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) { setDisplay(target); return undefined; }
+    let raf;
+    const duration = 700;
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - (1 - t) ** 3; // ease-out cubic
+      setDisplay(Math.round(target * eased));
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, active]);
+  return display;
+}
+
+function Stat({ value, label, icon: Icon, loading }) {
+  const display = useCountUp(typeof value === 'number' ? value : 0, !loading);
   return (
     <div style={{ padding: '22px 12px', textAlign: 'center' }}>
-      <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--color-primary-dark)', lineHeight: 1.1 }}>{value}</div>
+      {Icon && <Icon size={17} color="var(--color-primary)" style={{ marginBottom: 4 }} />}
+      <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--color-primary-dark)', lineHeight: 1.1 }}>
+        {loading ? '—' : display}
+      </div>
       <div style={{ fontSize: 12.5, color: 'var(--color-text-muted)', marginTop: 2 }}>{label}</div>
+    </div>
+  );
+}
+
+// Centered heading with a short two-tone accent bar underneath - the one
+// typographic flourish repeated across every section (Why Us, How to
+// Apply, Open Positions, FAQ) so the page reads as one designed system
+// rather than a stack of plain <h2>s.
+function SectionHeading({ title, subtitle }) {
+  return (
+    <div style={{ textAlign: 'center', marginBottom: 28 }}>
+      <h2 style={{ color: 'var(--color-primary-dark)', marginBottom: 10 }}>{title}</h2>
+      <span style={{
+        display: 'block', width: 48, height: 4, borderRadius: 999, margin: '0 auto',
+        background: 'linear-gradient(90deg, var(--color-primary), var(--color-gold))'
+      }} />
+      {subtitle && (
+        <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', maxWidth: 560, margin: '14px auto 0' }}>
+          {subtitle}
+        </p>
+      )}
     </div>
   );
 }
@@ -201,12 +252,26 @@ export default function Home() {
       {/* Hero */}
       <section
         style={{
-          width: '100%', boxSizing: 'border-box',
+          width: '100%', boxSizing: 'border-box', position: 'relative', overflow: 'hidden',
           background: `linear-gradient(160deg, ${ucaa.blue} 0%, ${ucaa.navy} 100%)`,
-          color: '#fff', padding: '64px 20px 88px'
+          color: '#fff', padding: '64px 20px 100px'
         }}
       >
-        <div style={{ maxWidth: 860, margin: '0 auto', textAlign: 'center' }}>
+        {/* Purely decorative depth - two soft blurred orbs (brand blue-light
+            and the gold accent) sitting behind the content. aria-hidden and
+            pointer-events:none since they carry no information and must
+            never intercept clicks/taps meant for the form/buttons above
+            them. Clipped by the section's own overflow:hidden. */}
+        <div aria-hidden="true" style={{
+          position: 'absolute', top: -80, right: '8%', width: 280, height: 280, borderRadius: '50%',
+          background: 'var(--color-gold)', opacity: 0.18, filter: 'blur(70px)', pointerEvents: 'none'
+        }} />
+        <div aria-hidden="true" style={{
+          position: 'absolute', bottom: -100, left: '5%', width: 320, height: 320, borderRadius: '50%',
+          background: '#fff', opacity: 0.08, filter: 'blur(80px)', pointerEvents: 'none'
+        }} />
+
+        <div style={{ maxWidth: 860, margin: '0 auto', textAlign: 'center', position: 'relative' }}>
           <span
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -216,8 +281,21 @@ export default function Home() {
           >
             <img src={ucaaLogo} alt="UCAA logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           </span>
-          <h1 style={{ fontSize: 'clamp(26px, 4vw, 38px)', margin: '0 0 12px', lineHeight: 1.15 }}>
-            Build Your Career in Aviation
+
+          {/* Eyebrow chip - real, live data (open position count) rather
+              than a static "Now Hiring" label, so it's never stale and
+              gives the hero one concrete, ever-changing fact up top. */}
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 999,
+            background: 'rgba(255,255,255,0.14)', border: '1px solid rgba(255,255,255,0.3)',
+            fontSize: 12.5, fontWeight: 600, letterSpacing: 0.3, marginBottom: 18
+          }}>
+            <Sparkles size={13} color="var(--color-gold)" />
+            {loading ? 'Careers at UCAA' : `${vacancies.length} open position${vacancies.length === 1 ? '' : 's'} - now hiring`}
+          </div>
+
+          <h1 style={{ fontSize: 'clamp(28px, 4.4vw, 42px)', fontWeight: 800, margin: '0 0 14px', lineHeight: 1.12, letterSpacing: -0.5 }}>
+            Build Your Career<br />in <span style={{ color: 'var(--color-gold)' }}>Aviation</span>
           </h1>
           <p style={{ fontSize: 15.5, opacity: 0.92, maxWidth: 600, margin: '0 auto 28px' }}>
             Join the Uganda Civil Aviation Authority and help keep Uganda&rsquo;s skies safe, connected,
@@ -278,6 +356,16 @@ export default function Home() {
             </Button>
           </form>
         </div>
+
+        {/* Wave divider - a soft curve into the page background instead of
+            the hero's gradient ending in a hard straight edge. Sits behind
+            the stats card below (that card's own -36px negative margin and
+            z-index:1 already make it float above both the hero and this
+            curve, so paint order here doesn't matter). */}
+        <svg aria-hidden="true" viewBox="0 0 1440 60" preserveAspectRatio="none"
+          style={{ display: 'block', width: '100%', height: 48, position: 'absolute', bottom: 0, left: 0 }}>
+          <path d="M0,32 C320,64 1120,0 1440,28 L1440,60 L0,60 Z" fill="var(--color-bg)" />
+        </svg>
       </section>
 
       {/* Stats strip - overlaps the hero's bottom edge */}
@@ -289,20 +377,18 @@ export default function Home() {
             display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))'
           }}
         >
-          <Stat value={loading ? '—' : vacancies.length} label="Open positions" />
-          <Stat value={loading ? '—' : departmentCount} label="Departments hiring" />
-          <Stat value={loading ? '—' : positionsCount} label="Vacancies available" />
+          <Stat value={vacancies.length} loading={loading} icon={Briefcase} label="Open positions" />
+          <Stat value={departmentCount} loading={loading} icon={Building2} label="Departments hiring" />
+          <Stat value={positionsCount} loading={loading} icon={Users} label="Vacancies available" />
         </div>
       </div>
 
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '56px 20px 0', boxSizing: 'border-box' }}>
         {/* Why work with us */}
-        <h2 style={{ textAlign: 'center', color: 'var(--color-primary-dark)', marginBottom: 4 }}>
-          Why Build Your Career With Us
-        </h2>
-        <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', maxWidth: 560, margin: '0 auto' }}>
-          A national regulator with a real mission, and a workplace that invests in the people behind it.
-        </p>
+        <SectionHeading
+          title="Why Build Your Career With Us"
+          subtitle="A national regulator with a real mission, and a workplace that invests in the people behind it."
+        />
         <div
           style={{
             display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
@@ -310,10 +396,12 @@ export default function Home() {
           }}
         >
           {VALUES.map(({ icon: Icon, title, text }) => (
-            <Card key={title} style={{ textAlign: 'center', marginBottom: 0 }}>
+            <Card key={title} className="hover-lift" style={{ textAlign: 'center', marginBottom: 0 }}>
               <div
                 style={{
-                  width: 44, height: 44, borderRadius: '50%', background: 'var(--color-primary-light)',
+                  width: 48, height: 48, borderRadius: '50%',
+                  background: 'linear-gradient(135deg, var(--color-primary-light), #fff)',
+                  border: '1px solid var(--color-primary-light)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px'
                 }}
               >
@@ -326,9 +414,7 @@ export default function Home() {
         </div>
 
         {/* How to apply */}
-        <h2 style={{ textAlign: 'center', color: 'var(--color-primary-dark)', marginBottom: 28 }}>
-          How to Apply
-        </h2>
+        <SectionHeading title="How to Apply" />
         <div
           style={{
             display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
@@ -339,16 +425,17 @@ export default function Home() {
             <div key={title} style={{ textAlign: 'center', padding: '0 8px' }}>
               <div
                 style={{
-                  width: 48, height: 48, borderRadius: '50%', background: 'var(--color-primary)',
+                  width: 48, height: 48, borderRadius: '50%',
+                  background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))',
                   color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  margin: '0 auto 12px', position: 'relative'
+                  margin: '0 auto 12px', position: 'relative', boxShadow: '0 6px 14px rgba(28,113,157,0.25)'
                 }}
               >
                 <Icon size={20} />
                 <span
                   style={{
                     position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%',
-                    background: 'var(--color-primary-dark)', fontSize: 11, fontWeight: 700,
+                    background: 'var(--color-gold)', color: 'var(--color-primary-dark)', fontSize: 11, fontWeight: 700,
                     display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff'
                   }}
                 >
@@ -363,9 +450,13 @@ export default function Home() {
 
         {/* Open positions */}
         <div id="open-positions" style={{ scrollMarginTop: 20 }}>
-          <h2 style={{ textAlign: 'center', color: 'var(--color-primary-dark)', marginBottom: 4 }}>
+          <h2 style={{ textAlign: 'center', color: 'var(--color-primary-dark)', marginBottom: 10 }}>
             Open Positions
           </h2>
+          <span style={{
+            display: 'block', width: 48, height: 4, borderRadius: 999, margin: '0 auto 18px',
+            background: 'linear-gradient(90deg, var(--color-primary), var(--color-gold))'
+          }} />
           {!loading && !loadError && (
             <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span>{`Showing ${filtered.length} of ${vacancies.length} open position${vacancies.length === 1 ? '' : 's'}`}</span>
@@ -411,7 +502,7 @@ export default function Home() {
               {filtered.map((v) => {
                 const closed = isClosed(v);
                 return (
-                <Card key={v.id} style={{ marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
+                <Card key={v.id} className="hover-lift" style={{ marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
                   <div style={{ fontWeight: 700, marginBottom: 8 }}>
                     {v.jobRef ? <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{v.jobRef}: </span> : null}
                     {v.title}
@@ -466,12 +557,10 @@ export default function Home() {
 
         {/* FAQ */}
         <div id="faq" style={{ scrollMarginTop: 20, maxWidth: 680, margin: '64px auto 56px' }}>
-          <h2 style={{ textAlign: 'center', color: 'var(--color-primary-dark)', marginBottom: 4 }}>
-            Frequently Asked Questions
-          </h2>
-          <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 24 }}>
-            Common questions about applying to UCAA - or use the chat assistant in the bottom-right corner.
-          </p>
+          <SectionHeading
+            title="Frequently Asked Questions"
+            subtitle="Common questions about applying to UCAA - or use the chat assistant in the bottom-right corner."
+          />
           <div>
             {FAQ_ITEMS.map((item, i) => (
               <FaqItem
@@ -492,8 +581,20 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Final CTA */}
-      <section style={{ width: '100%', boxSizing: 'border-box', background: 'var(--color-primary-light)', padding: '48px 20px', textAlign: 'center' }}>
+      {/* Final CTA - bookends the hero: same rounded-icon-badge treatment
+          and gold accent, so the page opens and closes on the same visual
+          language instead of the hero being the only "designed" moment. */}
+      <section style={{
+        width: '100%', boxSizing: 'border-box', textAlign: 'center', padding: '52px 20px',
+        background: 'linear-gradient(180deg, var(--color-primary-light), #fff)'
+      }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 52, height: 52,
+          borderRadius: '50%', background: 'linear-gradient(135deg, var(--color-primary), var(--color-primary-dark))',
+          color: '#fff', marginBottom: 16, boxShadow: '0 8px 18px rgba(28,113,157,0.25)'
+        }}>
+          <Plane size={22} />
+        </div>
         <h2 style={{ color: 'var(--color-primary-dark)', margin: '0 0 8px' }}>Ready to take the next step?</h2>
         <p style={{ color: 'var(--color-text-muted)', margin: '0 0 20px' }}>
           Create your candidate account and start applying in minutes.

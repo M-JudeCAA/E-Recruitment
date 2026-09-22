@@ -18,6 +18,13 @@
                                       falling back to an invalid/inherited value before this. */
   --color-danger: #b3261e;
   --color-warning: #a66a00;
+  /* Decorative-only accent (aviation gold) - purely for visual richness on
+     the marketing surfaces (Home.jsx hero/highlights), never for status or
+     semantic meaning the way accent/success/danger/warning are used
+     elsewhere. Kept as a token rather than a hardcoded hex so a future
+     rebrand still only touches this file. */
+  --color-gold: #E0A339;
+  --color-gold-dark: #B87F1F;
 
   /* Neutrals */
   --color-text: #14181C;      /* was #23262b */
@@ -232,6 +239,19 @@ input::placeholder, textarea::placeholder {
   .btn-attention {
     animation: none;
   }
+}
+
+/* Opt-in hover lift for a card that isn't already Card's onClick-driven
+   .card-clickable (e.g. Home.jsx's value/vacancy cards, which are
+   informational, not a single click target) - a bit more visual life on
+   hover than the flat static card look, without changing Card's default
+   behavior anywhere it's used without this class. */
+.hover-lift {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 28px rgba(20,24,28,0.12);
 }
 
 /* Sidebar nav links (Sidebar.jsx). Hover lives here rather than inline
