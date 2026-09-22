@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Search, MapPin, Users, Calendar, ArrowRight, UserPlus, LogIn, Download,
-  FileEdit, Send, ListChecks, ShieldCheck, TrendingUp, HeartHandshake, GraduationCap
+  FileEdit, Send, ListChecks, ShieldCheck, TrendingUp, HeartHandshake, GraduationCap,
+  AlertTriangle, RotateCw, X, Clock
 } from 'lucide-react';
 import client from '../models/apiClient';
 import Button from '../components/Button';
@@ -17,6 +18,34 @@ import { useVacancyPdfDownload } from '../utils/useVacancyPdfDownload';
 // mutated just because a deadline lapsed), tagged Closed with its Apply
 // button swapped for a details-download one, rather than disappearing.
 const isClosed = (v) => v.deadline && new Date(v.deadline) < new Date();
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Whole-day countdown, floored so "closes tonight" still reads as 0 (today)
+// rather than -1/negative. Only meaningful for a vacancy that isn't closed
+// yet - callers check isClosed(v) first.
+function daysUntil(deadline) {
+  return Math.floor((new Date(deadline) - new Date()) / DAY_MS);
+}
+
+// The one piece of urgency information a candidate actually acts on -
+// deliberately louder (warning/danger color) the closer the deadline gets,
+// rather than a flat "Apply by <date>" line that reads the same whether
+// it's 90 days out or tomorrow.
+function ClosingBadge({ deadline }) {
+  if (!deadline) return null;
+  const days = daysUntil(deadline);
+  let text = `Closes ${new Date(deadline).toLocaleDateString()}`;
+  let color = 'var(--color-text-muted)';
+  if (days <= 0) { text = 'Closes today'; color = 'var(--color-danger)'; }
+  else if (days === 1) { text = 'Closes tomorrow'; color = 'var(--color-danger)'; }
+  else if (days <= 7) { text = `Closes in ${days} days`; color = 'var(--color-warning)'; }
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: days <= 7 ? 700 : 400, color }}>
+      <Clock size={14} /> {text}
+    </span>
+  );
+}
 
 // Same CSS-variable-backed palette as CandidateLogin.jsx/Navbar.jsx, so
 // this full-bleed hero stays visually identical to the rest of the app's
@@ -59,23 +88,50 @@ function Stat({ value, label }) {
 export default function Home() {
   const [vacancies, setVacancies] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [titleSearch, setTitleSearch] = useState('');
   const [deptSearch, setDeptSearch] = useState('');
   const { download, hiddenPrintArea, downloadingId } = useVacancyPdfDownload();
 
-  useEffect(() => {
+  const loadVacancies = () => {
+    setLoading(true);
+    setLoadError(false);
     client.get('/api/vacancies')
       .then((res) => setVacancies(res.data))
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(loadVacancies, []);
+
+  // Built from whatever vacancies actually loaded, not a separate lookup
+  // call - there's no standalone "list of departments with open roles"
+  // endpoint, and deriving it here means it can never list a department
+  // with zero open positions.
+  const departmentOptions = useMemo(
+    () => [...new Set(vacancies.map((v) => v.department?.name).filter(Boolean))].sort(),
+    [vacancies]
+  );
+
+  const hasActiveFilters = Boolean(titleSearch.trim() || deptSearch);
 
   const filtered = useMemo(() => {
     const title = titleSearch.trim().toLowerCase();
-    const dept = deptSearch.trim().toLowerCase();
-    return vacancies.filter((v) =>
+    const matches = vacancies.filter((v) =>
       (!title || v.title.toLowerCase().includes(title)) &&
-      (!dept || (v.department?.name || '').toLowerCase().includes(dept))
+      (!deptSearch || v.department?.name === deptSearch)
     );
+    // Soonest-closing first (the most actionable thing for a visitor to
+    // see), open-ended vacancies after all dated ones, closed vacancies
+    // pushed to the very end regardless of when they closed.
+    return [...matches].sort((a, b) => {
+      const aClosed = isClosed(a), bClosed = isClosed(b);
+      if (aClosed !== bClosed) return aClosed ? 1 : -1;
+      if (!a.deadline && !b.deadline) return 0;
+      if (!a.deadline) return 1;
+      if (!b.deadline) return -1;
+      return new Date(a.deadline) - new Date(b.deadline);
+    });
   }, [vacancies, titleSearch, deptSearch]);
 
   const departmentCount = useMemo(
@@ -148,6 +204,7 @@ export default function Home() {
           >
             <input
               placeholder="Search job title..."
+              aria-label="Search job title"
               value={titleSearch}
               onChange={(e) => setTitleSearch(e.target.value)}
               style={{
@@ -155,15 +212,19 @@ export default function Home() {
                 fontSize: 'inherit', fontFamily: 'inherit', color: 'var(--color-text)', minWidth: 0
               }}
             />
-            <input
-              placeholder="Department"
+            <select
               value={deptSearch}
               onChange={(e) => setDeptSearch(e.target.value)}
+              aria-label="Filter by department"
               style={{
-                flex: '1 1 150px', border: 'none', padding: '10px 12px',
-                fontSize: 'inherit', fontFamily: 'inherit', color: 'var(--color-text)', minWidth: 0
+                flex: '1 1 170px', border: 'none', padding: '10px 12px',
+                fontSize: 'inherit', fontFamily: 'inherit', color: deptSearch ? 'var(--color-text)' : 'var(--color-text-muted)',
+                minWidth: 0, background: 'transparent'
               }}
-            />
+            >
+              <option value="">All departments</option>
+              {departmentOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
             <Button type="submit" className="btn-attention" style={{ padding: '10px 18px', fontWeight: 700 }}>
               <Search size={16} /> Find Jobs
             </Button>
@@ -257,17 +318,42 @@ export default function Home() {
           <h2 style={{ textAlign: 'center', color: 'var(--color-primary-dark)', marginBottom: 4 }}>
             Open Positions
           </h2>
-          <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 24 }}>
-            {loading
-              ? 'Loading vacancies...'
-              : `Showing ${filtered.length} of ${vacancies.length} open position${vacancies.length === 1 ? '' : 's'}`}
-          </p>
+          {!loading && !loadError && (
+            <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span>{`Showing ${filtered.length} of ${vacancies.length} open position${vacancies.length === 1 ? '' : 's'}`}</span>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={() => { setTitleSearch(''); setDeptSearch(''); }}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none',
+                    color: 'var(--color-primary)', fontSize: 13, fontWeight: 600, cursor: 'pointer', padding: 0
+                  }}
+                >
+                  <X size={14} /> Clear filters
+                </button>
+              )}
+            </p>
+          )}
 
           {loading && <LoadingState label="Loading open vacancies..." />}
-          {!loading && filtered.length === 0 && (
+
+          {!loading && loadError && (
+            <div style={{ textAlign: 'center', padding: '32px 20px' }}>
+              <AlertTriangle size={28} color="var(--color-warning)" style={{ marginBottom: 10 }} />
+              <p style={{ color: 'var(--color-text-muted)', marginBottom: 16 }}>
+                We couldn&rsquo;t load open positions right now. Please check your connection and try again.
+              </p>
+              <Button variant="secondary" onClick={loadVacancies} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <RotateCw size={15} /> Retry
+              </Button>
+            </div>
+          )}
+
+          {!loading && !loadError && filtered.length === 0 && (
             <p style={{ textAlign: 'center', color: 'var(--color-text-muted)' }}>No open vacancies match your search.</p>
           )}
-          {!loading && filtered.length > 0 && (
+          {!loading && !loadError && filtered.length > 0 && (
             <div
               style={{
                 display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
@@ -292,20 +378,24 @@ export default function Home() {
                         </span>
                       </span>
                     )}
-                    {v.deadline && (
+                    {!closed && v.deadline && <ClosingBadge deadline={v.deadline} />}
+                    {closed && v.deadline && (
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Calendar size={14} /> Apply by {new Date(v.deadline).toLocaleDateString()}
+                        <Calendar size={14} /> Closed {new Date(v.deadline).toLocaleDateString()}
                       </span>
                     )}
                     <span style={{ display: 'flex', gap: 6 }}>
                       {closed ? <StatusBadge status="Closed" /> : <StatusBadge status={v.status} />}
                     </span>
                   </div>
+                  <Link to={`/jobs/${v.id}`} style={{ marginTop: 'auto', fontSize: 13, fontWeight: 600, marginBottom: 10 }}>
+                    View details
+                  </Link>
                   {closed ? (
                     <Button
                       variant="secondary"
                       disabled={downloadingId === v.id}
-                      style={{ marginTop: 'auto', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                       onClick={() => download(v)}
                     >
                       <Download size={16} /> {downloadingId === v.id ? 'Preparing PDF...' : 'Download Job Details'}
@@ -315,7 +405,7 @@ export default function Home() {
                     // anonymous visitor is bounced to /login?returnTo=... and
                     // lands back here after signing in, same as clicking
                     // Apply from any other job listing in the app.
-                    <Link to={`/apply/${v.id}`} style={{ marginTop: 'auto', textDecoration: 'none' }}>
+                    <Link to={`/apply/${v.id}`} style={{ textDecoration: 'none' }}>
                       <Button style={{ width: '100%' }}>Apply Now</Button>
                     </Link>
                   )}

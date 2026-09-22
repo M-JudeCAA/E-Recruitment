@@ -16,6 +16,7 @@ import CandidateJobs from "./views/CandidateJobs";
 import CandidateProfile from "./views/CandidateProfile";
 import CandidateApplications from "./views/CandidateApplications";
 import ApplyForm from "./views/ApplyForm";
+import JobDetails from "./views/JobDetails";
 import StaffLogin from "./views/StaffLogin";
 import StaffForgotPassword from "./views/StaffForgotPassword";
 import StaffResetPassword from "./views/StaffResetPassword";
@@ -191,6 +192,10 @@ export default function App() {
             any of these URLs there lands on staff login instead. */}
         <Route element={<GuestPortGate />}>
           <Route element={<PaddedLayout />}>
+            {/* Public - no RequireCandidate. Reached from Home.jsx's "View
+                details" link and directly shareable, since a guest should
+                be able to read a full advert before creating an account. */}
+            <Route path="/jobs/:id" element={<JobDetails />} />
             <Route path="/confirm-email" element={<ConfirmEmail />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
