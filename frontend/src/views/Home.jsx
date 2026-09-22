@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   Search, MapPin, Users, Calendar, ArrowRight, UserPlus, LogIn, Download,
   FileEdit, Send, ListChecks, ShieldCheck, TrendingUp, HeartHandshake, GraduationCap,
-  AlertTriangle, RotateCw, X, Clock
+  AlertTriangle, RotateCw, X, Clock, ChevronDown, ShieldAlert
 } from 'lucide-react';
 import client from '../models/apiClient';
 import Button from '../components/Button';
@@ -12,6 +12,7 @@ import StatusBadge from '../components/StatusBadge';
 import LoadingState from '../components/LoadingState';
 import ucaaLogo from '../assets/ucaa-logo.png';
 import { useVacancyPdfDownload } from '../utils/useVacancyPdfDownload';
+import { HEAD_OFFICE_CONTACTS } from '../components/HowToApplyBlock';
 
 // A vacancy whose deadline has passed is still shown here (see
 // vacancyController.listPublic's own comment - Vacancy.status is never
@@ -47,6 +48,36 @@ function ClosingBadge({ deadline }) {
   );
 }
 
+// A single collapsible Q&A row. Plain <button> (not Card's onClick, which
+// renders a <div>) so it's keyboard-operable and a screen reader announces
+// it as a toggle - aria-expanded reflects the actual open state, and
+// aria-controls/id tie the button to the answer it reveals.
+function FaqItem({ q, a, open, onToggle, id }) {
+  return (
+    <div style={{ borderBottom: '1px solid var(--color-border)' }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls={id}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+          width: '100%', padding: '16px 4px', background: 'none', border: 'none', textAlign: 'left',
+          fontSize: 15, fontWeight: 600, color: 'var(--color-text)', cursor: 'pointer', fontFamily: 'inherit'
+        }}
+      >
+        {q}
+        <ChevronDown size={18} color="var(--color-text-muted)" style={{ flexShrink: 0, transition: 'transform 0.15s ease', transform: open ? 'rotate(180deg)' : 'none' }} />
+      </button>
+      {open && (
+        <p id={id} style={{ margin: '0 4px 16px', fontSize: 13.5, color: 'var(--color-text-muted)', lineHeight: 1.6 }}>
+          {a}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Same CSS-variable-backed palette as CandidateLogin.jsx/Navbar.jsx, so
 // this full-bleed hero stays visually identical to the rest of the app's
 // gradient surfaces even though it's assembled from inline styles here.
@@ -67,6 +98,44 @@ const STEPS = [
   { icon: FileEdit, title: 'Complete your profile', text: 'Add your education and experience once - reuse them for every application.' },
   { icon: Send, title: 'Apply to a role', text: 'Browse open positions and submit your application online.' },
   { icon: ListChecks, title: 'Track your status', text: 'Follow your application from review through to an offer, from your dashboard.' }
+];
+
+// Answers grounded in what this app actually does (registration, the
+// draft/submit/withdraw workflow, one-application-per-vacancy) rather than
+// generic filler - see applicationDraftController.js for the withdraw/
+// one-application-per-vacancy rules this reflects. The fee/fraud warning
+// is standard practice for a public-sector recruiter's own portal, not
+// behavior read from the code - HR should confirm the exact wording
+// before this goes live.
+const FAQ_ITEMS = [
+  {
+    q: 'Is there a fee to apply?',
+    a: `No. UCAA never charges a fee at any stage of recruitment - application, shortlisting, interview, or offer. If anyone asks you for money in UCAA's name, do not pay, and report it to Head Office: ${HEAD_OFFICE_CONTACTS.join(', ')}.`
+  },
+  {
+    q: 'Do I need to create an account before I can apply?',
+    a: 'Yes. Create a free candidate account, then apply from the Open Positions list below. Your profile (education, experience) is saved once and reused for every application you submit.'
+  },
+  {
+    q: "What's the difference between an Internal and External vacancy?",
+    a: 'Internal vacancies are open only to current UCAA staff, verified by your work email address at registration. Everyone else applies to External vacancies. You will only see and be able to apply to the vacancies that match your account type.'
+  },
+  {
+    q: 'What documents do I need?',
+    a: 'A CV is required for every application. A cover letter is optional. Some vacancies also ask a few short screening questions as part of the application.'
+  },
+  {
+    q: 'Can I apply for more than one vacancy?',
+    a: "Yes, you can apply to as many different open vacancies as you're eligible for. You can only submit one application per vacancy."
+  },
+  {
+    q: 'Can I edit or withdraw my application after submitting it?',
+    a: 'You can edit a saved draft freely before you submit it. Once submitted, you can no longer edit it, but you can withdraw it from your dashboard at any time before a decision is made.'
+  },
+  {
+    q: 'What happens after I submit my application?',
+    a: "Your application is reviewed against the vacancy's requirements. If shortlisted, you'll be invited to interview; if successful, you'll receive an offer. You can track your status from your dashboard at every stage, and you'll be notified of major updates by email."
+  }
 ];
 
 function Stat({ value, label }) {
@@ -91,7 +160,9 @@ export default function Home() {
   const [loadError, setLoadError] = useState(false);
   const [titleSearch, setTitleSearch] = useState('');
   const [deptSearch, setDeptSearch] = useState('');
+  const [openFaq, setOpenFaq] = useState(null);
   const { download, hiddenPrintArea, downloadingId } = useVacancyPdfDownload();
+  const location = useLocation();
 
   const loadVacancies = () => {
     setLoading(true);
@@ -103,6 +174,19 @@ export default function Home() {
   };
 
   useEffect(loadVacancies, []);
+
+  // React Router's <Link to="/#open-positions"> (used by JobDetails.jsx's
+  // "Back to Open Positions" and the footer's "FAQ" link) navigates via
+  // pushState, which - unlike a plain <a href="#..."> or a full page
+  // load - does NOT trigger the browser's native scroll-to-anchor
+  // behavior. This replicates that behavior for the SPA case: on mount
+  // (i.e. whenever this route is navigated to, hash included), scroll to
+  // whatever element the hash names, if any.
+  useEffect(() => {
+    if (!location.hash) return;
+    const el = document.getElementById(location.hash.slice(1));
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [location.hash]);
 
   // Built from whatever vacancies actually loaded, not a separate lookup
   // call - there's no standalone "list of departments with open roles"
@@ -414,6 +498,33 @@ export default function Home() {
               })}
             </div>
           )}
+        </div>
+
+        {/* FAQ */}
+        <div id="faq" style={{ scrollMarginTop: 20, maxWidth: 680, margin: '64px auto 56px' }}>
+          <h2 style={{ textAlign: 'center', color: 'var(--color-primary-dark)', marginBottom: 4 }}>
+            Frequently Asked Questions
+          </h2>
+          <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 24 }}>
+            Common questions about applying to UCAA.
+          </p>
+          <div>
+            {FAQ_ITEMS.map((item, i) => (
+              <FaqItem
+                key={item.q}
+                id={`faq-answer-${i}`}
+                q={item.q}
+                a={item.a}
+                open={openFaq === i}
+                onToggle={() => setOpenFaq(openFaq === i ? null : i)}
+              />
+            ))}
+          </div>
+          <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--color-text-muted)', marginTop: 20 }}>
+            <ShieldAlert size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
+            Still have a question? Contact Head Office: {HEAD_OFFICE_CONTACTS.join(', ')}, or{' '}
+            <a href="mailto:careers@caa.co.ug">careers@caa.co.ug</a>.
+          </p>
         </div>
       </div>
 
