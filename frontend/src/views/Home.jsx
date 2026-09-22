@@ -13,6 +13,8 @@ import LoadingState from '../components/LoadingState';
 import ucaaLogo from '../assets/ucaa-logo.png';
 import { useVacancyPdfDownload } from '../utils/useVacancyPdfDownload';
 import { HEAD_OFFICE_CONTACTS } from '../components/HowToApplyBlock';
+import { FAQ_ITEMS } from '../data/faqItems';
+import FaqChatWidget from '../components/FaqChatWidget';
 
 // A vacancy whose deadline has passed is still shown here (see
 // vacancyController.listPublic's own comment - Vacancy.status is never
@@ -98,44 +100,6 @@ const STEPS = [
   { icon: FileEdit, title: 'Complete your profile', text: 'Add your education and experience once - reuse them for every application.' },
   { icon: Send, title: 'Apply to a role', text: 'Browse open positions and submit your application online.' },
   { icon: ListChecks, title: 'Track your status', text: 'Follow your application from review through to an offer, from your dashboard.' }
-];
-
-// Answers grounded in what this app actually does (registration, the
-// draft/submit/withdraw workflow, one-application-per-vacancy) rather than
-// generic filler - see applicationDraftController.js for the withdraw/
-// one-application-per-vacancy rules this reflects. The fee/fraud warning
-// is standard practice for a public-sector recruiter's own portal, not
-// behavior read from the code - HR should confirm the exact wording
-// before this goes live.
-const FAQ_ITEMS = [
-  {
-    q: 'Is there a fee to apply?',
-    a: `No. UCAA never charges a fee at any stage of recruitment - application, shortlisting, interview, or offer. If anyone asks you for money in UCAA's name, do not pay, and report it to Head Office: ${HEAD_OFFICE_CONTACTS.join(', ')}.`
-  },
-  {
-    q: 'Do I need to create an account before I can apply?',
-    a: 'Yes. Create a free candidate account, then apply from the Open Positions list below. Your profile (education, experience) is saved once and reused for every application you submit.'
-  },
-  {
-    q: "What's the difference between an Internal and External vacancy?",
-    a: 'Internal vacancies are open only to current UCAA staff, verified by your work email address at registration. Everyone else applies to External vacancies. You will only see and be able to apply to the vacancies that match your account type.'
-  },
-  {
-    q: 'What documents do I need?',
-    a: 'A CV is required for every application. A cover letter is optional. Some vacancies also ask a few short screening questions as part of the application.'
-  },
-  {
-    q: 'Can I apply for more than one vacancy?',
-    a: "Yes, you can apply to as many different open vacancies as you're eligible for. You can only submit one application per vacancy."
-  },
-  {
-    q: 'Can I edit or withdraw my application after submitting it?',
-    a: 'You can edit a saved draft freely before you submit it. Once submitted, you can no longer edit it, but you can withdraw it from your dashboard at any time before a decision is made.'
-  },
-  {
-    q: 'What happens after I submit my application?',
-    a: "Your application is reviewed against the vacancy's requirements. If shortlisted, you'll be invited to interview; if successful, you'll receive an offer. You can track your status from your dashboard at every stage, and you'll be notified of major updates by email."
-  }
 ];
 
 function Stat({ value, label }) {
@@ -506,7 +470,7 @@ export default function Home() {
             Frequently Asked Questions
           </h2>
           <p style={{ textAlign: 'center', color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 24 }}>
-            Common questions about applying to UCAA.
+            Common questions about applying to UCAA - or use the chat assistant in the bottom-right corner.
           </p>
           <div>
             {FAQ_ITEMS.map((item, i) => (
@@ -542,6 +506,7 @@ export default function Home() {
       </section>
 
       {hiddenPrintArea}
+      <FaqChatWidget />
     </div>
   );
 }
