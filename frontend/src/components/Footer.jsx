@@ -1,4 +1,7 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
+
+const linkStyle = { color: 'var(--color-text-muted)' };
 
 export default function Footer() {
   return (
@@ -32,7 +35,14 @@ export default function Footer() {
         }}
       >
         <span>&copy; {new Date().getFullYear()} Uganda Civil Aviation Authority</span>
-        <span>Careers help: careers@caa.co.ug</span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          {/* /#faq only ever resolves meaningfully from Home.jsx (the only
+              route with a #faq section) - Home's own hash-scroll effect
+              handles the actual scrolling once routed there. Fine to show
+              everywhere, same as the always-visible email beside it. */}
+          <Link to="/#faq" style={linkStyle}>FAQ</Link>
+          <a href="mailto:careers@caa.co.ug" style={linkStyle}>Careers help: careers@caa.co.ug</a>
+        </span>
       </div>
     </footer>
   );

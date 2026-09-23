@@ -8,7 +8,9 @@ import React from 'react';
 // vary per vacancy - the application deadline - is passed in and reused
 // from the same `deadline` value already shown in the advert's header
 // facts, so the two can never disagree with each other.
-const HEAD_OFFICE_CONTACTS = ['+256 414 352000', '+256 312 352000', '+256 20 0452000'];
+// Exported so other guest-facing copy (Home.jsx's FAQ) can point candidates
+// at the same numbers without re-typing them and risking the two drifting.
+export const HEAD_OFFICE_CONTACTS = ['+256 414 352000', '+256 312 352000', '+256 20 0452000'];
 
 export default function HowToApplyBlock({ deadline }) {
   const siteUrl = typeof window !== 'undefined' ? window.location.origin : '';
