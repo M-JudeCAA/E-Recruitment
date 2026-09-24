@@ -70,6 +70,20 @@ async function assertNotSelfApprovedShortlist(vacancyId, approverId) {
 }
 
 /**
+ * Self-approval block for the offer recommend/approve split: whoever
+ * recommended an offer (Offer.recommendedById) cannot also approve it. A
+ * Manager or Director meets both tiers (recommend is Principal_HR_Officer+,
+ * approve is Manager+), so without this one person could carry an offer
+ * from recommendation to candidate on their own. Takes the offer row the
+ * caller already loaded rather than re-reading it.
+ */
+function assertNotSelfApprovedOffer(offer, approverId) {
+  if (offer.recommendedById != null && offer.recommendedById === approverId) {
+    throw new Error('Self-approval blocked: you recommended this offer - a different Manager or Director must approve it');
+  }
+}
+
+/**
  * Computes Vacancy.status from accepted offers vs positions_required.
  * Accepts an optional Prisma client/transaction handle so callers that need
  * this to run atomically alongside an offer-status change (see
@@ -109,11 +123,20 @@ async function recomputeVacancyStatus(vacancyId, client = prisma) {
  * sequential writes. The offer flip itself is guarded (updateMany scoped to
  * status: 'Approved') so a second concurrent accept attempt - a double
  * click, or a race with a decline - can't also succeed; it reports a
- * conflict instead. Running the vacancy-status recompute inside the same
- * transaction as the guarded write also narrows (though, absent a DB-level
- * capacity constraint, doesn't fully eliminate) the window where two
- * different candidates' offers for the same vacancy could both be accepted
- * past positionsRequired.
+ * conflict instead.
+ *
+ * Capacity: two DIFFERENT candidates accepting offers for the same vacancy
+ * at the same moment could previously both succeed past positionsRequired,
+ * since each transaction counted accepted offers before the other
+ * committed. The vacancy row is now locked (SELECT ... FOR UPDATE) as the
+ * very first statement, so concurrent acceptances for one vacancy run one
+ * after another, and the accepted count is checked under that lock. The
+ * lock must come before any other read: under MySQL's default REPEATABLE
+ * READ, a transaction's snapshot is fixed at its first plain read, so a
+ * count taken after the lock is granted sees the other transaction's
+ * committed acceptance. That is why vacancyId is passed in by the caller
+ * rather than looked up from the offer inside the transaction. Returns
+ * { full: true } without touching anything when every position is taken.
  */
 // Default Prisma interactive-transaction timeout is 5s, and default maxWait
 // (time to acquire a transaction slot before even starting) is 2s - both
@@ -124,8 +147,17 @@ async function recomputeVacancyStatus(vacancyId, client = prisma) {
 // file - saveRanking's own $transaction (vacancyController.js) is the
 // simpler array/batch form, which doesn't hold a transaction open across
 // JS-side awaits the way these two do, so it isn't exposed to the same risk.
-async function acceptOfferTransactionally(offerId) {
+async function acceptOfferTransactionally(offerId, vacancyId) {
   return prisma.$transaction(async (tx) => {
+    const lockedRows = await tx.$queryRaw`SELECT positionsRequired FROM Vacancy WHERE id = ${vacancyId} FOR UPDATE`;
+    const locked = lockedRows && lockedRows[0];
+    if (!locked) return { conflict: true };
+
+    const acceptedCount = await tx.offer.count({
+      where: { status: 'Accepted', application: { vacancyId } }
+    });
+    if (acceptedCount >= Number(locked.positionsRequired)) return { full: true };
+
     const result = await tx.offer.updateMany({
       where: { id: offerId, status: 'Approved' },
       data: { status: 'Accepted', decidedAt: new Date() }
@@ -271,6 +303,7 @@ module.exports = {
   assertCanShortlist,
   assertNotSelfApproval,
   assertNotSelfApprovedShortlist,
+  assertNotSelfApprovedOffer,
   recomputeVacancyStatus,
   acceptOfferTransactionally,
   handleOfferDeclined,

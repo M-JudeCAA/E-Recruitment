@@ -589,6 +589,24 @@ describe('listPublic', () => {
     });
   });
 
+  test('strips HR-only and audit fields from every listed vacancy', async () => {
+    prisma.vacancy.findMany.mockResolvedValue([
+      { id: 1, title: 'A', internalSalaryRange: '10-12M', recruiterNotes: 'n', approvedByRole: 'Manager' },
+      { id: 2, title: 'B', internalSalaryRange: '8-9M', recruiterNotes: null, createdById: 3 }
+    ]);
+    const res = mockRes();
+    await vacancyController.listPublic({ user: undefined }, res);
+
+    const listed = res.json.mock.calls[0][0];
+    expect(listed.map((v) => v.title)).toEqual(['A', 'B']);
+    for (const v of listed) {
+      expect(v.internalSalaryRange).toBeUndefined();
+      expect(v.recruiterNotes).toBeUndefined();
+      expect(v.approvedByRole).toBeUndefined();
+      expect(v.createdById).toBeUndefined();
+    }
+  });
+
   test('defaults to the safe External filter for an anonymous request (no token)', async () => {
     prisma.vacancy.findMany.mockResolvedValue([]);
     await vacancyController.listPublic({ user: undefined }, mockRes());
@@ -601,7 +619,13 @@ describe('listPublic', () => {
 });
 
 describe('getOne', () => {
-  const fullVacancy = { id: 5, title: 'Officer', internalSalaryRange: '10-12M', recruiterNotes: 'prefers internal' };
+  // A listed External vacancy, carrying HR-only and audit columns.
+  const fullVacancy = {
+    id: 5, title: 'Officer', status: 'Open', postingType: 'External',
+    internalSalaryRange: '10-12M', recruiterNotes: 'prefers internal',
+    createdById: 1, approvedById: 2, approvedByRole: 'Manager', postingTypePreviousValue: 'Internal'
+  };
+  const candidate = (candidateType, id = 7) => ({ type: 'candidate', candidateType, id });
 
   test('returns 404 for a vacancy id that does not exist', async () => {
     prisma.vacancy.findUnique.mockResolvedValue(null);
@@ -612,31 +636,41 @@ describe('getOne', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
-  test('strips internalSalaryRange/recruiterNotes for an anonymous request', async () => {
+  test('returns 404 for a non-numeric id without querying the database', async () => {
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: 'abc' }, user: undefined }, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(prisma.vacancy.findUnique).not.toHaveBeenCalled();
+  });
+
+  test('strips HR-only and audit fields for an anonymous request', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy });
     const res = mockRes();
 
     await vacancyController.getOne({ params: { id: '5' }, user: undefined }, res);
 
     const returned = res.json.mock.calls[0][0];
-    expect(returned.internalSalaryRange).toBeUndefined();
-    expect(returned.recruiterNotes).toBeUndefined();
     expect(returned.title).toBe('Officer');
+    for (const field of ['internalSalaryRange', 'recruiterNotes', 'createdById', 'approvedById', 'approvedByRole', 'postingTypePreviousValue']) {
+      expect(returned[field]).toBeUndefined();
+    }
   });
 
   test('strips internalSalaryRange/recruiterNotes for a candidate request', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy });
     const res = mockRes();
 
-    await vacancyController.getOne({ params: { id: '5' }, user: { type: 'candidate' } }, res);
+    await vacancyController.getOne({ params: { id: '5' }, user: candidate('External') }, res);
 
     const returned = res.json.mock.calls[0][0];
     expect(returned.internalSalaryRange).toBeUndefined();
     expect(returned.recruiterNotes).toBeUndefined();
   });
 
-  test('includes internalSalaryRange/recruiterNotes for an authenticated staff request', async () => {
-    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy });
+  test('includes every field for an authenticated staff request, whatever the status', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy, status: 'PendingApproval', postingType: 'Internal' });
     const res = mockRes();
 
     await vacancyController.getOne({ params: { id: '5' }, user: { type: 'staff' } }, res);
@@ -644,6 +678,82 @@ describe('getOne', () => {
     const returned = res.json.mock.calls[0][0];
     expect(returned.internalSalaryRange).toBe('10-12M');
     expect(returned.recruiterNotes).toBe('prefers internal');
+    expect(returned.approvedByRole).toBe('Manager');
+  });
+
+  test('hides a vacancy still awaiting approval from an anonymous visitor', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy, status: 'PendingApproval' });
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: '5' }, user: undefined }, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Not found' });
+  });
+
+  test('hides an Internal vacancy from an anonymous visitor', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy, postingType: 'Internal' });
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: '5' }, user: undefined }, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('hides an Internal vacancy from an External candidate with no application on it', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy, postingType: 'Internal' });
+    prisma.application.findFirst.mockResolvedValue(null);
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: '5' }, user: candidate('External') }, res);
+
+    expect(prisma.application.findFirst).toHaveBeenCalledWith({ where: { vacancyId: 5, candidateId: 7 } });
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('hides an External vacancy from an Internal candidate with no application on it', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy });
+    prisma.application.findFirst.mockResolvedValue(null);
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: '5' }, user: candidate('Internal') }, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test('shows an Internal candidate a listed Internal vacancy without an application lookup', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy, status: 'PartiallyFilled', postingType: 'Internal' });
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: '5' }, user: candidate('Internal') }, res);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].id).toBe(5);
+    expect(prisma.application.findFirst).not.toHaveBeenCalled();
+  });
+
+  test('still shows a candidate a Closed vacancy they applied to, with HR-only fields stripped', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy, status: 'Closed' });
+    prisma.application.findFirst.mockResolvedValue({ id: 40, vacancyId: 5, candidateId: 7 });
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: '5' }, user: candidate('External') }, res);
+
+    expect(res.status).not.toHaveBeenCalled();
+    const returned = res.json.mock.calls[0][0];
+    expect(returned.id).toBe(5);
+    expect(returned.internalSalaryRange).toBeUndefined();
+  });
+
+  test('still shows a candidate a vacancy they applied to after its posting type was transitioned', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy, postingType: 'Internal' });
+    prisma.application.findFirst.mockResolvedValue({ id: 40, vacancyId: 5, candidateId: 7 });
+    const res = mockRes();
+
+    await vacancyController.getOne({ params: { id: '5' }, user: candidate('External') }, res);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json.mock.calls[0][0].id).toBe(5);
   });
 });
 

@@ -31,4 +31,8 @@ const mockDb = {
 // both the interactive (callback) and batch (array of promises) forms.
 mockDb.$transaction = jest.fn((arg) => (typeof arg === 'function' ? arg(mockDb) : Promise.all(arg)));
 
+// Raw SQL - used for the vacancy row lock (SELECT ... FOR UPDATE) in
+// workflowService.acceptOfferTransactionally.
+mockDb.$queryRaw = jest.fn();
+
 module.exports = mockDb;

@@ -639,6 +639,21 @@ describe('approveOffer', () => {
     expect(prisma.offer.updateMany).not.toHaveBeenCalled();
   });
 
+  test('blocks the Manager who recommended the offer from approving it themselves', async () => {
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 20, status: 'Recommended', recommendedById: 2, application: { candidateId: 7, vacancyId: 3 }
+    });
+    const req = { params: { offerId: '20' }, user: { id: 2 } };
+    const res = mockRes();
+
+    await applicationController.approveOffer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json).toHaveBeenCalledWith({ error: expect.stringMatching(/Self-approval blocked/) });
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+    expect(prisma.candidateNotification.create).not.toHaveBeenCalled();
+  });
+
   test('returns 409 when a concurrent request already changed this offer', async () => {
     prisma.offer.findUnique.mockResolvedValue({ id: 20, status: 'Recommended', application: { candidateId: 7, vacancyId: 3 } });
     prisma.offer.updateMany.mockResolvedValue({ count: 0 });
@@ -652,7 +667,7 @@ describe('approveOffer', () => {
 
   test('approves an existing offer and notifies the candidate they can now act on it', async () => {
     prisma.offer.findUnique
-      .mockResolvedValueOnce({ id: 20, status: 'Recommended', application: { candidateId: 7, vacancyId: 3 } })
+      .mockResolvedValueOnce({ id: 20, status: 'Recommended', recommendedById: 5, application: { candidateId: 7, vacancyId: 3 } })
       .mockResolvedValueOnce({
         id: 20, status: 'Approved',
         application: { candidateId: 7, vacancyId: 3, vacancy: { title: 'Air Traffic Controller' } }
@@ -900,6 +915,8 @@ describe('acceptOffer / declineOffer ownership check', () => {
     prisma.offer.findUnique.mockResolvedValue({
       id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 }
     });
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 1 }]);
+    prisma.offer.count.mockResolvedValue(0);
     prisma.offer.updateMany.mockResolvedValue({ count: 0 });
     const req = { params: { offerId: '20' }, user: { id: 7 } };
     const res = mockRes();
@@ -909,16 +926,36 @@ describe('acceptOffer / declineOffer ownership check', () => {
     expect(res.status).toHaveBeenCalledWith(409);
   });
 
+  test('acceptOffer refuses with 409 once every position on the vacancy is already filled', async () => {
+    prisma.offer.findUnique.mockResolvedValue({
+      id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 }
+    });
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 1 }]);
+    prisma.offer.count.mockResolvedValue(1);
+    const req = { params: { offerId: '20' }, user: { id: 7 } };
+    const res = mockRes();
+
+    await applicationController.acceptOffer(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ error: expect.stringMatching(/already been filled/) });
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
+  });
+
   test('acceptOffer succeeds for the actual owning candidate', async () => {
     prisma.offer.findUnique
       .mockResolvedValueOnce({ id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 } })
       .mockResolvedValueOnce({
         id: 20, status: 'Accepted', approvedById: 2,
-        application: { candidateId: 7, vacancyId: 3, vacancy: { positionsRequired: 1 } }
+        application: { candidateId: 7, vacancyId: 3, vacancy: { positionsRequired: 1, internalSalaryRange: '10-12M', recruiterNotes: 'x' } }
       });
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 1 }]);
     prisma.offer.updateMany.mockResolvedValue({ count: 1 });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 3, positionsRequired: 1, status: 'Open', filledAt: null });
-    prisma.offer.count.mockResolvedValue(1);
+    prisma.offer.count
+      .mockResolvedValueOnce(0) // capacity check under the lock
+      .mockResolvedValueOnce(1); // recompute after the flip
 
     const req = { params: { offerId: '20' }, user: { id: 7 } };
     const res = mockRes();
@@ -931,7 +968,11 @@ describe('acceptOffer / declineOffer ownership check', () => {
     // The vacancy fills up (1 accepted of 1 required) - recomputeVacancyStatus
     // ran as part of the same transaction as the offer flip.
     expect(prisma.vacancy.update).toHaveBeenCalledWith({ where: { id: 3 }, data: { status: 'Filled', filledAt: expect.any(Date) } });
-    expect(res.json).toHaveBeenCalled();
+    const body = res.json.mock.calls[0][0];
+    expect(body.id).toBe(20);
+    expect(body.application.vacancy.positionsRequired).toBe(1);
+    expect(body.application.vacancy.internalSalaryRange).toBeUndefined();
+    expect(body.application.vacancy.recruiterNotes).toBeUndefined();
   });
 
   test('declineOffer rejects a candidate who does not own the offer', async () => {
@@ -969,5 +1010,23 @@ describe('acceptOffer / declineOffer ownership check', () => {
     await applicationController.declineOffer(req, res);
 
     expect(res.status).toHaveBeenCalledWith(409);
+  });
+
+  test('declineOffer never returns the promoted reserve candidate\'s application to the decliner', async () => {
+    prisma.offer.findUnique
+      .mockResolvedValueOnce({ id: 21, status: 'Approved', application: { candidateId: 7, vacancyId: 3 } })
+      .mockResolvedValueOnce({ id: 21, status: 'Declined', application: { candidateId: 7, vacancyId: 3 } });
+    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
+    prisma.application.findFirst.mockResolvedValue({ id: 55, candidateId: 8, vacancyId: 3, listStatus: 'Reserve', whyThisRole: 'private answer' });
+    prisma.application.update.mockResolvedValue({});
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 3, positionsRequired: 1, status: 'Open', filledAt: null });
+    prisma.offer.count.mockResolvedValue(0);
+    const req = { params: { offerId: '21' }, user: { id: 7 } };
+    const res = mockRes();
+
+    await applicationController.declineOffer(req, res);
+
+    expect(prisma.application.update).toHaveBeenCalledWith({ where: { id: 55 }, data: { listStatus: 'Primary' } });
+    expect(res.json).toHaveBeenCalledWith({ message: 'Offer declined' });
   });
 });

@@ -62,6 +62,10 @@ export default function ApplyForm() {
   const navigate = useNavigate();
 
   const [vacancy, setVacancy] = useState(null);
+  // 'notFound' when the API hides this vacancy from this viewer (not listed
+  // for their account type, not yet approved, or closed with no application
+  // of theirs on it), 'error' for any other load failure.
+  const [vacancyLoadFailure, setVacancyLoadFailure] = useState(null);
   const [profile, setProfile] = useState(null);
   const [application, setApplication] = useState(null);
   // Candidate-level fields (persist across every application) - National ID,
@@ -156,7 +160,9 @@ export default function ApplyForm() {
   });
 
   useEffect(() => {
-    client.get(`/api/vacancies/${vacancyId}`).then((res) => setVacancy(res.data));
+    client.get(`/api/vacancies/${vacancyId}`)
+      .then((res) => setVacancy(res.data))
+      .catch((err) => setVacancyLoadFailure(err.response?.status === 404 ? 'notFound' : 'error'));
     loadProfile();
     client.get('/api/candidates/me/applications').then((res) => {
       const existing = res.data.find((a) => a.vacancyId === Number(vacancyId));
@@ -366,6 +372,31 @@ export default function ApplyForm() {
     }
     navigate(application ? '/dashboard/applications' : '/dashboard/jobs');
   };
+
+  if (vacancyLoadFailure) {
+    return (
+      <div style={{ background: 'var(--color-primary-light)', minHeight: '100%', width: '100%' }}>
+        <div className="p-4 md:p-8">
+          <div className="max-w-3xl mx-auto">
+          <WizardExitHeader candidate={candidate} />
+          <div style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 32, textAlign: 'center' }}>
+            <h2 style={{ color: 'var(--color-primary-dark)', marginTop: 0 }}>
+              {vacancyLoadFailure === 'notFound' ? 'Vacancy not available' : 'Could not load this vacancy'}
+            </h2>
+            <p style={{ color: 'var(--color-text-muted)', maxWidth: 480, margin: '0 auto 20px' }}>
+              {vacancyLoadFailure === 'notFound'
+                ? 'This vacancy doesn\u2019t exist, is no longer available, or isn\u2019t open to your account type.'
+                : 'Something went wrong while loading this vacancy. Please try again in a moment.'}
+            </p>
+            <Link to="/dashboard/jobs" style={{ textDecoration: 'none' }}>
+              <Button>Browse open positions</Button>
+            </Link>
+          </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!vacancy || !applicationsChecked) {
     return (

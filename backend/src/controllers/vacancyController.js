@@ -8,11 +8,22 @@ const workflow = require('../services/workflowService');
 const slaModel = require('../models/slaModel');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { generateJobRef } = require('../utils/jobRefGenerator');
+const { toPublicVacancy } = require('../utils/publicVacancy');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
 const {
   validateVacancyEditableFields,
   normalizeStringList, normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades
 } = require('../utils/vacancyValidation');
+
+// Statuses a vacancy must be in for candidates and guests to see it.
+const PUBLIC_STATUSES = ['Open', 'PartiallyFilled'];
+
+// Which posting type a non-staff viewer may see. Derived only from the
+// verified token, never from anything the client sends; an anonymous
+// visitor is treated as External.
+function viewerPostingType(user) {
+  return user?.type === 'candidate' && user.candidateType === 'Internal' ? 'Internal' : 'External';
+}
 
 // Shared by create() and readvertise() below - both construct a full
 // Vacancy row the same way (same fields, same normalization), differing
@@ -410,14 +421,11 @@ async function transitionPostingType(req, res) {
 // fill-count, not time) - a manually status:Closed/Filled vacancy is a
 // separate, unrelated case still excluded by the status filter below.
 async function listPublic(req, res) {
-  const candidateType = req.user?.type === 'candidate' ? req.user.candidateType : 'External';
-  const postingType = candidateType === 'Internal' ? 'Internal' : 'External';
-
   const vacancies = await vacancyModel.findManyWithDetails({
-    status: { in: ['Open', 'PartiallyFilled'] },
-    postingType
+    status: { in: PUBLIC_STATUSES },
+    postingType: viewerPostingType(req.user)
   });
-  res.json(vacancies);
+  res.json(vacancies.map(toPublicVacancy));
 }
 
 // Not scoped by department. Every account that can reach this route (any
@@ -436,20 +444,33 @@ async function listForAdmin(req, res) {
 
 // Shared by staff (VacancyDetail.jsx, ApplicationManagement.jsx - via
 // staffApiClient, which always attaches a staff Bearer token) and
-// candidates/guests (ApplyForm.jsx, the public JobDetails.jsx - no token).
-// findByIdWithDetails has no `select`, so it returns every scalar column
-// including internalSalaryRange/recruiterNotes - fields CreateVacancyListing.jsx's
-// own comment already documents as "HR only, never sent to the candidate-facing
-// API". Strip them for anyone who isn't authenticated staff, same
-// req.user?.type check listPublic uses just above.
+// candidates/guests (ApplyForm.jsx, the public JobDetails.jsx).
+//
+// Staff see every vacancy in full. Anyone else sees a vacancy only when
+// listPublic would list it for them (same statuses, same posting-type
+// rule), or when they are a candidate who already has an application on
+// it - so a candidate can still open the advert for something they
+// applied to after it closes, fills, or has its posting type transitioned.
+// Everything else is a plain 404, not a 403, so vacancy ids can't be
+// probed to learn which unapproved or other-audience vacancies exist.
+// Previously this returned any vacancy by id to anyone, including
+// PendingApproval ones and Internal ones to anonymous visitors.
 async function getOne(req, res) {
-  const vacancy = await vacancyModel.findByIdWithDetails(Number(req.params.id));
+  const vacancyId = Number(req.params.id);
+  if (!Number.isInteger(vacancyId)) return res.status(404).json({ error: 'Not found' });
+  const vacancy = await vacancyModel.findByIdWithDetails(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Not found' });
-  if (req.user?.type !== 'staff') {
-    delete vacancy.internalSalaryRange;
-    delete vacancy.recruiterNotes;
+  if (req.user?.type === 'staff') return res.json(vacancy);
+
+  const listedForViewer = PUBLIC_STATUSES.includes(vacancy.status)
+    && vacancy.postingType === viewerPostingType(req.user);
+  if (!listedForViewer) {
+    const ownApplication = req.user?.type === 'candidate'
+      ? await applicationModel.findFirst({ vacancyId, candidateId: req.user.id })
+      : null;
+    if (!ownApplication) return res.status(404).json({ error: 'Not found' });
   }
-  res.json(vacancy);
+  res.json(toPublicVacancy(vacancy));
 }
 
 async function listApplications(req, res) {

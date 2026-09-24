@@ -213,30 +213,85 @@ describe('handleOfferDeclined', () => {
 
 describe('acceptOfferTransactionally', () => {
   test('reports a conflict instead of accepting when the offer is no longer Approved', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 1 }]);
+    prisma.offer.count.mockResolvedValue(0);
     prisma.offer.updateMany.mockResolvedValue({ count: 0 });
 
-    const result = await workflow.acceptOfferTransactionally(10);
+    const result = await workflow.acceptOfferTransactionally(10, 1);
 
     expect(result.conflict).toBe(true);
     expect(prisma.offer.findUnique).not.toHaveBeenCalled();
   });
 
   test('flips the offer to Accepted and recomputes vacancy status in the same transaction', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 1 }]);
+    prisma.offer.count
+      .mockResolvedValueOnce(0) // capacity check, under the lock
+      .mockResolvedValueOnce(1); // recomputeVacancyStatus, after the flip
     prisma.offer.updateMany.mockResolvedValue({ count: 1 });
     prisma.offer.findUnique.mockResolvedValue({
       id: 10, status: 'Accepted',
       application: { vacancyId: 1, candidateId: 7 }
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 1, status: 'Open', filledAt: null });
-    prisma.offer.count.mockResolvedValue(1);
 
-    const result = await workflow.acceptOfferTransactionally(10);
+    const result = await workflow.acceptOfferTransactionally(10, 1);
 
     expect(prisma.offer.updateMany).toHaveBeenCalledWith({
       where: { id: 10, status: 'Approved' }, data: { status: 'Accepted', decidedAt: expect.any(Date) }
     });
     expect(prisma.vacancy.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { status: 'Filled', filledAt: expect.any(Date) } });
     expect(result.offer.id).toBe(10);
+  });
+
+  test('locks the vacancy row before any other query in the transaction', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 2 }]);
+    prisma.offer.count.mockResolvedValue(0);
+    prisma.offer.updateMany.mockResolvedValue({ count: 0 });
+
+    await workflow.acceptOfferTransactionally(10, 1);
+
+    const [strings, vacancyId] = prisma.$queryRaw.mock.calls[0];
+    expect(strings.join('?')).toMatch(/SELECT positionsRequired FROM Vacancy WHERE id = \? FOR UPDATE/);
+    expect(vacancyId).toBe(1);
+    // Lock first, then the capacity count - the order MySQL's snapshot rules depend on.
+    expect(prisma.$queryRaw.mock.invocationCallOrder[0])
+      .toBeLessThan(prisma.offer.count.mock.invocationCallOrder[0]);
+  });
+
+  test('refuses to accept once every position is already filled, without touching the offer', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 2 }]);
+    prisma.offer.count.mockResolvedValue(2);
+
+    const result = await workflow.acceptOfferTransactionally(10, 1);
+
+    expect(result).toEqual({ full: true });
+    expect(prisma.offer.count).toHaveBeenCalledWith({ where: { status: 'Accepted', application: { vacancyId: 1 } } });
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+  });
+
+  test('reports a conflict when the vacancy row no longer exists', async () => {
+    prisma.$queryRaw.mockResolvedValue([]);
+
+    const result = await workflow.acceptOfferTransactionally(10, 1);
+
+    expect(result.conflict).toBe(true);
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('assertNotSelfApprovedOffer', () => {
+  test('blocks the person who recommended the offer from approving it', () => {
+    expect(() => workflow.assertNotSelfApprovedOffer({ recommendedById: 4 }, 4)).toThrow(/Self-approval blocked/);
+  });
+
+  test('allows a different approver', () => {
+    expect(() => workflow.assertNotSelfApprovedOffer({ recommendedById: 4 }, 5)).not.toThrow();
+  });
+
+  test('allows approval of a legacy offer with no recorded recommender', () => {
+    expect(() => workflow.assertNotSelfApprovedOffer({ recommendedById: null }, 5)).not.toThrow();
   });
 });
 

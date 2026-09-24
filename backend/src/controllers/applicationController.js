@@ -1,4 +1,5 @@
 const { sendError } = require('../utils/errorResponse');
+const { toPublicVacancy } = require('../utils/publicVacancy');
 const applicationModel = require('../models/applicationModel');
 const offerModel = require('../models/offerModel');
 const slaModel = require('../models/slaModel');
@@ -316,6 +317,11 @@ async function approveOffer(req, res) {
   if (existing.status !== 'Recommended') {
     return res.status(422).json({ error: `An offer at status "${existing.status}" cannot be approved` });
   }
+  try {
+    workflow.assertNotSelfApprovedOffer(existing, req.user.id);
+  } catch (err) {
+    return sendError(res, err, 422);
+  }
 
   // Atomic guard - scoped to the status just read, so a second concurrent
   // approve (double-click, or two Managers racing) can't both succeed and
@@ -360,9 +366,12 @@ async function acceptOffer(req, res) {
     return res.status(422).json({ error: `An offer at status "${existing.status}" cannot be accepted` });
   }
 
-  const result = await workflow.acceptOfferTransactionally(offerId);
+  const result = await workflow.acceptOfferTransactionally(offerId, existing.application.vacancyId);
   if (result.conflict) {
     return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
+  }
+  if (result.full) {
+    return res.status(409).json({ error: 'All positions for this vacancy have already been filled, so this offer can no longer be accepted. Please contact HR.' });
   }
   const offer = result.offer;
 
@@ -380,7 +389,8 @@ async function acceptOffer(req, res) {
     console.error(`Failed to capture hire snapshot for offer ${offerId}:`, err);
   }
   broadcastDashboardEvent('OfferAccepted', { offerId });
-  res.json(offer);
+  // The candidate is the caller here - strip HR-only vacancy columns.
+  res.json({ ...offer, application: { ...offer.application, vacancy: toPublicVacancy(offer.application.vacancy) } });
 }
 
 async function declineOffer(req, res) {
@@ -399,7 +409,9 @@ async function declineOffer(req, res) {
     return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
   }
   broadcastDashboardEvent('OfferDeclined', { offerId });
-  res.json(result);
+  // result.promoted is the NEXT reserve candidate's application row - another
+  // applicant's data, never to be returned to the candidate who declined.
+  res.json({ message: 'Offer declined' });
 }
 
 module.exports = {
