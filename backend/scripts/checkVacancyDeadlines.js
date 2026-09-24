@@ -1,7 +1,5 @@
-// Run on a schedule (e.g. hourly via cron), not as an in-process timer -
-// same reasoning as scripts/checkSlaEscalations.js: this belongs outside
-// the request-serving Node process, not competing with it for the event
-// loop.
+// Run on a schedule (the scheduler worker, or cron), not as an in-process
+// timer inside the API - same reasoning as scripts/checkSlaEscalations.js.
 // 0 * * * * cd /path/to/backend && node scripts/checkVacancyDeadlines.js
 //
 // Vacancy.status is deliberately never mutated just because a deadline
@@ -10,10 +8,14 @@
 // a notification-worthy event for HR, not a status transition. Candidate-
 // facing visibility for a lapsed vacancy is handled separately, in
 // vacancyController.listPublic's own deadline filter.
+// Loads SMTP_* etc. from backend/.env when run directly. Prisma reads
+// DATABASE_URL from .env on its own, but the mailer does not - without
+// this, emails sent from a cron-run script always failed.
+require('dotenv').config();
 const prisma = require('../src/config/db');
 const { notify } = require('../src/services/notificationService');
 
-async function main() {
+async function run() {
   const now = new Date();
 
   // deadlineNotifiedAt: null is the one-time-fire guard (same idiom as
@@ -46,9 +48,11 @@ async function main() {
     await prisma.vacancy.update({ where: { id: vacancy.id }, data: { deadlineNotifiedAt: now } });
   }
 
-  console.log(`Vacancy deadline check complete. ${passed.length} vacancy(ies) notified.`);
+  return `Vacancy deadline check complete. ${passed.length} vacancy(ies) notified.`;
 }
 
-main()
-  .catch((e) => { console.error(e); process.exit(1); })
-  .finally(() => prisma.$disconnect());
+module.exports = { run };
+
+if (require.main === module) {
+  require('../src/utils/jobRunner').runAsScript('checkVacancyDeadlines', run);
+}

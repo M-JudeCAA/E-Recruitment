@@ -18,6 +18,7 @@
                                       falling back to an invalid/inherited value before this. */
   --color-danger: #b3261e;
   --color-warning: #a66a00;
+  --color-warning-light: #FDF3E1; /* background for warning banners (Alert type="warning") */
   /* Decorative-only accent (aviation gold) - purely for visual richness on
      the marketing surfaces (Home.jsx hero/highlights), never for status or
      semantic meaning the way accent/success/danger/warning are used

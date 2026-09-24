@@ -7,6 +7,7 @@ import { useDashboardEvents } from '../models/dashboardSocket';
 import HRSidebar from '../components/HRSidebar';
 import Card from '../components/Card';
 import Alert from '../components/Alert';
+import SystemHealthBanner from '../components/SystemHealthBanner';
 import StatusBadge from '../components/StatusBadge';
 import LiveIndicator from '../components/LiveIndicator';
 import FollowUpsPanel from '../components/FollowUpsPanel';
@@ -367,6 +368,7 @@ export default function HRHome() {
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <Alert type="error" message={error} />
+          <SystemHealthBanner />
 
           <GreetingHeader staff={staff} connected={connected} />
 

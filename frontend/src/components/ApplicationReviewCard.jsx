@@ -66,7 +66,7 @@ export default function ApplicationReviewCard({
 
   // Only one modal is ever open for this card at a time, so a single
   // discriminated slot is enough instead of five separate booleans.
-  const [activeModal, setActiveModal] = useState(null); // 'verify' | 'reject' | 'interview' | 'score' | 'finalize' | null
+  const [activeModal, setActiveModal] = useState(null); // 'verify' | 'reject' | 'interview' | 'score' | 'finalize' | 'withdrawOffer' | null
 
   const [verifyDecision, setVerifyDecision] = useState('HR_Verified');
   const [verifyComments, setVerifyComments] = useState('');
@@ -203,6 +203,23 @@ export default function ApplicationReviewCard({
       onUpdated();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not finalize recommendation');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Principal_HR_Officer+ can take back an offer that is still in play -
+  // typically one that can no longer be accepted because the vacancy filled.
+  const [withdrawReason, setWithdrawReason] = useState('');
+  const openWithdrawOffer = () => { setWithdrawReason(''); setError(''); setActiveModal('withdrawOffer'); };
+  const submitWithdrawOffer = async () => {
+    setSubmitting(true);
+    try {
+      await staffClient.patch(`/api/applications/offers/${app.offer.id}/withdraw`, { reason: withdrawReason || undefined });
+      closeModal();
+      onUpdated();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not withdraw this offer');
     } finally {
       setSubmitting(false);
     }
@@ -480,6 +497,15 @@ export default function ApplicationReviewCard({
           <Button onClick={approveOffer} disabled={submitting}>Approve offer</Button>
         )}
         {app.offer && <span style={{ marginLeft: 8 }}>Offer: <StatusBadge status={app.offer.status} /></span>}
+        {app.offer && ['Recommended', 'Approved'].includes(app.offer.status) && rank >= ROLE_RANK.Principal_HR_Officer && (
+          <Button
+            variant="ghost"
+            style={{ marginLeft: 8, color: 'var(--color-danger)' }}
+            onClick={openWithdrawOffer}
+          >
+            Withdraw offer
+          </Button>
+        )}
         {!NOT_REJECTABLE.includes(app.status) && rank >= ROLE_RANK.Senior_HR_Officer && (
           <Button
             variant="ghost"
@@ -506,6 +532,26 @@ export default function ApplicationReviewCard({
             but is included in their notification when given.
           </p>
           <TextArea label="Reason (optional)" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+        </Modal>
+      )}
+
+      {activeModal === 'withdrawOffer' && (
+        <Modal
+          title={`Withdraw offer — ${app.candidate.fullName}`}
+          onClose={closeModal}
+          footer={<>
+            <Button variant="ghost" onClick={closeModal} disabled={submitting}>Cancel</Button>
+            <Button onClick={submitWithdrawOffer} disabled={submitting}>{submitting ? 'Withdrawing...' : 'Confirm withdrawal'}</Button>
+          </>}
+        >
+          {error && <div style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
+            The offer can no longer be accepted once withdrawn, and this cannot be undone.
+            {app.offer?.status === 'Approved'
+              ? ' The candidate has already been told about this offer, so they will be notified by email and in-app. A reason is optional but is included in their notification when given.'
+              : ' The offer has not been approved yet, so the candidate was never told about it and will not be notified.'}
+          </p>
+          <TextArea label="Reason (optional)" value={withdrawReason} onChange={(e) => setWithdrawReason(e.target.value)} />
         </Modal>
       )}
 

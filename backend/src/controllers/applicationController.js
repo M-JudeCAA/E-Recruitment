@@ -6,6 +6,8 @@ const slaModel = require('../models/slaModel');
 const vacancyModel = require('../models/vacancyModel');
 const workflow = require('../services/workflowService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
+const { notifyAllWithRole } = require('../services/notificationService');
+const prisma = require('../config/db');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { ROLE_RANK } = require('../middleware/auth');
 
@@ -371,6 +373,12 @@ async function acceptOffer(req, res) {
     return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
   }
   if (result.full) {
+    // The candidate was told to contact HR - make sure HR already knows,
+    // since this offer now can't be accepted until HR withdraws it or
+    // raises positionsRequired.
+    await notifyHrSafely(existing.application.vacancy, 'VacancyFilledWithOpenOffers', offerId,
+      `A candidate tried to accept their offer for ${describeVacancy(existing.application.vacancy)} (application #${existing.applicationId}), `
+      + 'but every position is already filled, so the acceptance was refused. Withdraw the offer, or raise the number of positions if another hire is wanted.');
     return res.status(409).json({ error: 'All positions for this vacancy have already been filled, so this offer can no longer be accepted. Please contact HR.' });
   }
   const offer = result.offer;
@@ -387,6 +395,25 @@ async function acceptOffer(req, res) {
     });
   } catch (err) {
     console.error(`Failed to capture hire snapshot for offer ${offerId}:`, err);
+  }
+  // If this acceptance filled the vacancy, any other offer still in play on
+  // it can no longer be accepted - flag them to HR now rather than letting
+  // a candidate discover it by being refused.
+  try {
+    const vacancy = await vacancyModel.findById(offer.application.vacancyId);
+    if (vacancy?.status === 'Filled') {
+      const openOffers = await offerModel.findOpenForVacancy(vacancy.id, offer.id);
+      if (openOffers.length > 0) {
+        const list = openOffers
+          .map((o) => `${o.application.candidate?.fullName || 'a candidate'} (application #${o.applicationId}, offer ${o.status})`)
+          .join('; ');
+        await notifyAllWithRole('Principal_HR_Officer', 'VacancyFilledWithOpenOffers', vacancy.id,
+          `${describeVacancy(vacancy)} is now filled, but ${openOffers.length} other offer${openOffers.length === 1 ? ' is' : 's are'} still open: ${list}. `
+          + 'They can no longer be accepted. Withdraw them, or raise the number of positions if more hires are wanted.');
+      }
+    }
+  } catch (err) {
+    console.error(`Failed to flag open offers after offer ${offerId} was accepted:`, err);
   }
   broadcastDashboardEvent('OfferAccepted', { offerId });
   // The candidate is the caller here - strip HR-only vacancy columns.
@@ -408,13 +435,88 @@ async function declineOffer(req, res) {
   if (result.conflict) {
     return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
   }
+  // Previously nobody was told: the next reserve was promoted silently and
+  // HR only found out from the dashboard. Principal HR Officers are the
+  // ones who recommend the replacement offer.
+  const vacancy = existing.application.vacancy;
+  await notifyHrSafely(vacancy, 'OfferDeclined', offerId, result.promoted
+    ? `An offer for ${describeVacancy(vacancy)} was declined (application #${existing.applicationId}). `
+      + `The next reserve candidate (application #${result.promoted.id}) has been moved to Primary - recommend an offer for them when ready.`
+    : `An offer for ${describeVacancy(vacancy)} was declined (application #${existing.applicationId}). `
+      + 'There are no reserve candidates left on this vacancy\'s shortlist.');
   broadcastDashboardEvent('OfferDeclined', { offerId });
   // result.promoted is the NEXT reserve candidate's application row - another
   // applicant's data, never to be returned to the candidate who declined.
   res.json({ message: 'Offer declined' });
 }
 
+// Withdraws an offer that is still in play (Recommended or Approved) - for
+// an offer that can no longer be accepted because the vacancy filled, or
+// one HR otherwise needs to take back. Principal_HR_Officer+ (the tier that
+// recommends offers). The candidate is only told if they had been told
+// about the offer in the first place (Approved - see approveOffer). Who
+// withdrew it, and why, goes to AuditLog, since Offer has no column for it.
+// The application stays at Offered: its one Offer row (applicationId is
+// unique) now reads Withdrawn, which is what the candidate sees.
+async function withdrawOffer(req, res) {
+  const offerId = Number(req.params.offerId);
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 1000) : '';
+  const existing = await offerModel.findById(offerId);
+  if (!existing) return res.status(404).json({ error: 'Offer not found' });
+  if (!['Recommended', 'Approved'].includes(existing.status)) {
+    return res.status(422).json({ error: `An offer at status "${existing.status}" cannot be withdrawn` });
+  }
+
+  const result = await offerModel.updateIfStatus(offerId, existing.status, { status: 'Withdrawn', decidedAt: new Date() });
+  if (result.count === 0) {
+    return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'Offer', entityId: offerId, action: 'Offer withdrawn', performedById: req.user.id,
+      payload: { previousStatus: existing.status, reason: reason || null }
+    }
+  });
+  // A Recommended offer may have an active OfferApproval escalation - it
+  // is resolved now, not left "active" forever.
+  await slaModel.resolveEscalations('OfferApproval', offerId);
+
+  if (existing.status === 'Approved') {
+    try {
+      await notifyCandidate(existing.application.candidateId, 'OfferWithdrawn',
+        `Your offer for "${existing.application.vacancy.title}" has been withdrawn.`
+        + (reason ? ` Reason given: ${escapeHtml(reason)}` : '')
+        + ' Please contact HR if you have any questions.');
+    } catch (err) {
+      console.error(`Failed to notify candidate ${existing.application.candidateId} of withdrawn offer ${offerId}:`, err);
+    }
+  }
+  broadcastDashboardEvent('OfferWithdrawn', { offerId });
+  res.json(await offerModel.findById(offerId));
+}
+
+function describeVacancy(vacancy) {
+  return vacancy ? `${vacancy.jobRef} (${vacancy.title})` : 'a vacancy';
+}
+
+// The notification message goes into an HTML email body as-is (see
+// candidateNotificationService), so free text typed by staff is escaped.
+function escapeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Staff notifications here are a side effect of an action that has already
+// committed - a notification failure must never turn it into a 500.
+async function notifyHrSafely(vacancy, taskType, taskId, message) {
+  try {
+    await notifyAllWithRole('Principal_HR_Officer', taskType, taskId, message);
+  } catch (err) {
+    console.error(`Failed to send ${taskType} notification for ${describeVacancy(vacancy)}:`, err);
+  }
+}
+
 module.exports = {
   count, list, shortlist, reject, approveShortlist, recommendOffer,
-  listOffersPendingApproval, approveOffer, acceptOffer, declineOffer
+  listOffersPendingApproval, approveOffer, acceptOffer, declineOffer, withdrawOffer
 };

@@ -234,3 +234,27 @@ describe('headcountByDirectorate', () => {
     ]);
   });
 });
+
+describe('systemHealth', () => {
+  test('returns the warnings for the staff banner', async () => {
+    prisma.systemHealth.findMany.mockResolvedValue([]);
+    const res = mockRes();
+
+    await dashboardController.systemHealth({ user: { id: 1 } }, res);
+
+    const body = res.json.mock.calls[0][0];
+    expect(body.warnings[0]).toMatch(/Scheduled maintenance has not run/);
+  });
+
+  test('still returns the status when alerting Directors fails', async () => {
+    prisma.systemHealth.findMany.mockResolvedValue([]);
+    prisma.systemHealth.upsert.mockRejectedValueOnce(new Error('write failed'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = mockRes();
+
+    await dashboardController.systemHealth({ user: { id: 1 } }, res);
+
+    expect(res.json.mock.calls[0][0].warnings.length).toBeGreaterThan(0);
+    console.error.mockRestore();
+  });
+});

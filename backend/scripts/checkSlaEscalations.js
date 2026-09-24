@@ -1,8 +1,15 @@
-// Run on a schedule (e.g. hourly via cron), not as an in-process timer -
-// the same reasoning already applied elsewhere in this project: scheduled
+// Run on a schedule, not as an in-process timer inside the API - scheduled
 // logic belongs outside the request-serving Node process, not competing
-// with it for the event loop.
+// with it for the event loop. Normally run hourly by the scheduler worker
+// (`npm run jobs`, scripts/scheduler.js); can also be run directly from
+// cron / Task Scheduler:
 // 0 * * * * cd /path/to/backend && node scripts/checkSlaEscalations.js
+// Either way each run is recorded in SystemHealth, so staff are warned if
+// it stops running (services/systemHealthService.js).
+// Loads SMTP_* etc. from backend/.env when run directly. Prisma reads
+// DATABASE_URL from .env on its own, but the mailer does not - without
+// this, emails sent from a cron-run script always failed.
+require('dotenv').config();
 const slaModel = require('../src/models/slaModel');
 const { notifyAllWithRole } = require('../src/services/notificationService');
 // getPendingTasks/INITIAL_TIER/tierAbove now live in slaStatusService,
@@ -11,9 +18,8 @@ const { notifyAllWithRole } = require('../src/services/notificationService');
 // overdue" - this script is the only one of the two with side effects
 // (it's what actually creates the escalation + fires the notification).
 const { INITIAL_TIER, tierAbove, getPendingTasks } = require('../src/services/slaStatusService');
-const prisma = require('../src/config/db');
 
-async function main() {
+async function run() {
   const now = new Date();
   let totalEscalated = 0;
 
@@ -55,9 +61,11 @@ async function main() {
     }
   }
 
-  console.log(`SLA check complete. ${totalEscalated} task(s) escalated.`);
+  return `SLA check complete. ${totalEscalated} task(s) escalated.`;
 }
 
-main()
-  .catch((e) => { console.error(e); process.exit(1); })
-  .finally(() => prisma.$disconnect());
+module.exports = { run };
+
+if (require.main === module) {
+  require('../src/utils/jobRunner').runAsScript('checkSlaEscalations', run);
+}

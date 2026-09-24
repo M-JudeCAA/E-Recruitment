@@ -1,6 +1,7 @@
 const dashboardModel = require('../models/dashboardModel');
 const slaModel = require('../models/slaModel');
 const { getPendingTasksWithStatus } = require('../services/slaStatusService');
+const systemHealthService = require('../services/systemHealthService');
 
 // Executive summary KPIs for the Manager/Director landing dashboard - one
 // round trip in place of the several per-status client-side filters
@@ -237,7 +238,24 @@ async function screeningBreakdown(req, res) {
   });
 }
 
+// Warnings for the banner on the HR home page: scheduled maintenance that
+// has stopped running, or outgoing email that is failing. Also the moment
+// Directors get alerted when nothing else would notice - if the scheduler
+// worker itself is down, this page load is what catches it (see
+// systemHealthService.checkAndAlert). An alerting problem never fails the
+// request: staff still get the banner.
+async function systemHealth(req, res) {
+  let status;
+  try {
+    status = await systemHealthService.checkAndAlert();
+  } catch (err) {
+    console.error('System health alerting failed:', err);
+    status = await systemHealthService.getStatus();
+  }
+  res.json(status);
+}
+
 module.exports = {
   summary, activity, headcountByDirectorate, trends, followUps, slaPolicies,
-  upcomingInterviews, screeningBreakdown
+  upcomingInterviews, screeningBreakdown, systemHealth
 };

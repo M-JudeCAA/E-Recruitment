@@ -25,5 +25,7 @@ router.get('/trends', authenticate, requireStaffRole('HR_Officer'), controller.t
 router.get('/follow-ups', authenticate, requireStaffRole('HR_Officer'), controller.followUps);
 router.get('/upcoming-interviews', authenticate, requireStaffRole('HR_Officer'), controller.upcomingInterviews);
 router.get('/screening-breakdown', authenticate, requireStaffRole('HR_Officer'), controller.screeningBreakdown);
+// Every staff tier sees the same system warnings - they affect everyone's work.
+router.get('/system-health', authenticate, requireStaffRole('HR_Officer'), controller.systemHealth);
 
 module.exports = router;

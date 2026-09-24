@@ -897,6 +897,22 @@ enum SlaTaskType {
   // applicationDraftController.submit. Internal candidates additionally
   // trigger workflowService.notifySupervisor, which is unrelated to this.
   NewApplicationSubmitted
+  // Same "reuse notify()'s plumbing" principle - none of these three is
+  // part of the SLA-escalation loop either.
+  // Sent to every Principal_HR_Officer when a candidate declines an offer
+  // (applicationController.declineOffer), naming the reserve candidate the
+  // decline promoted, or saying none is left.
+  OfferDeclined
+  // Sent to every Principal_HR_Officer when a vacancy is Filled while other
+  // offers on it are still Recommended/Approved, or when a candidate's
+  // acceptance is refused because every position is already taken - those
+  // offers can no longer be accepted and need HR to withdraw them or raise
+  // positionsRequired (applicationController.acceptOffer).
+  VacancyFilledWithOpenOffers
+  // In-app only, to every Director: outgoing email has been failing, or the
+  // scheduled maintenance jobs have stopped running (systemHealthService).
+  // taskId is 0 - there is no single entity behind it.
+  SystemHealthAlert
 }
 
 model SlaPolicy {
@@ -952,6 +968,9 @@ enum CandidateNotificationType {
   ApplicationRejected
   InterviewScheduled
   OfferReceived
+  // HR withdrew an offer the candidate had already been told about (it was
+  // Approved) - applicationController.withdrawOffer.
+  OfferWithdrawn
 }
 
 // A separate model rather than reusing Notification above: recipientId
@@ -971,4 +990,24 @@ model CandidateNotification {
   message     String                    @db.Text
   sentAt      DateTime                  @default(now())
   readAt      DateTime?
+}
+
+// One row per thing whose silent failure would otherwise go unnoticed:
+// each scheduled maintenance job ("job:<name>", written by
+// utils/jobRunner.js from the scheduler worker or a cron-run script) and
+// outgoing email ("mail", written by utils/mailer.js). Read by
+// GET /api/dashboard/system-health for the staff warning banner, and by
+// systemHealthService to alert Directors. A key/value shape rather than
+// one model per concern, since both only need "when did it last work,
+// when did it last fail, and why".
+model SystemHealth {
+  key                 String    @id
+  lastSuccessAt       DateTime?
+  lastFailureAt       DateTime?
+  lastError           String?   @db.Text
+  consecutiveFailures Int       @default(0)
+  // When Directors were last alerted about this key, so a lasting outage
+  // raises one alert a day rather than one per failure.
+  alertedAt           DateTime?
+  updatedAt           DateTime  @updatedAt
 }

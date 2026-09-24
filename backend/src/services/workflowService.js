@@ -207,8 +207,9 @@ async function handleOfferDeclined(offerId) {
         where: { id: nextReserve.id },
         data: { listStatus: 'Primary' }
       });
-      // In a full build: notify the Principal HR Officer that a new
-      // offer recommendation is needed for nextReserve.id.
+      // Principal HR Officers are notified that a new recommendation is
+      // needed by the caller (applicationController.declineOffer), outside
+      // this transaction - a notification must never roll back the decline.
     }
 
     await recomputeVacancyStatus(vacancyId, tx);

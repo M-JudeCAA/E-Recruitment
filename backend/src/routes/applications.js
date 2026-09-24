@@ -44,5 +44,8 @@ router.get('/offers/pending-approval', authenticate, requireStaffRole('Manager')
 router.patch('/offers/:offerId/approve', authenticate, requireStaffRole('Manager'), controller.approveOffer);
 router.patch('/offers/:offerId/accept', authenticate, requireCandidate, controller.acceptOffer);
 router.patch('/offers/:offerId/decline', authenticate, requireCandidate, controller.declineOffer);
+// Principal_HR_Officer+ - the tier that recommends offers can also take one
+// back (e.g. one that can no longer be accepted because the vacancy filled).
+router.patch('/offers/:offerId/withdraw', authenticate, requireStaffRole('Principal_HR_Officer'), controller.withdrawOffer);
 
 module.exports = router;

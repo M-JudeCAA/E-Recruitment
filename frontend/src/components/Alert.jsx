@@ -5,7 +5,8 @@ export default function Alert({ type = 'info', message }) {
   const styles = {
     success: { background: '#eaf6ef', color: 'var(--color-accent)' },
     error: { background: '#fbeceb', color: 'var(--color-danger)' },
-    info: { background: 'var(--color-primary-light)', color: 'var(--color-primary)' }
+    info: { background: 'var(--color-primary-light)', color: 'var(--color-primary)' },
+    warning: { background: 'var(--color-warning-light)', color: 'var(--color-warning)' }
   };
   return (
     <div style={{
