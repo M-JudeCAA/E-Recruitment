@@ -2,6 +2,7 @@ const express = require('express');
 const controller = require('../controllers/candidateController');
 const notificationController = require('../controllers/candidateNotificationController');
 const cvParseController = require('../controllers/cvParseController');
+const candidateInterviewController = require('../controllers/candidateInterviewController');
 const { authenticate, requireCandidate } = require('../middleware/auth');
 const { uploadMemory } = require('../middleware/uploadMemory');
 const { uploadPhoto } = require('../middleware/upload');
@@ -33,6 +34,10 @@ router.put('/me/internal-profile', authenticate, requireCandidate, asyncHandler(
 router.put('/me/photo', authenticate, requireCandidate, uploadPhoto.single('photo'), asyncHandler(controller.updatePhoto));
 router.delete('/me/photo', authenticate, requireCandidate, asyncHandler(controller.removePhoto));
 router.get('/me/applications', authenticate, requireCandidate, asyncHandler(controller.myApplications));
+// A candidate's own interview invitations - confirm, ask for another time, or
+// add it to their calendar. See candidateInterviewController.
+router.patch('/me/interviews/:id/respond', authenticate, requireCandidate, asyncHandler(candidateInterviewController.respond));
+router.get('/me/interviews/:id/calendar.ics', authenticate, requireCandidate, asyncHandler(candidateInterviewController.calendarFile));
 router.get('/me/notifications', authenticate, requireCandidate, asyncHandler(notificationController.listMine));
 router.patch('/me/notifications/:id/read', authenticate, requireCandidate, asyncHandler(notificationController.markRead));
 router.post('/me/parse-cv', authenticate, requireCandidate, uploadMemory.single('cv'), asyncHandler(cvParseController.parseCv));

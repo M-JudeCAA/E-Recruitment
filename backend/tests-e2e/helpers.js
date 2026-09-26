@@ -68,7 +68,8 @@ function api(token) {
   return {
     get: (url) => withAuth(request(app).get(url)),
     post: (url, body) => withAuth(request(app).post(url)).send(body || {}),
-    patch: (url, body) => withAuth(request(app).patch(url)).send(body || {})
+    patch: (url, body) => withAuth(request(app).patch(url)).send(body || {}),
+    delete: (url) => withAuth(request(app).delete(url))
   };
 }
 

@@ -173,14 +173,14 @@ function RecentVacancies({ vacancies, loading }) {
 }
 
 // Interview rounds scheduled in the next 7 days, across every vacancy -
-// what to walk into this week, without hunting through HRDashboard's
-// interviews tab (which lists every round ever scheduled, not just what's
-// imminent).
+// what to walk into this week. Each row opens that interview in the
+// Interview Hub (InterviewHub.jsx), which has the full agenda.
 function UpcomingInterviews({ items, loading }) {
   return (
     <Card style={{ marginBottom: 0, flex: '1 1 320px', minWidth: 0 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', marginBottom: 10 }}>
-        Upcoming interviews (7 days)
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', marginBottom: 10, display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+        <span>Upcoming interviews (7 days)</span>
+        <Link to="/hr/interviews" style={{ fontWeight: 400, fontSize: 12 }}>Interview Hub &rarr;</Link>
       </div>
       {loading ? (
         <PanelRowsSkeleton />
@@ -191,7 +191,7 @@ function UpcomingInterviews({ items, loading }) {
           {items.map((r, i) => (
             <Link
               key={r.id}
-              to={`/hr/applications?vacancyId=${r.vacancyId}`}
+              to={`/hr/interviews?round=${r.id}`}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0',
                 borderTop: i > 0 ? '1px solid var(--color-border)' : 'none',
@@ -204,11 +204,14 @@ function UpcomingInterviews({ items, loading }) {
                   {r.candidateName} &middot; {r.vacancyTitle}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                  Round {r.roundNumber} &middot; {r.mode || 'mode TBC'}
+                  Round {r.roundNumber} &middot; {r.mode === 'In-person' && r.location ? r.location : (r.mode || 'mode TBC')}
+                  {r.candidateResponse === 'Confirmed' && <> &middot; <span style={{ color: 'var(--color-accent)' }}>confirmed</span></>}
+                  {r.candidateResponse === 'RescheduleRequested' && <> &middot; <span style={{ color: 'var(--color-warning)' }}>asked to move</span></>}
                 </div>
               </div>
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)', flexShrink: 0, textAlign: 'right' }}>
                 {r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }) : 'unscheduled'}
+                {r.scheduledDate && <div>{new Date(r.scheduledDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>}
               </div>
             </Link>
           ))}

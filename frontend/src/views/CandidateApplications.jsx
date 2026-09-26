@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CalendarClock, Video, MapPin, Award, ClipboardList } from 'lucide-react';
+import { Award, ClipboardList } from 'lucide-react';
 import client from '../models/apiClient';
 import { useAuth } from '../models/AuthContext';
 import CandidateSidebar from '../components/CandidateSidebar';
@@ -15,6 +15,7 @@ import DataTable from '../components/DataTable';
 import BoardView from '../components/BoardView';
 import LoadMoreControl from '../components/LoadMoreControl';
 import { useConfirm } from '../components/ConfirmDialog';
+import CandidateInterviewCard from '../components/interviews/CandidateInterviewCard';
 
 const PAGE_SIZE = 10;
 
@@ -40,28 +41,6 @@ const FILTERS = [
   { key: 'offers', label: 'Offers', test: (a) => a.status === 'Offered' || !!a.offer },
   { key: 'closed', label: 'Closed', test: (a) => CLOSED_STATUSES.includes(a.status) },
 ];
-
-function InterviewRoundRow({ round }) {
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13,
-      color: 'var(--color-text-muted)', padding: '6px 0'
-    }}>
-      <CalendarClock size={15} style={{ flexShrink: 0, marginTop: 1 }} />
-      <span>
-        <strong style={{ color: 'var(--color-text)' }}>Round {round.roundNumber}</strong>
-        {round.scheduledDate ? ` — ${new Date(round.scheduledDate).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}` : ' — date to be confirmed'}
-        {round.mode && (
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 8 }}>
-            {round.mode.toLowerCase().includes('virtual') || round.mode.toLowerCase().includes('online')
-              ? <Video size={13} /> : <MapPin size={13} />}
-            {round.mode}
-          </span>
-        )}
-      </span>
-    </div>
-  );
-}
 
 function OfferPanel({ offer, onRespond, busy }) {
   return (
@@ -94,7 +73,11 @@ export default function CandidateApplications() {
   const confirm = useConfirm();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
+  // ?filter=interviews (CandidateHome's "Confirm or reschedule") opens on that tab.
+  const [filter, setFilter] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get('filter');
+    return FILTERS.some((f) => f.key === requested) ? requested : 'all';
+  });
   const [offerMessage, setOfferMessage] = useState('');
   const [withdrawMessage, setWithdrawMessage] = useState('');
   const [busyOfferId, setBusyOfferId] = useState(null);
@@ -318,7 +301,7 @@ export default function CandidateApplications() {
                   {app.interviewRounds
                     .slice()
                     .sort((a, b) => a.roundNumber - b.roundNumber)
-                    .map((round) => <InterviewRoundRow key={round.id} round={round} />)}
+                    .map((round) => <CandidateInterviewCard key={round.id} round={round} onChanged={loadApplications} />)}
                 </div>
               )}
 

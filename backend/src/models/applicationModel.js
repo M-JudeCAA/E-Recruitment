@@ -15,6 +15,10 @@ const CANDIDATE_SELECT = {
   internalProfile: true
 };
 
+// Interview rounds as HR lists show them - with the panel, so a review card
+// can show panel progress without fetching each round separately.
+const HR_ROUNDS_INCLUDE = { include: { panelMembers: true }, orderBy: { roundNumber: 'asc' } };
+
 // Cross-vacancy include (findManyForHr) - same candidate/interviewRounds/
 // offer/rejectedBy shape as findByVacancy, plus a vacancy select since this
 // spans vacancies instead of being scoped to one already-known vacancy.
@@ -26,7 +30,7 @@ const HR_LIST_INCLUDE = {
       department: { select: { name: true, directorate: { select: { name: true } } } }
     }
   },
-  interviewRounds: true,
+  interviewRounds: HR_ROUNDS_INCLUDE,
   offer: true,
   rejectedBy: { select: { name: true } }
 };
@@ -84,7 +88,7 @@ module.exports = {
     where: { vacancyId, status: { not: 'Draft' } },
     include: {
       candidate: { select: CANDIDATE_SELECT },
-      interviewRounds: true,
+      interviewRounds: HR_ROUNDS_INCLUDE,
       offer: true,
       rejectedBy: { select: { name: true } }
     },
@@ -126,6 +130,37 @@ module.exports = {
   }),
   // Same Draft exclusion as findByVacancy - a single query in place of the
   // per-vacancy fetch-and-sum HRHome.jsx used to do.
+  // Applications an interview can be scheduled for on one vacancy - the
+  // Interview Hub's scheduler. Same gate as interviewController's
+  // SCHEDULABLE_STATUSES plus no offer yet; ordered like the shortlist.
+  findSchedulable: (vacancyId, statuses) => prisma.application.findMany({
+    where: { vacancyId, status: { in: statuses }, offer: null },
+    select: {
+      id: true, status: true, rank: true, listStatus: true, shortlistScore: true,
+      candidate: { select: { id: true, fullName: true, email: true, candidateType: true } },
+      interviewRounds: {
+        select: { id: true, roundNumber: true, status: true, scheduledDate: true, recommendation: true },
+        orderBy: { roundNumber: 'asc' }
+      }
+    },
+    orderBy: [{ rank: 'asc' }, { shortlistScore: 'desc' }]
+  }),
+  // The applications named in a bulk-scheduling request, scoped to the
+  // vacancy so ids from another vacancy can't be slipped in.
+  findForSession: (vacancyId, ids) => prisma.application.findMany({
+    where: { vacancyId, id: { in: ids } },
+    select: {
+      id: true, status: true, candidateId: true,
+      candidate: { select: { id: true, fullName: true } },
+      offer: { select: { id: true } }
+    }
+  }),
+  // Shortlisted with nothing scheduled yet - the Hub's "waiting to be
+  // scheduled" prompt, per vacancy.
+  findShortlistedUnscheduled: () => prisma.application.findMany({
+    where: { status: 'Shortlisted', offer: null },
+    select: { id: true, vacancy: { select: { id: true, jobRef: true, title: true } } }
+  }),
   countAll: () => prisma.application.count({ where: { status: { not: 'Draft' } } }),
   // Same Draft exclusion, scoped to one vacancy.
   countByVacancy: (vacancyId) => prisma.application.count({ where: { vacancyId, status: { not: 'Draft' } } }),

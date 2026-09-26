@@ -271,7 +271,11 @@ async function recommendOffer(req, res) {
   // Shortlist" - a candidate with multiple rounds where an earlier round
   // said Shortlist but a later, more authoritative round said Hold/Reject
   // must not still qualify just because some earlier round once passed.
-  const mostRecentRound = [...application.interviewRounds].sort((a, b) => b.roundNumber - a.roundNumber)[0];
+  // Cancelled and no-show rounds never happened, so they are skipped - a
+  // later round that was called off doesn't cancel an earlier verdict.
+  const mostRecentRound = application.interviewRounds
+    .filter((r) => !['Cancelled', 'NoShow'].includes(r.status))
+    .sort((a, b) => b.roundNumber - a.roundNumber)[0];
   if (!mostRecentRound || mostRecentRound.score == null || mostRecentRound.recommendation !== 'Shortlist') {
     return res.status(422).json({ error: 'This application has no finalized "Shortlist" interview recommendation yet' });
   }

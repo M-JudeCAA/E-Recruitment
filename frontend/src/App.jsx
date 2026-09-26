@@ -31,6 +31,7 @@ import StaffManagement from "./views/StaffManagement";
 import VacancyDetail from "./views/VacancyDetail";
 import CreateVacancyListing from "./views/CreateVacancyListing";
 import PanelScoreAccess from "./views/PanelScoreAccess";
+import InterviewHub from "./views/InterviewHub";
 import { RequireCandidate, RequireStaff, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
 
 // Padding lives here, not on the app shell - Navbar/Footer render outside
@@ -99,6 +100,16 @@ export default function App() {
             element={
               <RequireStaff minRole="HR_Officer">
                 <HRDashboard />
+              </RequireStaff>
+            }
+          />
+          {/* Interview Hub - agenda, what needs attention, scorecards and
+              the scheduler; replaces the old Interviews tab on /hr. */}
+          <Route
+            path="/hr/interviews"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <InterviewHub />
               </RequireStaff>
             }
           />

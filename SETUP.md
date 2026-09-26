@@ -58,6 +58,7 @@ Every other field in `.env.example` needs a real value too:
 | `SMTP_*` | See [Email](#email-gmail-smtp) below |
 | `UPLOAD_DIR` | Leave as `./uploads` |
 | `TRUST_PROXY` | Optional. Which reverse proxy to believe about a client's address, used by the sign-in rate limits. Default `loopback` (a proxy on the same machine, e.g. nginx or IIS). Set to `false` if nothing sits in front of the API, or to a hop count or proxy address if the proxy is on another machine |
+| `APP_TIMEZONE` | Optional. Time zone used for interview times in emails and notifications. Default `Africa/Kampala` |
 | `SCHEDULER_INTERVAL_MINUTES` | Optional. How often the scheduler worker runs the maintenance jobs. Default `60` |
 | `DATABASE_URL_TEST` | Only for the end-to-end tests: a separate, empty MySQL database whose name contains `test`. See [Running tests](#running-tests) |
 

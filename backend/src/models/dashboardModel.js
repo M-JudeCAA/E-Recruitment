@@ -157,17 +157,21 @@ module.exports = {
   // with no system account, see the schema comment on PanelMember) in the
   // controller to build the workload/average-score table.
   scoredPanelMembers: () => prisma.panelMember.findMany({
-    where: { score: { not: null } },
+    // A panelist who stood down (recusedAt) didn't count towards the round,
+    // so they don't count here either.
+    where: { score: { not: null }, recusedAt: null },
     select: { name: true, score: true }
   }),
 
   // Interview rounds scheduled within a window - HRHome's "Upcoming
   // interviews" panel.
   interviewRoundsScheduledBetween: (from, to) => prisma.interviewRound.findMany({
-    where: { scheduledDate: { gte: from, lte: to } },
+    // Cancelled/no-show rounds are not upcoming interviews.
+    where: { scheduledDate: { gte: from, lte: to }, status: 'Scheduled' },
     orderBy: { scheduledDate: 'asc' },
     select: {
       id: true, scheduledDate: true, mode: true, roundNumber: true,
+      durationMinutes: true, location: true, candidateResponse: true,
       application: {
         select: {
           candidate: { select: { fullName: true } },

@@ -8,6 +8,7 @@ const { fileUrl } = require('../middleware/upload');
 const { educationKey, workExperienceKey, certificateKey, examGradeKey } = require('../utils/entryDedup');
 const { normalizeStringList } = require('../utils/vacancyValidation');
 const { toPublicVacancy } = require('../utils/publicVacancy');
+const { toCandidateInterview } = require('../utils/candidateInterview');
 
 // Candidate rows carry passwordHash - fine for the internal auth-check
 // reads in candidateAuthController, but every response here goes straight
@@ -334,7 +335,15 @@ async function updateInternalProfile(req, res) {
 // which carries HR-only columns - strip them before they reach the candidate.
 async function myApplications(req, res) {
   const applications = await applicationModel.findByCandidate(req.user.id);
-  res.json(applications.map((a) => ({ ...a, vacancy: toPublicVacancy(a.vacancy) })));
+  // Interview rounds go through the same kind of whitelist as the vacancy -
+  // the panel's scores, recommendation and HR's internal notes stay staff-only.
+  res.json(applications.map((a) => ({
+    ...a,
+    vacancy: toPublicVacancy(a.vacancy),
+    interviewRounds: (a.interviewRounds || [])
+      .slice().sort((x, y) => x.roundNumber - y.roundNumber)
+      .map(toCandidateInterview)
+  })));
 }
 
 module.exports = {

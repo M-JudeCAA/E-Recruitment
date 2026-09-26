@@ -48,7 +48,7 @@ export default function HRSidebar({ active }) {
   const operationalItems = [
     { key: 'vacancies', label: 'Vacancies', icon: Briefcase, to: '/hr', section: 'Recruitment' },
     { key: 'applications', label: 'Applications', icon: FileText, to: '/hr/applications', section: 'Recruitment' },
-    { key: 'interviews', label: 'Interviews', icon: CalendarClock, to: '/hr?tab=interviews', section: 'Recruitment' },
+    { key: 'interviews', label: 'Interviews', icon: CalendarClock, to: '/hr/interviews', section: 'Recruitment' },
     { key: 'offers', label: 'Offers', icon: Award, to: '/hr?tab=offers', section: 'Recruitment' },
     { key: 'departments', label: 'Departments', icon: Building2, to: '/hr/departments', section: 'Organization' },
     ...(canManageTeam
