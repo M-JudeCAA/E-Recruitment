@@ -1,6 +1,13 @@
 import axios from 'axios';
 
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+// VITE_API_URL=same-origin: the API is reached through whatever server
+// serves the site (the `vite preview` proxy in vite.config.js), so the
+// same build works under any hostname and port - used by the Tailscale
+// Funnel demo setup in deploy/tunnel/ (candidate site on 443, staff on 8443).
+const configuredApiUrl = import.meta.env.VITE_API_URL;
+export const API_URL = configuredApiUrl === 'same-origin'
+  ? window.location.origin
+  : (configuredApiUrl || 'http://localhost:4000');
 
 export const OFFLINE_MESSAGE = 'Server offline. We can\'t reach the server right now - please check your connection and try again shortly.';
 export const TIMEOUT_MESSAGE = 'The server is taking too long to respond. Please try again.';

@@ -43,3 +43,6 @@ Thumbs.db
 coverage/
 .nyc_output/
 SPEC_BUGS_AND_CAVEATS.md
+
+# Tunnel demo (deploy/tunnel/)
+deploy/tunnel/logs/

@@ -229,6 +229,10 @@ Register-ScheduledTask -TaskName "UCAA-CheckVacancyDeadlines" -Action $action -T
 Each script reads `backend/.env` (database and SMTP settings), so it must
 run somewhere with that file present and network access to the database.
 
+## Sharing from this computer (Tailscale Funnel)
+
+See [deploy/tunnel/README.md](deploy/tunnel/README.md): runs the app here and gives it fixed public HTTPS links for demos (staff site on port 8443), free, no card needed.
+
 ## Deploying to Oracle Cloud (free)
 
 See [deploy/oracle/README.md](deploy/oracle/README.md): the whole app on one Always Free VM with Docker Compose.
