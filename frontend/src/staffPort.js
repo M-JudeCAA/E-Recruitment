@@ -5,6 +5,12 @@
 // rather than baked in at build time.
 export const STAFF_PORT = import.meta.env.VITE_STAFF_PORT || '4174';
 
+// Hosted deployments (e.g. Render, see render.yaml) serve every site on the
+// default HTTPS port, so the port can't tell the two apart there. Instead
+// the staff site is its own build with VITE_STAFF_SITE=true, which makes
+// the whole bundle behave as if it were on the staff port.
+const STAFF_SITE = import.meta.env.VITE_STAFF_SITE === 'true';
+
 export function isStaffPort() {
-  return window.location.port === STAFF_PORT;
+  return STAFF_SITE || window.location.port === STAFF_PORT;
 }

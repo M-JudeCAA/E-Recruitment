@@ -1,0 +1,22 @@
+# Caddy gets and renews the HTTPS certificates for these three names itself.
+# The names come from deploy/oracle/.env.
+
+{$WEB_DOMAIN} {
+	encode gzip
+	root * /srv/web
+	try_files {path} /index.html
+	file_server
+}
+
+{$STAFF_DOMAIN} {
+	encode gzip
+	root * /srv/staff
+	try_files {path} /index.html
+	file_server
+}
+
+# REST API, file downloads and the /ws/dashboard WebSocket.
+{$API_DOMAIN} {
+	encode gzip
+	reverse_proxy api:4000
+}

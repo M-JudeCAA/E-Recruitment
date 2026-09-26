@@ -30,7 +30,7 @@ Seeded staff accounts (password for all: `ChangeMe123!`): `hro@caa.co.ug` (HR Of
 
 `backend/.env` is gitignored; required vars are documented in [SETUP.md](SETUP.md) (`DATABASE_URL`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `INTERNAL_EMAIL_DOMAIN`, `PORT`, `FRONTEND_URL`, `SMTP_*`, `UPLOAD_DIR`). SMTP misconfiguration fails silently (`sendMail` logs and returns `null`) rather than crashing request handling — expect emails to silently not arrive if SMTP env vars are wrong.
 
-Scripts live in `backend/scripts/` (`node scripts/<name>.js`). Five are hourly maintenance jobs, run by the scheduler worker (`scripts/scheduler.js`, `npm run jobs`) or individually from cron: `checkSlaEscalations.js`, `checkVacancyDeadlines.js`, `sendInterviewReminders.js`, `cleanupPendingRegistrations.js`, `cleanupVerificationTokens.js`. Each exports `run()` and records every run in `SystemHealth` via `utils/jobRunner.js` - keep that shape when adding a job, and add it to `JOBS` in both `scheduler.js` and `services/systemHealthService.js`. Scheduled work deliberately never runs on a timer inside the API process. The rest are one-off: `seedDepartments.js`, `seedSlaPolicies.js`, `migrateEducationLevels.js`, plus two demo-data seeders, `seedPreShortlistDemoData.js` and `seedFullWorkflowDemoData.js`, for populating a dev DB at a given workflow stage.
+Scripts live in `backend/scripts/` (`node scripts/<name>.js`). Five are hourly maintenance jobs, run by the scheduler worker (`scripts/scheduler.js`, `npm run jobs`; `--once` runs one cycle and exits) or individually from cron: `checkSlaEscalations.js`, `checkVacancyDeadlines.js`, `sendInterviewReminders.js`, `cleanupPendingRegistrations.js`, `cleanupVerificationTokens.js`. Each exports `run()` and records every run in `SystemHealth` via `utils/jobRunner.js` - keep that shape when adding a job, and add it to `JOBS` in both `scheduler.js` and `services/systemHealthService.js`. Scheduled work deliberately never runs on a timer inside the API process. `prepareDatabase.js` (`npm run db:prepare`) is the deploy-time schema step used by `render.yaml`: `prisma db push` + baseline on an empty DB, `prisma migrate deploy` otherwise. The rest are one-off: `seedDepartments.js`, `seedSlaPolicies.js`, `migrateEducationLevels.js`, plus two demo-data seeders, `seedPreShortlistDemoData.js` and `seedFullWorkflowDemoData.js`, for populating a dev DB at a given workflow stage.
 
 ### Frontend (`frontend/`)
 
@@ -42,7 +42,7 @@ npm run preview   # preview a production build
 npm run preview:staff  # same build on http://localhost:4174 — the only port staff can sign in from
 ```
 
-**Staff vs. candidate port**: it's one SPA build, but `/staff/login`, `/staff/forgot-password` and `/staff/reset-password` only render when `window.location.port` equals `STAFF_PORT` (`4174`, override with `VITE_STAFF_PORT`; see `staffPort.js` and `RequireStaffPort`/`GuestPortGate` in `ProtectedRoute.jsx`). To exercise staff screens locally you must `npm run build` then `npm run preview:staff` — the `:5173` dev server will bounce staff routes back to `/`. Details in [SETUP.md](SETUP.md).
+**Staff vs. candidate port**: it's one SPA build, but `/staff/login`, `/staff/forgot-password` and `/staff/reset-password` only render when `window.location.port` equals `STAFF_PORT` (`4174`, override with `VITE_STAFF_PORT`; see `staffPort.js` and `RequireStaffPort`/`GuestPortGate` in `ProtectedRoute.jsx`). To exercise staff screens locally you must `npm run build` then `npm run preview:staff` — the `:5173` dev server will bounce staff routes back to `/`. A build with `VITE_STAFF_SITE=true` treats every port as the staff port (the Render staff site, see `render.yaml`). Details in [SETUP.md](SETUP.md).
 
 No frontend test suite exists yet.
 
@@ -131,5 +131,5 @@ Every suite in `backend/tests/` mocks the shared Prisma client via `jest.mock('.
 - The migration history can't build a database from scratch (`20260915120000_age_flying_hours_exam_grades` alters a column no earlier migration creates - columns were added directly on the shared DB; see the READMEs in `prisma/migrations/`). The e2e suite uses `prisma db push` instead. New migrations still go in `prisma/migrations/` as usual.
 - Rate limits are in-memory per API process; a multi-process deployment would need a shared store.
 - No frontend test suite.
-- `docker-compose.yml` exists but isn't wired up for local dev — use the two-terminal `npm run dev` flow in [SETUP.md](SETUP.md) instead.
+- `docker-compose.yml` exists but isn't wired up for local dev — use the two-terminal `npm run dev` flow in [SETUP.md](SETUP.md) instead. Hosted deployments: `render.yaml` (Render) and `deploy/oracle/` (one-VM Docker Compose + Caddy, see its README).
 - No HRMS/AD/WSO2 integration — `candidateType` (Internal/External) is determined purely by email domain (`INTERNAL_EMAIL_DOMAIN`) at registration, and `InternalProfile` fields are self-declared + HR-verified, not synced from an authoritative system.

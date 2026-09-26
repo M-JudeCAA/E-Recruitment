@@ -2,6 +2,7 @@
 // every SCHEDULER_INTERVAL_MINUTES (default 60), in a process of its own.
 //
 //   npm run jobs        (node scripts/scheduler.js)
+//   node scripts/scheduler.js --once   (one cycle, then exit)
 //
 // Deliberately a separate, long-running process rather than a timer inside
 // the API server: this project keeps scheduled work out of the
@@ -56,6 +57,16 @@ async function runCycle() {
 }
 
 async function main() {
+  // --once: run a single cycle and exit, for hosts that start the process on
+  // a schedule themselves (a Render cron job, see render.yaml).
+  if (process.argv.includes('--once')) {
+    console.log(`Scheduler running ${JOBS.length} jobs once.`);
+    await verifyMailTransport();
+    await runCycle();
+    await prisma.$disconnect();
+    process.exit(0);
+  }
+
   console.log(`Scheduler worker started - running ${JOBS.length} jobs every ${intervalMinutes} minute(s).`);
   await verifyMailTransport();
   await runCycle();

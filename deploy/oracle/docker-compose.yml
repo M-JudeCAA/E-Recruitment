@@ -1,0 +1,100 @@
+# Whole app on one server (Oracle Cloud Always Free VM) - see README.md here.
+#
+#   cd deploy/oracle
+#   docker compose up -d --build
+#
+# Settings come from deploy/oracle/.env (setup-vm.sh creates it).
+
+x-backend-env: &backend-env
+  DATABASE_URL: mysql://erec:${MYSQL_PASSWORD:?set in .env}@mysql:3306/erecruitment
+  JWT_SECRET: ${JWT_SECRET:?set in .env}
+  JWT_EXPIRES_IN: 8h
+  INTERNAL_EMAIL_DOMAIN: ${INTERNAL_EMAIL_DOMAIN:-caa.co.ug}
+  PORT: "4000"
+  # Candidate site first, staff site second (backend/src/config/frontendUrl.js).
+  FRONTEND_URL: https://${WEB_DOMAIN},https://${STAFF_DOMAIN}
+  UPLOAD_DIR: /app/uploads
+  # One proxy hop: Caddy.
+  TRUST_PROXY: "1"
+  APP_TIMEZONE: ${APP_TIMEZONE:-Africa/Kampala}
+  SMTP_HOST: ${SMTP_HOST:-json}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASS: ${SMTP_PASS:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: erecruitment
+      MYSQL_USER: erec
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set in .env}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    # Over TCP on purpose: during first-time init MySQL runs without
+    # networking, and a socket ping would report healthy too early.
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h 127.0.0.1 -u erec -p\"$$MYSQL_PASSWORD\" -e 'SELECT 1' erecruitment"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  api:
+    build: ../../backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment: *backend-env
+    # Schema first (scripts/prepareDatabase.js), then the server.
+    command: sh -c "npm run db:prepare && node src/server.js"
+    volumes:
+      - uploads_data:/app/uploads
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 180s
+
+  # Hourly maintenance jobs (scripts/scheduler.js), in their own process.
+  scheduler:
+    build: ../../backend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment: *backend-env
+    command: node scripts/scheduler.js
+
+  web:
+    build:
+      context: ../../frontend
+      dockerfile: ../deploy/oracle/web.Dockerfile
+      args:
+        API_URL: https://${API_DOMAIN:?set in .env}
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      WEB_DOMAIN: ${WEB_DOMAIN:?set in .env}
+      STAFF_DOMAIN: ${STAFF_DOMAIN:?set in .env}
+      API_DOMAIN: ${API_DOMAIN:?set in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  mysql_data:
+  uploads_data:
+  caddy_data:
+  caddy_config:

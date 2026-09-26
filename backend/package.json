@@ -9,6 +9,7 @@
     "prestart": "prisma generate",
     "start": "node src/server.js",
     "migrate": "prisma migrate deploy",
+    "db:prepare": "node scripts/prepareDatabase.js",
     "migrate:dev": "prisma migrate dev",
     "generate": "prisma generate",
     "seed": "node prisma/seed.js",

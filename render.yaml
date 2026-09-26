@@ -1,0 +1,126 @@
+# Render Blueprint - see SETUP.md "Deploying to Render".
+#
+# Four services from this one repo:
+#   erecruitment-api    Express API + dashboard WebSocket, uploads on a persistent disk
+#   erecruitment-jobs   hourly cron job running the maintenance jobs once (scheduler.js --once)
+#   erecruitment-web    candidate-facing static site
+#   erecruitment-staff  staff static site (same SPA, built with VITE_STAFF_SITE=true)
+#
+# Render has no managed MySQL, so DATABASE_URL points at an external MySQL 8
+# database. Values marked `sync: false` are asked for when the Blueprint is
+# first created in the Render dashboard.
+
+services:
+  - type: web
+    name: erecruitment-api
+    runtime: node
+    rootDir: backend
+    region: frankfurt
+    # A paid plan: the uploads disk and the pre-deploy command need one.
+    plan: starter
+    buildCommand: npm ci && npx prisma generate
+    preDeployCommand: npm run db:prepare
+    startCommand: npm start
+    healthCheckPath: /health
+    disk:
+      name: uploads
+      mountPath: /var/data
+      sizeGB: 5
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: INTERNAL_EMAIL_DOMAIN
+        value: caa.co.ug
+      # Candidate site first, staff site second, comma-separated, e.g.
+      # https://erecruitment-web.onrender.com,https://erecruitment-staff.onrender.com
+      - key: FRONTEND_URL
+        sync: false
+      - key: UPLOAD_DIR
+        value: /var/data/uploads
+      # Render's proxies sit in front of the API; needed for per-address sign-in rate limits.
+      - key: TRUST_PROXY
+        value: "true"
+      - key: APP_TIMEZONE
+        value: Africa/Kampala
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+
+  - type: cron
+    name: erecruitment-jobs
+    runtime: node
+    rootDir: backend
+    region: frankfurt
+    plan: starter
+    schedule: "0 * * * *"
+    buildCommand: npm ci && npx prisma generate
+    startCommand: node scripts/scheduler.js --once
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: APP_TIMEZONE
+        value: Africa/Kampala
+      # Everything else is copied from the API so the two never drift apart.
+      - key: DATABASE_URL
+        fromService: { name: erecruitment-api, type: web, envVarKey: DATABASE_URL }
+      - key: JWT_SECRET
+        fromService: { name: erecruitment-api, type: web, envVarKey: JWT_SECRET }
+      - key: INTERNAL_EMAIL_DOMAIN
+        fromService: { name: erecruitment-api, type: web, envVarKey: INTERNAL_EMAIL_DOMAIN }
+      - key: FRONTEND_URL
+        fromService: { name: erecruitment-api, type: web, envVarKey: FRONTEND_URL }
+      - key: SMTP_HOST
+        fromService: { name: erecruitment-api, type: web, envVarKey: SMTP_HOST }
+      - key: SMTP_PORT
+        fromService: { name: erecruitment-api, type: web, envVarKey: SMTP_PORT }
+      - key: SMTP_USER
+        fromService: { name: erecruitment-api, type: web, envVarKey: SMTP_USER }
+      - key: SMTP_PASS
+        fromService: { name: erecruitment-api, type: web, envVarKey: SMTP_PASS }
+      - key: SMTP_FROM
+        fromService: { name: erecruitment-api, type: web, envVarKey: SMTP_FROM }
+
+  - type: web
+    name: erecruitment-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # The API's public URL, e.g. https://erecruitment-api.onrender.com (no trailing slash).
+      - key: VITE_API_URL
+        sync: false
+
+  - type: web
+    name: erecruitment-staff
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+      # Turns on the staff-only routes (see frontend/src/staffPort.js).
+      - key: VITE_STAFF_SITE
+        value: "true"

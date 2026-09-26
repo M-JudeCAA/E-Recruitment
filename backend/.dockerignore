@@ -1,0 +1,7 @@
+node_modules
+uploads
+tests
+tests-e2e
+coverage
+.env
+.env.*
