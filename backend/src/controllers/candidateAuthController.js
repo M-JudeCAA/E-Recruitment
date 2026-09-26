@@ -1,3 +1,4 @@
+const { sendError } = require('../utils/errorResponse');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const candidateModel = require('../models/candidateModel');
@@ -34,6 +35,20 @@ async function register(req, res) {
 
   const existingCandidate = await candidateModel.findByEmail(email);
   if (existingCandidate) return res.status(409).json({ error: 'An account with this email already exists' });
+
+  // Checked here, before the pending row/confirmation email ever exist, so
+  // a duplicate National ID/Passport is caught immediately rather than
+  // only surfacing as a raw unique-constraint error later in
+  // confirmEmail() (see that function's own P2002 handling for the
+  // residual race window this narrows but can't fully close - two people
+  // registering the same id within the same few minutes, before either
+  // confirms).
+  if (nationalId) {
+    const existingByNationalId = await candidateModel.findByNationalId(nationalId);
+    if (existingByNationalId) {
+      return res.status(409).json({ error: 'This National ID or Passport number is already registered on another account.' });
+    }
+  }
 
   const existingPending = await pendingRegistrationModel.findByEmail(email);
   if (existingPending) {
@@ -79,12 +94,13 @@ async function register(req, res) {
 // handled by scripts/cleanupPendingRegistrations.js for links that are
 // never used at all).
 async function confirmEmail(req, res) {
+  let pending;
   try {
     const record = await consumeToken(req.query.token, 'EmailConfirmation');
     if (!record.pendingRegistrationId) {
       throw new Error('Invalid or unknown token');
     }
-    const pending = await pendingRegistrationModel.findById(record.pendingRegistrationId);
+    pending = await pendingRegistrationModel.findById(record.pendingRegistrationId);
     if (!pending) {
       throw new Error('This registration is no longer available - please sign up again');
     }
@@ -103,7 +119,22 @@ async function confirmEmail(req, res) {
 
     res.json({ message: 'Email confirmed. You can now log in.' });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    // register()'s own check narrows this to a genuine race (two people
+    // registering the same National ID/Passport within the same short
+    // window, both past that check before either confirms) rather than
+    // the common case, but it can still happen. The confirmation token is
+    // already single-use consumed by this point, so this exact link can
+    // never be retried either way - removing the now-dead-ended pending
+    // row here frees the email up immediately for a fresh registration
+    // attempt, instead of leaving it stuck forever pointing at a used
+    // token with no way to finish.
+    if (err.code === 'P2002' && pending) {
+      await pendingRegistrationModel.remove(pending.id);
+      return res.status(409).json({
+        error: 'This National ID or Passport number is already registered on another account. Please register again with the correct details.'
+      });
+    }
+    sendError(res, err, 400);
   }
 }
 
@@ -131,7 +162,7 @@ async function login(req, res) {
   );
   res.json({
     token, candidateType: candidate.candidateType, fullName: candidate.fullName,
-    photoUrl: candidate.photoUrl, firstLogin
+    photoUrl: candidate.photoUrl, email: candidate.email, firstLogin
   });
 }
 
@@ -161,7 +192,7 @@ async function resetPassword(req, res) {
     await candidateModel.update(record.candidateId, { passwordHash });
     res.json({ message: 'Password updated. You can now log in.' });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err, 400);
   }
 }
 

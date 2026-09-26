@@ -7,6 +7,7 @@ import Card from '../components/Card';
 import Avatar from '../components/Avatar';
 import ProgressRing from '../components/ProgressRing';
 import ProfileCompletionForm from '../components/ProfileCompletionForm';
+import Skeleton from '../components/Skeleton';
 import { getProfileCompletionPercent } from '../utils/profileCompleteness';
 import { candidateFileSrc } from '../utils/fileSrc';
 
@@ -39,8 +40,8 @@ export default function CandidateProfile() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <PageHeader title="My profile" subtitle="Keep your details current - this is what every application is built from." />
 
-          {summary && (
-            <Card style={{ marginBottom: 'var(--spacing-md)' }}>
+          <Card style={{ marginBottom: 'var(--spacing-md)' }}>
+            {summary ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                 <Avatar src={candidateFileSrc(candidate?.photoUrl)} size={56} />
                 <div style={{ flex: 1, minWidth: 160 }}>
@@ -60,8 +61,18 @@ export default function CandidateProfile() {
                   <span style={{ fontSize: 12, color: 'var(--color-text-muted)', maxWidth: 90 }}>Profile complete</span>
                 </div>
               </div>
-            </Card>
-          )}
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <Skeleton width={56} height={56} radius="50%" />
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <Skeleton width={160} height={16} style={{ marginBottom: 8 }} />
+                  <Skeleton width={200} height={13} style={{ marginBottom: 6 }} />
+                  <Skeleton width={180} height={12} />
+                </div>
+                <Skeleton width={48} height={48} radius="50%" />
+              </div>
+            )}
+          </Card>
 
           <Card accent="var(--color-primary)">
             <ProfileCompletionForm />

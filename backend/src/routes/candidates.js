@@ -2,6 +2,7 @@ const express = require('express');
 const controller = require('../controllers/candidateController');
 const notificationController = require('../controllers/candidateNotificationController');
 const cvParseController = require('../controllers/cvParseController');
+const candidateInterviewController = require('../controllers/candidateInterviewController');
 const { authenticate, requireCandidate } = require('../middleware/auth');
 const { uploadMemory } = require('../middleware/uploadMemory');
 const { uploadPhoto } = require('../middleware/upload');
@@ -23,10 +24,20 @@ router.delete('/me/work-experience/:id', authenticate, requireCandidate, asyncHa
 router.post('/me/education', authenticate, requireCandidate, asyncHandler(controller.addEducation));
 router.put('/me/education/:id', authenticate, requireCandidate, asyncHandler(controller.updateEducation));
 router.delete('/me/education/:id', authenticate, requireCandidate, asyncHandler(controller.deleteEducation));
+router.post('/me/certificates', authenticate, requireCandidate, asyncHandler(controller.addCertificate));
+router.put('/me/certificates/:id', authenticate, requireCandidate, asyncHandler(controller.updateCertificate));
+router.delete('/me/certificates/:id', authenticate, requireCandidate, asyncHandler(controller.deleteCertificate));
+router.post('/me/exam-grades', authenticate, requireCandidate, asyncHandler(controller.addExamGrade));
+router.put('/me/exam-grades/:id', authenticate, requireCandidate, asyncHandler(controller.updateExamGrade));
+router.delete('/me/exam-grades/:id', authenticate, requireCandidate, asyncHandler(controller.deleteExamGrade));
 router.put('/me/internal-profile', authenticate, requireCandidate, asyncHandler(controller.updateInternalProfile));
 router.put('/me/photo', authenticate, requireCandidate, uploadPhoto.single('photo'), asyncHandler(controller.updatePhoto));
 router.delete('/me/photo', authenticate, requireCandidate, asyncHandler(controller.removePhoto));
 router.get('/me/applications', authenticate, requireCandidate, asyncHandler(controller.myApplications));
+// A candidate's own interview invitations - confirm, ask for another time, or
+// add it to their calendar. See candidateInterviewController.
+router.patch('/me/interviews/:id/respond', authenticate, requireCandidate, asyncHandler(candidateInterviewController.respond));
+router.get('/me/interviews/:id/calendar.ics', authenticate, requireCandidate, asyncHandler(candidateInterviewController.calendarFile));
 router.get('/me/notifications', authenticate, requireCandidate, asyncHandler(notificationController.listMine));
 router.patch('/me/notifications/:id/read', authenticate, requireCandidate, asyncHandler(notificationController.markRead));
 router.post('/me/parse-cv', authenticate, requireCandidate, uploadMemory.single('cv'), asyncHandler(cvParseController.parseCv));

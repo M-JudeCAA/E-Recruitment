@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate, useSearchParams, Link } from "react-router-dom";
+import { useNavigate, useSearchParams, Navigate, Link } from "react-router-dom";
 import client from "../models/apiClient";
 import { useAuth } from "../models/AuthContext";
 import PageHeader from "../components/PageHeader";
@@ -53,8 +53,23 @@ export default function CandidateLogin() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const { loginCandidate } = useAuth();
+  const { loginCandidate, candidate } = useAuth();
   const navigate = useNavigate();
+
+  // Already signed in - the `replace: true` below on a successful submit
+  // only keeps THIS page from staying reachable by Back after login; it
+  // does nothing to stop this route being reached some other way (a stale
+  // bookmark/tab, a second tab, or - per a real report - Back still
+  // landing here in some sequence) while the session is still valid.
+  // Navbar renders unconditionally on every route (see App.jsx), so
+  // without this an already-authenticated candidate would see their own
+  // logged-in navbar above a fully live login form underneath. Redirect
+  // away before ever rendering that form - same validReturnTo precedence
+  // as a fresh login, just without firstLogin (that flag only ever comes
+  // back in the login response itself, not from an existing session).
+  if (candidate) {
+    return <Navigate to={validReturnTo || "/dashboard"} replace />;
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -70,16 +85,23 @@ export default function CandidateLogin() {
     setSubmitting(true);
     try {
       const res = await client.post("/api/candidates/auth/login", form);
-      loginCandidate(res.data.token, res.data.candidateType, res.data.fullName, res.data.photoUrl);
+      loginCandidate(res.data.token, res.data.candidateType, res.data.fullName, res.data.photoUrl, res.data.email);
       sessionStorage.removeItem("pendingReturnTo");
 
       // Precedence: a pending Apply-page destination always wins, even on
       // a first-ever login - the Advert User path takes over from the
       // New User "go straight to the full profile page" rule in that
       // case (see ApplyForm.jsx, which shows the completion modal itself).
-      if (validReturnTo) navigate(validReturnTo);
-      else if (res.data.firstLogin) navigate("/profile/complete");
-      else navigate("/dashboard");
+      //
+      // `replace: true` on every branch here - this page must never stay
+      // in browser history once login succeeds, or Back from inside the
+      // logged-in app lands back on the login form (still "logged in" per
+      // AuthContext, but showing a stale credentials form) instead of
+      // leaving the app. Everything navigated to *after* this one push is
+      // normal history, so Back still steps through those as expected.
+      if (validReturnTo) navigate(validReturnTo, { replace: true });
+      else if (res.data.firstLogin) navigate("/profile/complete", { replace: true });
+      else navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err.response?.data?.error || "Login failed");
     } finally {

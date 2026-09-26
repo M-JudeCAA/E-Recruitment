@@ -18,6 +18,14 @@
                                       falling back to an invalid/inherited value before this. */
   --color-danger: #b3261e;
   --color-warning: #a66a00;
+  --color-warning-light: #FDF3E1; /* background for warning banners (Alert type="warning") */
+  /* Decorative-only accent (aviation gold) - purely for visual richness on
+     the marketing surfaces (Home.jsx hero/highlights), never for status or
+     semantic meaning the way accent/success/danger/warning are used
+     elsewhere. Kept as a token rather than a hardcoded hex so a future
+     rebrand still only touches this file. */
+  --color-gold: #E0A339;
+  --color-gold-dark: #B87F1F;
 
   /* Neutrals */
   --color-text: #14181C;      /* was #23262b */
@@ -54,6 +62,11 @@
      page content. */
   --navbar-height: 64px;
   --footer-height: 48px;
+  /* BreadcrumbNav.jsx - also position:fixed (pinned just below the Navbar
+     on scroll), same reasoning as the two above. Only App.jsx's
+     PaddedLayout pads by this amount, not the outer wrapper, since only
+     routes rendered through that layout show the breadcrumb bar. */
+  --breadcrumb-height: 45px;
 }
 
 * {
@@ -186,6 +199,96 @@ input::placeholder, textarea::placeholder {
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
 
+/* Attention pulse for a single primary call-to-action (Home.jsx's "Find
+   Jobs"). Two staggered expanding rings plus a scale bump, not a hard
+   on/off blink - a ~1.6s cycle stays well under the WCAG flash threshold
+   and reads as "look here" without being irritating. The inner ring is
+   primary-dark (visible on a white surface) and the outer ring is white
+   (visible on the blue hero the button sits over) - a single primary-blue
+   ring vanished against that gradient once it grew past the form's white
+   padding. Stops on hover/focus (the user has found it) and for
+   prefers-reduced-motion users. Use on one button per page at most, or it
+   stops standing out. */
+.btn-attention {
+  animation: btn-attention-pulse 1.6s ease-out infinite;
+}
+.btn-attention:hover,
+.btn-attention:focus-visible {
+  animation: none;
+}
+@keyframes btn-attention-pulse {
+  0% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--color-primary-dark) 85%, transparent),
+      0 0 0 0 rgba(255, 255, 255, 0.9);
+  }
+  55% {
+    transform: scale(1.08);
+    box-shadow:
+      0 0 0 10px color-mix(in srgb, var(--color-primary-dark) 0%, transparent),
+      0 0 0 0 rgba(255, 255, 255, 0.9);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 10px color-mix(in srgb, var(--color-primary-dark) 0%, transparent),
+      0 0 0 26px rgba(255, 255, 255, 0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn-attention {
+    animation: none;
+  }
+}
+
+/* Opt-in hover lift for a card that isn't already Card's onClick-driven
+   .card-clickable (e.g. Home.jsx's value/vacancy cards, which are
+   informational, not a single click target) - a bit more visual life on
+   hover than the flat static card look, without changing Card's default
+   behavior anywhere it's used without this class. */
+.hover-lift {
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 28px rgba(20,24,28,0.12);
+}
+
+/* Sidebar nav links (Sidebar.jsx). Hover lives here rather than inline
+   styles because React inline styles can't express :hover - the active
+   state sets its own inline background, which always wins over this
+   class, so hover only ever shows through on inactive links. */
+.sidebar-link {
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+.sidebar-link:hover {
+  background: var(--color-bg);
+}
+
+/* HRDashboard's Vacancies master-detail list rows - same reasoning as
+   .sidebar-link above (inline styles can't express :hover), a lighter
+   tint since these rows sit on a white Card rather than the sidebar's
+   subtle-blue background. */
+.list-row {
+  background: transparent;
+  transition: background-color 0.12s ease;
+}
+.list-row:hover {
+  background: var(--color-bg-subtle);
+}
+
+/* Fixed-height scroll well for a dashboard panel's list body (HRHome /
+   ExecutiveDashboard cards: ClosingSoon, RecentVacancies, UpcomingInterviews,
+   FollowUpsPanel, ActivityFeed) - keeps every panel in a row the same
+   height regardless of item count, instead of the tallest panel stretching
+   the whole row. */
+.panel-scroll {
+  max-height: 260px;
+  overflow-y: auto;
+}
+
 /* Clickable Card (see Card.jsx's optional onClick prop) - a subtle hover
    lift so a whole card reads as clickable, not just the buttons inside it. */
 .card-clickable {
@@ -196,4 +299,24 @@ input::placeholder, textarea::placeholder {
 }
 .card-clickable:active {
   transform: translateY(1px);
+}
+
+/* Skeleton.jsx - a moving gradient sweep rather than a flat pulse, reads
+   more clearly as "loading" than "broken/disabled" at a glance. Colors are
+   two existing neutral tokens (never a new hardcoded gray) so it matches
+   light/dark surfaces the same way every other themed element does. */
+.skeleton-block {
+  background: linear-gradient(90deg, var(--color-bg-subtle) 25%, var(--color-border) 37%, var(--color-bg-subtle) 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-block {
+    animation: none;
+    background: var(--color-bg-subtle);
+  }
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../models/AuthContext';
 import { isStaffPort } from '../staffPort';
 
@@ -14,11 +14,33 @@ export function RequireStaffPort({ children }) {
   return children;
 }
 
+// Mirror image of RequireStaffPort: gates every guest/candidate-facing
+// route (the landing page, register, candidate login, the dashboard,
+// apply, etc.) so none of them render from the staff-only port - a staff
+// member opening that port directly always lands on staff login instead,
+// no matter which guest URL they typed or had bookmarked. A layout route
+// (like PaddedLayout below), so App.jsx wraps a whole group of routes in
+// it at once rather than repeating this on every single one.
+export function GuestPortGate() {
+  if (isStaffPort()) return <Navigate to="/staff/login" replace />;
+  return <Outlet />;
+}
+
 export function RequireStaff({ minRole = 'HR_Officer', children }) {
   const { staff } = useAuth();
   if (!staff) return <Navigate to="/staff/login" replace />;
   if ((ROLE_RANK[staff.role] || 0) < (ROLE_RANK[minRole] || 0)) {
-    return <p>You do not have permission to view this page.</p>;
+    // Browser history is a per-tab stack of URLs, not per-account - it has
+    // no idea a different, higher-privileged account was signed in when a
+    // page like this was last visited. Back (or a stale bookmark, or a
+    // link shared by someone with more access) can land the CURRENT
+    // account on a URL it no longer has permission for. A bare dead-end
+    // message here used to be the result; sending them to wherever they
+    // actually belong instead - same landing logic StaffLogin.jsx uses
+    // right after a fresh login - is far more useful and matches how the
+    // "not authenticated at all" branch above already behaves.
+    const isExecutive = (ROLE_RANK[staff.role] || 0) >= ROLE_RANK.Manager;
+    return <Navigate to={isExecutive ? '/hr/executive' : '/hr/home'} replace />;
   }
   return children;
 }

@@ -1,5 +1,6 @@
 const multer = require('multer');
 const { ALLOWED_MIME, MAX_FILE_SIZE } = require('./uploadConstants');
+const { AppError } = require('../utils/errorResponse');
 
 // Used only for the profile CV-autofill endpoint - the file is read into
 // memory to extract text and is never written to disk or referenced by
@@ -8,7 +9,7 @@ const { ALLOWED_MIME, MAX_FILE_SIZE } = require('./uploadConstants');
 // and unaffected by this).
 const fileFilter = (req, file, cb) => {
   if (!ALLOWED_MIME.includes(file.mimetype)) {
-    return cb(new Error('Only PDF or Word documents are allowed'));
+    return cb(new AppError('Only PDF or Word documents are allowed', 400));
   }
   cb(null, true);
 };

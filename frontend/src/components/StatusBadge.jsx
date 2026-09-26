@@ -2,7 +2,9 @@ import React from 'react';
 
 // Central color mapping for every status enum used across the system -
 // change a status's color here and it updates everywhere it's shown.
-const STATUS_COLORS = {
+// Exported so other status-driven visuals (e.g. HRHome's status breakdown
+// bar) reuse the exact same mapping instead of duplicating it.
+export const STATUS_COLORS = {
   // Panel/interview recommendation
   Shortlist: 'var(--color-accent)', Hold: 'var(--color-warning)', Reject: 'var(--color-danger)',
   // Vacancy
@@ -11,7 +13,7 @@ const STATUS_COLORS = {
   Filled: 'var(--color-primary)', Closed: 'var(--color-text-muted)',
   // Application
   Draft: 'var(--color-text-muted)', Submitted: 'var(--color-primary)',
-  UnderReview: 'var(--color-warning)', Shortlisted: 'var(--color-accent)',
+  UnderReview: 'var(--color-warning)', ShortlistProposed: 'var(--color-warning)', Shortlisted: 'var(--color-accent)',
   Interviewed: 'var(--color-accent)', Offered: 'var(--color-accent)',
   InterviewScheduled: 'var(--color-warning)',
   Rejected: 'var(--color-danger)', Withdrawn: 'var(--color-text-muted)',
@@ -19,19 +21,31 @@ const STATUS_COLORS = {
   Recommended: 'var(--color-warning)', Approved: 'var(--color-accent)',
   Extended: 'var(--color-accent)', Accepted: 'var(--color-accent)',
   Declined: 'var(--color-danger)',
+  // Interview round status (InterviewRoundStatus) and the candidate's answer
+  // (InterviewCandidateResponse). "Held" is the candidate-facing name for
+  // Completed (see backend utils/candidateInterview.js).
+  Scheduled: 'var(--color-primary)', Completed: 'var(--color-accent)', Held: 'var(--color-accent)',
+  Cancelled: 'var(--color-text-muted)', NoShow: 'var(--color-danger)',
+  Confirmed: 'var(--color-accent)', RescheduleRequested: 'var(--color-warning)',
   // Verification
   Pending: 'var(--color-warning)', HR_Verified: 'var(--color-accent)',
-  Discrepancy_Flagged: 'var(--color-danger)'
+  Discrepancy_Flagged: 'var(--color-danger)',
+  // Not a real enum value - a derived tag shown next to a vacancy's title
+  // when it was created via readvertise() (Vacancy.readvertisedFromId is
+  // set). Reuses this same lookup/component rather than a bespoke badge.
+  Readvertised: 'var(--color-accent)'
 };
 
-export default function StatusBadge({ status }) {
+// label optionally overrides the displayed text (e.g. "No-show" for
+// NoShow) without changing how the status is colored.
+export default function StatusBadge({ status, label }) {
   const color = STATUS_COLORS[status] || 'var(--color-text-muted)';
   return (
     <span style={{
       display: 'inline-block', padding: '2px 10px', borderRadius: 999,
       fontSize: 12, fontWeight: 600, color: '#fff', background: color
     }}>
-      {String(status).replace(/_/g, ' ')}
+      {label || String(status).replace(/_/g, ' ')}
     </span>
   );
 }

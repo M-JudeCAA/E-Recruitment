@@ -1,6 +1,7 @@
 const departmentModel = require('../models/departmentModel');
 const directorateModel = require('../models/directorateModel');
 const slaModel = require('../models/slaModel');
+const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
 // Departments are structural (unlike Positions, which any HR Officer can
 // add freely) - a new department affects reporting lines and vacancy
@@ -24,6 +25,7 @@ async function propose(req, res) {
   const department = await departmentModel.create({
     name: name.trim(), directorateId: directorate.id, status: 'Pending', createdById: req.user.id
   });
+  broadcastDashboardEvent('DepartmentPendingApproval', { departmentId: department.id });
   res.status(201).json(department);
 }
 
@@ -55,6 +57,7 @@ async function approve(req, res) {
   // defines slaModel.resolveEscalations but never invokes it anywhere -
   // without this, an escalated DepartmentApproval task never clears.
   await slaModel.resolveEscalations('DepartmentApproval', department.id);
+  broadcastDashboardEvent('DepartmentApproved', { departmentId: department.id });
   res.json(updated);
 }
 
@@ -74,6 +77,7 @@ async function reject(req, res) {
     status: 'Rejected', approvedById: req.user.id, approvedAt: new Date(), rejectionReason: reason
   });
   await slaModel.resolveEscalations('DepartmentApproval', department.id);
+  broadcastDashboardEvent('DepartmentRejected', { departmentId: department.id });
   res.json(updated);
 }
 

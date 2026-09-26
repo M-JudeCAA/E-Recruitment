@@ -23,9 +23,17 @@ router.patch('/:id/approve', authenticate, requireStaffRole('Manager'), controll
 // only Manager/Director can call this at all, which is what makes their
 // call to it constitute the required approval - no separate propose step.
 router.patch('/:id/transition-posting-type', authenticate, requireStaffRole('Manager'), controller.transitionPostingType);
+// NEW - readvertise a closed vacancy as a brand new one. Same tier as
+// create(), since this is functionally "create a new vacancy" (it goes
+// through PendingApproval -> approve again, not a direct reopen).
+router.post('/:id/readvertise', authenticate, requireStaffRole('HR_Officer'), controller.readvertise);
 router.get('/', optionalAuthenticate, controller.listPublic);
 router.get('/admin', authenticate, requireStaffRole('HR_Officer'), controller.listForAdmin);
-router.get('/:id', controller.getOne);
+// optionalAuthenticate (not plain, unauthenticated) so getOne can tell a
+// staff caller (staffApiClient always sends a Bearer token) from a
+// candidate/guest one and hide HR-only fields accordingly - see that
+// function's own comment.
+router.get('/:id', optionalAuthenticate, controller.getOne);
 router.get('/:id/applications', authenticate, requireStaffRole('HR_Officer'), controller.listApplications);
 // Saving a shortlist ranking is the actual "review & shortlist candidates"
 // action, so it requires Senior HR Officer+, same as shortlist/interview

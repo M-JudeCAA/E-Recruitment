@@ -36,8 +36,13 @@ module.exports = {
   findManyForAdmin: (where) => prisma.vacancy.findMany({
     where,
     include: {
-      _count: { select: { applications: true } },
+      // Excludes Draft, same convention as applicationModel.findByVacancy/
+      // countAll - a draft isn't yet an application HR has any business
+      // seeing, so it shouldn't count as one here either (HRDashboard and
+      // HRHome both display this figure).
+      _count: { select: { applications: { where: { status: { not: 'Draft' } } } } },
       department: { include: { directorate: true } },
+      createdBy: { select: { name: true } },
       approvedBy: { select: { name: true } },
       postingTypeChangedBy: { select: { name: true } }
     },

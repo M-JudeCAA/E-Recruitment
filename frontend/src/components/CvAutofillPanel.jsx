@@ -9,7 +9,7 @@ import Alert from './Alert';
 // best-effort on the server (no AI, plain text-extraction + heuristics)
 // - hence the persistent accuracy warning the moment that mode is picked.
 // The uploaded file itself is never stored (see backend's parse-cv route).
-export default function CvAutofillPanel({ onLinkedinSuggested, onEducationSuggested, onWorkExperienceSuggested }) {
+export default function CvAutofillPanel({ onLinkedinSuggested, onEducationSuggested, onWorkExperienceSuggested, onCertificateSuggested }) {
   const [mode, setMode] = useState('manual');
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
@@ -38,7 +38,7 @@ export default function CvAutofillPanel({ onLinkedinSuggested, onEducationSugges
     }
   };
 
-  const hasSuggestions = result && (result.linkedinUrl || result.education?.length || result.workExperience?.length);
+  const hasSuggestions = result && (result.linkedinUrl || result.education?.length || result.workExperience?.length || result.certificates?.length);
 
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 24 }}>
@@ -87,8 +87,22 @@ export default function CvAutofillPanel({ onLinkedinSuggested, onEducationSugges
 
               {(result.workExperience || []).map((w, i) => !applied[`work-${i}`] && (
                 <div key={i} style={{ fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>Found role: {w.jobTitle || '(title not detected)'}{w.startDate ? ` from ${w.startDate.slice(0, 4)}` : ''}</span>
+                  <span>
+                    Found role: {w.jobTitle || '(title not detected)'}{w.startDate ? ` from ${w.startDate.slice(0, 4)}` : ''}
+                    {w.duties?.length > 0 ? ` - ${w.duties.length} duty line${w.duties.length === 1 ? '' : 's'} detected` : ''}
+                  </span>
                   <Button type="button" variant="ghost" onClick={() => { onWorkExperienceSuggested(w); setApplied((a) => ({ ...a, [`work-${i}`]: true })); }}>
+                    Review & add
+                  </Button>
+                </div>
+              ))}
+
+              {(result.certificates || []).map((c, i) => !applied[`cert-${i}`] && (
+                <div key={i} style={{ fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>
+                    Found certificate: {c.name || '(name not detected)'}{c.issuingOrganization ? ` - ${c.issuingOrganization}` : ''}
+                  </span>
+                  <Button type="button" variant="ghost" onClick={() => { onCertificateSuggested(c); setApplied((a) => ({ ...a, [`cert-${i}`]: true })); }}>
                     Review & add
                   </Button>
                 </div>

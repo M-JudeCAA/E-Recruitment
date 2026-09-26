@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Briefcase, FileText, CalendarClock, Award, MapPin, Calendar, ArrowRight, Video } from 'lucide-react';
+import { Briefcase, FileText, CalendarClock, Award, MapPin, Calendar, ArrowRight, Video, Download, CheckCircle2, FileEdit } from 'lucide-react';
 import client from '../models/apiClient';
 import { useAuth } from '../models/AuthContext';
 import CandidateSidebar from '../components/CandidateSidebar';
@@ -10,6 +10,13 @@ import StatusBadge from '../components/StatusBadge';
 import ProgressRing from '../components/ProgressRing';
 import LoadingState from '../components/LoadingState';
 import { getProfileCompletionPercent } from '../utils/profileCompleteness';
+import { useVacancyPdfDownload } from '../utils/useVacancyPdfDownload';
+
+// See Home.jsx/CandidateJobs.jsx's identical helper - a vacancy whose
+// deadline has passed is still shown (Vacancy.status is never mutated just
+// because a deadline lapsed), tagged Closed with Apply swapped for a
+// details download.
+const isClosed = (v) => v.deadline && new Date(v.deadline) < new Date();
 
 function KpiCard({ icon: Icon, label, value, accent, loading, to }) {
   const body = (
@@ -47,6 +54,7 @@ export default function CandidateHome() {
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [applications, setApplications] = useState([]);
   const [loadingApplications, setLoadingApplications] = useState(true);
+  const { download, hiddenPrintArea, downloadingId } = useVacancyPdfDownload();
 
   // The completeness ring below is this page's only profile-editing
   // entry point now - "Edit profile" always sends the candidate to the
@@ -78,12 +86,23 @@ export default function CandidateHome() {
     const now = new Date();
     return applications
       .flatMap((app) => (app.interviewRounds || []).map((round) => ({ app, round })))
-      .filter(({ round }) => round.scheduledDate && new Date(round.scheduledDate) >= now)
+      // A cancelled round (or one marked a no-show) is not an upcoming interview.
+      .filter(({ round }) => round.status === 'Scheduled' && round.scheduledDate && new Date(round.scheduledDate) >= now)
       .sort((a, b) => new Date(a.round.scheduledDate) - new Date(b.round.scheduledDate));
   }, [applications]);
 
   const offersToRespond = useMemo(
     () => applications.filter((app) => app.offer?.status === 'Approved'),
+    [applications]
+  );
+
+  // Keyed by vacancyId so each job card below can look up whether this
+  // candidate already has an application for it - saveDraft/submit on the
+  // backend refuse a second (non-Draft) application to the same vacancy
+  // (see applicationDraftController.saveDraft), so the Apply button here
+  // needs to reflect that instead of leading somewhere that will just 409.
+  const applicationByVacancyId = useMemo(
+    () => Object.fromEntries(applications.map((app) => [app.vacancy?.id ?? app.vacancyId, app])),
     [applications]
   );
 
@@ -144,13 +163,18 @@ export default function CandidateHome() {
                     {nextInterview.round.mode && (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         &middot; {nextInterview.round.mode.toLowerCase().includes('virtual') || nextInterview.round.mode.toLowerCase().includes('online')
-                          ? <Video size={13} /> : <MapPin size={13} />} {nextInterview.round.mode}
+                          ? <Video size={13} /> : <MapPin size={13} />} {nextInterview.round.mode === 'In-person' && nextInterview.round.location ? nextInterview.round.location : nextInterview.round.mode}
                       </span>
                     )}
                   </div>
+                  {nextInterview.round.candidateResponse === 'Pending' && (
+                    <div style={{ fontSize: 13, color: 'var(--color-warning)', marginTop: 4 }}>Please confirm you can attend, or ask for another time.</div>
+                  )}
                 </div>
-                <Link to="/dashboard/applications" style={{ textDecoration: 'none' }}>
-                  <Button variant="secondary" style={{ padding: '6px 14px', fontSize: 13 }}>View details</Button>
+                <Link to="/dashboard/applications?filter=interviews" style={{ textDecoration: 'none' }}>
+                  <Button variant="secondary" style={{ padding: '6px 14px', fontSize: 13 }}>
+                    {nextInterview.round.candidateResponse === 'Pending' ? 'Confirm or reschedule' : 'View details'}
+                  </Button>
                 </Link>
               </div>
             </Card>
@@ -218,11 +242,15 @@ export default function CandidateHome() {
                 gap: 'var(--spacing-md)',
               }}
             >
-              {recentVacancies.map((v) => (
+              {recentVacancies.map((v) => {
+                const closed = isClosed(v);
+                const existingApp = applicationByVacancyId[v.id];
+                return (
                 <Card key={v.id} style={{ marginBottom: 0, display: 'flex', flexDirection: 'column' }}>
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>
                     {v.jobRef ? <span style={{ color: 'var(--color-text-muted)', fontWeight: 600 }}>{v.jobRef}: </span> : null}
                     {v.title}
+                    {v.readvertisedFromId != null && <span style={{ marginLeft: 8 }}><StatusBadge status="Readvertised" /></span>}
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
                     {v.department?.name && (
@@ -232,20 +260,53 @@ export default function CandidateHome() {
                     )}
                     {v.deadline && (
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <Calendar size={14} /> Closes {new Date(v.deadline).toLocaleDateString()}
+                        <Calendar size={14} /> {closed ? 'Closed' : 'Closes'} {new Date(v.deadline).toLocaleDateString()}
                       </span>
                     )}
-                    <span><StatusBadge status={v.status} /></span>
+                    <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {closed ? <StatusBadge status="Closed" /> : <StatusBadge status={v.status} />}
+                      {existingApp && existingApp.status !== 'Draft' && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-accent)', fontWeight: 600 }}>
+                          <CheckCircle2 size={14} /> You applied
+                        </span>
+                      )}
+                    </span>
                   </div>
-                  <Link to={`/apply/${v.id}`} style={{ marginTop: 'auto', textDecoration: 'none' }}>
-                    <Button style={{ width: '100%' }}>Apply Now</Button>
-                  </Link>
+                  {closed ? (
+                    <Button
+                      variant="secondary"
+                      disabled={downloadingId === v.id}
+                      style={{ marginTop: 'auto', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      onClick={() => download(v)}
+                    >
+                      <Download size={16} /> {downloadingId === v.id ? 'Preparing PDF...' : 'Download Job Details'}
+                    </Button>
+                  ) : existingApp && existingApp.status === 'Draft' ? (
+                    <Link to={`/apply/${v.id}`} style={{ marginTop: 'auto', textDecoration: 'none' }}>
+                      <Button variant="secondary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                        <FileEdit size={16} /> Continue Application
+                      </Button>
+                    </Link>
+                  ) : existingApp ? (
+                    <Link to="/dashboard/applications" style={{ marginTop: 'auto', textDecoration: 'none' }}>
+                      <Button variant="secondary" style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                        <CheckCircle2 size={16} /> Already Applied
+                      </Button>
+                    </Link>
+                  ) : (
+                    <Link to={`/apply/${v.id}`} style={{ marginTop: 'auto', textDecoration: 'none' }}>
+                      <Button style={{ width: '100%' }}>Apply Now</Button>
+                    </Link>
+                  )}
                 </Card>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
       </div>
+
+      {hiddenPrintArea}
     </div>
   );
 }

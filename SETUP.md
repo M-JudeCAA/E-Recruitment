@@ -57,6 +57,10 @@ Every other field in `.env.example` needs a real value too:
 | `FRONTEND_URL` | Comma-separated list of allowed CORS origins. Leave as `http://localhost:5173,http://localhost:4174` (guest dev server + staff preview, see [below](#staff-access-on-a-separate-port)) |
 | `SMTP_*` | See [Email](#email-gmail-smtp) below |
 | `UPLOAD_DIR` | Leave as `./uploads` |
+| `TRUST_PROXY` | Optional. Which reverse proxy to believe about a client's address, used by the sign-in rate limits. Default `loopback` (a proxy on the same machine, e.g. nginx or IIS). Set to `false` if nothing sits in front of the API, or to a hop count or proxy address if the proxy is on another machine |
+| `APP_TIMEZONE` | Optional. Time zone used for interview times in emails and notifications. Default `Africa/Kampala` |
+| `SCHEDULER_INTERVAL_MINUTES` | Optional. How often the scheduler worker runs the maintenance jobs. Default `60` |
+| `DATABASE_URL_TEST` | Only for the end-to-end tests: a separate, empty MySQL database whose name contains `test`. See [Running tests](#running-tests) |
 
 ## 3. Database
 
@@ -106,6 +110,11 @@ If you're using the shared dev database, ask for the working `SMTP_USER` /
    SMTP_FROM="UCAA e-Recruitment <youraccount@gmail.com>"
    ```
 
+To work without a mail server, set `SMTP_HOST="json"`: emails are built
+and discarded instead of sent. Leaving `SMTP_HOST` empty is reported as an
+error at start-up and on the HR home page, because it means no email is
+ever sent.
+
 If SMTP is left unconfigured or wrong, `sendMail` logs the failure and
 returns `null` instead of crashing the server — registration/reset flows
 will still respond successfully, but no email actually arrives.
@@ -153,6 +162,73 @@ backend also uses the second entry (`staffFrontendUrl` in
 order wrong doesn't break CORS, but it does send staff an email link to a
 port that immediately redirects them away.
 
+## Scheduled maintenance
+
+Four jobs in `backend/scripts/` must run every hour. Nothing else runs
+them, so they have to be started as part of every deployment:
+
+| Script | What it does |
+|---|---|
+| `checkSlaEscalations.js` | Escalates an overdue VacancyApproval/DepartmentApproval/OfferApproval to the next role tier |
+| `checkVacancyDeadlines.js` | Notifies a vacancy's creator once its deadline passes while still Open/PartiallyFilled |
+| `cleanupPendingRegistrations.js` | Deletes abandoned candidate registrations whose confirmation link expired unused |
+| `cleanupVerificationTokens.js` | Deletes email-confirmation and password-reset links that were used or expired more than 7 days ago |
+
+**If they stop running, staff are told.** Every run is recorded in the
+`SystemHealth` table. If any job hasn't succeeded in 3 hours, the HR home
+page shows a warning banner to every staff member, and every Director gets
+an in-app alert, at most once a day per problem. Failing email is reported
+the same way.
+
+### Recommended: the scheduler worker
+
+One long-running process runs all four jobs every hour
+(`SCHEDULER_INTERVAL_MINUTES` to change it), separately from the API:
+
+```bash
+cd backend
+npm run jobs
+```
+
+Run it next to the API under whatever keeps the API running. For example,
+with pm2:
+
+```bash
+pm2 start npm --name erecruitment-api -- start
+pm2 start npm --name erecruitment-jobs -- run jobs
+```
+
+On Windows, register `npm run jobs` as a service with NSSM, the same way
+as the API. It needs the same `backend/.env` and database access as the
+API; running it on the same host is simplest.
+
+### Alternative: cron or Task Scheduler
+
+Each script can also be run on its own. It exits with code 1 if it fails,
+and its run is recorded the same way. Use this **or** the worker, not
+both, or SLA escalations could be checked twice in the same hour.
+
+**Linux/macOS (cron)** — `crontab -e`, then:
+```cron
+0 * * * * cd /path/to/backend && node scripts/checkSlaEscalations.js >> /var/log/erecruitment/sla.log 2>&1
+0 * * * * cd /path/to/backend && node scripts/checkVacancyDeadlines.js >> /var/log/erecruitment/deadlines.log 2>&1
+0 * * * * cd /path/to/backend && node scripts/cleanupPendingRegistrations.js >> /var/log/erecruitment/cleanup.log 2>&1
+0 * * * * cd /path/to/backend && node scripts/cleanupVerificationTokens.js >> /var/log/erecruitment/cleanup.log 2>&1
+```
+
+All four run hourly: the warning treats a job as stopped after 3 hours
+without a successful run.
+
+**Windows (Task Scheduler)** — one example, repeat per script:
+```powershell
+$action = New-ScheduledTaskAction -Execute "node.exe" -Argument "scripts\checkVacancyDeadlines.js" -WorkingDirectory "D:\CAA Work\E-Recruitment\backend"
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration ([TimeSpan]::MaxValue)
+Register-ScheduledTask -TaskName "UCAA-CheckVacancyDeadlines" -Action $action -Trigger $trigger -Description "Notifies HR when a vacancy deadline passes"
+```
+
+Each script reads `backend/.env` (database and SMTP settings), so it must
+run somewhere with that file present and network access to the database.
+
 ## Common issues
 
 - **`EADDRINUSE` on port 4000** — a previous `npm run dev` is still running
@@ -175,4 +251,22 @@ cd backend
 npm test
 ```
 
-42 Jest tests, all against a mocked Prisma client — no database needed.
+Unit tests, all against a mocked Prisma client — no database needed.
+
+### End-to-end tests
+
+These drive the real API against a real MySQL database: the whole
+recruitment flow, simultaneous offer acceptances, the maintenance jobs,
+the system-health warnings and the sign-in rate limits. They need an
+**empty database of their own, whose name contains `test`**, because every
+test deletes all of its data:
+
+```bash
+mysql -u root -p -e "CREATE DATABASE erecruitment_test"
+cd backend
+DATABASE_URL_TEST="mysql://user:password@localhost:3306/erecruitment_test" npm run test:e2e
+```
+
+The suite rebuilds the database from `schema.prisma` before each run and
+refuses to touch a database without `test` in its name. CI runs it against
+a MySQL 8 service container. See `backend/tests-e2e/README.md`.

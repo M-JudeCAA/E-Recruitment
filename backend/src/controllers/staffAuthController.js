@@ -1,3 +1,4 @@
+const { sendError } = require('../utils/errorResponse');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const staffModel = require('../models/staffModel');
@@ -17,7 +18,7 @@ async function login(req, res) {
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN }
   );
-  res.json({ token, role: staff.role, department: staff.department, departmentId: staff.departmentId, name: staff.name });
+  res.json({ token, role: staff.role, department: staff.department, departmentId: staff.departmentId, name: staff.name, email: staff.email });
 }
 
 async function forgotPassword(req, res) {
@@ -47,7 +48,7 @@ async function resetPassword(req, res) {
     await staffModel.update(record.staffId, { passwordHash });
     res.json({ message: 'Password updated. You can now log in.' });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    sendError(res, err, 400);
   }
 }
 

@@ -1,10 +1,9 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { User, LogOut } from "lucide-react";
 import { useAuth } from "../models/AuthContext";
 import NotificationBell from "./NotificationBell";
 import CandidateNotificationBell from "./CandidateNotificationBell";
-import Avatar from "./Avatar";
+import ProfileMenu from "./ProfileMenu";
 import { candidateFileSrc } from "../utils/fileSrc";
 import ucaaLogo from "../assets/ucaa-logo.png";
 
@@ -25,26 +24,14 @@ const linkStyle = {
   fontWeight: 500,
 };
 
-const buttonStyle = {
-  background: "transparent",
-  border: "1px solid rgba(255,255,255,0.4)",
-  color: "#FFFFFF",
-  borderRadius: 6,
-  padding: "6px 12px",
-  fontSize: 13.5,
-  cursor: "pointer",
-};
-
-// Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK. Delegation
-// is self-service (you delegate your own authority to a subordinate) -
-// an HR Officer has nobody below them, so the link is hidden rather
-// than shown and immediately 403'd.
+// Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 
 export default function Navbar() {
   const { candidate, staff, logoutCandidate, logoutStaff } = useAuth();
-  const canDelegate = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
-  const canManageStaff = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Principal_HR_Officer;
+  // Manager/Director land on the reimagined Executive Overview instead of
+  // the HR Officer's operational Home - see HRSidebar.jsx/ExecutiveDashboard.jsx.
+  const isExecutive = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Manager;
 
   return (
     <nav
@@ -84,7 +71,7 @@ export default function Navbar() {
             account"/"Sign in" CTAs don't make sense once already signed
             in), or the guest landing page otherwise. */}
         <Link
-          to={staff ? "/hr/home" : candidate ? "/dashboard" : "/"}
+          to={staff ? (isExecutive ? "/hr/executive" : "/hr/home") : candidate ? "/dashboard" : "/"}
           style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}
         >
           <span
@@ -115,71 +102,44 @@ export default function Navbar() {
         <span style={{ flex: 1 }} />
         {candidate && (
           <>
-            {candidate.fullName && (
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Avatar
-                  src={candidateFileSrc(candidate.photoUrl)}
-                  size={28}
-                  background="rgba(255,255,255,0.15)"
-                  border="1px solid rgba(255,255,255,0.4)"
-                  iconColor="#FFFFFF"
-                />
-                <span style={{ ...linkStyle, fontWeight: 400, opacity: 0.85 }}>{candidate.fullName}</span>
-              </span>
-            )}
             <Link to="/dashboard" style={linkStyle}>
               My dashboard
             </Link>
             <CandidateNotificationBell />
-            <button onClick={logoutCandidate} style={{ ...buttonStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <LogOut size={14} /> Log out
-            </button>
+
+            {/* Account panel - click the avatar for a card with name/type/
+                email and Sign out, replacing the old always-visible chip +
+                separate logout button. Same shape as staff's below so a
+                signed-in candidate and a signed-in staff member get a
+                consistent navbar regardless of which side of the app
+                they're on. */}
+            <ProfileMenu
+              name={candidate.fullName}
+              subtitle={candidate.candidateType}
+              email={candidate.email}
+              avatarSrc={candidateFileSrc(candidate.photoUrl)}
+              onLogout={logoutCandidate}
+            />
           </>
         )}
         {staff ? (
           <>
-            {canManageStaff && (
-              <Link to="/hr/staff" style={linkStyle}>
-                Staff accounts
-              </Link>
-            )}
-            {canDelegate && (
-              <Link to="/hr/delegations" style={linkStyle}>
-                Delegations
-              </Link>
-            )}
+            {/* Staff accounts / Delegations moved off the top nav - both
+                now live under the "Staff Management" sidebar entry
+                (HRSidebar.jsx) on one combined page (StaffManagement.jsx). */}
             <NotificationBell />
 
-            {/* Profile chip - carries "logged in as <name> (<role>)", moved
-                here from the HR dashboard's page header so it's visible on
-                every staff screen, not just that one. */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 30,
-                  height: 30,
-                  flexShrink: 0,
-                  borderRadius: "50%",
-                  background: "rgba(255,255,255,0.15)",
-                  border: "1px solid rgba(255,255,255,0.4)",
-                }}
-              >
-                <User size={15} color="#FFFFFF" />
-              </span>
-              <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
-                <span style={{ ...linkStyle, fontWeight: 600, fontSize: 13 }}>{staff?.name}</span>
-                <span style={{ ...linkStyle, fontWeight: 400, fontSize: 11, opacity: 0.8 }}>
-                  {staff?.role?.replace(/_/g, ' ')}
-                </span>
-              </span>
-            </div>
-
-            <button onClick={logoutStaff} style={{ ...buttonStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <LogOut size={14} /> Staff log out
-            </button>
+            {/* Account panel - carries "logged in as <name> (<role>)" plus
+                email, moved here from the HR dashboard's page header so
+                it's visible on every staff screen, not just that one.
+                Click the avatar for the card; replaces the old
+                always-visible chip + separate "Staff log out" button. */}
+            <ProfileMenu
+              name={staff?.name}
+              subtitle={staff?.role?.replace(/_/g, ' ')}
+              email={staff?.email}
+              onLogout={logoutStaff}
+            />
           </>
         ) : null}
       </div>

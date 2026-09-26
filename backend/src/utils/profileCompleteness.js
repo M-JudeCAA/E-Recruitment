@@ -21,6 +21,7 @@ function getMissingProfileFields(candidate) {
   }
 
   if (!(candidate.education || []).length) missing.push('education');
+  if (!(candidate.workExperience || []).length) missing.push('workExperience');
 
   if (candidate.candidateType === 'Internal') {
     const internalProfile = candidate.internalProfile || {};
