@@ -77,7 +77,9 @@ try {
   if (-not $up) { throw "The API did not start - see $logs\api.err.log and api.out.log" }
 
   # 3. The site, served once locally; both public ports point at it.
-  Start-Logged 'web' 'npx.cmd' "vite preview --port $localPort --strictPort" $frontend
+  # --host 127.0.0.1: Funnel forwards to IPv4 127.0.0.1, but "localhost" can
+  # resolve to IPv6 ::1 only, which gives every visitor a 502.
+  Start-Logged 'web' 'npx.cmd' "vite preview --host 127.0.0.1 --port $localPort --strictPort" $frontend
 
   # 4. Public. The first time, Tailscale may print a link to approve Funnel
   # for this tailnet - open it, approve, and the command carries on.
