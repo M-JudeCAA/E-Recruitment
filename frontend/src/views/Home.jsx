@@ -273,7 +273,6 @@ function PositionRow({ v, onDownload, downloading }) {
             {v.title}
           </Link>
           {v.readvertisedFromId != null && <StatusBadge status="Readvertised" />}
-          {!closed && v.status && v.status !== 'Open' && <StatusBadge status={v.status} />}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 13, color: 'var(--color-text-muted)' }}>
           {v.department?.name && <span style={metaItemStyle}><Building2 size={14} /> {v.department.name}</span>}
