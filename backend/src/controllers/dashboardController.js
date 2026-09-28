@@ -189,6 +189,7 @@ async function upcomingInterviews(req, res) {
   const rounds = await dashboardModel.interviewRoundsScheduledBetween(from, to);
   res.json(rounds.map((r) => ({
     id: r.id, scheduledDate: r.scheduledDate, mode: r.mode, roundNumber: r.roundNumber,
+    durationMinutes: r.durationMinutes, location: r.location, candidateResponse: r.candidateResponse,
     candidateName: r.application.candidate.fullName,
     vacancyId: r.application.vacancy.id, vacancyTitle: r.application.vacancy.title, jobRef: r.application.vacancy.jobRef
   })));

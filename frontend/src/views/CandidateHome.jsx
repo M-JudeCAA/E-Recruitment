@@ -86,7 +86,8 @@ export default function CandidateHome() {
     const now = new Date();
     return applications
       .flatMap((app) => (app.interviewRounds || []).map((round) => ({ app, round })))
-      .filter(({ round }) => round.scheduledDate && new Date(round.scheduledDate) >= now)
+      // A cancelled round (or one marked a no-show) is not an upcoming interview.
+      .filter(({ round }) => round.status === 'Scheduled' && round.scheduledDate && new Date(round.scheduledDate) >= now)
       .sort((a, b) => new Date(a.round.scheduledDate) - new Date(b.round.scheduledDate));
   }, [applications]);
 
@@ -162,13 +163,18 @@ export default function CandidateHome() {
                     {nextInterview.round.mode && (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         &middot; {nextInterview.round.mode.toLowerCase().includes('virtual') || nextInterview.round.mode.toLowerCase().includes('online')
-                          ? <Video size={13} /> : <MapPin size={13} />} {nextInterview.round.mode}
+                          ? <Video size={13} /> : <MapPin size={13} />} {nextInterview.round.mode === 'In-person' && nextInterview.round.location ? nextInterview.round.location : nextInterview.round.mode}
                       </span>
                     )}
                   </div>
+                  {nextInterview.round.candidateResponse === 'Pending' && (
+                    <div style={{ fontSize: 13, color: 'var(--color-warning)', marginTop: 4 }}>Please confirm you can attend, or ask for another time.</div>
+                  )}
                 </div>
-                <Link to="/dashboard/applications" style={{ textDecoration: 'none' }}>
-                  <Button variant="secondary" style={{ padding: '6px 14px', fontSize: 13 }}>View details</Button>
+                <Link to="/dashboard/applications?filter=interviews" style={{ textDecoration: 'none' }}>
+                  <Button variant="secondary" style={{ padding: '6px 14px', fontSize: 13 }}>
+                    {nextInterview.round.candidateResponse === 'Pending' ? 'Confirm or reschedule' : 'View details'}
+                  </Button>
                 </Link>
               </div>
             </Card>

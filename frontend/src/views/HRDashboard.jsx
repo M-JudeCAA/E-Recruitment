@@ -31,7 +31,9 @@ function UrgencyBadge({ followUp }) {
   return <span style={{ fontSize: 11, fontWeight: 700, color: urgency.color, whiteSpace: 'nowrap' }}>{urgency.label}</span>;
 }
 
-const VALID_TABS = ['vacancies', 'interviews', 'offers'];
+// Interviews moved to their own page (/hr/interviews, InterviewHub.jsx);
+// an old ?tab=interviews link is redirected there below.
+const VALID_TABS = ['vacancies', 'offers'];
 
 const EMPLOYMENT_CATEGORY_LABELS = { FullTime: 'Full-time', Contract: 'Contract', FixedTermContract: 'Fixed Term Contract' };
 // UCAA's actual sites - matches backend/src/utils/vacancyValidation.js's
@@ -72,7 +74,7 @@ function daysLeftLabel(deadline) {
   return { text: `in ${daysLeft} days`, urgent: daysLeft <= 7 };
 }
 
-// Mimics the Interviews/Offers tabs' own card rows (name + vacancy line)
+// Mimics the Offers tab's own card rows (name + vacancy line)
 // so the cross-vacancy queue doesn't visibly jump in layout once the real
 // list lands - see Skeleton.jsx's own comment for why this beats a plain
 // "Loading..." string here.
@@ -152,9 +154,12 @@ export default function HRDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get('tab');
   const activeSection = VALID_TABS.includes(requestedTab) ? requestedTab : 'vacancies';
+  useEffect(() => {
+    if (requestedTab === 'interviews') navigate('/hr/interviews', { replace: true });
+  }, [requestedTab, navigate]);
 
-  // Interviews/Offers are cross-vacancy views over the small subset of
-  // applications with an interview round or an offer. This used to be an
+  // Offers is a cross-vacancy view over the small subset of applications
+  // with an offer. This used to be an
   // N+1 fetch (one request per vacancy, flattened client-side) as a
   // workaround for there being no aggregate endpoint - now there is one
   // (the same GET /api/applications the Application Management queue
@@ -164,8 +169,7 @@ export default function HRDashboard() {
   const [followUps, setFollowUps] = useState([]);
 
   // `force` bypasses the "already loaded" guard - the normal tab-switch
-  // path never needs to re-fetch, but a WS event on the interviews/offers
-  // tab does.
+  // path never needs to re-fetch, but a WS event on the offers tab does.
   const loadCrossVacancyApplications = useCallback(async (force = false) => {
     if (!force && (crossApps || crossLoading)) return;
     setCrossLoading(true);
@@ -182,7 +186,7 @@ export default function HRDashboard() {
   }, [crossApps, crossLoading]);
 
   useEffect(() => {
-    if (['interviews', 'offers'].includes(activeSection)) {
+    if (activeSection === 'offers') {
       loadCrossVacancyApplications();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -211,7 +215,7 @@ export default function HRDashboard() {
   const [postingTypeFilter, setPostingTypeFilter] = useState(searchParams.get('postingType') || 'All');
   const [directorateFilter, setDirectorateFilter] = useState(searchParams.get('directorate') || 'All');
   const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'urgent');
-  // List/Table/Board - shared across every tab (Vacancies/Interviews/
+  // List/Table/Board - shared across every tab (Vacancies/
   // Offers) that offers a ViewSwitcher, same as `tab` itself, since only
   // one tab's content is ever on screen to read it.
   const [view, setView] = useState(searchParams.get('view') || 'list');
@@ -256,12 +260,11 @@ export default function HRDashboard() {
   }, [searchText, statusFilter, departmentFilter, postingTypeFilter, directorateFilter, sortBy]);
 
   // Same "Load more" cap as Vacancies' own visibleCount above, applied to
-  // the Interviews/Offers tabs - crossApps is already fetched whole (one
+  // the Offers tab - crossApps is already fetched whole (one
   // bounded request, up to 500), so this only bounds the DOM, not another
   // fetch. Separate from visibleCount since either tab's scroll position
   // shouldn't reset the other's.
   const CROSS_PAGE_SIZE = 20;
-  const [interviewsVisibleCount, setInterviewsVisibleCount] = useState(CROSS_PAGE_SIZE);
   const [offersVisibleCount, setOffersVisibleCount] = useState(CROSS_PAGE_SIZE);
 
   // setLoadingVacancies(true) is deliberately NOT reset to true on every
@@ -521,13 +524,6 @@ export default function HRDashboard() {
     { label: 'Open', value: vacancies.filter((v) => v.status === 'Open').length, color: 'var(--color-accent)' },
     { label: 'Pending approval', value: vacancies.filter((v) => v.status === 'PendingApproval').length, color: 'var(--color-warning)' },
     { label: 'Closed', value: vacancies.filter((v) => v.status === 'Closed').length, color: 'var(--color-text-muted)' }
-  ];
-  const allRounds = (crossApps || []).flatMap((app) => app.interviewRounds || []);
-  const interviewStats = [
-    { label: 'Shortlist', value: allRounds.filter((r) => r.recommendation === 'Shortlist').length, color: 'var(--color-accent)' },
-    { label: 'Hold', value: allRounds.filter((r) => r.recommendation === 'Hold').length, color: 'var(--color-warning)' },
-    { label: 'Reject', value: allRounds.filter((r) => r.recommendation === 'Reject').length, color: 'var(--color-danger)' },
-    { label: 'Awaiting a score', value: allRounds.filter((r) => r.score == null).length, color: 'var(--color-text-muted)' }
   ];
   const offerStatuses = (crossApps || []).filter((app) => app.offer).map((app) => app.offer.status);
   const offerStats = ['Recommended', 'Approved', 'Extended', 'Accepted', 'Declined'].map((status) => ({
@@ -1078,96 +1074,6 @@ export default function HRDashboard() {
       )}
             </>
           )}
-
-          {activeSection === 'interviews' && (() => {
-            const interviewApps = crossApps ? crossApps.filter((app) => app.interviewRounds?.length > 0) : null;
-            const latestRound = (app) => [...app.interviewRounds].sort((a, b) => b.roundNumber - a.roundNumber)[0];
-            const visibleInterviewApps = interviewApps ? interviewApps.slice(0, interviewsVisibleCount) : [];
-            return (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-                  <h3 style={{ margin: 0 }}>Interviews</h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <LiveIndicator connected={connected} />
-                    {interviewApps?.length > 0 && <ViewSwitcher view={view} onChange={setView} />}
-                  </div>
-                </div>
-                <StatsStrip stats={interviewStats} />
-                {crossLoading && <CrossQueueRowSkeleton />}
-                {interviewApps?.length === 0 && <p>No interviews scheduled yet.</p>}
-                {interviewApps?.length > 0 && view === 'table' && (
-                  <>
-                    <Card style={{ padding: 0 }}>
-                      <DataTable
-                        getRowKey={(app) => app.id}
-                        rows={visibleInterviewApps}
-                        columns={[
-                          { key: 'candidate', label: 'Candidate', render: (app) => <span style={{ fontWeight: 600 }}>{app.candidate.fullName}</span> },
-                          { key: 'vacancy', label: 'Vacancy', render: (app) => `${app.vacancy.jobRef} — ${app.vacancy.title}` },
-                          { key: 'round', label: 'Round', render: (app) => `Round ${latestRound(app).roundNumber}` },
-                          { key: 'date', label: 'Date', render: (app) => latestRound(app).scheduledDate ? new Date(latestRound(app).scheduledDate).toLocaleDateString() : 'unscheduled' },
-                          { key: 'score', label: 'Score', render: (app) => latestRound(app).score != null ? latestRound(app).score.toFixed(1) : '—' },
-                          { key: 'recommendation', label: 'Recommendation', render: (app) => latestRound(app).recommendation ? <StatusBadge status={latestRound(app).recommendation} /> : '—' },
-                          { key: 'actions', label: '', render: (app) => <Link to={`/hr/applications?vacancyId=${app.vacancy.id}`} style={{ fontSize: 12 }}>Manage &rarr;</Link> }
-                        ]}
-                      />
-                    </Card>
-                    <LoadMoreControl total={interviewApps.length} visibleCount={interviewsVisibleCount} onLoadMore={() => setInterviewsVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
-                  </>
-                )}
-                {interviewApps?.length > 0 && view === 'board' && (
-                  <>
-                    <BoardView
-                      getItemKey={(app) => app.id}
-                      items={visibleInterviewApps}
-                      groupBy={(app) => latestRound(app).recommendation || 'Pending'}
-                      columns={[
-                        { key: 'Pending', label: 'Pending', color: 'var(--color-text-muted)' },
-                        { key: 'Shortlist', label: 'Shortlist', color: STATUS_COLORS.Shortlist },
-                        { key: 'Hold', label: 'Hold', color: STATUS_COLORS.Hold },
-                        { key: 'Reject', label: 'Reject', color: STATUS_COLORS.Reject }
-                      ]}
-                      renderCard={(app) => {
-                        const r = latestRound(app);
-                        return (
-                          <Card onClick={() => navigate(`/hr/applications?vacancyId=${app.vacancy.id}`)} style={{ marginBottom: 0, padding: 10 }}>
-                            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{app.candidate.fullName}</div>
-                            <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{app.vacancy.jobRef} &middot; {app.vacancy.title}</div>
-                            <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginTop: 2 }}>
-                              Round {r.roundNumber}{r.score != null && <> &middot; {r.score.toFixed(1)}</>}
-                            </div>
-                          </Card>
-                        );
-                      }}
-                    />
-                    <LoadMoreControl total={interviewApps.length} visibleCount={interviewsVisibleCount} onLoadMore={() => setInterviewsVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
-                  </>
-                )}
-                {interviewApps?.length > 0 && view !== 'table' && view !== 'board' && (
-                  <>
-                    {visibleInterviewApps.map((app) => (
-                      <Card key={app.id}>
-                        <strong>{app.candidate.fullName}</strong> &mdash; {app.vacancy.jobRef} ({app.vacancy.title})
-                        <div style={{ marginTop: 6 }}>
-                          {app.interviewRounds.map((r) => (
-                            <div key={r.id} style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-                              Round {r.roundNumber}
-                              {' '}&middot; {r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString() : 'unscheduled'}
-                              {' '}&middot; {r.mode}
-                              {r.score != null && <> &middot; average {r.score.toFixed(1)}</>}
-                              {r.recommendation && <> &middot; <StatusBadge status={r.recommendation} /></>}
-                            </div>
-                          ))}
-                        </div>
-                        <Link to={`/hr/applications?vacancyId=${app.vacancy.id}`}>Manage in Application Management &rarr;</Link>
-                      </Card>
-                    ))}
-                    <LoadMoreControl total={interviewApps.length} visibleCount={interviewsVisibleCount} onLoadMore={() => setInterviewsVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
-                  </>
-                )}
-              </div>
-            );
-          })()}
 
           {activeSection === 'offers' && (() => {
             const offerApps = crossApps ? crossApps.filter((app) => app.offer) : null;

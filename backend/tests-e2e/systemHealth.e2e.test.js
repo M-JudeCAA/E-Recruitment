@@ -23,6 +23,7 @@ afterAll(async () => {
 const JOBS = {
   checkSlaEscalations: () => require('../scripts/checkSlaEscalations').run(),
   checkVacancyDeadlines: () => require('../scripts/checkVacancyDeadlines').run(),
+  sendInterviewReminders: () => require('../scripts/sendInterviewReminders').run(),
   cleanupPendingRegistrations: () => require('../scripts/cleanupPendingRegistrations').run(),
   cleanupVerificationTokens: () => require('../scripts/cleanupVerificationTokens').run()
 };

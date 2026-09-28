@@ -113,9 +113,10 @@ describe('slaPolicies', () => {
 });
 
 describe('upcomingInterviews', () => {
-  test('shapes rounds scheduled within the window, defaulting to 7 days', async () => {
+  test('shapes still-Scheduled rounds within the window, defaulting to 7 days', async () => {
     prisma.interviewRound.findMany.mockResolvedValue([{
       id: 1, scheduledDate: new Date('2026-01-05T10:00:00Z'), mode: 'Virtual', roundNumber: 1,
+      durationMinutes: 45, location: null, candidateResponse: 'Confirmed',
       application: { candidate: { fullName: 'Dan Doe' }, vacancy: { id: 3, title: 'Analyst', jobRef: 'UCAA/ADV/EXT/01/2026' } }
     }]);
 
@@ -124,10 +125,11 @@ describe('upcomingInterviews', () => {
     await dashboardController.upcomingInterviews(req, res);
 
     expect(prisma.interviewRound.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { scheduledDate: expect.objectContaining({ gte: expect.any(Date), lte: expect.any(Date) }) }
+      where: { scheduledDate: expect.objectContaining({ gte: expect.any(Date), lte: expect.any(Date) }), status: 'Scheduled' }
     }));
     expect(res.json).toHaveBeenCalledWith([{
       id: 1, scheduledDate: new Date('2026-01-05T10:00:00Z'), mode: 'Virtual', roundNumber: 1,
+      durationMinutes: 45, location: null, candidateResponse: 'Confirmed',
       candidateName: 'Dan Doe', vacancyId: 3, vacancyTitle: 'Analyst', jobRef: 'UCAA/ADV/EXT/01/2026'
     }]);
   });

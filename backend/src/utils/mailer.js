@@ -53,14 +53,18 @@ async function recordOutcome(ok, error) {
 
 // Still returns null instead of throwing on failure - callers rely on an
 // email problem never rolling back the action that triggered it.
-async function sendMail({ to, subject, html }) {
+// attachments is optional (nodemailer's own shape) - used for the .ics
+// calendar invites sent to interview panelists.
+async function sendMail({ to, subject, html, attachments }) {
   if (!process.env.SMTP_HOST) {
     console.error(`Failed to send email to ${to}: SMTP_HOST is not set`);
     await recordOutcome(false, 'SMTP_HOST is not set');
     return null;
   }
   try {
-    const info = await transporter.sendMail({ from: process.env.SMTP_FROM, to, subject, html });
+    const info = await transporter.sendMail({
+      from: process.env.SMTP_FROM, to, subject, html, ...(attachments ? { attachments } : {})
+    });
     await recordOutcome(true);
     return info;
   } catch (err) {

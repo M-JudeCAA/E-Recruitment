@@ -154,6 +154,8 @@ model StaffUser {
   vacanciesApproved Vacancy[]        @relation("VacancyApprovedBy")
   vacanciesPostingTypeChanged Vacancy[] @relation("VacancyPostingTypeChangedBy")
   interviewsRun    InterviewRound[] @relation("InterviewConductedBy")
+  interviewsScheduled InterviewRound[] @relation("InterviewScheduledBy")
+  interviewsCancelled InterviewRound[] @relation("InterviewCancelledBy")
   panelLinks       PanelMember[]    @relation("PanelStaffLink")
   panelScoresRecorded PanelMember[] @relation("PanelRecordedBy")
   offersRecommended Offer[]         @relation("OfferRecommendedBy")
@@ -725,12 +727,28 @@ model PanelMember {
   email            String?
   staffUserId      Int?           // optional - only set if this panelist happens to have a system account
   staffUser        StaffUser?     @relation("PanelStaffLink", fields: [staffUserId], references: [id])
+  // The panel chair - a label only (who leads the session, whom HR
+  // contacts about the panel's view); it carries no extra weight in the
+  // average. At most one per round, enforced in interviewController.
+  isChair          Boolean        @default(false)
+  // Always 0-100, however it was entered. When the round has a rubric
+  // (InterviewRound.criteria) this is computed from criterionScores by
+  // interviewService.scoreFromCriteria, never typed in - so the round
+  // average, analytics and recommend-offer all keep reading one number.
   score            Float?
+  // { [criterionId]: 1-5 } against InterviewRound.criteria - null for a
+  // round scored as a single overall number.
+  criterionScores  Json?
   comments         String?        @db.Text
   selfSubmitted    Boolean        @default(false) // true if entered via their own access link, not proxied by HR
   recordedById     Int?           // the HR Officer who transcribed this score, if proxied
   recordedBy       StaffUser?     @relation("PanelRecordedBy", fields: [recordedById], references: [id])
   submittedAt      DateTime?
+  // A panelist who stood down for this candidate (declared a conflict of
+  // interest, or did not sit). Excluded from the round average and from
+  // "all panel scores are in"; their access links are revoked.
+  recusedAt        DateTime?
+  recusalReason    String?        @db.Text
   accessTokens     PanelAccessToken[]
 }
 
@@ -744,18 +762,73 @@ model PanelAccessToken {
   createdAt     DateTime    @default(now())
 }
 
+enum InterviewRoundStatus {
+  Scheduled
+  // Set when the panel's recommendation is finalized
+  // (interviewController.finalizeRecommendation).
+  Completed
+  Cancelled
+  NoShow
+}
+
+// The candidate's answer to an invitation - reset to Pending on every
+// reschedule, since confirming the old time says nothing about the new one.
+enum InterviewCandidateResponse {
+  Pending
+  Confirmed
+  RescheduleRequested
+}
+
 model InterviewRound {
-  id             Int         @id @default(autoincrement())
-  applicationId  Int
-  application    Application @relation(fields: [applicationId], references: [id])
-  roundNumber    Int
-  scheduledDate  DateTime?
-  mode           String?
-  score          Float?      // computed: average of this round's PanelMember scores
-  recommendation String?     // Shortlist / Hold / Reject - a deliberate HR judgment, not an average
-  conductedById  Int?
-  conductedBy    StaffUser?  @relation("InterviewConductedBy", fields: [conductedById], references: [id])
-  panelMembers   PanelMember[]
+  id              Int         @id @default(autoincrement())
+  applicationId   Int
+  application     Application @relation(fields: [applicationId], references: [id])
+  roundNumber     Int
+  // Start date AND time (it used to be a date only). Null means "to be
+  // confirmed" - still allowed, but such a round can't be checked for
+  // clashes and gets no reminder.
+  scheduledDate   DateTime?
+  durationMinutes Int?        // null is treated as 60 by the clash check
+  mode            String?     // In-person / Virtual / Phone
+  location        String?     // room/venue, for In-person
+  meetingLink     String?     @db.Text
+  // Shown to the candidate (what to bring, who to ask for at reception).
+  instructions    String?     @db.Text
+  // Staff-only - never sent to the candidate (see utils/candidateInterview.js).
+  internalNotes   String?     @db.Text
+  // Scoring rubric: [{ id, name, weight, description }]. Ids are generated
+  // server-side and stable for the life of the round, same principle as
+  // Vacancy.desirableRequirements. Frozen once any panelist has scored.
+  criteria        Json?
+  // Rounds created together by one bulk-scheduling run share this key, so
+  // the Interview Hub can show them as one session.
+  sessionKey      String?
+  status          InterviewRoundStatus       @default(Scheduled)
+  candidateResponse     InterviewCandidateResponse @default(Pending)
+  candidateResponseNote String?  @db.Text
+  candidateRespondedAt  DateTime?
+  rescheduleCount Int         @default(0)
+  cancelledAt     DateTime?
+  cancelledById   Int?
+  cancelledBy     StaffUser?  @relation("InterviewCancelledBy", fields: [cancelledById], references: [id])
+  cancellationReason String?  @db.Text
+  completedAt     DateTime?
+  // One-time-fire guards for scripts/sendInterviewReminders.js (same idiom
+  // as Vacancy.deadlineNotifiedAt); reminderSentAt is cleared on reschedule.
+  reminderSentAt  DateTime?
+  scoreNudgeSentAt DateTime?
+  score           Float?      // computed: average of this round's non-recused PanelMember scores
+  recommendation  String?     // Shortlist / Hold / Reject - a deliberate HR judgment, not an average
+  conductedById   Int?
+  conductedBy     StaffUser?  @relation("InterviewConductedBy", fields: [conductedById], references: [id])
+  scheduledById   Int?
+  scheduledBy     StaffUser?  @relation("InterviewScheduledBy", fields: [scheduledById], references: [id])
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @default(now()) @updatedAt
+  panelMembers    PanelMember[]
+
+  @@index([scheduledDate])
+  @@index([sessionKey])
 }
 
 model Offer {
@@ -913,6 +986,17 @@ enum SlaTaskType {
   // scheduled maintenance jobs have stopped running (systemHealthService).
   // taskId is 0 - there is no single entity behind it.
   SystemHealthAlert
+  // Interview scheduling - same "reuse notify()'s plumbing, not part of the
+  // SLA-escalation loop" principle. taskId is the InterviewRound id.
+  // A candidate asked for another time (interviewController.candidateRespond),
+  // sent to whoever scheduled the round.
+  InterviewRescheduleRequested
+  // The last outstanding panelist submitted through their own link - the
+  // round is ready for HR to finalize (panelAccessController.submitByToken).
+  InterviewReadyToFinalize
+  // A day after the interview, panel scores are still missing
+  // (scripts/sendInterviewReminders.js).
+  InterviewScoresOverdue
 }
 
 model SlaPolicy {
@@ -971,6 +1055,11 @@ enum CandidateNotificationType {
   // HR withdrew an offer the candidate had already been told about (it was
   // Approved) - applicationController.withdrawOffer.
   OfferWithdrawn
+  // Interview scheduling (interviewController, candidateInterviewController,
+  // scripts/sendInterviewReminders.js).
+  InterviewRescheduled
+  InterviewCancelled
+  InterviewReminder
 }
 
 // A separate model rather than reusing Notification above: recipientId
