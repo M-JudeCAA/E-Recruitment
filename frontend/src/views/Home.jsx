@@ -389,7 +389,12 @@ export default function Home() {
     setLoading(true);
     setLoadError(false);
     client.get('/api/vacancies')
-      .then((res) => setVacancies(res.data))
+      // Anything but an array (e.g. an HTML page from a misrouted /api) is a
+      // load error, not a crash in every list operation below.
+      .then((res) => {
+        if (!Array.isArray(res.data)) throw new Error('Unexpected vacancies response');
+        setVacancies(res.data);
+      })
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
   };
