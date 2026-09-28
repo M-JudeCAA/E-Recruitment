@@ -255,6 +255,44 @@ input::placeholder, textarea::placeholder {
   box-shadow: 0 14px 28px rgba(20,24,28,0.12);
 }
 
+/* Home.jsx hero "jump to" pills (a directorate, or "closing this week") -
+   ghost-button styling against the dark hero background; hover lives here
+   since inline React styles can't express :hover. */
+.home-hero__pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.4); background: rgba(255,255,255,0.08);
+  color: #fff; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.home-hero__pill:hover {
+  background: rgba(255,255,255,0.18);
+  border-color: rgba(255,255,255,0.65);
+}
+
+/* Home.jsx hero decorative flight path - a plane drifting along an
+   approximated curve (see the SVG dashed path it flies over). Several
+   transform keyframes rather than SVG motion-path, for broader browser
+   support; mixed vw/px units in `translate` are valid and only need to be
+   approximately right since this is purely decorative. */
+@keyframes home-flightpath {
+  0%   { transform: translate(0, 40px) rotate(18deg); opacity: 0; }
+  8%   { opacity: 1; }
+  50%  { transform: translate(48vw, -60px) rotate(-6deg); opacity: 1; }
+  92%  { opacity: 1; }
+  100% { transform: translate(100vw, -10px) rotate(10deg); opacity: 0; }
+}
+.home-flightpath-plane {
+  animation: home-flightpath 14s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .home-flightpath-plane {
+    animation: none;
+    opacity: 0.5;
+    transform: translate(40vw, -20px) rotate(0deg);
+  }
+}
+
 /* Sidebar nav links (Sidebar.jsx). Hover lives here rather than inline
    styles because React inline styles can't express :hover - the active
    state sets its own inline background, which always wins over this
@@ -454,6 +492,9 @@ input::placeholder, textarea::placeholder {
   .home-hero__primary { width: 100%; }
   .home-hero__secondary { flex: 1 1 0; }
   .home-hero__secondary .btn { width: 100%; padding: 10px 8px !important; font-size: 14px !important; }
+  .home-hero__trust { margin-top: 14px !important; font-size: 11.5px !important; }
+  .home-hero__quickjump { display: none !important; } /* the panel below is one scroll away; skip it on a short mobile hero */
+  .home-flightpath-svg, .home-flightpath-plane { display: none !important; } /* not enough hero height on phones to read as a curve */
 
   .home-panel-wrap { margin-top: -40px !important; padding: 0 !important; }
   .home-panel {
