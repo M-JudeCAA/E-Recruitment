@@ -62,4 +62,4 @@ function dedupeBy(items, keyFn) {
   return result;
 }
 
-module.exports = { educationKey, workExperienceKey, certificateKey, dedupeBy };
+module.exports = { educationKey, workExperienceKey, certificateKey, examGradeKey, dedupeBy };
