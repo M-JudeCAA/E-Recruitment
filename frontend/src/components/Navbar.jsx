@@ -54,6 +54,7 @@ export default function Navbar() {
           drifting apart on wide viewports where a centered, width-capped
           bar would leave extra margin the page content doesn't have. */}
       <div
+        className="navbar-inner"
         style={{
           height: "100%",
           padding: "0 20px",
@@ -90,7 +91,11 @@ export default function Navbar() {
           >
             <img src={ucaaLogo} alt="UCAA logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           </span>
-          <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+          {/* Phones get a short app-style title instead of the full name. */}
+          <span className="mobile-only" style={{ ...linkStyle, fontWeight: 700, fontSize: 16 }}>
+            UCAA Careers
+          </span>
+          <span className="desktop-only navbar-title" style={{ flexDirection: "column", lineHeight: 1.15 }}>
             <span style={{ ...linkStyle, fontWeight: 700, fontSize: 14.5 }}>
               Uganda Civil Aviation Authority
             </span>
@@ -102,7 +107,8 @@ export default function Navbar() {
         <span style={{ flex: 1 }} />
         {candidate && (
           <>
-            <Link to="/dashboard" style={linkStyle}>
+            {/* The phone tab bar already carries this. */}
+            <Link to="/dashboard" className="desktop-only" style={linkStyle}>
               My dashboard
             </Link>
             <CandidateNotificationBell />

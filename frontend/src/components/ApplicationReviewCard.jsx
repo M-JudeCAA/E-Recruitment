@@ -5,13 +5,13 @@ import Card from './Card';
 import Button from './Button';
 import StatusBadge from './StatusBadge';
 import Modal from './Modal';
-import TextField from './TextField';
 import TextArea from './TextArea';
-import Select from './Select';
 import { fileLink } from '../utils/fileLink';
 import { safeJsonParse } from '../utils/safeJsonParse';
-
-const emptyPanelist = { name: '', trade: '', email: '' };
+import InterviewScheduler from './interviews/InterviewScheduler';
+import InterviewRoundPanel from './interviews/InterviewRoundPanel';
+import { ROUND_LABELS } from './interviews/formStyles';
+import { formatDateTime, venueLabel } from '../utils/interviews';
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK - used so
 // "Recommend for offer" (Principal HR Officer+), "Approve offer"
@@ -26,7 +26,9 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 const NOT_REJECTABLE = ['Draft', 'Offered', 'Rejected', 'Withdrawn'];
 
 // One application's full review card - screening detail, verification,
-// interview scheduling/scoring/finalizing, offer actions, and reject.
+// interviews (a summary of each round, opening the shared round workspace -
+// scheduling, panel, scores and finalizing live there and in the Interview
+// Hub), offer actions, and reject.
 // Extracted out of VacancyDetail.jsx so both the cross-vacancy "All
 // vacancies" queue and the single-vacancy view in ApplicationManagement.jsx
 // can render the exact same review experience HR already had.
@@ -51,39 +53,25 @@ export default function ApplicationReviewCard({
   // full detail up front.
   const [expanded, setExpanded] = useState(defaultExpanded);
   const [error, setError] = useState('');
-  const [linkMessage, setLinkMessage] = useState('');
   // One flag for every mutating action on this card - a slow network plus
   // an impatient double-click would otherwise fire the same request twice
   // (double-reject, double-approve-offer, etc.), since none of these are
   // naturally idempotent from the UI's point of view.
   const [submitting, setSubmitting] = useState(false);
-  // sendAccessLink is keyed separately (by panel member id) rather than
-  // reusing `submitting` - multiple panelists' links are independent
-  // actions, and per its own success message ("any previous link ... now
-  // invalid"), a double-click here can invalidate a link just shown to HR
-  // before they can copy it, so this one specifically needs its own guard.
-  const [linkSubmittingId, setLinkSubmittingId] = useState(null);
 
   // Only one modal is ever open for this card at a time, so a single
   // discriminated slot is enough instead of five separate booleans.
-  const [activeModal, setActiveModal] = useState(null); // 'verify' | 'reject' | 'interview' | 'score' | 'finalize' | 'withdrawOffer' | null
+  const [activeModal, setActiveModal] = useState(null); // 'verify' | 'reject' | 'withdrawOffer' | null
+  // The scheduler and the round workspace are their own modals (shared with
+  // the Interview Hub), so they sit outside activeModal.
+  const [scheduling, setScheduling] = useState(false);
+  const [openRoundId, setOpenRoundId] = useState(null);
 
   const [verifyDecision, setVerifyDecision] = useState('HR_Verified');
   const [verifyComments, setVerifyComments] = useState('');
   const [verifyFile, setVerifyFile] = useState(null);
 
   const [rejectReason, setRejectReason] = useState('');
-
-  const [interviewDate, setInterviewDate] = useState('');
-  const [interviewMode, setInterviewMode] = useState('In-person');
-  const [panelists, setPanelists] = useState([{ ...emptyPanelist }]);
-
-  const [scoreTarget, setScoreTarget] = useState(null); // { panelMemberId, name }
-  const [scoreValue, setScoreValue] = useState('');
-  const [scoreComments, setScoreComments] = useState('');
-
-  const [finalizeTarget, setFinalizeTarget] = useState(null); // { interviewId }
-  const [recommendation, setRecommendation] = useState('Shortlist');
 
   const closeModal = () => setActiveModal(null);
 
@@ -118,91 +106,6 @@ export default function ApplicationReviewCard({
       onUpdated();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not reject this application');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const openSchedule = () => {
-    setInterviewDate(''); setInterviewMode('In-person'); setPanelists([{ ...emptyPanelist }]); setError('');
-    setActiveModal('interview');
-  };
-  const updatePanelist = (index, field, value) => {
-    setPanelists((prev) => prev.map((p, i) => (i === index ? { ...p, [field]: value } : p)));
-  };
-  const addPanelistRow = () => setPanelists((prev) => [...prev, { ...emptyPanelist }]);
-  const removePanelistRow = (index) => setPanelists((prev) => prev.filter((_, i) => i !== index));
-  const submitSchedule = async () => {
-    if (!interviewDate) { setError('Please choose an interview date'); return; }
-    const validPanelists = panelists.filter((p) => p.name.trim());
-    setSubmitting(true);
-    try {
-      await staffClient.post(`/api/interviews/applications/${app.id}/interviews`, {
-        scheduledDate: interviewDate, mode: interviewMode, panelMembers: validPanelists
-      });
-      closeModal();
-      onUpdated();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not schedule interview');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const openScore = (panelMemberId, name) => {
-    setScoreTarget({ panelMemberId, name }); setScoreValue(''); setScoreComments(''); setError('');
-    setActiveModal('score');
-  };
-  const submitScore = async () => {
-    // Number('') is 0, not "empty" - without this check a blank field
-    // silently submits as a deliberate zero score instead of being caught.
-    const numericScore = Number(scoreValue);
-    if (scoreValue === '' || !Number.isFinite(numericScore) || numericScore < 0 || numericScore > 100) {
-      setError('Enter a score between 0 and 100');
-      return;
-    }
-    setSubmitting(true);
-    try {
-      await staffClient.patch(`/api/interviews/panel-members/${scoreTarget.panelMemberId}/score`, {
-        score: numericScore, comments: scoreComments
-      });
-      closeModal();
-      onUpdated();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not save score');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const sendAccessLink = async (panelMemberId, name) => {
-    setError(''); setLinkMessage(''); setLinkSubmittingId(panelMemberId);
-    try {
-      const res = await staffClient.post(`/api/interviews/panel-members/${panelMemberId}/access-link`);
-      setLinkMessage(
-        res.data.emailed
-          ? `Scoring link (re)sent to ${name}. Any previous link for them is now invalid.`
-          : `${name} has no email on file. Share this link directly - it replaces any previous link: ${res.data.url}`
-      );
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not generate scoring link');
-    } finally {
-      setLinkSubmittingId(null);
-    }
-  };
-
-  const openFinalize = (interviewId) => {
-    setFinalizeTarget({ interviewId }); setRecommendation('Shortlist'); setError('');
-    setActiveModal('finalize');
-  };
-  const submitFinalize = async () => {
-    setSubmitting(true);
-    try {
-      await staffClient.patch(`/api/interviews/${finalizeTarget.interviewId}/finalize`, { recommendation });
-      closeModal();
-      onUpdated();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not finalize recommendation');
     } finally {
       setSubmitting(false);
     }
@@ -251,7 +154,6 @@ export default function ApplicationReviewCard({
   return (
     <Card>
       {error && <div style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
-      {linkMessage && <div style={{ color: 'var(--color-text-muted)', fontSize: 13, marginBottom: 8 }}>{linkMessage}</div>}
 
       {showVacancyContext && app.vacancy && (
         <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 4 }}>
@@ -435,58 +337,35 @@ export default function ApplicationReviewCard({
             </Card>
           )}
 
-          {app.interviewRounds.map((r) => (
-            <Card key={r.id} accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)' }}>
-              <strong>Round {r.roundNumber}</strong>
-              {' · '}{r.scheduledDate ? new Date(r.scheduledDate).toLocaleDateString() : 'unscheduled'}
-              {' · '}{r.mode}
-              {r.score != null && <span> &middot; Panel average: {r.score.toFixed(1)}</span>}
-              {r.recommendation && <span> &middot; Recommendation: <StatusBadge status={r.recommendation} /></span>}
-
-              <div style={{ marginTop: 8 }}>
-                {(r.panelMembers || []).map((p) => (
-                  <div key={p.id} style={{ fontSize: 13, marginBottom: 4 }}>
-                    {p.name}{p.trade ? ` (${p.trade})` : ''}
-                    {p.score != null ? (
-                      <span>
-                        {' '}&mdash; scored {p.score}{p.comments ? `: "${p.comments}"` : ''}
-                        {' '}<span style={{ color: 'var(--color-text-muted)' }}>
-                          ({p.selfSubmitted ? 'submitted by panelist' : 'recorded by HR'})
-                        </span>
-                      </span>
-                    ) : (
-                      <>
-                        <Button variant="ghost" style={{ marginLeft: 8, padding: '2px 8px' }} onClick={() => openScore(p.id, p.name)}>
-                          Record score
-                        </Button>
-                        <Button variant="ghost" style={{ marginLeft: 4, padding: '2px 8px' }}
-                          onClick={() => sendAccessLink(p.id, p.name)} disabled={linkSubmittingId === p.id}>
-                          {linkSubmittingId === p.id ? 'Sending...' : 'Send/regenerate scoring link'}
-                        </Button>
-                      </>
-                    )}
+          {app.interviewRounds.map((r) => {
+            const active = (r.panelMembers || []).filter((p) => !p.recusedAt);
+            const scored = active.filter((p) => p.score != null).length;
+            return (
+              <Card key={r.id} accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 13, minWidth: 0 }}>
+                  <strong>Round {r.roundNumber}</strong>
+                  {' · '}{formatDateTime(r.scheduledDate)}
+                  {' · '}{venueLabel(r)}
+                  <div style={{ color: 'var(--color-text-muted)', marginTop: 2 }}>
+                    Panel {scored}/{active.length} scored
+                    {r.score != null && <> &middot; average {r.score.toFixed(1)}</>}
+                    {r.status === 'Scheduled' && r.candidateResponse && <> &middot; candidate: {ROUND_LABELS[r.candidateResponse]}</>}
                   </div>
-                ))}
-              </div>
-
-              {!r.recommendation && (
-                <Button
-                  variant="secondary"
-                  style={{ marginTop: 8 }}
-                  disabled={r.score == null}
-                  onClick={() => openFinalize(r.id)}
-                >
-                  Finalize recommendation
-                </Button>
-              )}
-            </Card>
-          ))}
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <StatusBadge status={r.status || 'Scheduled'} label={ROUND_LABELS[r.status]} />
+                  {r.recommendation && <StatusBadge status={r.recommendation} />}
+                  <Button variant="ghost" style={{ padding: '4px 10px' }} onClick={() => setOpenRoundId(r.id)}>Open</Button>
+                </div>
+              </Card>
+            );
+          })}
         </>
       )}
 
       <div style={{ marginTop: 8 }}>
         {['Shortlisted', 'InterviewScheduled', 'Interviewed'].includes(app.status) && !app.offer && (
-          <Button variant="secondary" onClick={openSchedule}>
+          <Button variant="secondary" onClick={() => setScheduling(true)}>
             {app.interviewRounds.length === 0 ? 'Schedule interview' : 'Schedule another round'}
           </Button>
         )}
@@ -576,84 +455,16 @@ export default function ApplicationReviewCard({
         </Modal>
       )}
 
-      {activeModal === 'interview' && (
-        <Modal
-          title="Schedule interview"
-          onClose={closeModal}
-          footer={<>
-            <Button variant="ghost" onClick={closeModal} disabled={submitting}>Cancel</Button>
-            <Button onClick={submitSchedule} disabled={submitting}>{submitting ? 'Scheduling...' : 'Schedule'}</Button>
-          </>}
-        >
-          {error && <div style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
-          <TextField label="Interview date" type="date" value={interviewDate}
-            onChange={(e) => setInterviewDate(e.target.value)} />
-          <Select label="Mode" value={interviewMode} onChange={(e) => setInterviewMode(e.target.value)}>
-            <option value="In-person">In-person</option>
-            <option value="Virtual">Virtual</option>
-          </Select>
-
-          <div style={{ marginTop: 'var(--spacing-sm)' }}>
-            <span style={{ display: 'block', fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-              Panel members - no system account needed for any of them
-            </span>
-            {panelists.map((p, index) => (
-              <div key={index} style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-                <input placeholder="Name" value={p.name} onChange={(e) => updatePanelist(index, 'name', e.target.value)}
-                  style={{ flex: 2, padding: 6, border: '1px solid var(--color-border)', borderRadius: 'var(--radius)' }} />
-                <input placeholder="Trade / position" value={p.trade} onChange={(e) => updatePanelist(index, 'trade', e.target.value)}
-                  style={{ flex: 2, padding: 6, border: '1px solid var(--color-border)', borderRadius: 'var(--radius)' }} />
-                <input placeholder="Email (optional)" value={p.email} onChange={(e) => updatePanelist(index, 'email', e.target.value)}
-                  style={{ flex: 2, padding: 6, border: '1px solid var(--color-border)', borderRadius: 'var(--radius)' }} />
-                {panelists.length > 1 && (
-                  <button type="button" onClick={() => removePanelistRow(index)}
-                    style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer' }}>&times;</button>
-                )}
-              </div>
-            ))}
-            <Button variant="ghost" style={{ padding: '4px 10px', fontSize: 13 }} onClick={addPanelistRow}>+ Add panelist</Button>
-          </div>
-        </Modal>
+      {scheduling && (
+        <InterviewScheduler
+          presetVacancyId={app.vacancyId || vacancy?.id}
+          presetApplicationIds={[app.id]}
+          onClose={() => setScheduling(false)}
+          onScheduled={onUpdated}
+        />
       )}
-
-      {activeModal === 'score' && (
-        <Modal
-          title={`Record score — ${scoreTarget?.name}`}
-          onClose={closeModal}
-          footer={<>
-            <Button variant="ghost" onClick={closeModal} disabled={submitting}>Cancel</Button>
-            <Button onClick={submitScore} disabled={submitting}>{submitting ? 'Saving...' : 'Save score'}</Button>
-          </>}
-        >
-          {error && <div style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
-            Entered on this panelist's behalf - no login required for them.
-          </p>
-          <TextField label="Score (0-100)" type="number" min="0" max="100" value={scoreValue}
-            onChange={(e) => setScoreValue(e.target.value)} />
-          <TextArea label="Comments" value={scoreComments} onChange={(e) => setScoreComments(e.target.value)} />
-        </Modal>
-      )}
-
-      {activeModal === 'finalize' && (
-        <Modal
-          title="Finalize recommendation"
-          onClose={closeModal}
-          footer={<>
-            <Button variant="ghost" onClick={closeModal} disabled={submitting}>Cancel</Button>
-            <Button onClick={submitFinalize} disabled={submitting}>{submitting ? 'Finalizing...' : 'Finalize'}</Button>
-          </>}
-        >
-          {error && <div style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
-            This is your judgment call informed by the panel's scores, not an automatic average.
-          </p>
-          <Select label="Recommendation" value={recommendation} onChange={(e) => setRecommendation(e.target.value)}>
-            <option value="Shortlist">Shortlist</option>
-            <option value="Hold">Hold</option>
-            <option value="Reject">Reject</option>
-          </Select>
-        </Modal>
+      {openRoundId && (
+        <InterviewRoundPanel roundId={openRoundId} onClose={() => setOpenRoundId(null)} onChanged={onUpdated} />
       )}
     </Card>
   );

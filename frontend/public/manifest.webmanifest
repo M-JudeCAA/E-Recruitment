@@ -1,0 +1,14 @@
+{
+  "name": "UCAA e-Recruitment",
+  "short_name": "UCAA Careers",
+  "description": "Find and apply for jobs at the Uganda Civil Aviation Authority.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#1C719D",
+  "icons": [
+    { "src": "/ucaa-icon.png", "type": "image/png", "sizes": "any", "purpose": "any" }
+  ]
+}
