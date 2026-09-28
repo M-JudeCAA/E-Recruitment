@@ -519,12 +519,21 @@ export default function HRDashboard() {
 
   // Vacancies tab strip - totals over the full (unfiltered) list, same
   // "always the full picture regardless of the filter bar" convention as
-  // HRHome's own KPI tiles.
+  // HRHome's own KPI tiles. Each tile's own `statusValue` is exactly the
+  // Status <Select>'s option value above, so clicking a tile can drive the
+  // very same statusFilter state as picking it from that dropdown -
+  // clicking the active tile again clears back to "All" (see
+  // handleVacancyStatClick), same toggle feel as re-clicking an active
+  // filter chip elsewhere in the app.
   const vacancyStats = [
-    { label: 'Open', value: vacancies.filter((v) => v.status === 'Open').length, color: 'var(--color-accent)' },
-    { label: 'Pending approval', value: vacancies.filter((v) => v.status === 'PendingApproval').length, color: 'var(--color-warning)' },
-    { label: 'Closed', value: vacancies.filter((v) => v.status === 'Closed').length, color: 'var(--color-text-muted)' }
+    { label: 'Open', value: vacancies.filter((v) => v.status === 'Open').length, color: 'var(--color-accent)', statusValue: 'Open' },
+    { label: 'Pending approval', value: vacancies.filter((v) => v.status === 'PendingApproval').length, color: 'var(--color-warning)', statusValue: 'PendingApproval' },
+    { label: 'Closed', value: vacancies.filter((v) => v.status === 'Closed').length, color: 'var(--color-text-muted)', statusValue: 'Closed' }
   ];
+  const handleVacancyStatClick = (stat) => {
+    setStatusFilter((current) => (current === stat.statusValue ? 'All' : stat.statusValue));
+  };
+  const activeVacancyStatLabel = vacancyStats.find((s) => s.statusValue === statusFilter)?.label;
   const offerStatuses = (crossApps || []).filter((app) => app.offer).map((app) => app.offer.status);
   const offerStats = ['Recommended', 'Approved', 'Extended', 'Accepted', 'Declined'].map((status) => ({
     label: status, value: offerStatuses.filter((s) => s === status).length
@@ -551,7 +560,7 @@ export default function HRDashboard() {
         </div>
       </div>
 
-      <StatsStrip stats={vacancyStats} />
+      <StatsStrip stats={vacancyStats} onSelect={handleVacancyStatClick} activeLabel={activeVacancyStatLabel} />
 
       <Alert type="success" message={message} />
       <Alert type="error" message={error} />
