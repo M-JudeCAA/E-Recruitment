@@ -126,7 +126,7 @@ Two terminals:
 ```bash
 # terminal 1
 cd backend
-npm run dev      # nodemon, http://localhost:4000
+npm run dev      # API (nodemon, http://localhost:4000) + scheduler worker
 
 # terminal 2
 cd frontend
@@ -134,6 +134,14 @@ npm run dev       # vite, http://localhost:5173
 ```
 
 Check the backend is up: `curl http://localhost:4000/health` → `{"status":"ok"}`
+
+The backend's `npm run dev` starts two processes in one terminal, their
+output prefixed `[api]` and `[jobs]`: the API under nodemon, and the
+scheduler worker (see [Scheduled maintenance](#scheduled-maintenance)).
+The worker isn't restarted on file changes, since it runs every job at
+start-up; restart `npm run dev` after editing a job. Ctrl+C stops both.
+Use `npm run dev:api` for the API alone, e.g. while a separate
+`npm run jobs` is already running (don't run two workers at once).
 
 Open http://localhost:5173 to register or log in as a candidate. Staff sign
 in from a separate port — see below.
@@ -190,7 +198,8 @@ cd backend
 npm run jobs
 ```
 
-Run it next to the API under whatever keeps the API running. For example,
+Locally, `npm run dev` already starts it next to the API. In production,
+run it next to the API under whatever keeps the API running. For example,
 with pm2:
 
 ```bash

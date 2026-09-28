@@ -12,7 +12,9 @@ UCAA e-Recruitment System: React (frontend) + Node.js/Express (API) + MySQL via 
 
 ```bash
 npm install
-npm run dev              # nodemon, http://localhost:4000 (predev/prestart hooks auto-run `prisma generate`)
+npm run dev              # API (nodemon, http://localhost:4000) + scheduler worker in one terminal, via scripts/dev.js
+npm run dev:api          # API alone (nodemon)
+# predev/prestart/prejobs hooks run scripts/prismaGenerate.js (`prisma generate`, tolerating the Windows engine-DLL lock when a client already exists)
 npm start                # plain node, no watch
 npm test                 # jest, all suites, mocked Prisma client (no DB needed)
 npm run test:e2e         # end-to-end suite against a real MySQL DB - needs DATABASE_URL_TEST (a DB whose name contains "test"); see tests-e2e/README.md
@@ -131,5 +133,5 @@ Every suite in `backend/tests/` mocks the shared Prisma client via `jest.mock('.
 - The migration history can't build a database from scratch (`20260915120000_age_flying_hours_exam_grades` alters a column no earlier migration creates - columns were added directly on the shared DB; see the READMEs in `prisma/migrations/`). The e2e suite uses `prisma db push` instead. New migrations still go in `prisma/migrations/` as usual.
 - Rate limits are in-memory per API process; a multi-process deployment would need a shared store.
 - No frontend test suite.
-- `docker-compose.yml` exists but isn't wired up for local dev — use the two-terminal `npm run dev` flow in [SETUP.md](SETUP.md) instead.
+- `docker-compose.yml` exists but isn't wired up for local dev — use the two-terminal `npm run dev` flow (backend + frontend) in [SETUP.md](SETUP.md) instead.
 - No HRMS/AD/WSO2 integration — `candidateType` (Internal/External) is determined purely by email domain (`INTERNAL_EMAIL_DOMAIN`) at registration, and `InternalProfile` fields are self-declared + HR-verified, not synced from an authoritative system.
