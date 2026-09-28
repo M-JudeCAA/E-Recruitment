@@ -1,8 +1,11 @@
 import React from "react";
-import { Routes, Route, Outlet } from "react-router-dom";
+import { Routes, Route, Outlet, useLocation } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import BreadcrumbNav from "./components/BreadcrumbNav";
+import MobileTabBar from "./components/MobileTabBar";
+import { useAuth } from "./models/AuthContext";
+import { isStaffPort } from "./staffPort";
 
 import Home from "./views/Home";
 import Register from "./views/Register";
@@ -47,16 +50,29 @@ function PaddedLayout() {
     // height so routed content never renders underneath it. Only this
     // layout pads by --breadcrumb-height, not the outer wrapper below,
     // since the full-bleed sibling routes never render the bar at all.
-    <div style={{ padding: 20, paddingTop: 'calc(20px + var(--breadcrumb-height))' }}>
+    <div className="padded-layout" style={{ padding: 20, paddingTop: 'calc(20px + var(--breadcrumb-height))' }}>
       <BreadcrumbNav />
       <Outlet />
     </div>
   );
 }
 
+// Focused flows where a phone shows no tab bar, the way an app hides its
+// tabs inside a multi-step task: the apply wizard, first-time profile
+// completion, and a panelist's one-off scoring link.
+const NO_TABBAR_PATHS = [/^\/apply\//, /^\/profile\/complete/, /^\/panel-score\//];
+
 export default function App() {
+  const { candidate, staff } = useAuth();
+  const { pathname } = useLocation();
+  // Phones only (theme.css hides it above 767px). The guest/candidate site
+  // gets the bottom tab bar; staff screens keep their sidebar drawer.
+  const showTabBar = !staff && !isStaffPort() && !NO_TABBAR_PATHS.some((re) => re.test(pathname));
+
   return (
-    <div style={{ fontFamily: "sans-serif", width: "100%" }}>
+    // app-shell / with-tabbar drive the phone-only layout in theme.css
+    // (compact app bar, no footer, --footer-height = tab bar height).
+    <div className={`app-shell${showTabBar ? " with-tabbar" : ""}`} style={{ fontFamily: "sans-serif", width: "100%" }}>
       <Navbar />
 
       {/* Navbar and Footer are position:fixed (pinned to the viewport on
@@ -273,6 +289,7 @@ export default function App() {
       </div>
 
       <Footer />
+      {showTabBar && <MobileTabBar signedIn={Boolean(candidate)} />}
     </div>
   );
 }

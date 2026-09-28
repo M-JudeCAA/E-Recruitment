@@ -320,3 +320,238 @@ input::placeholder, textarea::placeholder {
     background: var(--color-bg-subtle);
   }
 }
+
+/* Home.jsx Open Positions list rows - hover can't be expressed inline. */
+.position-row {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.position-row:hover {
+  box-shadow: 0 6px 18px rgba(20,24,28,0.08);
+  border-color: var(--color-primary);
+}
+
+/* ------------------------------------------------------------------ */
+/* Phone layout (<= 767px, the same breakpoint as Tailwind's md, which  */
+/* Sidebar.jsx already switches on). Everything below only applies on  */
+/* phones - tablets, laptops and desktops keep the layout as it was.   */
+/* Most views style themselves inline, so overrides here use           */
+/* !important to beat those inline styles.                             */
+/* ------------------------------------------------------------------ */
+
+.navbar-title { display: flex; }
+
+@media (min-width: 768px) {
+  .mobile-only { display: none !important; }
+}
+
+@media (max-width: 767px) {
+  .desktop-only { display: none !important; }
+
+  :root {
+    --navbar-height: 56px;
+    --font-size-base: 15px;
+  }
+
+  /* No Footer on phones. With the tab bar, the space it reserved at the
+     bottom becomes the tab bar's height (plus the iPhone home-indicator
+     inset), so every fixed element positioned above --footer-height
+     (FAQ chat, sidebar button) automatically clears the tab bar. */
+  .app-shell { --footer-height: env(safe-area-inset-bottom, 0px); }
+  .app-shell.with-tabbar {
+    --footer-height: calc(60px + env(safe-area-inset-bottom, 0px));
+    /* The tab bar is the navigation here - no breadcrumb strip. */
+    --breadcrumb-height: 0px;
+  }
+  .with-tabbar .breadcrumb-bar { display: none !important; }
+
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+  h1 { font-size: 24px; }
+  h2 { font-size: 21px; }
+
+  /* 16px stops iOS Safari zooming the page when a field is focused. */
+  input, select, textarea { font-size: 16px !important; }
+
+  /* Comfortable thumb targets. */
+  .btn { min-height: 44px; justify-content: center; }
+
+  .navbar-inner { padding: 0 14px !important; gap: 12px !important; }
+  .padded-layout {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+
+  /* Dialogs become bottom sheets, like a native app. */
+  .modal-overlay { align-items: flex-end !important; }
+  .modal-sheet {
+    width: 100% !important;
+    max-width: none !important;
+    max-height: 88vh !important;
+    border-radius: 18px 18px 0 0 !important;
+    padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px)) !important;
+    animation: sheet-up 0.22s ease-out;
+  }
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(40px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* Bottom tab bar (MobileTabBar.jsx). */
+.mobile-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 150;
+  display: flex;
+  height: calc(60px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-top: 1px solid var(--color-border);
+  box-shadow: 0 -4px 16px rgba(20, 24, 28, 0.06);
+}
+.mobile-tabbar__item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  position: relative;
+}
+.mobile-tabbar__item.is-active { color: var(--color-primary); }
+.mobile-tabbar__item.is-active::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  width: 28px;
+  height: 3px;
+  border-radius: 0 0 3px 3px;
+  background: var(--color-primary);
+}
+.mobile-tabbar__item:active { background: var(--color-primary-light); }
+
+/* Home.jsx on phones: short hero, the positions list as a full-width
+   sheet, and the supporting sections compacted. */
+@media (max-width: 767px) {
+  .home-hero { padding: 24px 16px 64px !important; }
+  .home-hero__logo { display: none !important; }
+  .home-hero__title { font-size: 26px !important; margin-bottom: 8px !important; }
+  .home-hero__lead { font-size: 14px !important; margin-bottom: 18px !important; }
+  .home-hero__actions { gap: 10px !important; }
+  .home-hero__primary { width: 100%; }
+  .home-hero__secondary { flex: 1 1 0; }
+  .home-hero__secondary .btn { width: 100%; padding: 10px 8px !important; font-size: 14px !important; }
+
+  .home-panel-wrap { margin-top: -40px !important; padding: 0 !important; }
+  .home-panel {
+    border-radius: 20px 20px 0 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+    box-shadow: 0 -6px 20px rgba(20, 24, 28, 0.08) !important;
+    padding: 18px 14px 8px !important;
+  }
+  .home-panel h2 { font-size: 22px !important; }
+  /* The three counts as an even strip instead of wrapping. */
+  .home-figures {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px !important;
+    width: 100%;
+  }
+  .home-figures > div {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 0 !important;
+    background: var(--color-primary-light);
+    border-radius: 12px;
+    padding: 8px 10px;
+  }
+  .home-figure__icon { display: none !important; }
+
+  .home-toolbar { padding: 10px !important; border-radius: 14px !important; }
+  /* Compact two-up filters so the first jobs show on the first screen. */
+  .home-toolbar { gap: 8px !important; }
+  .home-toolbar > div { gap: 8px !important; }
+  .home-toolbar select { flex: 1 1 calc(50% - 4px) !important; padding: 9px 10px !important; }
+  .home-toolbar button { flex: 1 1 auto !important; justify-content: center; padding: 9px 12px !important; }
+  /* "Closing this week" and sort share the last row. */
+  .home-toolbar > div:last-child > button { flex: 0 1 auto !important; }
+  .home-sort { flex: 1 1 120px; min-width: 0; margin-left: 0 !important; }
+  .home-sort select { flex: 1 1 auto !important; width: 100%; }
+  .home-sort-label { display: none; }
+
+  /* Active filter chips scroll sideways instead of stacking up. */
+  .home-chips {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .home-chips::-webkit-scrollbar { display: none; }
+  .home-chips > * { flex-shrink: 0; }
+
+  /* Each job as a tappable card with full-width actions. */
+  .position-row {
+    padding: 14px !important;
+    gap: 10px !important;
+    border-radius: 14px !important;
+  }
+  .position-row__deadline { min-width: 0 !important; }
+  .position-row__actions { width: 100%; flex-wrap: nowrap !important; }
+  .position-row__actions > * { flex: 1 1 0; }
+  .position-row__actions .btn { width: 100%; }
+
+  .home-info { margin-top: 28px !important; }
+  .home-info__inner { padding: 32px 0 4px !important; }
+  .home-info__inner > div:first-child,
+  .home-info__inner > div:nth-child(3) { padding: 0 16px; }
+  /* "Why work with us" as a swipeable card carousel. */
+  .home-values {
+    display: flex !important;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    gap: 12px !important;
+    padding: 4px 16px 12px;
+    margin-bottom: 32px !important;
+    scrollbar-width: none;
+  }
+  .home-values::-webkit-scrollbar { display: none; }
+  .home-values > * { flex: 0 0 78%; scroll-snap-align: center; }
+  .home-values .hover-lift:hover { transform: none; }
+  /* "How to apply" as a vertical list: icon on the left, text right. */
+  .home-steps {
+    display: flex !important;
+    flex-direction: column;
+    gap: 14px !important;
+    padding: 0 16px;
+    margin-bottom: 32px !important;
+  }
+  .home-step {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    column-gap: 14px;
+    text-align: left !important;
+    padding: 0 !important;
+    align-items: center;
+  }
+  .home-step__icon { margin: 0 !important; grid-row: span 2; }
+  .home-step h4 { margin: 0 !important; }
+
+  .home-faq { margin: 32px auto !important; }
+  .home-cta { padding: 36px 16px !important; }
+}

@@ -32,7 +32,9 @@ import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react';
 // room for the label text) - items with no `section` render as a flat,
 // ungrouped list at the top, for the one or two links (Home, Approvals
 // Center) that don't belong to any functional group.
-export default function Sidebar({ items, active, storageKey, width = 250, title }) {
+// `mobileTrigger={false}` drops the phone menu button - for the candidate
+// side, where MobileTabBar already carries the same four stops.
+export default function Sidebar({ items, active, storageKey, width = 250, title, mobileTrigger = true }) {
   const [collapsed, setCollapsed] = React.useState(() => {
     try {
       return localStorage.getItem(storageKey) === '1';
@@ -257,7 +259,7 @@ export default function Sidebar({ items, active, storageKey, width = 250, title 
 
       {/* Mobile - floating trigger; the inline aside above is hidden below
           md, not squeezed, so this is the only way to reach it there. */}
-      <button
+      {mobileTrigger && <button
         onClick={() => setMobileOpen(true)}
         aria-label="Open menu"
         className="md:hidden flex items-center justify-center"
@@ -281,7 +283,7 @@ export default function Sidebar({ items, active, storageKey, width = 250, title 
         }}
       >
         <Menu size={20} />
-      </button>
+      </button>}
 
       {mobileOpen && (
         <div

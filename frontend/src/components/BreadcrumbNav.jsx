@@ -78,6 +78,7 @@ export default function BreadcrumbNav() {
 
   return (
     <div
+      className="breadcrumb-bar"
       style={{
         // Fixed, not just sticky - pinned directly under the (also fixed)
         // Navbar so it never scrolls away with the page content, same
