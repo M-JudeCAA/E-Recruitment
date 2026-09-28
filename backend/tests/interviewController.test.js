@@ -77,6 +77,15 @@ describe('schedule', () => {
     }
   );
 
+  test('refuses another round for a candidate already ranked on the merit list', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'Interviewed', offer: null, meritStatus: 'Proposed' });
+    const res = mockRes();
+    await interviewController.schedule({ params: { applicationId: '1' }, body: {} }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json).toHaveBeenCalledWith({ error: expect.stringMatching(/merit list/) });
+    expect(prisma.interviewRound.create).not.toHaveBeenCalled();
+  });
+
   test('refuses to schedule an interview for an application that already has an offer', async () => {
     prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'Interviewed', offer: { id: 9 } });
     const res = mockRes();
@@ -102,7 +111,7 @@ describe('schedule', () => {
     }, res);
 
     expect(prisma.application.updateMany).toHaveBeenCalledWith({
-      where: { id: 1, status: { in: ['Shortlisted', 'InterviewScheduled', 'Interviewed'] }, offer: null },
+      where: { id: 1, status: { in: ['Shortlisted', 'InterviewScheduled', 'Interviewed'] }, offer: null, meritStatus: null },
       data: { status: 'InterviewScheduled' }
     });
     expect(prisma.interviewRound.create).toHaveBeenCalledWith({

@@ -6,6 +6,7 @@ const ROUND_INCLUDE = {
   application: {
     select: {
       id: true, status: true, rank: true, listStatus: true, candidateId: true,
+      meritRank: true, meritListStatus: true, meritStatus: true,
       candidate: { select: { id: true, fullName: true, email: true, phone: true, candidateType: true } },
       vacancy: { select: { id: true, jobRef: true, title: true, createdById: true, positionsRequired: true } },
       offer: { select: { id: true, status: true } }
@@ -65,7 +66,7 @@ function createSession(entries, schedulableStatuses) {
     const created = [];
     for (const { round, panel } of entries) {
       const moved = await tx.application.updateMany({
-        where: { id: round.applicationId, status: { in: schedulableStatuses }, offer: null },
+        where: { id: round.applicationId, status: { in: schedulableStatuses }, offer: null, meritStatus: null },
         data: { status: 'InterviewScheduled' }
       });
       if (moved.count === 0) {

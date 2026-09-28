@@ -398,7 +398,7 @@ describe('list', () => {
   });
 
   describe('needsAction', () => {
-    test('a Senior HR Officer only sees Submitted/UnderReview', async () => {
+    test('a Senior HR Officer sees Submitted/UnderReview plus interviewed candidates not yet on a merit list', async () => {
       prisma.application.findMany.mockResolvedValue([]);
       prisma.application.count.mockResolvedValue(0);
       const req = { query: { needsAction: 'true' }, user: { role: 'Senior_HR_Officer' } };
@@ -407,7 +407,12 @@ describe('list', () => {
       await applicationController.list(req, res);
 
       expect(prisma.application.findMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: expect.objectContaining({ OR: [{ status: { in: ['Submitted', 'UnderReview'] } }] })
+        where: expect.objectContaining({
+          OR: [
+            { status: { in: ['Submitted', 'UnderReview'] } },
+            { status: 'Interviewed', meritStatus: null }
+          ]
+        })
       }));
     });
 
@@ -423,7 +428,9 @@ describe('list', () => {
         where: expect.objectContaining({
           OR: [
             { status: { in: ['Submitted', 'UnderReview'] } },
-            { status: 'Interviewed', offer: null },
+            { status: 'Interviewed', meritStatus: null },
+            { status: 'Interviewed', meritStatus: 'Proposed' },
+            { status: 'Interviewed', meritStatus: 'Approved', meritListStatus: 'Primary', offer: null },
             { offer: { status: 'Recommended' } }
           ]
         })
@@ -459,242 +466,13 @@ describe('list', () => {
           status: 'Rejected',
           OR: [
             { status: { in: ['Submitted', 'UnderReview'] } },
-            { status: 'Interviewed', offer: null }
+            { status: 'Interviewed', meritStatus: null },
+            { status: 'Interviewed', meritStatus: 'Proposed' },
+            { status: 'Interviewed', meritStatus: 'Approved', meritListStatus: 'Primary', offer: null }
           ]
         }
       }));
     });
-  });
-});
-
-describe('recommendOffer', () => {
-  test('rejects when the application has no scored interview yet', async () => {
-    prisma.application.findUnique.mockResolvedValue({
-      id: 1,
-      interviewRounds: [{ id: 1, score: null, recommendation: null }]
-    });
-    const req = { params: { id: '1' }, user: { id: 5 } };
-    const res = mockRes();
-
-    await applicationController.recommendOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.offer.create).not.toHaveBeenCalled();
-  });
-
-  test('rejects when a score exists but no recommendation has been finalized yet', async () => {
-    prisma.application.findUnique.mockResolvedValue({
-      id: 1,
-      interviewRounds: [{ id: 1, score: 82, recommendation: null }]
-    });
-    const req = { params: { id: '1' }, user: { id: 5 } };
-    const res = mockRes();
-
-    await applicationController.recommendOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.offer.create).not.toHaveBeenCalled();
-  });
-
-  test('rejects when the application is not at Interviewed (e.g. already Rejected by a panel "Reject" recommendation)', async () => {
-    prisma.application.findUnique.mockResolvedValue({
-      id: 1, status: 'Rejected',
-      interviewRounds: [{ id: 1, score: 78, recommendation: 'Reject' }]
-    });
-    const req = { params: { id: '1' }, user: { id: 5 } };
-    const res = mockRes();
-
-    await applicationController.recommendOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.offer.create).not.toHaveBeenCalled();
-  });
-
-  test('rejects a "Hold" or "Reject" recommendation even if the application status is Interviewed', async () => {
-    prisma.application.findUnique.mockResolvedValue({
-      id: 1, status: 'Interviewed',
-      interviewRounds: [{ id: 1, score: 78, recommendation: 'Hold' }]
-    });
-    const req = { params: { id: '1' }, user: { id: 5 } };
-    const res = mockRes();
-
-    await applicationController.recommendOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.offer.create).not.toHaveBeenCalled();
-  });
-
-  // A candidate can have multiple rounds - only the MOST RECENT one's
-  // recommendation should count. An earlier round saying Shortlist must not
-  // still qualify once a later round has said otherwise.
-  test('rejects when an earlier round said Shortlist but the most recent round did not', async () => {
-    prisma.application.findUnique.mockResolvedValue({
-      id: 1, status: 'Interviewed',
-      interviewRounds: [
-        { id: 1, roundNumber: 1, score: 90, recommendation: 'Shortlist' },
-        { id: 2, roundNumber: 2, score: 40, recommendation: 'Hold' }
-      ]
-    });
-    const req = { params: { id: '1' }, user: { id: 5 } };
-    const res = mockRes();
-
-    await applicationController.recommendOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.offer.create).not.toHaveBeenCalled();
-  });
-
-  test('accepts when the most recent round says Shortlist, regardless of an earlier round', async () => {
-    prisma.application.findUnique.mockResolvedValue({
-      id: 1, status: 'Interviewed',
-      interviewRounds: [
-        { id: 1, roundNumber: 1, score: 40, recommendation: 'Hold' },
-        { id: 2, roundNumber: 2, score: 90, recommendation: 'Shortlist' }
-      ]
-    });
-    prisma.offer.create.mockResolvedValue({ id: 11, applicationId: 1, status: 'Recommended' });
-    const req = { params: { id: '1' }, user: { id: 5 } };
-    const res = mockRes();
-
-    await applicationController.recommendOffer(req, res);
-
-    expect(prisma.offer.create).toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(201);
-  });
-
-  test('creates a Recommended offer and moves the application to Offered once a recommendation is finalized', async () => {
-    prisma.application.findUnique.mockResolvedValue({
-      id: 1, status: 'Interviewed',
-      interviewRounds: [{ id: 1, score: 78, recommendation: 'Shortlist' }]
-    });
-    prisma.offer.create.mockResolvedValue({ id: 10, applicationId: 1, status: 'Recommended' });
-
-    const req = { params: { id: '1' }, user: { id: 5 } };
-    const res = mockRes();
-
-    await applicationController.recommendOffer(req, res);
-
-    expect(prisma.offer.create).toHaveBeenCalledWith({
-      data: { applicationId: 1, status: 'Recommended', recommendedById: 5, recommendedDate: expect.any(Date) }
-    });
-    expect(prisma.application.update).toHaveBeenCalledWith({
-      where: { id: 1 }, data: { status: 'Offered' }
-    });
-    expect(res.status).toHaveBeenCalledWith(201);
-  });
-
-  test('returns 409 rather than a duplicate offer if one was already recommended', async () => {
-    prisma.application.findUnique.mockResolvedValue({
-      id: 1, status: 'Interviewed',
-      interviewRounds: [{ id: 1, score: 78, recommendation: 'Shortlist' }]
-    });
-    prisma.offer.create.mockRejectedValue(new Error('Unique constraint failed'));
-
-    const req = { params: { id: '1' }, user: { id: 5 } };
-    const res = mockRes();
-
-    await applicationController.recommendOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(409);
-  });
-});
-
-describe('listOffersPendingApproval', () => {
-  test('returns a paginated page of what the model finds', async () => {
-    const offers = [{ id: 1, status: 'Recommended' }, { id: 2, status: 'Recommended' }];
-    prisma.offer.findMany.mockResolvedValue(offers);
-    prisma.offer.count.mockResolvedValue(2);
-    const req = { query: {} };
-    const res = mockRes();
-
-    await applicationController.listOffersPendingApproval(req, res);
-
-    expect(prisma.offer.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { status: 'Recommended' }, skip: 0, take: 20
-    }));
-    expect(res.json).toHaveBeenCalledWith({ data: offers, total: 2, page: 1, limit: 20 });
-  });
-});
-
-describe('approveOffer', () => {
-  test('returns 404 rather than crashing when the offer does not exist', async () => {
-    prisma.offer.findUnique.mockResolvedValue(null);
-    const req = { params: { offerId: '999' }, user: { id: 2 } };
-    const res = mockRes();
-
-    await applicationController.approveOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(prisma.offer.update).not.toHaveBeenCalled();
-  });
-
-  test('refuses to approve an offer that is not at Recommended', async () => {
-    prisma.offer.findUnique.mockResolvedValue({ id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 } });
-    const req = { params: { offerId: '20' }, user: { id: 2 } };
-    const res = mockRes();
-
-    await applicationController.approveOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
-  });
-
-  test('blocks the Manager who recommended the offer from approving it themselves', async () => {
-    prisma.offer.findUnique.mockResolvedValue({
-      id: 20, status: 'Recommended', recommendedById: 2, application: { candidateId: 7, vacancyId: 3 }
-    });
-    const req = { params: { offerId: '20' }, user: { id: 2 } };
-    const res = mockRes();
-
-    await applicationController.approveOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(res.json).toHaveBeenCalledWith({ error: expect.stringMatching(/Self-approval blocked/) });
-    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
-    expect(prisma.candidateNotification.create).not.toHaveBeenCalled();
-  });
-
-  test('returns 409 when a concurrent request already changed this offer', async () => {
-    prisma.offer.findUnique.mockResolvedValue({ id: 20, status: 'Recommended', application: { candidateId: 7, vacancyId: 3 } });
-    prisma.offer.updateMany.mockResolvedValue({ count: 0 });
-    const req = { params: { offerId: '20' }, user: { id: 2 } };
-    const res = mockRes();
-
-    await applicationController.approveOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(409);
-  });
-
-  test('approves an existing offer and notifies the candidate they can now act on it', async () => {
-    prisma.offer.findUnique
-      .mockResolvedValueOnce({ id: 20, status: 'Recommended', recommendedById: 5, application: { candidateId: 7, vacancyId: 3 } })
-      .mockResolvedValueOnce({
-        id: 20, status: 'Approved',
-        application: { candidateId: 7, vacancyId: 3, vacancy: { title: 'Air Traffic Controller' } }
-      });
-    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
-    prisma.candidate.findUnique.mockResolvedValue({ id: 7, email: 'candidate@example.com' });
-    const req = { params: { offerId: '20' }, user: { id: 2 } };
-    const res = mockRes();
-
-    await applicationController.approveOffer(req, res);
-
-    expect(prisma.offer.updateMany).toHaveBeenCalledWith({
-      where: { id: 20, status: 'Recommended' },
-      data: expect.objectContaining({ status: 'Approved', approvedById: 2 })
-    });
-    expect(res.json).toHaveBeenCalled();
-    // Approving is a resolution - any active OfferApproval escalation for
-    // this offer should clear, not sit "active" forever.
-    expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith({
-      where: { taskType: 'OfferApproval', taskId: 20, resolvedAt: null },
-      data: { resolvedAt: expect.any(Date) }
-    });
-    // Approved is the moment the candidate can actually accept/decline -
-    // this is the notification that tells them an offer exists at all.
-    expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ candidateId: 7, type: 'OfferReceived' })
-    }));
   });
 });
 
@@ -766,16 +544,6 @@ describe('shortlist', () => {
     expect(prisma.application.updateMany).not.toHaveBeenCalled();
   });
 
-  test('rejects an invalid listStatus', async () => {
-    const req = { params: { id: '1' }, body: { listStatus: 'Maybe' }, user: { id: 3 } };
-    const res = mockRes();
-
-    await applicationController.shortlist(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(prisma.application.updateMany).not.toHaveBeenCalled();
-  });
-
   test.each(['Draft', 'Offered', 'Rejected', 'Withdrawn'])('refuses to shortlist an application at status %s', async (status) => {
     const workflow = require('../src/services/workflowService');
     jest.spyOn(workflow, 'assertCanShortlist').mockResolvedValue(undefined);
@@ -820,7 +588,9 @@ describe('shortlist', () => {
     expect(prisma.application.updateMany).toHaveBeenCalledWith({
       where: { id: 1, status: 'UnderReview' },
       data: {
-        status: 'ShortlistProposed', rank: 1, listStatus: 'Primary', rankVersion: { increment: 1 },
+        // Primary/Reserve is no longer decided here (see the merit list) -
+        // a listStatus sent by an older client is ignored.
+        status: 'ShortlistProposed', rank: 1, listStatus: null, rankVersion: { increment: 1 },
         shortlistProposedAt: expect.any(Date), shortlistProposedById: 3
       }
     });
@@ -881,352 +651,5 @@ describe('approveShortlist', () => {
       data: expect.objectContaining({ candidateId: 8, type: 'ApplicationShortlisted' })
     }));
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ vacancyId: 5, approvedCount: 2 }));
-  });
-});
-
-describe('acceptOffer / declineOffer ownership check', () => {
-  test('acceptOffer rejects a candidate who does not own the offer', async () => {
-    prisma.offer.findUnique.mockResolvedValue({
-      id: 20, application: { candidateId: 99, vacancyId: 3 }
-    });
-    const req = { params: { offerId: '20' }, user: { id: 7 } };
-    const res = mockRes();
-
-    await applicationController.acceptOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(prisma.offer.update).not.toHaveBeenCalled();
-  });
-
-  test('acceptOffer refuses an offer that is not Approved', async () => {
-    prisma.offer.findUnique.mockResolvedValue({
-      id: 20, status: 'Recommended', application: { candidateId: 7, vacancyId: 3 }
-    });
-    const req = { params: { offerId: '20' }, user: { id: 7 } };
-    const res = mockRes();
-
-    await applicationController.acceptOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
-  });
-
-  test('acceptOffer returns 409 when a concurrent request already changed this offer', async () => {
-    prisma.offer.findUnique.mockResolvedValue({
-      id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 }
-    });
-    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 1 }]);
-    prisma.offer.count.mockResolvedValue(0);
-    prisma.offer.updateMany.mockResolvedValue({ count: 0 });
-    const req = { params: { offerId: '20' }, user: { id: 7 } };
-    const res = mockRes();
-
-    await applicationController.acceptOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(409);
-  });
-
-  test('acceptOffer refuses with 409 once every position on the vacancy is already filled', async () => {
-    prisma.offer.findUnique.mockResolvedValue({
-      id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 }
-    });
-    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 1 }]);
-    prisma.offer.count.mockResolvedValue(1);
-    const req = { params: { offerId: '20' }, user: { id: 7 } };
-    const res = mockRes();
-
-    await applicationController.acceptOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith({ error: expect.stringMatching(/already been filled/) });
-    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
-    expect(prisma.auditLog.create).not.toHaveBeenCalled();
-  });
-
-  test('acceptOffer tells Principal HR Officers when an acceptance is refused because the vacancy is full', async () => {
-    prisma.offer.findUnique.mockResolvedValue({
-      id: 20, status: 'Approved', applicationId: 44,
-      application: { candidateId: 7, vacancyId: 3, vacancy: { id: 3, jobRef: 'UCAA/ADV/EXT/09/2026', title: 'Pilot' } }
-    });
-    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 1 }]);
-    prisma.offer.count.mockResolvedValue(1);
-    prisma.staffUser.findMany.mockResolvedValue([{ id: 30 }]);
-    prisma.staffUser.findUnique.mockResolvedValue({ id: 30, email: 'phro@caa.co.ug' });
-    const req = { params: { offerId: '20' }, user: { id: 7 } };
-    const res = mockRes();
-
-    await applicationController.acceptOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(prisma.staffUser.findMany).toHaveBeenCalledWith({ where: { role: 'Principal_HR_Officer' }, select: { id: true } });
-    expect(prisma.notification.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      recipientId: 30, channel: 'InApp', taskType: 'VacancyFilledWithOpenOffers', taskId: 20,
-      message: expect.stringMatching(/UCAA\/ADV\/EXT\/09\/2026 \(Pilot\) \(application #44\).*every position is already filled/)
-    }) });
-  });
-
-  test('acceptOffer flags the other open offers to HR when this acceptance fills the vacancy', async () => {
-    prisma.offer.findUnique
-      .mockResolvedValueOnce({ id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 } })
-      .mockResolvedValueOnce({ id: 20, status: 'Accepted', application: { candidateId: 7, vacancyId: 3, vacancy: { id: 3 } } });
-    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 1 }]);
-    prisma.offer.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
-    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
-    prisma.vacancy.findUnique
-      .mockResolvedValueOnce({ id: 3, positionsRequired: 1, status: 'Open', filledAt: null }) // recompute, inside the transaction
-      .mockResolvedValueOnce({ id: 3, status: 'Filled', jobRef: 'UCAA/ADV/EXT/09/2026', title: 'Pilot' }); // after commit
-    prisma.offer.findMany.mockResolvedValue([
-      { id: 21, applicationId: 60, status: 'Approved', application: { candidate: { fullName: 'Grace A.' } } },
-      { id: 22, applicationId: 61, status: 'Recommended', application: { candidate: { fullName: 'John B.' } } }
-    ]);
-    prisma.staffUser.findMany.mockResolvedValue([{ id: 30 }]);
-    prisma.staffUser.findUnique.mockResolvedValue({ id: 30, email: null });
-    const res = mockRes();
-
-    await applicationController.acceptOffer({ params: { offerId: '20' }, user: { id: 7 } }, res);
-
-    expect(prisma.offer.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { status: { in: ['Recommended', 'Approved'] }, application: { vacancyId: 3 }, id: { not: 20 } }
-    }));
-    expect(prisma.notification.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      taskType: 'VacancyFilledWithOpenOffers', taskId: 3,
-      message: expect.stringMatching(/is now filled, but 2 other offers are still open: Grace A\. \(application #60, offer Approved\); John B\. \(application #61, offer Recommended\)/)
-    }) });
-    expect(res.json.mock.calls[0][0].id).toBe(20);
-  });
-
-  test('acceptOffer sends no open-offer notice when the vacancy still has positions left', async () => {
-    prisma.offer.findUnique
-      .mockResolvedValueOnce({ id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 } })
-      .mockResolvedValueOnce({ id: 20, status: 'Accepted', application: { candidateId: 7, vacancyId: 3, vacancy: { id: 3 } } });
-    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 2 }]);
-    prisma.offer.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
-    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
-    prisma.vacancy.findUnique
-      .mockResolvedValueOnce({ id: 3, positionsRequired: 2, status: 'Open', filledAt: null })
-      .mockResolvedValueOnce({ id: 3, status: 'PartiallyFilled' });
-
-    await applicationController.acceptOffer({ params: { offerId: '20' }, user: { id: 7 } }, mockRes());
-
-    expect(prisma.offer.findMany).not.toHaveBeenCalled();
-    expect(prisma.notification.create).not.toHaveBeenCalled();
-  });
-
-  test('acceptOffer succeeds for the actual owning candidate', async () => {
-    prisma.offer.findUnique
-      .mockResolvedValueOnce({ id: 20, status: 'Approved', application: { candidateId: 7, vacancyId: 3 } })
-      .mockResolvedValueOnce({
-        id: 20, status: 'Accepted', approvedById: 2,
-        application: { candidateId: 7, vacancyId: 3, vacancy: { positionsRequired: 1, internalSalaryRange: '10-12M', recruiterNotes: 'x' } }
-      });
-    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 1 }]);
-    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 3, positionsRequired: 1, status: 'Open', filledAt: null });
-    prisma.offer.count
-      .mockResolvedValueOnce(0) // capacity check under the lock
-      .mockResolvedValueOnce(1); // recompute after the flip
-
-    const req = { params: { offerId: '20' }, user: { id: 7 } };
-    const res = mockRes();
-
-    await applicationController.acceptOffer(req, res);
-
-    expect(prisma.offer.updateMany).toHaveBeenCalledWith({
-      where: { id: 20, status: 'Approved' }, data: { status: 'Accepted', decidedAt: expect.any(Date) }
-    });
-    // The vacancy fills up (1 accepted of 1 required) - recomputeVacancyStatus
-    // ran as part of the same transaction as the offer flip.
-    expect(prisma.vacancy.update).toHaveBeenCalledWith({ where: { id: 3 }, data: { status: 'Filled', filledAt: expect.any(Date) } });
-    const body = res.json.mock.calls[0][0];
-    expect(body.id).toBe(20);
-    expect(body.application.vacancy.positionsRequired).toBe(1);
-    expect(body.application.vacancy.internalSalaryRange).toBeUndefined();
-    expect(body.application.vacancy.recruiterNotes).toBeUndefined();
-  });
-
-  test('declineOffer rejects a candidate who does not own the offer', async () => {
-    prisma.offer.findUnique.mockResolvedValue({
-      id: 21, application: { candidateId: 99, vacancyId: 3 }
-    });
-    const req = { params: { offerId: '21' }, user: { id: 7 } };
-    const res = mockRes();
-
-    await applicationController.declineOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(403);
-  });
-
-  test('declineOffer refuses an offer that is not Approved', async () => {
-    prisma.offer.findUnique.mockResolvedValue({
-      id: 21, status: 'Declined', application: { candidateId: 7, vacancyId: 3 }
-    });
-    const req = { params: { offerId: '21' }, user: { id: 7 } };
-    const res = mockRes();
-
-    await applicationController.declineOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(422);
-  });
-
-  test('declineOffer returns 409 when a concurrent request already changed this offer', async () => {
-    prisma.offer.findUnique.mockResolvedValue({
-      id: 21, status: 'Approved', application: { candidateId: 7, vacancyId: 3 }
-    });
-    prisma.offer.updateMany.mockResolvedValue({ count: 0 });
-    const req = { params: { offerId: '21' }, user: { id: 7 } };
-    const res = mockRes();
-
-    await applicationController.declineOffer(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(409);
-  });
-
-  test('declineOffer never returns the promoted reserve candidate\'s application to the decliner', async () => {
-    prisma.offer.findUnique
-      .mockResolvedValueOnce({ id: 21, status: 'Approved', application: { candidateId: 7, vacancyId: 3 } })
-      .mockResolvedValueOnce({ id: 21, status: 'Declined', application: { candidateId: 7, vacancyId: 3 } });
-    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
-    prisma.application.findFirst.mockResolvedValue({ id: 55, candidateId: 8, vacancyId: 3, listStatus: 'Reserve', whyThisRole: 'private answer' });
-    prisma.application.update.mockResolvedValue({});
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 3, positionsRequired: 1, status: 'Open', filledAt: null });
-    prisma.offer.count.mockResolvedValue(0);
-    const req = { params: { offerId: '21' }, user: { id: 7 } };
-    const res = mockRes();
-
-    await applicationController.declineOffer(req, res);
-
-    expect(prisma.application.update).toHaveBeenCalledWith({ where: { id: 55 }, data: { listStatus: 'Primary' } });
-    expect(res.json).toHaveBeenCalledWith({ message: 'Offer declined' });
-  });
-
-  test('declineOffer tells Principal HR Officers which reserve candidate was promoted', async () => {
-    prisma.offer.findUnique
-      .mockResolvedValueOnce({ id: 21, status: 'Approved', applicationId: 50, application: { candidateId: 7, vacancyId: 3, vacancy: { jobRef: 'UCAA/ADV/INT/09/2026', title: 'Engineer' } } })
-      .mockResolvedValueOnce({ id: 21, status: 'Declined', application: { candidateId: 7, vacancyId: 3 } });
-    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
-    prisma.application.findFirst.mockResolvedValue({ id: 55, listStatus: 'Reserve' });
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 3, positionsRequired: 1, status: 'Open', filledAt: null });
-    prisma.offer.count.mockResolvedValue(0);
-    prisma.staffUser.findMany.mockResolvedValue([{ id: 30 }, { id: 31 }]);
-    prisma.staffUser.findUnique.mockResolvedValue({ id: 30, email: 'phro@caa.co.ug' });
-
-    await applicationController.declineOffer({ params: { offerId: '21' }, user: { id: 7 } }, mockRes());
-
-    const inApp = prisma.notification.create.mock.calls.map((c) => c[0].data).filter((d) => d.channel === 'InApp');
-    expect(inApp.map((d) => d.recipientId)).toEqual([30, 31]);
-    expect(inApp[0]).toEqual(expect.objectContaining({
-      taskType: 'OfferDeclined', taskId: 21,
-      message: expect.stringMatching(/UCAA\/ADV\/INT\/09\/2026 \(Engineer\) was declined \(application #50\)\. The next reserve candidate \(application #55\) has been moved to Primary/)
-    }));
-  });
-
-  test('declineOffer tells HR when no reserve candidate is left', async () => {
-    prisma.offer.findUnique
-      .mockResolvedValueOnce({ id: 21, status: 'Approved', applicationId: 50, application: { candidateId: 7, vacancyId: 3, vacancy: { jobRef: 'R', title: 'T' } } })
-      .mockResolvedValueOnce({ id: 21, status: 'Declined', application: { candidateId: 7, vacancyId: 3 } });
-    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
-    prisma.application.findFirst.mockResolvedValue(null);
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 3, positionsRequired: 1, status: 'Open', filledAt: null });
-    prisma.offer.count.mockResolvedValue(0);
-    prisma.staffUser.findMany.mockResolvedValue([{ id: 30 }]);
-    prisma.staffUser.findUnique.mockResolvedValue({ id: 30, email: null });
-
-    await applicationController.declineOffer({ params: { offerId: '21' }, user: { id: 7 } }, mockRes());
-
-    expect(prisma.notification.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      taskType: 'OfferDeclined', message: expect.stringMatching(/no reserve candidates left/)
-    }) });
-  });
-
-  test('declineOffer still succeeds when notifying HR fails', async () => {
-    prisma.offer.findUnique
-      .mockResolvedValueOnce({ id: 21, status: 'Approved', applicationId: 50, application: { candidateId: 7, vacancyId: 3, vacancy: { jobRef: 'R', title: 'T' } } })
-      .mockResolvedValueOnce({ id: 21, status: 'Declined', application: { candidateId: 7, vacancyId: 3 } });
-    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
-    prisma.application.findFirst.mockResolvedValue(null);
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 3, positionsRequired: 1, status: 'Open', filledAt: null });
-    prisma.offer.count.mockResolvedValue(0);
-    prisma.staffUser.findMany.mockRejectedValue(new Error('db blip'));
-    jest.spyOn(console, 'error').mockImplementation(() => {});
-    const res = mockRes();
-
-    await applicationController.declineOffer({ params: { offerId: '21' }, user: { id: 7 } }, res);
-
-    expect(res.json).toHaveBeenCalledWith({ message: 'Offer declined' });
-    console.error.mockRestore();
-  });
-});
-
-describe('withdrawOffer', () => {
-  const approvedOffer = {
-    id: 20, status: 'Approved', applicationId: 44,
-    application: { candidateId: 7, vacancyId: 3, vacancy: { title: 'Pilot' } }
-  };
-
-  test('returns 404 for an offer that does not exist', async () => {
-    prisma.offer.findUnique.mockResolvedValue(null);
-    const res = mockRes();
-
-    await applicationController.withdrawOffer({ params: { offerId: '999' }, body: {}, user: { id: 30 } }, res);
-
-    expect(res.status).toHaveBeenCalledWith(404);
-  });
-
-  test.each(['Accepted', 'Declined', 'Withdrawn'])('refuses to withdraw an offer that is already %s', async (status) => {
-    prisma.offer.findUnique.mockResolvedValue({ ...approvedOffer, status });
-    const res = mockRes();
-
-    await applicationController.withdrawOffer({ params: { offerId: '20' }, body: {}, user: { id: 30 } }, res);
-
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
-  });
-
-  test('returns 409 when a concurrent action already changed the offer', async () => {
-    prisma.offer.findUnique.mockResolvedValue(approvedOffer);
-    prisma.offer.updateMany.mockResolvedValue({ count: 0 });
-    const res = mockRes();
-
-    await applicationController.withdrawOffer({ params: { offerId: '20' }, body: {}, user: { id: 30 } }, res);
-
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(prisma.auditLog.create).not.toHaveBeenCalled();
-  });
-
-  test('withdraws an Approved offer, audits who did it and why, and tells the candidate', async () => {
-    prisma.offer.findUnique.mockResolvedValueOnce(approvedOffer).mockResolvedValueOnce({ ...approvedOffer, status: 'Withdrawn' });
-    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
-    prisma.candidate.findUnique.mockResolvedValue({ id: 7, email: 'cand@example.com' });
-    const res = mockRes();
-
-    await applicationController.withdrawOffer({ params: { offerId: '20' }, body: { reason: 'Position <filled>' }, user: { id: 30 } }, res);
-
-    expect(prisma.offer.updateMany).toHaveBeenCalledWith({
-      where: { id: 20, status: 'Approved' }, data: { status: 'Withdrawn', decidedAt: expect.any(Date) }
-    });
-    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: {
-      entityType: 'Offer', entityId: 20, action: 'Offer withdrawn', performedById: 30,
-      payload: { previousStatus: 'Approved', reason: 'Position <filled>' }
-    } });
-    expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith({
-      where: { taskType: 'OfferApproval', taskId: 20, resolvedAt: null }, data: { resolvedAt: expect.any(Date) }
-    });
-    // The reason goes into an HTML email body, so it is escaped.
-    expect(prisma.candidateNotification.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      candidateId: 7, type: 'OfferWithdrawn',
-      message: expect.stringMatching(/Your offer for "Pilot" has been withdrawn\. Reason given: Position &lt;filled&gt;/)
-    }) });
-    expect(res.json.mock.calls[0][0].status).toBe('Withdrawn');
-  });
-
-  test('does not notify the candidate when withdrawing an offer they were never told about', async () => {
-    const recommended = { ...approvedOffer, status: 'Recommended' };
-    prisma.offer.findUnique.mockResolvedValueOnce(recommended).mockResolvedValueOnce({ ...recommended, status: 'Withdrawn' });
-    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
-
-    await applicationController.withdrawOffer({ params: { offerId: '20' }, body: {}, user: { id: 30 } }, mockRes());
-
-    expect(prisma.offer.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 20, status: 'Recommended' } }));
-    expect(prisma.candidateNotification.create).not.toHaveBeenCalled();
   });
 });

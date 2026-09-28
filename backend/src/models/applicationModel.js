@@ -133,8 +133,9 @@ module.exports = {
   // Applications an interview can be scheduled for on one vacancy - the
   // Interview Hub's scheduler. Same gate as interviewController's
   // SCHEDULABLE_STATUSES plus no offer yet; ordered like the shortlist.
+  // Not anyone already ranked on the merit list - see interviewController.schedule.
   findSchedulable: (vacancyId, statuses) => prisma.application.findMany({
-    where: { vacancyId, status: { in: statuses }, offer: null },
+    where: { vacancyId, status: { in: statuses }, offer: null, meritStatus: null },
     select: {
       id: true, status: true, rank: true, listStatus: true, shortlistScore: true,
       candidate: { select: { id: true, fullName: true, email: true, candidateType: true } },
@@ -150,7 +151,7 @@ module.exports = {
   findForSession: (vacancyId, ids) => prisma.application.findMany({
     where: { vacancyId, id: { in: ids } },
     select: {
-      id: true, status: true, candidateId: true,
+      id: true, status: true, candidateId: true, meritStatus: true,
       candidate: { select: { id: true, fullName: true } },
       offer: { select: { id: true } }
     }

@@ -532,8 +532,7 @@ async function saveRanking(req, res) {
       if (status >= 500) return sendError(res, err, 422);
       return res.status(status).json({ error: `Application ${appId}: ${message}` });
     }
-    const listStatus = i < vacancy.positionsRequired ? 'Primary' : 'Reserve';
-    rankData.push({ id: appId, rank: i + 1, listStatus });
+    rankData.push({ id: appId, rank: i + 1 });
   }
 
   // Lands at ShortlistProposed, not Shortlisted - same propose/approve
@@ -550,11 +549,13 @@ async function saveRanking(req, res) {
   // the ranking half-committed if one write failed partway through (e.g. a
   // row deleted between the guard check above and the write itself).
   const results = await prisma.$transaction(
-    rankData.map(({ id, rank, listStatus }) =>
+    rankData.map(({ id, rank }) =>
       prisma.application.update({
         where: { id },
         data: {
-          rank, listStatus, status: 'ShortlistProposed', rankVersion: { increment: 1 },
+          // listStatus: null - Primary/Reserve is decided after the
+          // interviews, on the merit list (meritListService), not here.
+          rank, listStatus: null, status: 'ShortlistProposed', rankVersion: { increment: 1 },
           shortlistProposedAt: new Date(), shortlistProposedById: req.user.id
         }
       })

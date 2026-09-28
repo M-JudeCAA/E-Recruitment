@@ -160,7 +160,28 @@ describe('recomputeVacancyStatus', () => {
 });
 
 describe('handleOfferDeclined', () => {
-  test('promotes the next-ranked reserve candidate to Primary', async () => {
+  test('promotes the next reserve on the approved merit list, in merit order', async () => {
+    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
+    prisma.offer.findUnique.mockResolvedValue({ id: 10, application: { vacancyId: 1, candidateId: 7 } });
+    prisma.application.count.mockResolvedValue(4);
+    prisma.application.findFirst.mockResolvedValue({ id: 31, meritRank: 3, meritListStatus: 'Reserve' });
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 2, status: 'PartiallyFilled' });
+    prisma.offer.count.mockResolvedValue(1);
+
+    const result = await workflow.handleOfferDeclined(10);
+
+    expect(prisma.application.findFirst).toHaveBeenCalledWith({
+      where: { vacancyId: 1, meritStatus: 'Approved', meritListStatus: 'Reserve', status: 'Interviewed', offer: null },
+      orderBy: { meritRank: 'asc' }
+    });
+    expect(prisma.application.update).toHaveBeenCalledWith({ where: { id: 31 }, data: { meritListStatus: 'Primary' } });
+    expect(result.promoted.id).toBe(31);
+  });
+
+  // Vacancies whose offers predate the merit list keep the old
+  // pre-interview rank/listStatus cascade.
+  test('falls back to the old pre-interview ranking when the vacancy has no merit list', async () => {
+    prisma.application.count.mockResolvedValue(0);
     prisma.offer.updateMany.mockResolvedValue({ count: 1 });
     prisma.offer.findUnique.mockResolvedValue({
       id: 10,
@@ -173,7 +194,7 @@ describe('handleOfferDeclined', () => {
     const result = await workflow.handleOfferDeclined(10);
 
     expect(prisma.offer.updateMany).toHaveBeenCalledWith({
-      where: { id: 10, status: 'Approved' }, data: { status: 'Declined', decidedAt: expect.any(Date) }
+      where: { id: 10, status: 'Approved' }, data: { status: 'Declined', decidedAt: expect.any(Date), declineReason: null }
     });
     expect(prisma.application.update).toHaveBeenCalledWith({
       where: { id: 22 },

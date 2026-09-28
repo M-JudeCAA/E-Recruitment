@@ -15,6 +15,7 @@ const { AppError, sendError } = require('../utils/errorResponse');
 const { validateEmail } = require('../utils/validators');
 const { buildCalendar } = require('../utils/icsCalendar');
 const { endOf } = require('../utils/interviewFormat');
+const { CLEARED_MERIT } = require('../services/meritListService');
 
 // Applications an interview can legitimately be scheduled against - mirrors
 // the frontend's own gate (status in this list AND no offer yet) so a stale
@@ -206,6 +207,12 @@ async function schedule(req, res) {
   if (!SCHEDULABLE_STATUSES.includes(application.status) || application.offer) {
     return res.status(422).json({ error: `An application at status "${application.status}" cannot have an interview scheduled` });
   }
+  // A candidate already ranked on the merit list has been decided on - a
+  // further round would change the result the list was built from. HR
+  // takes them off the list (re-propose without them) first.
+  if (application.meritStatus) {
+    return res.status(422).json({ error: 'This candidate is already on the merit list - take them off it before scheduling another round' });
+  }
 
   const logistics = parseLogistics(req.body);
   const panel = parsePanel(req.body.panelMembers);
@@ -260,9 +267,9 @@ async function buildSession(req) {
 
   const apps = await applicationModel.findForSession(vacancyId, ids);
   if (apps.length !== ids.length) throw new AppError('Some of these applications were not found on this vacancy', 404);
-  const blocked = apps.filter((a) => !SCHEDULABLE_STATUSES.includes(a.status) || a.offer);
+  const blocked = apps.filter((a) => !SCHEDULABLE_STATUSES.includes(a.status) || a.offer || a.meritStatus);
   if (blocked.length) {
-    throw new AppError(`Not schedulable: ${blocked.map((a) => `${a.candidate.fullName} (${a.status})`).join(', ')}`, 422);
+    throw new AppError(`Not schedulable: ${blocked.map((a) => `${a.candidate.fullName} (${a.meritStatus ? 'on the merit list' : a.status})`).join(', ')}`, 422);
   }
 
   const logistics = parseLogistics({ ...req.body, scheduledDate: undefined });
@@ -504,6 +511,9 @@ async function scorecard(req, res) {
       applicationStatus: app.status,
       listStatus: app.listStatus,
       rank: app.rank,
+      meritRank: app.meritRank,
+      meritListStatus: app.meritListStatus,
+      meritStatus: app.meritStatus,
       offerStatus: app.offer?.status || null,
       rounds: appRounds.length,
       noShows: appRounds.filter((r) => r.status === 'NoShow').length,
@@ -888,7 +898,7 @@ async function finalizeRecommendation(req, res) {
     const updatedApplication = await applicationModel.update(round.applicationId, {
       status: 'Rejected', rejectedAt: new Date(), rejectedById: req.user.id,
       rejectionReason: 'Not recommended for offer following the interview panel\'s review.',
-      rank: null, listStatus: null, rankVersion: { increment: 1 }
+      rank: null, listStatus: null, ...CLEARED_MERIT, rankVersion: { increment: 1 }
     }, { vacancy: true });
     await notifyCandidate(
       updatedApplication.candidateId, 'ApplicationRejected',

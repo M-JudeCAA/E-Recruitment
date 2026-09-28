@@ -7,6 +7,8 @@ import React from 'react';
 export const STATUS_COLORS = {
   // Panel/interview recommendation
   Shortlist: 'var(--color-accent)', Hold: 'var(--color-warning)', Reject: 'var(--color-danger)',
+  // Merit list place (Application.meritListStatus)
+  Primary: 'var(--color-accent)', Reserve: 'var(--color-primary)',
   // Vacancy
   PendingApproval: 'var(--color-warning)',
   Open: 'var(--color-accent)', PartiallyFilled: 'var(--color-warning)',
@@ -20,7 +22,7 @@ export const STATUS_COLORS = {
   // Offer
   Recommended: 'var(--color-warning)', Approved: 'var(--color-accent)',
   Extended: 'var(--color-accent)', Accepted: 'var(--color-accent)',
-  Declined: 'var(--color-danger)',
+  Declined: 'var(--color-danger)', Returned: 'var(--color-warning)', Expired: 'var(--color-text-muted)',
   // Interview round status (InterviewRoundStatus) and the candidate's answer
   // (InterviewCandidateResponse). "Held" is the candidate-facing name for
   // Completed (see backend utils/candidateInterview.js).

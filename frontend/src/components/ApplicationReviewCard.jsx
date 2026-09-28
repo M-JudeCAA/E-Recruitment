@@ -10,6 +10,9 @@ import { fileLink } from '../utils/fileLink';
 import { safeJsonParse } from '../utils/safeJsonParse';
 import InterviewScheduler from './interviews/InterviewScheduler';
 import InterviewRoundPanel from './interviews/InterviewRoundPanel';
+import OfferComposer from './offers/OfferComposer';
+import OfferSummary from './offers/OfferSummary';
+import OfferActions from './offers/OfferActions';
 import { ROUND_LABELS } from './interviews/formStyles';
 import { formatDateTime, venueLabel } from '../utils/interviews';
 
@@ -61,7 +64,9 @@ export default function ApplicationReviewCard({
 
   // Only one modal is ever open for this card at a time, so a single
   // discriminated slot is enough instead of five separate booleans.
-  const [activeModal, setActiveModal] = useState(null); // 'verify' | 'reject' | 'withdrawOffer' | null
+  const [activeModal, setActiveModal] = useState(null); // 'verify' | 'reject' | null
+  // Drafting an offer (OfferComposer) is its own modal, like scheduling.
+  const [composingOffer, setComposingOffer] = useState(false);
   // The scheduler and the round workspace are their own modals (shared with
   // the Interview Hub), so they sit outside activeModal.
   const [scheduling, setScheduling] = useState(false);
@@ -111,46 +116,6 @@ export default function ApplicationReviewCard({
     }
   };
 
-  // Principal_HR_Officer+ can take back an offer that is still in play -
-  // typically one that can no longer be accepted because the vacancy filled.
-  const [withdrawReason, setWithdrawReason] = useState('');
-  const openWithdrawOffer = () => { setWithdrawReason(''); setError(''); setActiveModal('withdrawOffer'); };
-  const submitWithdrawOffer = async () => {
-    setSubmitting(true);
-    try {
-      await staffClient.patch(`/api/applications/offers/${app.offer.id}/withdraw`, { reason: withdrawReason || undefined });
-      closeModal();
-      onUpdated();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not withdraw this offer');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const approveOffer = async () => {
-    setSubmitting(true);
-    try {
-      await staffClient.patch(`/api/applications/offers/${app.offer.id}/approve`);
-      onUpdated();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not approve offer');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-  const recommendOffer = async () => {
-    setError(''); setSubmitting(true);
-    try {
-      await staffClient.post(`/api/applications/${app.id}/recommend-offer`);
-      onUpdated();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not recommend offer');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <Card>
       {error && <div style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
@@ -169,7 +134,9 @@ export default function ApplicationReviewCard({
       <div onClick={() => setExpanded((v) => !v)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, cursor: 'pointer' }}>
         <div>
           <strong>{app.candidate.fullName}</strong> ({app.candidate.candidateType}) &mdash; <StatusBadge status={app.status} />
-          {app.rank && <span> &middot; Rank {app.rank} ({app.listStatus})</span>}
+          {app.meritRank
+            ? <span> &middot; Merit list #{app.meritRank} ({app.meritListStatus}{app.meritStatus === 'Proposed' ? ', awaiting approval' : ''})</span>
+            : app.rank && <span> &middot; Interview order #{app.rank}</span>}
           {app.shortlistScore != null && (
             <span style={{ color: 'var(--color-text-muted)', marginLeft: 8, fontSize: 13 }}>&middot; Score {app.shortlistScore.toFixed(1)}</span>
           )}
@@ -363,27 +330,35 @@ export default function ApplicationReviewCard({
         </>
       )}
 
+      {/* The offer, its terms and trail, and whatever this viewer can do
+          with it next (approve, return, revise, withdraw). */}
+      {app.offer && (
+        <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+          <OfferSummary offer={app.offer} />
+          <OfferActions offer={app.offer} applicationId={app.id} staffRole={staffRole} onChanged={onUpdated} />
+        </div>
+      )}
+
       <div style={{ marginTop: 8 }}>
-        {['Shortlisted', 'InterviewScheduled', 'Interviewed'].includes(app.status) && !app.offer && (
+        {/* Someone already ranked on the merit list has been decided on - the
+            backend refuses another round until they are taken off it. */}
+        {['Shortlisted', 'InterviewScheduled', 'Interviewed'].includes(app.status) && !app.offer && !app.meritStatus && (
           <Button variant="secondary" onClick={() => setScheduling(true)}>
             {app.interviewRounds.length === 0 ? 'Schedule interview' : 'Schedule another round'}
           </Button>
         )}
-        {app.status === 'Interviewed' && !app.offer && rank >= ROLE_RANK.Principal_HR_Officer && (
-          <Button style={{ marginLeft: 8 }} onClick={recommendOffer} disabled={submitting}>Recommend for offer</Button>
+        {/* Offers come off the approved merit list - only its Primary
+            candidates can be recommended (see MeritListBoard). */}
+        {app.status === 'Interviewed' && !app.offer && app.meritStatus === 'Approved' && app.meritListStatus === 'Primary'
+          && rank >= ROLE_RANK.Principal_HR_Officer && (
+          <Button style={{ marginLeft: 8 }} onClick={() => setComposingOffer(true)}>Draft offer</Button>
         )}
-        {app.offer && rank >= ROLE_RANK.Manager && app.offer.status === 'Recommended' && (
-          <Button onClick={approveOffer} disabled={submitting}>Approve offer</Button>
-        )}
-        {app.offer && <span style={{ marginLeft: 8 }}>Offer: <StatusBadge status={app.offer.status} /></span>}
-        {app.offer && ['Recommended', 'Approved'].includes(app.offer.status) && rank >= ROLE_RANK.Principal_HR_Officer && (
-          <Button
-            variant="ghost"
-            style={{ marginLeft: 8, color: 'var(--color-danger)' }}
-            onClick={openWithdrawOffer}
-          >
-            Withdraw offer
-          </Button>
+        {app.status === 'Interviewed' && !app.offer && !(app.meritStatus === 'Approved' && app.meritListStatus === 'Primary') && (
+          <span style={{ marginLeft: 8, fontSize: 13, color: 'var(--color-text-muted)' }}>
+            {!app.meritStatus ? 'Next: rank on the merit list'
+              : app.meritStatus === 'Proposed' ? 'Merit list awaiting approval'
+                : 'On the reserve list'}
+          </span>
         )}
         {!NOT_REJECTABLE.includes(app.status) && rank >= ROLE_RANK.Senior_HR_Officer && (
           <Button
@@ -414,24 +389,8 @@ export default function ApplicationReviewCard({
         </Modal>
       )}
 
-      {activeModal === 'withdrawOffer' && (
-        <Modal
-          title={`Withdraw offer — ${app.candidate.fullName}`}
-          onClose={closeModal}
-          footer={<>
-            <Button variant="ghost" onClick={closeModal} disabled={submitting}>Cancel</Button>
-            <Button onClick={submitWithdrawOffer} disabled={submitting}>{submitting ? 'Withdrawing...' : 'Confirm withdrawal'}</Button>
-          </>}
-        >
-          {error && <div style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
-            The offer can no longer be accepted once withdrawn, and this cannot be undone.
-            {app.offer?.status === 'Approved'
-              ? ' The candidate has already been told about this offer, so they will be notified by email and in-app. A reason is optional but is included in their notification when given.'
-              : ' The offer has not been approved yet, so the candidate was never told about it and will not be notified.'}
-          </p>
-          <TextArea label="Reason (optional)" value={withdrawReason} onChange={(e) => setWithdrawReason(e.target.value)} />
-        </Modal>
+      {composingOffer && (
+        <OfferComposer applicationId={app.id} onClose={() => setComposingOffer(false)} onSaved={onUpdated} />
       )}
 
       {activeModal === 'verify' && (
