@@ -19,6 +19,11 @@ router.patch('/:id/begin-review', authenticate, requireStaffRole('Senior_HR_Offi
 // or DHRA" exactly. Cumulative rank means Director can also reach this,
 // consistent with every other minRole gate in this app.
 router.patch('/:id/approve', authenticate, requireStaffRole('Manager'), controller.approve);
+// The approver's other answers - both need a comment (FR-ATS-009). A
+// returned vacancy is revised and resubmitted by HR; a rejected one is final.
+router.patch('/:id/return', authenticate, requireStaffRole('Manager'), controller.returnForRevision);
+router.patch('/:id/reject', authenticate, requireStaffRole('Manager'), controller.reject);
+router.patch('/:id/resubmit', authenticate, requireStaffRole('HR_Officer'), controller.resubmit);
 // NEW - Internal <-> External transition. Same tier as approval itself:
 // only Manager/Director can call this at all, which is what makes their
 // call to it constitute the required approval - no separate propose step.

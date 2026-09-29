@@ -474,7 +474,7 @@ export default function ApplicationManagement() {
             </div>
             <ApplicationRowSkeleton />
           </>
-        ) : vacancy.status === 'PendingApproval' ? (
+        ) : ['PendingApproval', 'Returned', 'Rejected'].includes(vacancy.status) ? (
           <Alert type="info" message="This vacancy hasn't been approved and published yet, so there are no applications to review. Approve it from the HR dashboard first." />
         ) : (
           <>

@@ -141,7 +141,7 @@ function ActivityFeed({ items, loading }) {
   );
 }
 
-const VACANCY_STATUS_ORDER = ['PendingApproval', 'Open', 'PartiallyFilled', 'Filled', 'Closed'];
+const VACANCY_STATUS_ORDER = ['Returned', 'PendingApproval', 'Open', 'PartiallyFilled', 'Filled', 'Closed', 'Rejected'];
 const APPLICATION_STATUS_ORDER = ['Submitted', 'Shortlisted', 'Interviewed', 'Offered', 'Rejected', 'Withdrawn'];
 
 // Reimagined Manager/Director landing page (replaces HRHome for this

@@ -76,9 +76,18 @@ export default function VacancyDetail() {
         )}
       </p>
 
+      {vacancy.status === 'Returned' && (
+        <Alert type="warning" message={`Returned for revision: ${vacancy.returnReason || 'no comment recorded'}. Edit it and resubmit it for approval from the HR dashboard.`} />
+      )}
+      {vacancy.status === 'Rejected' && (
+        <Alert type="error" message={`Rejected: ${vacancy.rejectionReason || 'no reason recorded'}.`} />
+      )}
+      {vacancy.status === 'Closed' && vacancy.closeReason && (
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Closed: {vacancy.closeReason}</p>
+      )}
       {vacancy.status === 'PendingApproval' ? (
         <Alert type="info" message="This vacancy hasn't been approved and published yet, so there are no applications to review. Approve it from the HR dashboard first." />
-      ) : (
+      ) : ['Returned', 'Rejected'].includes(vacancy.status) ? null : (
         <Button onClick={() => navigate(`/hr/applications?vacancyId=${vacancy.id}`)}>Manage applications &rarr;</Button>
       )}
 

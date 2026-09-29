@@ -272,24 +272,44 @@ describe('update', () => {
 describe('close', () => {
   test('returns 404 when the vacancy does not exist', async () => {
     prisma.vacancy.findUnique.mockResolvedValue(null);
-    await vacancyController.close({ params: { id: '99' } }, mockRes());
-    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+    await vacancyController.close({ params: { id: '99' }, body: { reason: 'Frozen' } }, mockRes());
+    expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
   });
 
   test('returns 422 if the vacancy is already closed', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Closed' });
     const res = mockRes();
-    await vacancyController.close({ params: { id: '1' } }, res);
+    await vacancyController.close({ params: { id: '1' }, body: { reason: 'Frozen' } }, res);
     expect(res.status).toHaveBeenCalledWith(422);
   });
 
-  test('transitions an open vacancy to Closed', async () => {
+  test('requires a reason (FR-ATS-027)', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open' });
-    prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Closed' });
-    await vacancyController.close({ params: { id: '1' } }, mockRes());
-    expect(prisma.vacancy.update.mock.calls[0][0]).toEqual(expect.objectContaining({
-      where: { id: 1 }, data: { status: 'Closed' }
-    }));
+    const res = mockRes();
+    await vacancyController.close({ params: { id: '1' }, body: { reason: '  ' }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('closes an open vacancy, keeping the reason on the row and in the history', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open' });
+    prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+    await vacancyController.close({ params: { id: '1' }, body: { reason: 'Position frozen' }, user: { id: 2 } }, mockRes());
+    expect(prisma.vacancy.updateMany).toHaveBeenCalledWith({
+      where: { id: 1, status: 'Open' },
+      data: { status: 'Closed', closedAt: expect.any(Date), closeReason: 'Position frozen' }
+    });
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      entityType: 'Vacancy', entityId: 1, action: 'Vacancy closed', performedById: 2,
+      payload: { changes: { status: { from: 'Open', to: 'Closed' } }, comment: 'Position frozen' }
+    }) });
+  });
+
+  test.each(['Returned', 'Rejected'])('refuses to close a %s vacancy', async (status) => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status });
+    const res = mockRes();
+    await vacancyController.close({ params: { id: '1' }, body: { reason: 'Whatever' }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
   });
 });
 
@@ -299,26 +319,26 @@ describe('approve', () => {
     const res = mockRes();
     await vacancyController.approve({ params: { id: '99' }, user: { id: 2 } }, res);
     expect(res.status).toHaveBeenCalledWith(404);
-    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+    expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
   });
 
-  test.each(['Open', 'PartiallyFilled', 'Filled'])(
-    'refuses to approve a vacancy already %s - it does not need approval right now', async (status) => {
+  test.each(['Open', 'PartiallyFilled', 'Filled', 'Returned', 'Rejected'])(
+    'refuses to approve a %s vacancy', async (status) => {
       prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status, createdById: 5 });
       const res = mockRes();
       await vacancyController.approve({ params: { id: '1' }, user: { id: 2 } }, res);
       expect(res.status).toHaveBeenCalledWith(422);
-      expect(prisma.vacancy.update).not.toHaveBeenCalled();
+      expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
     });
 
   test.each(['PendingApproval', 'Closed'])(
     'allows a Manager/Director to approve a %s vacancy directly - no review step in the 2-tier flow', async (status) => {
       prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status, createdById: 5 });
-      prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open' });
+      prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
       const res = mockRes();
       await vacancyController.approve({ params: { id: '1' }, user: { id: 2, role: 'Manager' } }, res);
       expect(res.status).not.toHaveBeenCalledWith(422);
-      expect(prisma.vacancy.update).toHaveBeenCalled();
+      expect(prisma.vacancy.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 1, status } }));
     });
 
   test('refuses to approve a vacancy whose deadline has already passed', async () => {
@@ -326,15 +346,15 @@ describe('approve', () => {
     const res = mockRes();
     await vacancyController.approve({ params: { id: '1' }, user: { id: 2, role: 'Manager' } }, res);
     expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+    expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
   });
 
   test('allows approving a vacancy with a future deadline', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5, deadline: new Date('2999-01-01') });
-    prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open' });
+    prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
     const res = mockRes();
     await vacancyController.approve({ params: { id: '1' }, user: { id: 2, role: 'Manager' } }, res);
-    expect(prisma.vacancy.update).toHaveBeenCalled();
+    expect(prisma.vacancy.updateMany).toHaveBeenCalled();
   });
 
   test('blocks self-approval - the creator cannot approve their own vacancy', async () => {
@@ -342,7 +362,15 @@ describe('approve', () => {
     const res = mockRes();
     await vacancyController.approve({ params: { id: '1' }, user: { id: 2, role: 'Manager' } }, res);
     expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+    expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('answers 409 when another approver acted first', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5 });
+    prisma.vacancy.updateMany.mockResolvedValue({ count: 0 });
+    const res = mockRes();
+    await vacancyController.approve({ params: { id: '1' }, user: { id: 2, role: 'Manager' } }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
   });
 
   // approvedByRole snapshots which of the two (Manager or Director)
@@ -350,14 +378,17 @@ describe('approve', () => {
   // promotion.
   test.each(['Manager', 'Director'])(
     'approving as %s sets approvedAt/approvedById/approvedByRole and resolves any active VacancyApproval escalation', async (role) => {
-      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5 });
-      prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open' });
+      // Reads before the write see it pending; the read after sees it Open.
+      let approved = false;
+      prisma.vacancy.findUnique.mockImplementation(async () => (approved
+        ? { id: 1, status: 'Open' } : { id: 1, status: 'PendingApproval', createdById: 5 }));
+      prisma.vacancy.updateMany.mockImplementation(async () => { approved = true; return { count: 1 }; });
       const res = mockRes();
 
       await vacancyController.approve({ params: { id: '1' }, user: { id: 2, role } }, res);
 
-      expect(prisma.vacancy.update).toHaveBeenCalledWith(expect.objectContaining({
-        where: { id: 1 },
+      expect(prisma.vacancy.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 1, status: 'PendingApproval' },
         data: expect.objectContaining({ status: 'Open', approvedById: 2, approvedByRole: role, approvedAt: expect.any(Date) })
       }));
       expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith({
@@ -366,6 +397,73 @@ describe('approve', () => {
       });
       expect(res.json).toHaveBeenCalledWith({ id: 1, status: 'Open' });
     });
+});
+
+describe.each([
+  ['returnForRevision', 'Returned', 'VacancyReturned', 'Vacancy returned for revision'],
+  ['reject', 'Rejected', 'VacancyRejected', 'Vacancy rejected']
+])('%s', (action, status, noticeType, auditAction) => {
+  const pending = { id: 1, status: 'PendingApproval', createdById: 5, jobRef: 'UCAA/ADV/EXT/001/2026', title: 'Accountant' };
+
+  test('requires a comment (FR-ATS-009)', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue(pending);
+    const res = mockRes();
+    await vacancyController[action]({ params: { id: '1' }, body: {}, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
+  });
+
+  test.each(['Open', 'Returned', 'Closed'])('only acts on a vacancy awaiting approval, not a %s one', async (current) => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...pending, status: current });
+    const res = mockRes();
+    await vacancyController[action]({ params: { id: '1' }, body: { reason: 'Needs work' }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
+
+  test(`moves it to ${status}, stops the approval clock, audits the comment and tells the creator`, async () => {
+    prisma.vacancy.findUnique.mockResolvedValue(pending);
+    prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+    prisma.staffUser.findUnique.mockResolvedValue({ id: 5, email: 'hro@caa.co.ug' });
+    await vacancyController[action]({ params: { id: '1' }, body: { reason: 'Salary scale is wrong' }, user: { id: 2 } }, mockRes());
+
+    expect(prisma.vacancy.updateMany).toHaveBeenCalledWith({
+      where: { id: 1, status: 'PendingApproval' }, data: expect.objectContaining({ status })
+    });
+    expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { taskType: 'VacancyApproval', taskId: 1, resolvedAt: null }
+    }));
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      action: auditAction, payload: expect.objectContaining({ comment: 'Salary scale is wrong' })
+    }) });
+    expect(prisma.notification.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      recipientId: 5, taskType: noticeType, taskId: 1
+    }) });
+  });
+});
+
+describe('resubmit', () => {
+  test('puts a returned vacancy back for approval and restarts the clock', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Returned', deadline: new Date('2999-01-01') });
+    prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+    await vacancyController.resubmit({ params: { id: '1' }, body: {}, user: { id: 3 } }, mockRes());
+    expect(prisma.vacancy.updateMany).toHaveBeenCalledWith({
+      where: { id: 1, status: 'Returned' }, data: { status: 'PendingApproval', approvalRequestedAt: expect.any(Date) }
+    });
+  });
+
+  test.each(['PendingApproval', 'Rejected', 'Open'])('refuses a %s vacancy', async (status) => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status });
+    const res = mockRes();
+    await vacancyController.resubmit({ params: { id: '1' }, body: {}, user: { id: 3 } }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
+
+  test('refuses while the deadline has passed', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Returned', deadline: new Date('2000-01-01') });
+    const res = mockRes();
+    await vacancyController.resubmit({ params: { id: '1' }, body: {}, user: { id: 3 } }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
 });
 
 describe('transitionPostingType', () => {
@@ -909,5 +1007,43 @@ describe('saveRanking', () => {
 
     expect(res.status).toHaveBeenCalledWith(422);
     expect(prisma.application.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('update - moving the deadline (FR-ATS-027)', () => {
+  const later = '2999-06-30T00:00:00.000Z';
+
+  test('needs a reason once the vacancy is published', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open', deadline: new Date('2999-01-01') });
+    const res = mockRes();
+    await vacancyController.update({ params: { id: '1' }, body: { deadline: later }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+  });
+
+  test('records an extension with its reason', async () => {
+    const before = { id: 1, status: 'Open', deadline: new Date('2999-01-01') };
+    prisma.vacancy.findUnique.mockResolvedValue(before);
+    prisma.vacancy.update.mockResolvedValue({ ...before, deadline: new Date(later) });
+    await vacancyController.update({ params: { id: '1' }, body: { deadline: later, reason: 'Too few applicants' }, user: { id: 2 } }, mockRes());
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      action: 'Vacancy deadline extended',
+      payload: { changes: { deadline: { from: before.deadline.toISOString(), to: later } }, comment: 'Too few applicants' }
+    }) });
+  });
+
+  test('needs no reason while the vacancy is still being drafted or revised', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Returned', deadline: new Date('2999-01-01') });
+    prisma.vacancy.update.mockResolvedValue({ id: 1 });
+    const res = mockRes();
+    await vacancyController.update({ params: { id: '1' }, body: { deadline: later }, user: { id: 2 } }, res);
+    expect(prisma.vacancy.update).toHaveBeenCalled();
+  });
+
+  test('refuses to edit a rejected vacancy', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Rejected' });
+    const res = mockRes();
+    await vacancyController.update({ params: { id: '1' }, body: { salaryScale: 'U3' }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
   });
 });

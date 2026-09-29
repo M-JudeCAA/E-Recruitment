@@ -57,14 +57,8 @@ enum VacancyStatus {
   PartiallyFilled
   Filled
   Closed
-  // Declared to match the live column (enum('PendingApproval','Open',
-  // 'PartiallyFilled','Filled','Closed','Rejected')) - see the note on
-  // Vacancy.rejectionReason below. Nothing in this codebase currently
-  // sets a Vacancy to Rejected; only Department and Application have a
-  // real reject workflow. Left unused rather than removed, since
-  // removing an enum value a live column can already hold would be the
-  // riskier change.
-  Rejected
+  Rejected  // the approver refused it outright, with a reason (vacancyController.reject) - final
+  Returned  // sent back by the approver with a comment; HR edits and resubmits (FR-ATS-009)
 }
 
 enum ApplicationStatus {
@@ -323,6 +317,19 @@ model Vacancy {
   // ApplicationSnapshot.
   approvedByRole   StaffRole?
   rejectionReason  String?
+  rejectedAt       DateTime?
+
+  // Return for revision / resubmission (FR-ATS-009). returnReason is the
+  // latest return's comment; every return and resubmission is also in
+  // AuditLog. approvalRequestedAt is when the vacancy was last submitted
+  // for approval - the SLA clock starts there, falling back to createdAt.
+  returnedAt          DateTime?
+  returnReason        String?   @db.Text
+  approvalRequestedAt DateTime?
+
+  // Closing takes a reason (FR-ATS-027); re-opening keeps the last one.
+  closedAt         DateTime?
+  closeReason      String?   @db.Text
 
   // Set once, the first time recomputeVacancyStatus (workflowService.js)
   // computes status === 'Filled' - never cleared or re-stamped afterward,
@@ -1306,6 +1313,11 @@ enum SlaTaskType {
   // interview was due - to whoever scheduled those interviews
   // (scripts/checkInterviewSessions.js). taskId is the first round id.
   InterviewSessionNotStarted
+  // An approver returned a vacancy for revision, or rejected it, with a
+  // comment - to whoever created it (vacancyController.returnForRevision /
+  // reject). taskId is the vacancy id.
+  VacancyReturned
+  VacancyRejected
 }
 
 model SlaPolicy {

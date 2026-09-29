@@ -1333,7 +1333,7 @@ async function scenarioClosedReadvertised() {
   await api('PATCH', `/api/applications/${ruthApp.id}/withdraw`, { token: ruth.token, json: { reason: 'I have accepted a promotion with my current employer.' } });
   await beginReview(v.id);
   await reject(tomApp.id, 'The AIS training claimed on the application could not be confirmed with the training school.');
-  await api('PATCH', `/api/vacancies/${v.id}/close`, { token: T.phro });
+  await api('PATCH', `/api/vacancies/${v.id}/close`, { token: T.phro, json: { reason: 'Too few qualified applicants - to be readvertised with a lower experience requirement.' } });
   await retime(v.id, { created: 26, deadline: 12, review: 11, rejected: 10.5 });
 
   const re = await api('POST', `/api/vacancies/${v.id}/readvertise`, { token: T.hro, json: { ...body, deadline: dateOnly(21), minimumExperienceYears: 1 } });

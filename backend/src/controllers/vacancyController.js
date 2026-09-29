@@ -7,8 +7,10 @@ const offerModel = require('../models/offerModel');
 const workflow = require('../services/workflowService');
 const audit = require('../services/auditService');
 const slaModel = require('../models/slaModel');
+const { notify } = require('../services/notificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { toPublicVacancy } = require('../utils/publicVacancy');
+const { escapeHtml } = require('../utils/interviewFormat');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
 const {
   validateVacancyEditableFields,
@@ -214,6 +216,8 @@ async function update(req, res) {
   }, { partial: true });
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
+  if (vacancy.status === 'Rejected') return res.status(422).json({ error: 'A rejected vacancy can no longer be edited' });
+
   const data = {};
   if (postingType !== undefined) data.postingType = postingType;
   if (deadline !== undefined) data.deadline = deadline ? new Date(deadline) : null;
@@ -260,13 +264,136 @@ async function update(req, res) {
     data.positionsRequired = n;
   }
 
+  // Moving the deadline of a vacancy candidates can already see - extending
+  // or shortening it - needs a reason (FR-ATS-027). Before approval it's
+  // just drafting.
+  // Compared by calendar day: the edit form sends a plain date, and
+  // re-saving an untouched form must not count as moving the deadline.
+  const dayOf = (d) => (d ? d.toISOString().slice(0, 10) : null);
+  const deadlineMoved = data.deadline !== undefined && dayOf(data.deadline) !== dayOf(vacancy.deadline);
+  const published = ['Open', 'PartiallyFilled', 'Filled', 'Closed'].includes(vacancy.status);
+  const reason = reasonFrom(req.body);
+  if (deadlineMoved && published && !reason) {
+    return res.status(400).json({ error: 'Give a reason for changing the deadline of a published vacancy' });
+  }
+
   const updated = await vacancyModel.update(vacancyId, data);
   await audit.record({
-    entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy edited', actor: audit.actorFrom(req),
-    before: vacancy, after: updated, fields: Object.keys(data)
+    entityType: 'Vacancy', entityId: vacancyId,
+    action: deadlineMoved && published
+      ? (vacancy.deadline && data.deadline && data.deadline > vacancy.deadline ? 'Vacancy deadline extended' : 'Vacancy deadline changed')
+      : 'Vacancy edited',
+    actor: audit.actorFrom(req), before: vacancy, after: updated, fields: Object.keys(data), comment: reason
   });
   res.json(updated);
 }
+
+// A comment is mandatory wherever an approver says no, and when a vacancy
+// is closed or its published deadline moved (BR-ATS-07, FR-ATS-027).
+const MIN_REASON_LENGTH = 3;
+const MAX_REASON_LENGTH = 2000;
+function reasonFrom(body) {
+  const text = typeof body?.reason === 'string' ? body.reason.trim().slice(0, MAX_REASON_LENGTH) : '';
+  return text.length >= MIN_REASON_LENGTH ? text : null;
+}
+
+// Loads the vacancy for an approver's decision; answers and returns null
+// if it isn't awaiting approval.
+async function loadPendingApproval(req, res, verb) {
+  const vacancyId = Number(req.params.id);
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) { res.status(404).json({ error: 'Vacancy not found' }); return null; }
+  if (vacancy.status !== 'PendingApproval') {
+    res.status(422).json({ error: `Only a vacancy awaiting approval can be ${verb}` });
+    return null;
+  }
+  return vacancy;
+}
+
+function describeVacancy(vacancy) {
+  return `${vacancy.jobRef} (${vacancy.title})`;
+}
+
+// Notices are a side effect of a decision that already committed.
+async function notifySafely(recipientId, taskType, taskId, message) {
+  try {
+    await notify(recipientId, taskType, taskId, message);
+  } catch (err) {
+    console.error(`Failed to send ${taskType} notice for vacancy ${taskId}:`, err);
+  }
+}
+
+// PATCH /api/vacancies/:id/return - Manager+ sends a vacancy awaiting
+// approval back to HR with what needs to change. HR edits it and
+// resubmits it (below); the edits and the comment are in its history.
+async function returnForRevision(req, res) {
+  const vacancy = await loadPendingApproval(req, res, 'returned');
+  if (!vacancy) return;
+  const reason = reasonFrom(req.body);
+  if (!reason) return res.status(400).json({ error: 'Say what needs to change before this vacancy can be approved' });
+
+  const now = new Date();
+  const result = await vacancyModel.updateIfStatus(vacancy.id, 'PendingApproval', { status: 'Returned', returnedAt: now, returnReason: reason });
+  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  await slaModel.resolveEscalations('VacancyApproval', vacancy.id);
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancy.id, action: 'Vacancy returned for revision', actor: audit.actorFrom(req),
+    before: vacancy, after: { status: 'Returned' }, fields: ['status'], comment: reason
+  });
+  await notifySafely(vacancy.createdById, 'VacancyReturned', vacancy.id,
+    `${describeVacancy(vacancy)} was returned for revision: ${escapeHtml(reason)}. Edit it and resubmit it for approval.`);
+  broadcastDashboardEvent('VacancyReturned', { vacancyId: vacancy.id });
+  res.json(await vacancyModel.findById(vacancy.id));
+}
+
+// PATCH /api/vacancies/:id/reject - Manager+ refuses a vacancy outright.
+// Final: a rejected vacancy can't be resubmitted or approved.
+async function reject(req, res) {
+  const vacancy = await loadPendingApproval(req, res, 'rejected');
+  if (!vacancy) return;
+  const reason = reasonFrom(req.body);
+  if (!reason) return res.status(400).json({ error: 'A reason is required to reject a vacancy' });
+
+  const result = await vacancyModel.updateIfStatus(vacancy.id, 'PendingApproval', {
+    status: 'Rejected', rejectedAt: new Date(), rejectionReason: reason
+  });
+  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  await slaModel.resolveEscalations('VacancyApproval', vacancy.id);
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancy.id, action: 'Vacancy rejected', actor: audit.actorFrom(req),
+    before: vacancy, after: { status: 'Rejected' }, fields: ['status'], comment: reason
+  });
+  await notifySafely(vacancy.createdById, 'VacancyRejected', vacancy.id,
+    `${describeVacancy(vacancy)} was rejected: ${escapeHtml(reason)}`);
+  broadcastDashboardEvent('VacancyRejected', { vacancyId: vacancy.id });
+  res.json(await vacancyModel.findById(vacancy.id));
+}
+
+// PATCH /api/vacancies/:id/resubmit - HR puts a returned vacancy back for
+// approval once it has been revised. The approval clock restarts.
+async function resubmit(req, res) {
+  const vacancyId = Number(req.params.id);
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+  if (vacancy.status !== 'Returned') return res.status(422).json({ error: 'Only a returned vacancy can be resubmitted' });
+  if (vacancy.deadline && vacancy.deadline < new Date()) {
+    return res.status(422).json({ error: 'This vacancy\'s deadline has already passed - extend the deadline before resubmitting it' });
+  }
+
+  const result = await vacancyModel.updateIfStatus(vacancyId, 'Returned', { status: 'PendingApproval', approvalRequestedAt: new Date() });
+  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy resubmitted for approval', actor: audit.actorFrom(req),
+    before: vacancy, after: { status: 'PendingApproval' }, fields: ['status'], comment: reasonFrom(req.body)
+  });
+  broadcastDashboardEvent('VacancyPendingApproval', { vacancyId });
+  res.json(await vacancyModel.findById(vacancyId));
+}
+
+// PATCH /api/vacancies/:id/close - takes a vacancy off the jobs board (the
+// "unpublish" of FR-ATS-027). A closed vacancy can be re-opened through
+// approve(). The reason is required and kept on the row and in the history.
+const CLOSABLE_STATUSES = ['PendingApproval', 'Open', 'PartiallyFilled', 'Filled'];
 
 async function close(req, res) {
   const vacancyId = Number(req.params.id);
@@ -276,9 +403,21 @@ async function close(req, res) {
   if (vacancy.status === 'Closed') {
     return res.status(422).json({ error: 'This vacancy is already closed' });
   }
+  if (!CLOSABLE_STATUSES.includes(vacancy.status)) {
+    return res.status(422).json({ error: `A ${vacancy.status.toLowerCase()} vacancy cannot be closed` });
+  }
+  const reason = reasonFrom(req.body);
+  if (!reason) return res.status(400).json({ error: 'A reason is required to close a vacancy' });
 
-  const updated = await vacancyModel.update(vacancyId, { status: 'Closed' });
-  res.json(updated);
+  const result = await vacancyModel.updateIfStatus(vacancyId, vacancy.status, { status: 'Closed', closedAt: new Date(), closeReason: reason });
+  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  if (vacancy.status === 'PendingApproval') await slaModel.resolveEscalations('VacancyApproval', vacancyId);
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy closed', actor: audit.actorFrom(req),
+    before: vacancy, after: { status: 'Closed' }, fields: ['status'], comment: reason
+  });
+  broadcastDashboardEvent('VacancyClosed', { vacancyId });
+  res.json(await vacancyModel.findById(vacancyId));
 }
 
 // SIMPLIFIED from the 5-tier flow (create -> Senior HR Officer review ->
@@ -296,9 +435,12 @@ async function approve(req, res) {
   if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
 
   // Re-opening a previously Closed vacancy is still allowed - the one
-  // legitimate reuse of this endpoint beyond first approval.
-  if (['Open', 'PartiallyFilled', 'Filled'].includes(vacancy.status)) {
-    return res.status(422).json({ error: 'This vacancy does not need approval right now' });
+  // legitimate reuse of this endpoint beyond first approval. A Returned
+  // vacancy must be resubmitted first; a Rejected one is final.
+  if (!['PendingApproval', 'Closed'].includes(vacancy.status)) {
+    const why = vacancy.status === 'Returned' ? 'It was returned for revision - HR needs to resubmit it first'
+      : vacancy.status === 'Rejected' ? 'It was rejected' : 'It does not need approval right now';
+    return res.status(422).json({ error: `This vacancy can't be approved. ${why}.` });
   }
   // Approving (or re-opening) a vacancy whose deadline has already passed
   // would publish it in a state that can never accept an application -
@@ -315,10 +457,12 @@ async function approve(req, res) {
     return sendError(res, err, 422);
   }
 
-  const updated = await vacancyModel.update(vacancyId, {
+  const result = await vacancyModel.updateIfStatus(vacancyId, vacancy.status, {
     status: 'Open', approvedAt: new Date(), approvedById: req.user.id,
     approvedByRole: req.user.role // the role snapshot itself
   });
+  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  const updated = await vacancyModel.findById(vacancyId);
 
   // VacancyApproval can now be tracked and escalated by the SLA checker,
   // since approvedAt finally gives it a clean "resolved" signal.
@@ -587,4 +731,4 @@ async function saveRanking(req, res) {
   res.json(results);
 }
 
-module.exports = { create, update, close, approve, transitionPostingType, readvertise, listPublic, listForAdmin, getOne, listApplications, saveRanking };
+module.exports = { create, update, close, approve, returnForRevision, reject, resubmit, transitionPostingType, readvertise, listPublic, listForAdmin, getOne, listApplications, saveRanking };

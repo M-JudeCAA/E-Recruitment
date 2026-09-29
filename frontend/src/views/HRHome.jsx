@@ -63,7 +63,7 @@ function GreetingHeader({ staff, connected }) {
   );
 }
 
-const VACANCY_STATUS_ORDER = ['PendingApproval', 'Open', 'PartiallyFilled', 'Filled', 'Closed'];
+const VACANCY_STATUS_ORDER = ['Returned', 'PendingApproval', 'Open', 'PartiallyFilled', 'Filled', 'Closed', 'Rejected'];
 
 const MS_PER_DAY = 86400000;
 

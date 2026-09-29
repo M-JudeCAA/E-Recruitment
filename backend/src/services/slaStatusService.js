@@ -31,11 +31,14 @@ function tierAbove(role) {
 async function getPendingTasks(taskType) {
   if (taskType === 'VacancyApproval') {
     const rows = await prisma.vacancy.findMany({
-      where: { approvedAt: null, status: { not: 'Closed' } },
-      select: { id: true, createdAt: true, jobRef: true, title: true }
+      // Only while it is actually waiting on an approver - not once it has
+      // been returned to HR, rejected or closed. The clock restarts when a
+      // returned vacancy is resubmitted.
+      where: { approvedAt: null, status: 'PendingApproval' },
+      select: { id: true, createdAt: true, approvalRequestedAt: true, jobRef: true, title: true }
     });
     return rows.map((v) => ({
-      id: v.id, since: v.createdAt, label: `${v.jobRef} — ${v.title}`, to: `/hr/vacancy/${v.id}`
+      id: v.id, since: v.approvalRequestedAt || v.createdAt, label: `${v.jobRef} — ${v.title}`, to: `/hr/vacancy/${v.id}`
     }));
   }
   if (taskType === 'DepartmentApproval') {
