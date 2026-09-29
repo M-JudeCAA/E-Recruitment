@@ -8,6 +8,7 @@ const { fileUrl } = require('../middleware/upload');
 const { educationKey, workExperienceKey, certificateKey, examGradeKey } = require('../utils/entryDedup');
 const { normalizeStringList } = require('../utils/vacancyValidation');
 const { toPublicVacancy } = require('../utils/publicVacancy');
+const { toCandidateOffer } = require('../services/offerService');
 const { toCandidateInterview } = require('../utils/candidateInterview');
 
 // Candidate rows carry passwordHash - fine for the internal auth-check
@@ -337,13 +338,28 @@ async function myApplications(req, res) {
   const applications = await applicationModel.findByCandidate(req.user.id);
   // Interview rounds go through the same kind of whitelist as the vacancy -
   // the panel's scores, recommendation and HR's internal notes stay staff-only.
-  res.json(applications.map((a) => ({
-    ...a,
-    vacancy: toPublicVacancy(a.vacancy),
-    interviewRounds: (a.interviewRounds || [])
-      .slice().sort((x, y) => x.roundNumber - y.roundNumber)
-      .map(toCandidateInterview)
-  })));
+  // The offer too: nothing until it is issued, and only its terms then
+  // (offerService.toCandidateOffer). Until then an Offered application
+  // still reads as Interviewed, so the candidate never learns of an offer
+  // that is only recommended - or that is then returned or withdrawn.
+  // Where they sit on the interview order and the merit list (Primary or
+  // Reserve) is HR's working information, not the candidate's.
+  res.json(applications.map((a) => {
+    const {
+      rank, listStatus, meritRank, meritListStatus, meritStatus,
+      meritProposedAt, meritProposedById, meritApprovedAt, meritApprovedById, ...rest
+    } = a;
+    const offer = toCandidateOffer(a.offer);
+    return {
+      ...rest,
+      status: a.status === 'Offered' && !offer ? 'Interviewed' : a.status,
+      offer,
+      vacancy: toPublicVacancy(a.vacancy),
+      interviewRounds: (a.interviewRounds || [])
+        .slice().sort((x, y) => x.roundNumber - y.roundNumber)
+        .map(toCandidateInterview)
+    };
+  }));
 }
 
 module.exports = {

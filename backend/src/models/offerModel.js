@@ -41,12 +41,12 @@ module.exports = {
     skip, take
   }),
   countPendingApproval: () => prisma.offer.count({ where: { status: 'Recommended' } }),
-  // Offers on a vacancy that are still in play (Recommended or Approved),
+  // Offers on a vacancy that are still in play (Recommended, Returned or Approved),
   // other than excludeOfferId - used to flag offers that can no longer be
   // accepted once the vacancy is Filled.
   findOpenForVacancy: (vacancyId, excludeOfferId) => prisma.offer.findMany({
     where: {
-      status: { in: ['Recommended', 'Approved'] },
+      status: { in: ['Recommended', 'Returned', 'Approved'] },
       application: { vacancyId },
       ...(excludeOfferId ? { id: { not: excludeOfferId } } : {})
     },

@@ -45,6 +45,20 @@ const CATEGORY_LABELS = {
   FixedTermContract: 'Fixed-term contract'
 };
 
+// Same 10 UCAA sites HRDashboard.jsx's own LOCATIONS constant lists
+// (kept as an independent literal here rather than imported, since that
+// file is staff-only and this is the public landing page) - 8 of the 10
+// are aerodromes (Entebbe, Gulu, Jinja, Mbarara, Fort Portal, Arua,
+// Soroti, Kidepo); the other 2 are head-office locations, not aerodromes.
+// This is the fact behind the hero's trust line below - keep it in sync
+// if that list changes.
+const AERODROME_COUNT = 8;
+
+// Hero "jump to" pills - shown once vacancies have loaded, capped so the
+// row never grows unbounded with the number of directorates that happen
+// to have an open role right now.
+const MAX_HERO_DIRECTORATE_PILLS = 5;
+
 // Lowest to highest - same order and labels as EssentialRequirementsBuilder.
 // The "My qualification" filter keeps every vacancy whose minimum is at or
 // below the level picked (and every vacancy with no stated minimum).
@@ -259,7 +273,6 @@ function PositionRow({ v, onDownload, downloading }) {
             {v.title}
           </Link>
           {v.readvertisedFromId != null && <StatusBadge status="Readvertised" />}
-          {!closed && v.status && v.status !== 'Open' && <StatusBadge status={v.status} />}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 13, color: 'var(--color-text-muted)' }}>
           {v.department?.name && <span style={metaItemStyle}><Building2 size={14} /> {v.department.name}</span>}
@@ -511,6 +524,16 @@ export default function Home() {
     document.getElementById('open-positions')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
+  // Hero "jump to" pills (a directorate, or "closing this week") - starts
+  // from a clean EMPTY_FILTERS rather than merging into whatever's already
+  // set, so a hero click always means "show me exactly this," not "narrow
+  // my existing search further" (the visitor hasn't touched the panel's
+  // own filters yet in the common case of landing straight on the hero).
+  const jumpToCategory = (patch) => {
+    setFilters({ ...EMPTY_FILTERS, ...patch });
+    scrollToPositions();
+  };
+
   return (
     <div style={{ width: '100%' }}>
       {/* Hero */}
@@ -535,6 +558,19 @@ export default function Home() {
           position: 'absolute', bottom: -100, left: '5%', width: 320, height: 320, borderRadius: '50%',
           background: '#fff', opacity: 0.08, filter: 'blur(80px)', pointerEvents: 'none'
         }} />
+
+        {/* Decorative flight path - a static dashed curve plus a small
+            plane drifting along an approximated arc (a handful of
+            transform keyframes, not SVG motion-path, for broader browser
+            support). Reads as "aviation" rather than a generic gradient;
+            the animation pauses under prefers-reduced-motion (theme.css).
+            Hidden on phones - not enough hero height to read as a curve. */}
+        <svg aria-hidden="true" className="home-flightpath-svg" viewBox="0 0 900 300" preserveAspectRatio="none" style={{
+          position: 'absolute', top: 6, left: 0, width: '100%', height: '65%', opacity: 0.3, pointerEvents: 'none'
+        }}>
+          <path d="M-20,220 C200,260 350,40 500,90 S780,40 940,-10" fill="none" stroke="#fff" strokeWidth="2" strokeDasharray="2 10" strokeLinecap="round" />
+        </svg>
+        <Plane aria-hidden="true" size={20} color="var(--color-gold)" className="home-flightpath-plane" style={{ position: 'absolute', top: '20%', left: 0, pointerEvents: 'none' }} />
 
         <div style={{ maxWidth: 860, margin: '0 auto', textAlign: 'center', position: 'relative' }}>
           <span
@@ -589,6 +625,47 @@ export default function Home() {
               </Button>
             </Link>
           </div>
+
+          {/* Trust strip - two facts a wary applicant actually checks
+              before trusting a "government recruitment" site, reusing
+              claims already made elsewhere (the fee line matches the FAQ's
+              own answer verbatim) rather than inventing new copy. */}
+          <div className="home-hero__trust" style={{
+            display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '6px 22px',
+            marginTop: 22, fontSize: 12.5, opacity: 0.85
+          }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <ShieldCheck size={14} color="var(--color-gold)" /> No application fees, ever
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Plane size={14} color="var(--color-gold)" /> Uganda&rsquo;s aviation regulator &mdash; {AERODROME_COUNT} aerodromes nationwide
+            </span>
+          </div>
+
+          {/* Quick jump - browse by directorate, or straight to whatever's
+              closing soonest, without reading the whole list first. Built
+              from the same directorate list and closingSoonCount the panel
+              below already derives from the loaded vacancies, so it only
+              ever offers a category that actually has an open role right
+              now. Hidden until that data has loaded, to avoid a flash of
+              an empty row. */}
+          {!loading && (closingSoonCount > 0 || options.directorates.length > 0) && (
+            <div className="home-hero__quickjump" style={{
+              display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 20
+            }}>
+              <span style={{ fontSize: 12.5, opacity: 0.75 }}>Jump to:</span>
+              {closingSoonCount > 0 && (
+                <button type="button" className="home-hero__pill" onClick={() => jumpToCategory({ closingSoon: true })}>
+                  <Flame size={13} /> Closing this week ({closingSoonCount})
+                </button>
+              )}
+              {options.directorates.slice(0, MAX_HERO_DIRECTORATE_PILLS).map((d) => (
+                <button key={d} type="button" className="home-hero__pill" onClick={() => jumpToCategory({ directorate: d })}>
+                  {d}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Wave divider - a soft curve into the page background instead of

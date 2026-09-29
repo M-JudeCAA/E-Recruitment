@@ -3,7 +3,8 @@
 // seedPreShortlistDemoData.js (which deliberately stops at UnderReview so
 // HR can shortlist by hand), this one drives applications all the way
 // through shortlist propose/approve, interview scheduling/scoring/
-// finalizing (all three recommendation outcomes), offer recommend/approve/
+// finalizing (all three recommendation outcomes), the post-interview merit
+// list propose/approve, offer recommend/approve/
 // accept/decline (including the reserve-promotion cascade), vacancy status
 // computation (Open/PartiallyFilled/Filled/Closed), internal-candidate
 // verification (all three outcomes), department/position creation, and
@@ -150,8 +151,7 @@ async function verifyInternal(token, candidateId, decision, comments) {
   return api('PATCH', `/api/verification/candidates/${candidateId}/verify`, { token, form });
 }
 
-// Bulk-ranks a vacancy's applications in the given order (Primary/Reserve
-// computed server-side from positionsRequired) - lands every one at
+// Bulk-ranks a vacancy's applications in interview order - lands every one at
 // ShortlistProposed, same as dragging the ranking UI and clicking "Save
 // ranking & propose shortlist". Fresh applications default to
 // rankVersion 0, so no read-back is needed before this first ranking.
@@ -183,8 +183,30 @@ async function finalizeInterview(token, interviewId, recommendation) {
   return api('PATCH', `/api/interviews/${interviewId}/finalize`, { token, json: { recommendation } });
 }
 
-async function recommendOffer(token, applicationId) {
-  return api('POST', `/api/applications/${applicationId}/recommend-offer`, { token });
+// Ranks interviewed candidates on the vacancy's merit list in the given
+// order (Primary/Reserve computed server-side from positionsRequired and
+// each panel verdict), then approves it as a different officer.
+async function buildMeritList(tokens, vacancyId, applicationIds) {
+  const board = await api('GET', `/api/applications/vacancies/${vacancyId}/merit-list`, { token: tokens.shro });
+  const applicationRankVersions = Object.fromEntries([...board.entries, ...board.eligible].map((r) => [r.applicationId, r.rankVersion]));
+  await api('POST', `/api/applications/vacancies/${vacancyId}/merit-list`, { token: tokens.shro, json: { applicationIds, applicationRankVersions } });
+  await api('POST', `/api/applications/vacancies/${vacancyId}/merit-list/approve`, { token: tokens.phro });
+}
+
+// Offers are recommended with their terms - salary, start date, contract,
+// conditions and how long the candidate has to answer.
+async function recommendOffer(token, applicationId, terms = {}) {
+  const startDate = new Date(Date.now() + 45 * 86400000).toISOString().slice(0, 10);
+  return api('POST', `/api/applications/${applicationId}/recommend-offer`, {
+    token,
+    json: {
+      salaryAmount: 4800000, salaryPeriod: 'Monthly', employmentCategory: 'FullTime', startDate,
+      dutyStation: 'Entebbe International Airport',
+      conditions: ['Satisfactory references', 'Verification of academic certificates', 'A certificate of medical fitness'],
+      responseDays: 14,
+      ...terms
+    }
+  });
 }
 
 async function approveOffer(token, offerId) {
@@ -434,7 +456,7 @@ async function main() {
 
   await api('PATCH', `/api/vacancies/${v57.id}/begin-review`, { token: tokens.shro });
   await proposeShortlistRanking(tokens.shro, v57.id, [davidApp.id, estherApp.id]);
-  console.log('  David Ssekandi (Primary) + Esther Auma (Reserve) -> ShortlistProposed, LEFT for live Principal HR Officer approval.\n');
+  console.log('  David Ssekandi + Esther Auma -> interview shortlist ShortlistProposed, LEFT for live Principal HR Officer approval.\n');
 
   // ===================================================================
   // PHASE 5 - AVSEC vacancy: all three interview recommendation outcomes
@@ -467,8 +489,8 @@ async function main() {
     { applicationId: henry.app.id, scores: [40, 38], recommendation: 'Reject' }
   ];
   await runInterviewPipeline(tokens, avsecVacancy.id, avsecEntries);
-  console.log('  Frank Mugisha  -> Interviewed, recommendation Shortlist (ready for live "Recommend for offer")');
-  console.log('  Grace Nabirye  -> Interviewed, recommendation Hold (Recommend-for-offer stays disabled)');
+  console.log('  Frank Mugisha  -> Interviewed, recommendation Shortlist (ready for the live merit list: Primary)');
+  console.log('  Grace Nabirye  -> Interviewed, recommendation Hold (can only go on the merit list as Reserve)');
   console.log('  Henry Tumusiime -> Rejected via panel recommendation (not explicit HR reject)\n');
 
   // ===================================================================
@@ -497,7 +519,7 @@ async function main() {
   const kevin = await externalAtmCandidate('Kevin Byaruhanga', 'kevin');
   await api('PATCH', `/api/vacancies/${v56.id}/begin-review`, { token: tokens.shro });
 
-  // Ranked in order: Irene + Joseph -> Primary (positionsRequired = 2),
+  // Merit list in order: Irene + Joseph -> Primary (positionsRequired = 2),
   // Kevin -> Reserve.
   const v56Entries = [
     { applicationId: irene.app.id, scores: [90, 87], recommendation: 'Shortlist' },
@@ -505,6 +527,7 @@ async function main() {
     { applicationId: kevin.app.id, scores: [75, 73], recommendation: 'Shortlist' }
   ];
   await runInterviewPipeline(tokens, v56.id, v56Entries);
+  await buildMeritList(tokens, v56.id, v56Entries.map((e) => e.applicationId));
 
   const ireneOffer = await recommendOffer(tokens.phro, irene.app.id);
   await approveOffer(tokens.manager, ireneOffer.id);
@@ -535,6 +558,7 @@ async function main() {
   });
   await api('PATCH', `/api/vacancies/${v33.id}/begin-review`, { token: tokens.shro });
   await runInterviewPipeline(tokens, v33.id, [{ applicationId: lindaApp.id, scores: [92, 89], recommendation: 'Shortlist' }]);
+  await buildMeritList(tokens, v33.id, [lindaApp.id]);
   const lindaOffer = await recommendOffer(tokens.phro, lindaApp.id);
   await approveOffer(tokens.dhra, lindaOffer.id); // Director can approve too, not just Manager
   await acceptOffer(lindaToken, lindaOffer.id);

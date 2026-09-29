@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
-  ChevronLeft, ChevronRight, CalendarPlus, MapPin, Video, Phone, AlertTriangle, Crown, Search
+  ChevronLeft, ChevronRight, CalendarPlus, MapPin, Video, Phone, AlertTriangle, Crown, Search, Trophy
 } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
@@ -270,6 +270,19 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
         {vacancies.map((v) => <option key={v.id} value={v.id}>{v.jobRef} — {v.title}</option>)}
       </Select>
       <Alert type="error" message={error} />
+      {rows && rows.some((r) => r.applicationStatus === 'Interviewed') && (
+        <Card accent="var(--color-accent)">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13 }}>
+              The scorecard compares candidates; the <strong>merit list</strong> is where they are ranked on these results and
+              who is offered the job is decided and approved.
+            </span>
+            <Link to={`/hr/applications?vacancyId=${vacancyId}&stage=merit`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600 }}>
+              <Trophy size={14} /> Open merit list
+            </Link>
+          </div>
+        </Card>
+      )}
       {vacancyId && !rows && !error && <LoadingState />}
       {rows && rows.length === 0 && <Card><p style={{ margin: 0 }}>Nobody has been interviewed for this vacancy yet.</p></Card>}
       {rows && rows.length > 0 && (
@@ -277,7 +290,7 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr>
-                {['#', 'Candidate', 'Latest round', 'Score', ...criteriaNames, 'Panel', 'Verdict', 'Offer'].map((h) => (
+                {['#', 'Candidate', 'Latest round', 'Score', ...criteriaNames, 'Panel', 'Verdict', 'Merit list', 'Offer'].map((h) => (
                   <th key={h} style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '2px solid var(--color-border)', color: 'var(--color-text-muted)', fontSize: 12, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -290,7 +303,7 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
                     <td style={{ padding: '8px 12px' }}>{lr.score != null ? i + 1 : '—'}</td>
                     <td style={{ padding: '8px 12px' }}>
                       <strong>{r.candidateName}</strong>
-                      <div style={hintText}>{r.candidateType}{r.listStatus ? ` · ${r.listStatus}` : ''}{r.noShows ? ` · ${r.noShows} no-show` : ''}</div>
+                      <div style={hintText}>{r.candidateType}{r.noShows ? ` · ${r.noShows} no-show` : ''}</div>
                     </td>
                     <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
                       Round {lr.roundNumber} <StatusBadge status={lr.status} label={ROUND_LABELS[lr.status]} />
@@ -313,6 +326,11 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
                     })}
                     <td style={{ padding: '8px 12px' }}>{lr.progress.scored}/{lr.progress.total}</td>
                     <td style={{ padding: '8px 12px' }}>{lr.recommendation ? <StatusBadge status={lr.recommendation} /> : '—'}</td>
+                    <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
+                      {r.meritListStatus
+                        ? <StatusBadge status={r.meritListStatus} label={`#${r.meritRank} ${r.meritListStatus}${r.meritStatus === 'Proposed' ? ' (proposed)' : ''}`} />
+                        : '—'}
+                    </td>
                     <td style={{ padding: '8px 12px' }}>{r.offerStatus ? <StatusBadge status={r.offerStatus} /> : '—'}</td>
                   </tr>
                 );
@@ -356,7 +374,7 @@ export default function InterviewHub() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const debouncedRefresh = useCallback(debounce(refresh, 500), [refresh]);
   const { connected } = useDashboardEvents((event) => {
-    if (['InterviewUpdated', 'InterviewRecommendation', 'ApplicationUpdated', 'ShortlistApproved'].includes(event)) debouncedRefresh();
+    if (['InterviewUpdated', 'InterviewRecommendation', 'ApplicationUpdated', 'ShortlistApproved', 'MeritListProposed', 'MeritListApproved'].includes(event)) debouncedRefresh();
   });
 
   const setParam = (key, value) => {

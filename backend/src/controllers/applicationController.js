@@ -1,14 +1,9 @@
 const { sendError } = require('../utils/errorResponse');
-const { toPublicVacancy } = require('../utils/publicVacancy');
 const applicationModel = require('../models/applicationModel');
-const offerModel = require('../models/offerModel');
-const slaModel = require('../models/slaModel');
 const vacancyModel = require('../models/vacancyModel');
 const workflow = require('../services/workflowService');
+const meritList = require('../services/meritListService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
-const { notifyAllWithRole } = require('../services/notificationService');
-const prisma = require('../config/db');
-const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { ROLE_RANK } = require('../middleware/auth');
 
 // NOTE: application creation/submission lives in applicationDraftController
@@ -23,7 +18,7 @@ async function count(req, res) {
 }
 
 const VALID_STATUSES = [
-  'Submitted', 'UnderReview', 'Shortlisted', 'InterviewScheduled',
+  'Submitted', 'UnderReview', 'ShortlistProposed', 'Shortlisted', 'InterviewScheduled',
   'Interviewed', 'Offered', 'Rejected', 'Withdrawn'
 ]; // ApplicationStatus minus Draft - HR has no business filtering to drafts
 const VALID_CANDIDATE_TYPES = ['Internal', 'External'];
@@ -66,8 +61,16 @@ async function list(req, res) {
   if (needsAction === 'true') {
     const rank = ROLE_RANK[req.user.role] || 0;
     needsActionOr = [];
-    if (rank >= ROLE_RANK.Senior_HR_Officer) needsActionOr.push({ status: { in: ['Submitted', 'UnderReview'] } });
-    if (rank >= ROLE_RANK.Principal_HR_Officer) needsActionOr.push({ status: 'Interviewed', offer: null });
+    // Senior HR: screen and shortlist, then rank the interviewed onto a merit list.
+    if (rank >= ROLE_RANK.Senior_HR_Officer) {
+      needsActionOr.push({ status: { in: ['Submitted', 'UnderReview'] } });
+      needsActionOr.push({ status: 'Interviewed', meritStatus: null });
+    }
+    // Principal HR: approve a proposed merit list, then recommend offers for its Primary candidates.
+    if (rank >= ROLE_RANK.Principal_HR_Officer) {
+      needsActionOr.push({ status: 'Interviewed', meritStatus: 'Proposed' });
+      needsActionOr.push({ status: 'Interviewed', meritStatus: 'Approved', meritListStatus: 'Primary', offer: null });
+    }
     if (rank >= ROLE_RANK.Manager) needsActionOr.push({ offer: { status: 'Recommended' } });
     // An HR Officer has no direct decision power in this queue - their one
     // lever is reviewing what automated screening flagged for someone
@@ -99,18 +102,18 @@ async function list(req, res) {
 // same reasoning: a Draft/Offered/Rejected/Withdrawn application has no
 // business being (re)shortlisted here.
 const NOT_SHORTLISTABLE = ['Draft', 'Offered', 'Rejected', 'Withdrawn'];
-const VALID_LIST_STATUSES = ['Primary', 'Reserve'];
 
 async function shortlist(req, res) {
   const applicationId = Number(req.params.id);
   if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
 
-  const { rank, listStatus } = req.body;
+  // rank is the candidate's place in the interview order. There is no
+  // Primary/Reserve here any more - that is decided after the interviews,
+  // on the merit list (meritListService), so a listStatus sent by an older
+  // client is ignored.
+  const { rank } = req.body;
   if (rank !== undefined && rank !== null && !(Number.isInteger(rank) && rank > 0)) {
     return res.status(400).json({ error: 'rank must be a positive integer' });
-  }
-  if (listStatus !== undefined && listStatus !== null && !VALID_LIST_STATUSES.includes(listStatus)) {
-    return res.status(400).json({ error: `listStatus must be one of: ${VALID_LIST_STATUSES.join(', ')}` });
   }
 
   try {
@@ -133,7 +136,7 @@ async function shortlist(req, res) {
   // near-simultaneous action on this application (e.g. a reject landing at
   // the same moment) can't silently be overwritten by this one.
   const result = await applicationModel.updateIfStatus(applicationId, application.status, {
-    status: 'ShortlistProposed', rank, listStatus, rankVersion: { increment: 1 },
+    status: 'ShortlistProposed', rank, listStatus: null, rankVersion: { increment: 1 },
     shortlistProposedAt: new Date(), shortlistProposedById: req.user.id
   });
   if (result.count === 0) {
@@ -176,7 +179,7 @@ async function reject(req, res) {
   // next save rather than silently re-including a rejected candidate.
   const result = await applicationModel.updateIfStatus(applicationId, application.status, {
     status: 'Rejected', rejectedAt: new Date(), rejectedById: req.user.id, rejectionReason: reason,
-    rank: null, listStatus: null, rankVersion: { increment: 1 }
+    rank: null, listStatus: null, ...meritList.CLEARED_MERIT, rankVersion: { increment: 1 }
   });
   if (result.count === 0) {
     return res.status(409).json({ error: 'This application was already updated - please refresh and try again' });
@@ -246,281 +249,7 @@ async function approveShortlist(req, res) {
   res.json({ message: 'Shortlist approved', vacancyId, approvedCount: proposed.length });
 }
 
-// This was the missing step: Principal HR Officer reviews interview
-// outcomes and formally recommends the candidate for an offer, creating
-// the Offer row DHRA later approves. Nothing existed to do this before.
-async function recommendOffer(req, res) {
-  const applicationId = Number(req.params.id);
-  if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
+// Offers (recommend, approve, return, accept, decline, withdraw) live in
+// offerController.js.
 
-  const application = await applicationModel.findById(applicationId, { interviewRounds: true });
-  if (!application) return res.status(404).json({ error: 'Application not found' });
-
-  // Requires both an application actually at Interviewed (not, say,
-  // already Rejected by a "Reject" panel recommendation - see
-  // interviewController.finalizeRecommendation) AND a round whose
-  // recommendation is specifically "Shortlist", not merely present.
-  // Previously only "some round has any recommendation at all" was
-  // checked, so a panel's explicit "Hold" or "Reject" recommendation
-  // satisfied this exactly like "Shortlist" would - letting PHRO
-  // recommend an offer for someone the panel had said not to hire.
-  if (application.status !== 'Interviewed') {
-    return res.status(422).json({ error: 'This application is not awaiting an offer recommendation' });
-  }
-  // Looks at the MOST RECENT round specifically, not "any round ever said
-  // Shortlist" - a candidate with multiple rounds where an earlier round
-  // said Shortlist but a later, more authoritative round said Hold/Reject
-  // must not still qualify just because some earlier round once passed.
-  // Cancelled and no-show rounds never happened, so they are skipped - a
-  // later round that was called off doesn't cancel an earlier verdict.
-  const mostRecentRound = application.interviewRounds
-    .filter((r) => !['Cancelled', 'NoShow'].includes(r.status))
-    .sort((a, b) => b.roundNumber - a.roundNumber)[0];
-  if (!mostRecentRound || mostRecentRound.score == null || mostRecentRound.recommendation !== 'Shortlist') {
-    return res.status(422).json({ error: 'This application has no finalized "Shortlist" interview recommendation yet' });
-  }
-
-  let offer;
-  try {
-    offer = await offerModel.create({
-      applicationId,
-      status: 'Recommended',
-      recommendedById: req.user.id,
-      recommendedDate: new Date() // needed for SLA timing - see checkSlaEscalations.js
-    });
-  } catch (err) {
-    // Offer.applicationId is unique - a second recommendation attempt
-    // hits this instead of silently creating a duplicate.
-    return res.status(409).json({ error: 'An offer has already been recommended for this application' });
-  }
-
-  await applicationModel.update(applicationId, { status: 'Offered' });
-  broadcastDashboardEvent('OfferPendingApproval', { offerId: offer.id });
-  res.status(201).json(offer);
-}
-
-// Manager/Director Approvals Center - every offer currently awaiting
-// their approval, across every vacancy, in one list instead of hunting
-// through each vacancy's own applications tab. Paginated the same way the
-// cross-vacancy application queue (list, above) is.
-async function listOffersPendingApproval(req, res) {
-  const { page, limit } = req.query;
-  const take = Math.min(Number(limit) || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
-  const pageNum = Math.max(Number(page) || 1, 1);
-  const skip = (pageNum - 1) * take;
-
-  const [data, total] = await Promise.all([
-    offerModel.findManyPendingApproval({ skip, take }),
-    offerModel.countPendingApproval()
-  ]);
-  res.json({ data, total, page: pageNum, limit: take });
-}
-
-async function approveOffer(req, res) {
-  const offerId = Number(req.params.offerId);
-  const existing = await offerModel.findById(offerId);
-  if (!existing) return res.status(404).json({ error: 'Offer not found' });
-  if (existing.status !== 'Recommended') {
-    return res.status(422).json({ error: `An offer at status "${existing.status}" cannot be approved` });
-  }
-  try {
-    workflow.assertNotSelfApprovedOffer(existing, req.user.id);
-  } catch (err) {
-    return sendError(res, err, 422);
-  }
-
-  // Atomic guard - scoped to the status just read, so a second concurrent
-  // approve (double-click, or two Managers racing) can't both succeed and
-  // both re-stamp approvedById/approvedDate and re-fire the candidate email.
-  const result = await offerModel.updateIfStatus(offerId, 'Recommended', {
-    status: 'Approved', approvedById: req.user.id, approvedDate: new Date()
-  });
-  if (result.count === 0) {
-    return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
-  }
-  const offer = await offerModel.findById(offerId);
-  // The spec defines slaModel.resolveEscalations but never calls it
-  // anywhere - without this, an escalated OfferApproval task would stay
-  // "active" (resolvedAt: null) forever even after being decided.
-  await slaModel.resolveEscalations('OfferApproval', offerId);
-  // Approved (not Recommended) is the moment the candidate can actually
-  // act on this - OfferPanel in CandidateApplications.jsx only renders
-  // Accept/Decline once offer.status === 'Approved'. Notifying any
-  // earlier would point the candidate at something they can't do
-  // anything about yet.
-  if (offer.application?.vacancy) {
-    await notifyCandidate(
-      offer.application.candidateId, 'OfferReceived',
-      `Congratulations! You have received an offer for "${offer.application.vacancy.title}". Please log in to accept or decline.`
-    );
-  }
-  broadcastDashboardEvent('OfferApproved', { offerId });
-  res.json(offer);
-}
-
-// Accept/decline are candidate actions on their own offer - previously
-// these had no candidate-role check and no ownership check at all,
-// meaning any authenticated user could accept or decline anyone's offer.
-async function acceptOffer(req, res) {
-  const offerId = Number(req.params.offerId);
-  const existing = await offerModel.findById(offerId);
-  if (!existing) return res.status(404).json({ error: 'Offer not found' });
-  if (existing.application.candidateId !== req.user.id) {
-    return res.status(403).json({ error: 'This is not your offer' });
-  }
-  if (existing.status !== 'Approved') {
-    return res.status(422).json({ error: `An offer at status "${existing.status}" cannot be accepted` });
-  }
-
-  const result = await workflow.acceptOfferTransactionally(offerId, existing.application.vacancyId);
-  if (result.conflict) {
-    return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
-  }
-  if (result.full) {
-    // The candidate was told to contact HR - make sure HR already knows,
-    // since this offer now can't be accepted until HR withdraws it or
-    // raises positionsRequired.
-    await notifyHrSafely(existing.application.vacancy, 'VacancyFilledWithOpenOffers', offerId,
-      `A candidate tried to accept their offer for ${describeVacancy(existing.application.vacancy)} (application #${existing.applicationId}), `
-      + 'but every position is already filled, so the acceptance was refused. Withdraw the offer, or raise the number of positions if another hire is wanted.');
-    return res.status(409).json({ error: 'All positions for this vacancy have already been filled, so this offer can no longer be accepted. Please contact HR.' });
-  }
-  const offer = result.offer;
-
-  // A snapshot-audit failure here must not turn an already-successful
-  // accept into a 500 - the accept (and vacancy status recompute) already
-  // committed atomically above.
-  try {
-    await workflow.captureSnapshot({
-      entityType: 'HireSnapshot',
-      entityId: offer.id,
-      candidateId: offer.application.candidateId,
-      performedById: offer.approvedById
-    });
-  } catch (err) {
-    console.error(`Failed to capture hire snapshot for offer ${offerId}:`, err);
-  }
-  // If this acceptance filled the vacancy, any other offer still in play on
-  // it can no longer be accepted - flag them to HR now rather than letting
-  // a candidate discover it by being refused.
-  try {
-    const vacancy = await vacancyModel.findById(offer.application.vacancyId);
-    if (vacancy?.status === 'Filled') {
-      const openOffers = await offerModel.findOpenForVacancy(vacancy.id, offer.id);
-      if (openOffers.length > 0) {
-        const list = openOffers
-          .map((o) => `${o.application.candidate?.fullName || 'a candidate'} (application #${o.applicationId}, offer ${o.status})`)
-          .join('; ');
-        await notifyAllWithRole('Principal_HR_Officer', 'VacancyFilledWithOpenOffers', vacancy.id,
-          `${describeVacancy(vacancy)} is now filled, but ${openOffers.length} other offer${openOffers.length === 1 ? ' is' : 's are'} still open: ${list}. `
-          + 'They can no longer be accepted. Withdraw them, or raise the number of positions if more hires are wanted.');
-      }
-    }
-  } catch (err) {
-    console.error(`Failed to flag open offers after offer ${offerId} was accepted:`, err);
-  }
-  broadcastDashboardEvent('OfferAccepted', { offerId });
-  // The candidate is the caller here - strip HR-only vacancy columns.
-  res.json({ ...offer, application: { ...offer.application, vacancy: toPublicVacancy(offer.application.vacancy) } });
-}
-
-async function declineOffer(req, res) {
-  const offerId = Number(req.params.offerId);
-  const existing = await offerModel.findById(offerId);
-  if (!existing) return res.status(404).json({ error: 'Offer not found' });
-  if (existing.application.candidateId !== req.user.id) {
-    return res.status(403).json({ error: 'This is not your offer' });
-  }
-  if (existing.status !== 'Approved') {
-    return res.status(422).json({ error: `An offer at status "${existing.status}" cannot be declined` });
-  }
-
-  const result = await workflow.handleOfferDeclined(offerId);
-  if (result.conflict) {
-    return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
-  }
-  // Previously nobody was told: the next reserve was promoted silently and
-  // HR only found out from the dashboard. Principal HR Officers are the
-  // ones who recommend the replacement offer.
-  const vacancy = existing.application.vacancy;
-  await notifyHrSafely(vacancy, 'OfferDeclined', offerId, result.promoted
-    ? `An offer for ${describeVacancy(vacancy)} was declined (application #${existing.applicationId}). `
-      + `The next reserve candidate (application #${result.promoted.id}) has been moved to Primary - recommend an offer for them when ready.`
-    : `An offer for ${describeVacancy(vacancy)} was declined (application #${existing.applicationId}). `
-      + 'There are no reserve candidates left on this vacancy\'s shortlist.');
-  broadcastDashboardEvent('OfferDeclined', { offerId });
-  // result.promoted is the NEXT reserve candidate's application row - another
-  // applicant's data, never to be returned to the candidate who declined.
-  res.json({ message: 'Offer declined' });
-}
-
-// Withdraws an offer that is still in play (Recommended or Approved) - for
-// an offer that can no longer be accepted because the vacancy filled, or
-// one HR otherwise needs to take back. Principal_HR_Officer+ (the tier that
-// recommends offers). The candidate is only told if they had been told
-// about the offer in the first place (Approved - see approveOffer). Who
-// withdrew it, and why, goes to AuditLog, since Offer has no column for it.
-// The application stays at Offered: its one Offer row (applicationId is
-// unique) now reads Withdrawn, which is what the candidate sees.
-async function withdrawOffer(req, res) {
-  const offerId = Number(req.params.offerId);
-  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 1000) : '';
-  const existing = await offerModel.findById(offerId);
-  if (!existing) return res.status(404).json({ error: 'Offer not found' });
-  if (!['Recommended', 'Approved'].includes(existing.status)) {
-    return res.status(422).json({ error: `An offer at status "${existing.status}" cannot be withdrawn` });
-  }
-
-  const result = await offerModel.updateIfStatus(offerId, existing.status, { status: 'Withdrawn', decidedAt: new Date() });
-  if (result.count === 0) {
-    return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
-  }
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: 'Offer', entityId: offerId, action: 'Offer withdrawn', performedById: req.user.id,
-      payload: { previousStatus: existing.status, reason: reason || null }
-    }
-  });
-  // A Recommended offer may have an active OfferApproval escalation - it
-  // is resolved now, not left "active" forever.
-  await slaModel.resolveEscalations('OfferApproval', offerId);
-
-  if (existing.status === 'Approved') {
-    try {
-      await notifyCandidate(existing.application.candidateId, 'OfferWithdrawn',
-        `Your offer for "${existing.application.vacancy.title}" has been withdrawn.`
-        + (reason ? ` Reason given: ${escapeHtml(reason)}` : '')
-        + ' Please contact HR if you have any questions.');
-    } catch (err) {
-      console.error(`Failed to notify candidate ${existing.application.candidateId} of withdrawn offer ${offerId}:`, err);
-    }
-  }
-  broadcastDashboardEvent('OfferWithdrawn', { offerId });
-  res.json(await offerModel.findById(offerId));
-}
-
-function describeVacancy(vacancy) {
-  return vacancy ? `${vacancy.jobRef} (${vacancy.title})` : 'a vacancy';
-}
-
-// The notification message goes into an HTML email body as-is (see
-// candidateNotificationService), so free text typed by staff is escaped.
-function escapeHtml(text) {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-// Staff notifications here are a side effect of an action that has already
-// committed - a notification failure must never turn it into a 500.
-async function notifyHrSafely(vacancy, taskType, taskId, message) {
-  try {
-    await notifyAllWithRole('Principal_HR_Officer', taskType, taskId, message);
-  } catch (err) {
-    console.error(`Failed to send ${taskType} notification for ${describeVacancy(vacancy)}:`, err);
-  }
-}
-
-module.exports = {
-  count, list, shortlist, reject, approveShortlist, recommendOffer,
-  listOffersPendingApproval, approveOffer, acceptOffer, declineOffer, withdrawOffer
-};
+module.exports = { count, list, shortlist, reject, approveShortlist };

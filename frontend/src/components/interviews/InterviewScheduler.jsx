@@ -282,7 +282,7 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
                           <input type="checkbox" checked={selected.includes(a.id)} onChange={() => toggle(a.id)} style={{ marginTop: 3 }} />
                           <span style={{ flex: 1, minWidth: 0 }}>
                             <span style={{ fontWeight: 600 }}>{a.candidate.fullName}</span>
-                            {a.listStatus && <span style={{ ...hintText, marginLeft: 6 }}>{a.listStatus}{a.rank ? ` #${a.rank}` : ''}</span>}
+                            {a.rank && <span style={{ ...hintText, marginLeft: 6 }}>#{a.rank} on the interview shortlist</span>}
                             <span style={{ display: 'block', ...hintText }}>
                               {a.status.replace(/([A-Z])/g, ' $1').trim()}
                               {booked.length > 0 && ` · already booked ${formatDateTime(booked[0].scheduledDate)}`}

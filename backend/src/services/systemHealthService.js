@@ -16,6 +16,7 @@ const JOBS = [
   { name: 'checkSlaEscalations', label: 'SLA escalation check' },
   { name: 'checkVacancyDeadlines', label: 'vacancy deadline notices' },
   { name: 'sendInterviewReminders', label: 'interview reminders and score follow-ups' },
+  { name: 'expireOffers', label: 'offer deadline reminders and expiry' },
   { name: 'cleanupPendingRegistrations', label: 'cleanup of abandoned registrations' },
   { name: 'cleanupVerificationTokens', label: 'cleanup of old confirmation and reset links' }
 ];

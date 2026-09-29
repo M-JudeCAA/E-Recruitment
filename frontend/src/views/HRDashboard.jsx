@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
+import OfferTracker from '../components/offers/OfferTracker';
 import { useDashboardEvents } from '../models/dashboardSocket';
 import HRSidebar from '../components/HRSidebar';
 import Card from '../components/Card';
@@ -74,23 +75,6 @@ function daysLeftLabel(deadline) {
   return { text: `in ${daysLeft} days`, urgent: daysLeft <= 7 };
 }
 
-// Mimics the Offers tab's own card rows (name + vacancy line)
-// so the cross-vacancy queue doesn't visibly jump in layout once the real
-// list lands - see Skeleton.jsx's own comment for why this beats a plain
-// "Loading..." string here.
-function CrossQueueRowSkeleton() {
-  return (
-    <>
-      {[0, 1, 2].map((i) => (
-        <Card key={i}>
-          <Skeleton width={`${50 - i * 6}%`} height={15} style={{ marginBottom: 8 }} />
-          <Skeleton width="30%" height={12} />
-        </Card>
-      ))}
-    </>
-  );
-}
-
 export default function HRDashboard() {
   const { staff } = useAuth();
   const location = useLocation();
@@ -158,39 +142,10 @@ export default function HRDashboard() {
     if (requestedTab === 'interviews') navigate('/hr/interviews', { replace: true });
   }, [requestedTab, navigate]);
 
-  // Offers is a cross-vacancy view over the small subset of applications
-  // with an offer. This used to be an
-  // N+1 fetch (one request per vacancy, flattened client-side) as a
-  // workaround for there being no aggregate endpoint - now there is one
-  // (the same GET /api/applications the Application Management queue
-  // uses), so this is a single bounded request instead.
-  const [crossApps, setCrossApps] = useState(null);
-  const [crossLoading, setCrossLoading] = useState(false);
+  // The Offers tab is the offer tracker (OfferTracker.jsx), which fetches
+  // its own data - bumped here on live dashboard events.
+  const [offerReloadKey, setOfferReloadKey] = useState(0);
   const [followUps, setFollowUps] = useState([]);
-
-  // `force` bypasses the "already loaded" guard - the normal tab-switch
-  // path never needs to re-fetch, but a WS event on the offers tab does.
-  const loadCrossVacancyApplications = useCallback(async (force = false) => {
-    if (!force && (crossApps || crossLoading)) return;
-    setCrossLoading(true);
-    setError('');
-    try {
-      const res = await staffClient.get('/api/applications', { params: { limit: 500 } });
-      setCrossApps(res.data.data);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Could not load applications');
-    } finally {
-      setCrossLoading(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [crossApps, crossLoading]);
-
-  useEffect(() => {
-    if (activeSection === 'offers') {
-      loadCrossVacancyApplications();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSection]);
 
   const loadFollowUps = useCallback(() => {
     staffClient.get('/api/dashboard/follow-ups').then((res) => setFollowUps(res.data)).catch(() => {});
@@ -259,14 +214,6 @@ export default function HRDashboard() {
     setVisibleCount(VACANCY_PAGE_SIZE);
   }, [searchText, statusFilter, departmentFilter, postingTypeFilter, directorateFilter, sortBy]);
 
-  // Same "Load more" cap as Vacancies' own visibleCount above, applied to
-  // the Offers tab - crossApps is already fetched whole (one
-  // bounded request, up to 500), so this only bounds the DOM, not another
-  // fetch. Separate from visibleCount since either tab's scroll position
-  // shouldn't reset the other's.
-  const CROSS_PAGE_SIZE = 20;
-  const [offersVisibleCount, setOffersVisibleCount] = useState(CROSS_PAGE_SIZE);
-
   // setLoadingVacancies(true) is deliberately NOT reset to true on every
   // call - only the initial mount call should show the full-page
   // LoadingState; a background refetch (filter-driven reload, the
@@ -291,9 +238,9 @@ export default function HRDashboard() {
   const refetchActiveTab = useCallback(debounce(() => {
     loadFollowUps();
     if (activeSection === 'vacancies') load();
-    else loadCrossVacancyApplications(true);
+    else setOfferReloadKey((k) => k + 1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, 500), [activeSection, load, loadCrossVacancyApplications, loadFollowUps]);
+  }, 500), [activeSection, load, loadFollowUps]);
   const { connected } = useDashboardEvents(refetchActiveTab);
 
   const previewEditForm = () => {
@@ -534,10 +481,6 @@ export default function HRDashboard() {
     setStatusFilter((current) => (current === stat.statusValue ? 'All' : stat.statusValue));
   };
   const activeVacancyStatLabel = vacancyStats.find((s) => s.statusValue === statusFilter)?.label;
-  const offerStatuses = (crossApps || []).filter((app) => app.offer).map((app) => app.offer.status);
-  const offerStats = ['Recommended', 'Approved', 'Extended', 'Accepted', 'Declined'].map((status) => ({
-    label: status, value: offerStatuses.filter((s) => s === status).length
-  }));
 
   return (
     <div>
@@ -1084,78 +1027,20 @@ export default function HRDashboard() {
             </>
           )}
 
-          {activeSection === 'offers' && (() => {
-            const offerApps = crossApps ? crossApps.filter((app) => app.offer) : null;
-            const visibleOfferApps = offerApps ? offerApps.slice(0, offersVisibleCount) : [];
-            return (
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          {activeSection === 'offers' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                <div>
                   <h3 style={{ margin: 0 }}>Offers</h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                    <LiveIndicator connected={connected} />
-                    {offerApps?.length > 0 && <ViewSwitcher view={view} onChange={setView} />}
-                  </div>
+                  <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--color-text-muted)' }}>
+                    Every offer across all vacancies. Offers start from a vacancy's approved merit list.
+                  </p>
                 </div>
-                <StatsStrip stats={offerStats} />
-                {crossLoading && <CrossQueueRowSkeleton />}
-                {offerApps?.length === 0 && <p>No offers recommended yet.</p>}
-                {offerApps?.length > 0 && view === 'table' && (
-                  <>
-                    <Card style={{ padding: 0 }}>
-                      <DataTable
-                        getRowKey={(app) => app.id}
-                        rows={visibleOfferApps}
-                        columns={[
-                          { key: 'candidate', label: 'Candidate', render: (app) => <span style={{ fontWeight: 600 }}>{app.candidate.fullName}</span> },
-                          { key: 'vacancy', label: 'Vacancy', render: (app) => `${app.vacancy.jobRef} — ${app.vacancy.title}` },
-                          { key: 'status', label: 'Offer status', render: (app) => <StatusBadge status={app.offer.status} /> },
-                          { key: 'actions', label: '', render: (app) => <Link to={`/hr/applications?vacancyId=${app.vacancy.id}`} style={{ fontSize: 12 }}>Manage &rarr;</Link> }
-                        ]}
-                      />
-                    </Card>
-                    <LoadMoreControl total={offerApps.length} visibleCount={offersVisibleCount} onLoadMore={() => setOffersVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
-                  </>
-                )}
-                {offerApps?.length > 0 && view === 'board' && (
-                  <>
-                    <BoardView
-                      getItemKey={(app) => app.id}
-                      items={visibleOfferApps}
-                      groupBy={(app) => app.offer.status}
-                      columns={[
-                        { key: 'Recommended', label: 'Recommended', color: STATUS_COLORS.Recommended },
-                        { key: 'Approved', label: 'Approved', color: STATUS_COLORS.Approved },
-                        { key: 'Extended', label: 'Extended', color: STATUS_COLORS.Extended },
-                        { key: 'Accepted', label: 'Accepted', color: STATUS_COLORS.Accepted },
-                        { key: 'Declined', label: 'Declined', color: STATUS_COLORS.Declined }
-                      ]}
-                      renderCard={(app) => (
-                        <Card onClick={() => navigate(`/hr/applications?vacancyId=${app.vacancy.id}`)} style={{ marginBottom: 0, padding: 10 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{app.candidate.fullName}</div>
-                          <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{app.vacancy.jobRef} &middot; {app.vacancy.title}</div>
-                        </Card>
-                      )}
-                    />
-                    <LoadMoreControl total={offerApps.length} visibleCount={offersVisibleCount} onLoadMore={() => setOffersVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
-                  </>
-                )}
-                {offerApps?.length > 0 && view !== 'table' && view !== 'board' && (
-                  <>
-                    {visibleOfferApps.map((app) => (
-                      <Card key={app.id}>
-                        <strong>{app.candidate.fullName}</strong> &mdash; {app.vacancy.jobRef} ({app.vacancy.title})
-                        {' '}&middot; Offer: <StatusBadge status={app.offer.status} />
-                        <div style={{ marginTop: 6 }}>
-                          <Link to={`/hr/applications?vacancyId=${app.vacancy.id}`}>Manage in Application Management &rarr;</Link>
-                        </div>
-                      </Card>
-                    ))}
-                    <LoadMoreControl total={offerApps.length} visibleCount={offersVisibleCount} onLoadMore={() => setOffersVisibleCount((c) => c + CROSS_PAGE_SIZE)} />
-                  </>
-                )}
+                <LiveIndicator connected={connected} />
               </div>
-            );
-          })()}
+              <OfferTracker staffRole={staff?.role} reloadKey={offerReloadKey} />
+            </div>
+          )}
         </div>
       </div>
     </div>

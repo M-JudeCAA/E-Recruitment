@@ -1,6 +1,8 @@
 const express = require('express');
 const controller = require('../controllers/applicationController');
 const draftController = require('../controllers/applicationDraftController');
+const meritListController = require('../controllers/meritListController');
+const offerController = require('../controllers/offerController');
 const { authenticate, requireStaffRole, requireCandidate } = require('../middleware/auth');
 const { upload } = require('../middleware/upload');
 
@@ -34,18 +36,27 @@ router.patch('/:id/shortlist', authenticate, requireStaffRole('Senior_HR_Officer
 // the panel's own recommendation is "Reject"). Same tier as shortlist.
 router.patch('/:id/reject', authenticate, requireStaffRole('Senior_HR_Officer'), controller.reject);
 router.post('/vacancies/:vacancyId/approve-shortlist', authenticate, requireStaffRole('Principal_HR_Officer'), controller.approveShortlist);
-router.post('/:id/recommend-offer', authenticate, requireStaffRole('Principal_HR_Officer'), controller.recommendOffer);
-// Approvals Center listing - same Manager+ tier as approving one, since
-// this is purely "what's waiting for me to approve".
-router.get('/offers/pending-approval', authenticate, requireStaffRole('Manager'), controller.listOffersPendingApproval);
-// "Approve a final offer" explicitly excludes Principal HR Officer - only
-// Manager and Director can, per the 5-tier permission table (Decision #10:
-// PHRO can recommend but never approve).
-router.patch('/offers/:offerId/approve', authenticate, requireStaffRole('Manager'), controller.approveOffer);
-router.patch('/offers/:offerId/accept', authenticate, requireCandidate, controller.acceptOffer);
-router.patch('/offers/:offerId/decline', authenticate, requireCandidate, controller.declineOffer);
-// Principal_HR_Officer+ - the tier that recommends offers can also take one
-// back (e.g. one that can no longer be accepted because the vacancy filled).
-router.patch('/offers/:offerId/withdraw', authenticate, requireStaffRole('Principal_HR_Officer'), controller.withdrawOffer);
+// The post-interview merit list (meritListController) - same tiers as the
+// interview shortlist: read by any HR tier, proposed by Senior_HR_Officer+,
+// approved by Principal_HR_Officer+ (never the proposer).
+router.get('/merit-lists/pending-approval', authenticate, requireStaffRole('Principal_HR_Officer'), meritListController.listPendingApproval);
+router.get('/vacancies/:vacancyId/merit-list', authenticate, requireStaffRole('HR_Officer'), meritListController.getBoard);
+router.post('/vacancies/:vacancyId/merit-list', authenticate, requireStaffRole('Senior_HR_Officer'), meritListController.propose);
+router.post('/vacancies/:vacancyId/merit-list/approve', authenticate, requireStaffRole('Principal_HR_Officer'), meritListController.approve);
+// Offers (offerController, lifecycle in offerService.js). Principal HR
+// Officer+ drafts, revises and withdraws; Manager/Director approve or return
+// (Decision #10: PHRO can recommend but never approve); only the owning
+// candidate accepts or declines. Reading is open to every HR tier.
+router.get('/offers', authenticate, requireStaffRole('HR_Officer'), offerController.list);
+router.get('/offers/pending-approval', authenticate, requireStaffRole('Manager'), offerController.listPendingApproval);
+router.get('/:id/offer-draft', authenticate, requireStaffRole('Principal_HR_Officer'), offerController.draft);
+// Only for a Primary candidate on an approved merit list.
+router.post('/:id/recommend-offer', authenticate, requireStaffRole('Principal_HR_Officer'), offerController.recommend);
+router.patch('/offers/:offerId', authenticate, requireStaffRole('Principal_HR_Officer'), offerController.revise);
+router.patch('/offers/:offerId/approve', authenticate, requireStaffRole('Manager'), offerController.approve);
+router.patch('/offers/:offerId/return', authenticate, requireStaffRole('Manager'), offerController.returnForRevision);
+router.patch('/offers/:offerId/accept', authenticate, requireCandidate, offerController.accept);
+router.patch('/offers/:offerId/decline', authenticate, requireCandidate, offerController.decline);
+router.patch('/offers/:offerId/withdraw', authenticate, requireStaffRole('Principal_HR_Officer'), offerController.withdraw);
 
 module.exports = router;

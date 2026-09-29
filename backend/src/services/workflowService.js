@@ -174,26 +174,48 @@ async function acceptOfferTransactionally(offerId, vacancyId) {
 }
 
 /**
- * Decline cascade: when an offer is declined, promote the next-ranked
- * reserve candidate to Primary and notify the Principal HR Officer that
- * a fresh offer recommendation is needed - without restarting shortlisting.
- * Same atomic-guard-inside-a-transaction shape as acceptOfferTransactionally -
- * the offer flip only applies if it's still Approved, closing the race
- * where a decline lands at the same moment as an approve/accept, or two
- * decline attempts race each other.
+ * Closing cascade: an offer that ends without a hire - declined by the
+ * candidate, expired unanswered, or withdrawn by HR - releases its position
+ * to the next reserve, who is promoted to Primary so a Principal HR Officer
+ * can recommend them - without restarting shortlisting. Nobody is promoted
+ * once the vacancy is already filled (e.g. an offer withdrawn because the
+ * last position was taken). Same atomic-guard-inside-a-transaction shape as
+ * acceptOfferTransactionally: the offer only closes if it is still in one of
+ * fromStatuses, so two racing actions can't both apply.
  */
-async function handleOfferDeclined(offerId) {
+async function closeOffer(offerId, fromStatuses, data) {
   return prisma.$transaction(async (tx) => {
     const result = await tx.offer.updateMany({
-      where: { id: offerId, status: 'Approved' },
-      data: { status: 'Declined', decidedAt: new Date() }
+      where: { id: offerId, status: fromStatuses.length === 1 ? fromStatuses[0] : { in: fromStatuses } },
+      data
     });
     if (result.count === 0) return { conflict: true };
 
     const offer = await tx.offer.findUnique({ where: { id: offerId }, include: { application: true } });
     const vacancyId = offer.application.vacancyId;
+    const vacancy = await tx.vacancy.findUnique({ where: { id: vacancyId } });
+    const accepted = await tx.offer.count({ where: { status: 'Accepted', application: { vacancyId } } });
+    const nextReserve = vacancy && accepted < vacancy.positionsRequired ? await promoteNextReserve(tx, vacancyId) : null;
 
-    const nextReserve = await tx.application.findFirst({
+    await recomputeVacancyStatus(vacancyId, tx);
+    // Principal HR Officers are told a new recommendation is needed by the
+    // caller, outside this transaction - a notification must never roll
+    // back the close.
+    return { offer, promoted: nextReserve };
+  }, { timeout: 15000, maxWait: 5000 });
+}
+
+// The next reserve comes from the approved post-interview merit list
+// (meritListService), in merit order. A vacancy whose offers predate the
+// merit list falls back to the old pre-interview rank/listStatus.
+async function promoteNextReserve(tx, vacancyId) {
+  const hasMeritList = (await tx.application.count({ where: { vacancyId, meritStatus: 'Approved' } })) > 0;
+  const nextReserve = hasMeritList
+    ? await tx.application.findFirst({
+      where: { vacancyId, meritStatus: 'Approved', meritListStatus: 'Reserve', status: 'Interviewed', offer: null },
+      orderBy: { meritRank: 'asc' }
+    })
+    : await tx.application.findFirst({
       where: {
         vacancyId,
         listStatus: 'Reserve',
@@ -201,20 +223,18 @@ async function handleOfferDeclined(offerId) {
       },
       orderBy: { rank: 'asc' }
     });
+  if (nextReserve) {
+    await tx.application.update({
+      where: { id: nextReserve.id },
+      data: hasMeritList ? { meritListStatus: 'Primary' } : { listStatus: 'Primary' }
+    });
+  }
+  return nextReserve || null;
+}
 
-    if (nextReserve) {
-      await tx.application.update({
-        where: { id: nextReserve.id },
-        data: { listStatus: 'Primary' }
-      });
-      // Principal HR Officers are notified that a new recommendation is
-      // needed by the caller (applicationController.declineOffer), outside
-      // this transaction - a notification must never roll back the decline.
-    }
-
-    await recomputeVacancyStatus(vacancyId, tx);
-    return { promoted: nextReserve || null };
-  }, { timeout: 15000, maxWait: 5000 });
+// The candidate declined their issued offer.
+function handleOfferDeclined(offerId, declineReason = null) {
+  return closeOffer(offerId, ['Approved'], { status: 'Declined', decidedAt: new Date(), declineReason });
 }
 
 /**
@@ -308,6 +328,7 @@ module.exports = {
   recomputeVacancyStatus,
   acceptOfferTransactionally,
   handleOfferDeclined,
+  closeOffer,
   captureSnapshot,
   notifySupervisor,
   logVacancyPostingTypeTransition

@@ -90,12 +90,29 @@ enum ListStatus {
   Reserve
 }
 
+// The post-interview merit list (see Application.meritRank). Proposed by a
+// Senior_HR_Officer+, approved by a Principal_HR_Officer+ who didn't
+// propose it - the same propose/approve split as the interview shortlist.
+enum MeritStatus {
+  Proposed
+  Approved
+}
+
+// Offer lifecycle (offerService.js):
+//   Recommended -> Approved (issued to the candidate, response deadline set)
+//              \-> Returned (approver sent it back with a reason) -> Recommended (revised)
+//   Approved -> Accepted | Declined | Expired (deadline passed) | Withdrawn
+// Recommended/Returned can also be Withdrawn. Declined, Expired and
+// Withdrawn release the position to the next reserve on the merit list.
+// Extended is legacy and no longer written.
 enum OfferStatus {
   Recommended
+  Returned
   Approved
   Extended
   Accepted
   Declined
+  Expired
   Withdrawn
 }
 
@@ -170,6 +187,10 @@ model StaffUser {
   applicationsRejected Application[] @relation("ApplicationRejectedBy")
   applicationsShortlistProposed Application[] @relation("ApplicationShortlistProposedBy")
   applicationsShortlistApproved Application[] @relation("ApplicationShortlistApprovedBy")
+  applicationsMeritProposed Application[] @relation("ApplicationMeritProposedBy")
+  applicationsMeritApproved Application[] @relation("ApplicationMeritApprovedBy")
+  offersReturned Offer[] @relation("OfferReturnedBy")
+  offersWithdrawn Offer[] @relation("OfferWithdrawnBy")
 
   // Real, time-bounded, audited delegation - distinct from the older
   // static `actingAsId` field above, which predates this and is left
@@ -670,6 +691,24 @@ model Application {
   shortlistApprovedById  Int?
   shortlistApprovedBy    StaffUser?  @relation("ApplicationShortlistApprovedBy", fields: [shortlistApprovedById], references: [id])
 
+  // The post-interview merit list - the ranking that decides who is offered
+  // the job (Primary, top positionsRequired) and who waits in Reserve for a
+  // declined offer. Built from interview results (meritListService) once
+  // candidates are Interviewed. The rank/listStatus pair above is the older
+  // pre-interview ranking: the interview shortlist is now just who gets
+  // interviewed, in what order, so listStatus is no longer written and is
+  // read only by handleOfferDeclined for vacancies that never had a merit
+  // list. rankVersion guards writes to both rankings.
+  meritRank          Int?
+  meritListStatus    ListStatus?
+  meritStatus        MeritStatus?
+  meritProposedAt    DateTime?
+  meritProposedById  Int?
+  meritProposedBy    StaffUser?  @relation("ApplicationMeritProposedBy", fields: [meritProposedById], references: [id])
+  meritApprovedAt    DateTime?
+  meritApprovedById  Int?
+  meritApprovedBy    StaffUser?  @relation("ApplicationMeritApprovedBy", fields: [meritApprovedById], references: [id])
+
   // Application-level answers (vary per application, unlike the
   // candidate-level profile fields on Candidate) - the wizard's Questions
   // step, persisted for real rather than kept as local-only state.
@@ -851,8 +890,42 @@ model Offer {
   // handleOfferDeclined) - distinct from approvedDate (when Manager
   // approved the offer, a different event). Powers the offer-outcome
   // trend on the Analytics page; null for every offer still short of a
-  // candidate decision.
+  // candidate decision. Also set when an offer Expires or is Withdrawn.
   decidedAt        DateTime?
+
+  // The terms of the offer, drafted with the recommendation and approved as
+  // one package - what the candidate is actually accepting.
+  salaryAmount       Decimal?            @db.Decimal(14, 2)
+  salaryCurrency     String              @default("UGX")
+  salaryPeriod       String?             // Monthly | Annual
+  allowances         String?             @db.Text
+  employmentCategory EmploymentCategory?
+  contractMonths     Int?                // for Contract / FixedTermContract
+  startDate          DateTime?
+  dutyStation        String?
+  // Pre-employment conditions the offer depends on, as shown to the
+  // candidate: ["Satisfactory references", ...].
+  conditions         Json?
+  // Days the candidate has to respond, counted from approval; the deadline
+  // itself is fixed at approval (offerService.approve) and enforced by
+  // scripts/expireOffers.js.
+  responseDays       Int                 @default(14)
+  responseDeadline   DateTime?
+  responseReminderSentAt DateTime?
+  // Snapshots of where the candidate stood when the offer was recommended -
+  // same audit principle as the other *AtX snapshots in this schema.
+  meritRankAtOffer      Int?
+  interviewScoreAtOffer Float?
+  // Approver sent the offer back for revision (status Returned).
+  returnedAt       DateTime?
+  returnedById     Int?
+  returnedBy       StaffUser?  @relation("OfferReturnedBy", fields: [returnedById], references: [id])
+  returnReason     String?     @db.Text
+  // The candidate's optional reason for declining.
+  declineReason    String?     @db.Text
+  withdrawnById    Int?
+  withdrawnBy      StaffUser?  @relation("OfferWithdrawnBy", fields: [withdrawnById], references: [id])
+  withdrawalReason String?     @db.Text
 }
 
 model VerificationToken {
@@ -997,6 +1070,16 @@ enum SlaTaskType {
   // A day after the interview, panel scores are still missing
   // (scripts/sendInterviewReminders.js).
   InterviewScoresOverdue
+  // A merit list was proposed for a vacancy and awaits approval - to every
+  // Principal_HR_Officer (meritListController.propose). taskId is the
+  // vacancy id.
+  MeritListProposed
+  // An approver sent an offer back for revision - to whoever recommended
+  // it (offerService.returnOffer). taskId is the offer id.
+  OfferReturned
+  // An issued offer passed its response deadline unanswered - to every
+  // Principal_HR_Officer (scripts/expireOffers.js). taskId is the offer id.
+  OfferExpired
 }
 
 model SlaPolicy {
@@ -1060,6 +1143,10 @@ enum CandidateNotificationType {
   InterviewRescheduled
   InterviewCancelled
   InterviewReminder
+  // scripts/expireOffers.js - a reminder shortly before an issued offer's
+  // response deadline, and the notice once it has lapsed.
+  OfferExpiring
+  OfferExpired
 }
 
 // A separate model rather than reusing Notification above: recipientId

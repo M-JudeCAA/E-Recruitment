@@ -1,7 +1,7 @@
 const mockDb = {
   application: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), count: jest.fn() },
   vacancy: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-  offer: { update: jest.fn(), updateMany: jest.fn(), count: jest.fn(), create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
+  offer: { update: jest.fn(), updateMany: jest.fn(), count: jest.fn(), create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), groupBy: jest.fn() },
   workExperience: { findMany: jest.fn() },
   education: { findMany: jest.fn() },
   certificate: { findMany: jest.fn() },

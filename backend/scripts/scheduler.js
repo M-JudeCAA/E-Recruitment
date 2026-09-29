@@ -25,6 +25,7 @@ const JOBS = [
   { name: 'checkSlaEscalations', run: require('./checkSlaEscalations').run },
   { name: 'checkVacancyDeadlines', run: require('./checkVacancyDeadlines').run },
   { name: 'sendInterviewReminders', run: require('./sendInterviewReminders').run },
+  { name: 'expireOffers', run: require('./expireOffers').run },
   { name: 'cleanupPendingRegistrations', run: require('./cleanupPendingRegistrations').run },
   { name: 'cleanupVerificationTokens', run: () => require('./cleanupVerificationTokens').run() }
 ];

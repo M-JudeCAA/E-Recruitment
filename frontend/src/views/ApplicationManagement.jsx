@@ -14,6 +14,8 @@ import Select from '../components/Select';
 import TextField from '../components/TextField';
 import ApplicationReviewCard from '../components/ApplicationReviewCard';
 import ShortlistPipelineBoard from '../components/ShortlistPipelineBoard';
+import VacancyInterviewsPanel from '../components/VacancyInterviewsPanel';
+import MeritListBoard from '../components/MeritListBoard';
 import ViewSwitcher from '../components/ViewSwitcher';
 import DataTable from '../components/DataTable';
 import BoardView from '../components/BoardView';
@@ -22,6 +24,52 @@ import StatusBadge, { STATUS_COLORS } from '../components/StatusBadge';
 import Skeleton from '../components/Skeleton';
 import { useGeneratedCvDownload } from '../utils/useGeneratedCvDownload';
 import { debounce } from '../utils/debounce';
+
+// The three selection steps for one vacancy, in order. Each is its own
+// decision with its own propose/approve split on the backend: who to
+// interview, what the panel concluded, and who is offered the job.
+const STAGES = [
+  { key: 'shortlist', label: 'Shortlist for interview', hint: 'Screen and choose who to interview' },
+  { key: 'interviews', label: 'Interviews', hint: 'Schedule, score and decide' },
+  { key: 'merit', label: 'Merit list & offers', hint: 'Rank results, approve, offer' }
+];
+
+function StageTabs({ stage, counts, onChange }) {
+  return (
+    <div role="tablist" style={{ display: 'flex', gap: 8, marginBottom: 'var(--spacing-md)', flexWrap: 'wrap' }}>
+      {STAGES.map((s, i) => {
+        const active = s.key === stage;
+        return (
+          <button
+            key={s.key} type="button" role="tab" aria-selected={active} onClick={() => onChange(s.key)}
+            style={{
+              flex: '1 1 200px', display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', cursor: 'pointer',
+              padding: '10px 12px', borderRadius: 'var(--radius)', fontFamily: 'inherit', color: 'var(--color-text)',
+              border: `2px solid ${active ? 'var(--color-primary)' : 'var(--color-border)'}`,
+              background: active ? 'var(--color-primary-light)' : 'var(--color-bg)'
+            }}
+          >
+            <span style={{
+              width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              fontWeight: 700, fontSize: 13, background: active ? 'var(--color-primary)' : 'var(--color-bg-subtle)', color: active ? '#fff' : 'var(--color-text-muted)'
+            }}>
+              {i + 1}
+            </span>
+            <span style={{ minWidth: 0, flex: 1 }}>
+              <span style={{ display: 'block', fontWeight: 600, fontSize: 14 }}>{s.label}</span>
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--color-text-muted)' }}>{s.hint}</span>
+            </span>
+            {counts[s.key] > 0 && (
+              <span style={{ fontSize: 12, fontWeight: 700, borderRadius: 999, padding: '1px 8px', background: 'var(--color-bg-subtle)', color: 'var(--color-text-muted)' }}>
+                {counts[s.key]}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 // Mimics ApplicationReviewCard's collapsed header row (name + status badge,
 // CV/cover-letter line, score) so the queue doesn't visibly jump in layout
@@ -73,12 +121,19 @@ export default function ApplicationManagement() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const vacancyId = searchParams.get('vacancyId') || '';
+  const stage = STAGES.some((s) => s.key === searchParams.get('stage')) ? searchParams.get('stage') : 'shortlist';
+  const setStage = (key) => {
+    const next = new URLSearchParams(searchParams);
+    if (key === 'shortlist') next.delete('stage'); else next.set('stage', key);
+    setSearchParams(next, { replace: true });
+  };
   // Merges into whatever's already in the URL rather than replacing it
   // outright - the filter-sync effect below owns the other params, and a
   // plain setSearchParams({vacancyId}) here would wipe them out from under it.
   const selectVacancy = (id) => {
     const next = new URLSearchParams(searchParams);
     if (id) next.set('vacancyId', id); else next.delete('vacancyId');
+    next.delete('stage');
     setSearchParams(next, { replace: true });
   };
 
@@ -139,6 +194,9 @@ export default function ApplicationManagement() {
   // --- Mode B: single-vacancy state (ports VacancyDetail.jsx's own) ---
   const [vacancy, setVacancy] = useState(null);
   const [vacancyApps, setVacancyApps] = useState([]);
+  // Bumped whenever the vacancy reloads, so the merit list (which fetches
+  // its own board) refreshes alongside everything else.
+  const [meritReloadKey, setMeritReloadKey] = useState(0);
 
   // --- Mode A: cross-vacancy queue state ---
   const [queue, setQueue] = useState(null); // { data, total, page, limit }
@@ -161,6 +219,7 @@ export default function ApplicationManagement() {
   const loadVacancyMode = () => {
     const requestId = ++vacancyRequestIdRef.current;
     const currentVacancyId = vacancyId;
+    setMeritReloadKey((k) => k + 1);
     staffClient.get(`/api/vacancies/${currentVacancyId}`)
       .then((res) => { if (vacancyRequestIdRef.current === requestId) setVacancy(res.data); })
       .catch((err) => { if (vacancyRequestIdRef.current === requestId) setError(err.response?.data?.error || 'Could not load this vacancy'); });
@@ -254,12 +313,19 @@ export default function ApplicationManagement() {
     { label: 'Flagged (this page)', value: queue.data.filter((a) => a.screeningPassed === false).length, color: 'var(--color-warning)' },
     { label: 'Meets criteria (this page)', value: queue.data.filter((a) => a.screeningPassed === true).length, color: 'var(--color-success)' }
   ] : null;
+  const countStatus = (...statuses) => vacancyApps.filter((a) => statuses.includes(a.status)).length;
   const vacancyStats = vacancy ? [
     { label: 'Total applications', value: vacancyApps.length },
-    { label: 'Awaiting review', value: vacancyApps.filter((a) => a.status === 'Submitted').length, color: 'var(--color-warning)' },
+    { label: 'Awaiting review', value: countStatus('Submitted'), color: 'var(--color-warning)' },
     { label: 'Flagged', value: vacancyApps.filter((a) => a.screeningPassed === false).length, color: 'var(--color-warning)' },
-    { label: 'Shortlisted/ranked', value: vacancyApps.filter((a) => a.rank != null).length, color: 'var(--color-accent)' }
+    { label: 'Interview shortlist', value: countStatus('ShortlistProposed', 'Shortlisted', 'InterviewScheduled', 'Interviewed', 'Offered'), color: 'var(--color-primary)' },
+    { label: 'On merit list', value: vacancyApps.filter((a) => a.meritStatus).length, color: 'var(--color-accent)' }
   ] : null;
+  const stageCounts = {
+    shortlist: countStatus('Submitted', 'UnderReview', 'ShortlistProposed'),
+    interviews: countStatus('Shortlisted', 'InterviewScheduled'),
+    merit: countStatus('Interviewed')
+  };
 
   return (
     <div style={{ display: 'flex', gap: 'var(--spacing-lg)', alignItems: 'flex-start' }}>
@@ -408,19 +474,35 @@ export default function ApplicationManagement() {
           <Alert type="info" message="This vacancy hasn't been approved and published yet, so there are no applications to review. Approve it from the HR dashboard first." />
         ) : (
           <>
-            {canBeginReview && vacancyApps.some((a) => a.status === 'Submitted') && (
-              <Card accent="var(--color-warning)">
-                <strong>{vacancyApps.filter((a) => a.status === 'Submitted').length}</strong> application(s) awaiting review.
-                <Button style={{ marginLeft: 12 }} onClick={beginReview} disabled={beginReviewLoading}>
-                  {beginReviewLoading ? 'Screening...' : 'Begin Review'}
-                </Button>
-              </Card>
-            )}
+            <StageTabs stage={stage} counts={stageCounts} onChange={setStage} />
 
-            <ShortlistPipelineBoard
-              vacancy={vacancy} applications={vacancyApps} staffRole={staff?.role}
-              onUpdated={loadVacancyMode} onDownloadCv={downloadGeneratedCv} downloadingId={downloadingId}
-            />
+            {stage === 'shortlist' && (
+              <>
+                {canBeginReview && vacancyApps.some((a) => a.status === 'Submitted') && (
+                  <Card accent="var(--color-warning)">
+                    <strong>{vacancyApps.filter((a) => a.status === 'Submitted').length}</strong> application(s) awaiting review.
+                    <Button style={{ marginLeft: 12 }} onClick={beginReview} disabled={beginReviewLoading}>
+                      {beginReviewLoading ? 'Screening...' : 'Begin Review'}
+                    </Button>
+                  </Card>
+                )}
+
+                <ShortlistPipelineBoard
+                  vacancy={vacancy} applications={vacancyApps} staffRole={staff?.role}
+                  onUpdated={loadVacancyMode} onDownloadCv={downloadGeneratedCv} downloadingId={downloadingId}
+                  onGoToStage={setStage}
+                />
+              </>
+            )}
+            {stage === 'interviews' && (
+              <VacancyInterviewsPanel
+                vacancy={vacancy} applications={vacancyApps} staffRole={staff?.role}
+                onUpdated={loadVacancyMode} onGoToMeritList={() => setStage('merit')}
+              />
+            )}
+            {stage === 'merit' && (
+              <MeritListBoard vacancy={vacancy} staffRole={staff?.role} reloadKey={meritReloadKey} onChanged={loadVacancyMode} />
+            )}
           </>
         )}
 
