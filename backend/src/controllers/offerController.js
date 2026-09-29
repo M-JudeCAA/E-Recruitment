@@ -4,6 +4,7 @@ const slaModel = require('../models/slaModel');
 const vacancyModel = require('../models/vacancyModel');
 const workflow = require('../services/workflowService');
 const offerService = require('../services/offerService');
+const audit = require('../services/auditService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { notify, notifyAllWithRole } = require('../services/notificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
@@ -58,6 +59,14 @@ async function recommend(req, res) {
   } catch (err) {
     return sendError(res, err);
   }
+  await audit.record({
+    entityType: 'Offer', entityId: offer.id, action: 'Offer recommended', actor: audit.actorFrom(req),
+    details: { applicationId, terms: offerService.termsOf(offer) }
+  });
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Offer recommended', actor: audit.actorFrom(req),
+    details: { offerId: offer.id }
+  });
   broadcastDashboardEvent('OfferPendingApproval', { offerId: offer.id });
   res.status(201).json(offer);
 }
@@ -73,6 +82,10 @@ async function revise(req, res) {
   } catch (err) {
     return sendError(res, err);
   }
+  await audit.record({
+    entityType: 'Offer', entityId: offerId, action: result.previousStatus === 'Returned' ? 'Offer revised and resubmitted' : 'Offer terms revised',
+    actor: audit.actorFrom(req), before: result.before, after: result.offer, fields: [...offerService.TERM_FIELDS, 'status']
+  });
   // A fresh submission restarts the approval clock.
   await slaModel.resolveEscalations('OfferApproval', offerId);
   broadcastDashboardEvent('OfferPendingApproval', { offerId });
@@ -130,6 +143,10 @@ async function approve(req, res) {
     return sendError(res, err);
   }
   const offer = await offerModel.findById(offerId);
+  await audit.record({
+    entityType: 'Offer', entityId: offerId, action: 'Offer approved and issued', actor: audit.actorFrom(req),
+    before: existing, after: offer, fields: ['status', 'responseDeadline']
+  });
   await slaModel.resolveEscalations('OfferApproval', offerId);
   // Approved is the moment the candidate can act, so the moment they're told.
   await safely(`offer notice for offer ${offerId}`, () => notifyCandidate(
@@ -155,6 +172,10 @@ async function returnForRevision(req, res) {
   } catch (err) {
     return sendError(res, err);
   }
+  await audit.record({
+    entityType: 'Offer', entityId: offerId, action: 'Offer returned for revision', actor: audit.actorFrom(req),
+    before: existing, after: { status: 'Returned' }, fields: ['status'], comment: reason
+  });
   await slaModel.resolveEscalations('OfferApproval', offerId);
   if (existing.recommendedById) {
     await safely(`OfferReturned notification for offer ${offerId}`, () => notify(existing.recommendedById, 'OfferReturned', offerId,
@@ -201,6 +222,10 @@ async function accept(req, res) {
     return res.status(409).json({ error: 'All positions for this vacancy have already been filled, so this offer can no longer be accepted. Please contact HR.' });
   }
   const offer = result.offer;
+  await audit.record({
+    entityType: 'Offer', entityId: offerId, action: 'Offer accepted by the candidate', actor: audit.actorFrom(req),
+    before: existing, after: offer, fields: ['status']
+  });
 
   await safely(`hire snapshot for offer ${offerId}`, () => workflow.captureSnapshot({
     entityType: 'HireSnapshot', entityId: offer.id, candidateId: offer.application.candidateId, performedById: offer.approvedById
@@ -236,6 +261,11 @@ async function decline(req, res) {
   if (result.conflict) {
     return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
   }
+  await audit.record({
+    entityType: 'Offer', entityId: existing.id, action: 'Offer declined by the candidate', actor: audit.actorFrom(req),
+    before: existing, after: { status: 'Declined' }, fields: ['status'], comment: reason,
+    details: { promotedApplicationId: result.promoted?.id || null }
+  });
   await offerService.notifyPositionReleased('OfferDeclined', existing.id, existing.application.vacancy, existing.applicationId,
     `was declined${reason ? ` (reason given: ${escapeHtml(reason)})` : ''}`, result.promoted);
   broadcastDashboardEvent('OfferDeclined', { offerId: existing.id });
@@ -264,11 +294,10 @@ async function withdraw(req, res) {
     return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
   }
 
-  await prisma.auditLog.create({
-    data: {
-      entityType: 'Offer', entityId: offerId, action: 'Offer withdrawn', performedById: req.user.id,
-      payload: { previousStatus: existing.status, reason: reason || null, promotedApplicationId: result.promoted?.id || null }
-    }
+  await audit.record({
+    entityType: 'Offer', entityId: offerId, action: 'Offer withdrawn', actor: audit.actorFrom(req),
+    before: existing, after: { status: 'Withdrawn' }, fields: ['status'], comment: reason || null,
+    details: { previousStatus: existing.status, reason: reason || null, promotedApplicationId: result.promoted?.id || null }
   });
   await slaModel.resolveEscalations('OfferApproval', offerId);
 

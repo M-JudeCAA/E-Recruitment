@@ -5,6 +5,7 @@ import Card from './Card';
 import Button from './Button';
 import StatusBadge from './StatusBadge';
 import Modal from './Modal';
+import AuditTrail from './AuditTrail';
 import TextArea from './TextArea';
 import { fileLink } from '../utils/fileLink';
 import { safeJsonParse } from '../utils/safeJsonParse';
@@ -385,6 +386,8 @@ export default function ApplicationReviewCard({
           </Button>
         )}
       </div>
+
+      <AuditTrail entityType="Application" entityId={app.id} />
 
       {activeModal === 'reject' && (
         <Modal

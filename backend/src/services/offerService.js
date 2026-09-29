@@ -95,6 +95,14 @@ function parseTerms(body = {}, now = new Date()) {
   };
 }
 
+// The columns parseTerms sets - what an offer's terms are, for the audit trail.
+const TERM_FIELDS = ['salaryAmount', 'salaryCurrency', 'salaryPeriod', 'allowances', 'employmentCategory',
+  'contractMonths', 'startDate', 'dutyStation', 'conditions', 'responseDays'];
+
+function termsOf(offer) {
+  return Object.fromEntries(TERM_FIELDS.map((f) => [f, offer[f] ?? null]));
+}
+
 // An offer drafted before terms existed can't be issued as it stands.
 function hasTerms(offer) {
   return offer.salaryAmount != null && offer.startDate != null && offer.employmentCategory != null;
@@ -208,7 +216,7 @@ async function revise(offerId, body, revisedById) {
     data: { ...terms, status: 'Recommended', recommendedById: revisedById, recommendedDate: new Date() }
   });
   if (result.count === 0) throw new AppError('This offer was already updated - please refresh and try again', 409);
-  return { previousStatus: existing.status, offer: await prisma.offer.findUnique({ where: { id: offerId } }) };
+  return { previousStatus: existing.status, before: existing, offer: await prisma.offer.findUnique({ where: { id: offerId } }) };
 }
 
 /**
@@ -357,6 +365,6 @@ async function notifyPositionReleased(taskType, offerId, vacancy, applicationId,
 
 module.exports = {
   EMPLOYMENT_CATEGORIES, SALARY_PERIODS, MIN_RESPONSE_DAYS, MAX_RESPONSE_DAYS, DEFAULT_RESPONSE_DAYS, OPEN_STATUSES, DEFAULT_CONDITIONS,
-  parseTerms, hasTerms, recommendBlocker, draftContext, recommend, revise, approve, returnForRevision,
+  TERM_FIELDS, termsOf, parseTerms, hasTerms, recommendBlocker, draftContext, recommend, revise, approve, returnForRevision,
   findDueForReminder, findOverdue, list, toCandidateOffer, describeSalary, notifyPositionReleased
 };

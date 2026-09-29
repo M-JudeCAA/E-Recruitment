@@ -6,6 +6,7 @@ import Button from '../components/Button';
 import Alert from '../components/Alert';
 import StatusBadge from '../components/StatusBadge';
 import Skeleton from '../components/Skeleton';
+import AuditTrail from '../components/AuditTrail';
 
 // Vacancy-info only - the applicant review workflow (screening, shortlist
 // ranking, verification, reject, interview scheduling/scoring, offer
@@ -80,6 +81,8 @@ export default function VacancyDetail() {
       ) : (
         <Button onClick={() => navigate(`/hr/applications?vacancyId=${vacancy.id}`)}>Manage applications &rarr;</Button>
       )}
+
+      <AuditTrail entityType="Vacancy" entityId={vacancy.id} label="Vacancy history" />
     </div>
   );
 }

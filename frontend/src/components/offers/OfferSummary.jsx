@@ -1,6 +1,7 @@
 import React from 'react';
 import { Clock } from 'lucide-react';
 import StatusBadge from '../StatusBadge';
+import AuditTrail from '../AuditTrail';
 import { hintText } from '../interviews/formStyles';
 import { OFFER_STATUS_LABELS, formatSalary, formatContract, formatDate, deadlineInfo } from './offerFormat';
 
@@ -96,6 +97,7 @@ export default function OfferSummary({ offer, compact = false }) {
         </div>
       )}
       {trail(offer) && <div style={{ ...hintText, marginTop: 6 }}>{trail(offer)}</div>}
+      {offer.id && <AuditTrail entityType="Offer" entityId={offer.id} label="Offer history" />}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 const meritList = require('../services/meritListService');
+const audit = require('../services/auditService');
 const { notifyAllWithRole } = require('../services/notificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { sendError } = require('../utils/errorResponse');
@@ -47,6 +48,11 @@ async function propose(req, res) {
     return sendError(res, err);
   }
 
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancyId, action: 'Merit list proposed', actor: audit.actorFrom(req),
+    details: { applicationIds, primaryCount: result.primaryCount, reserveCount: result.reserveCount }
+  });
+
   // The proposal is already committed - a notification failure must not
   // turn it into a 500.
   try {
@@ -66,6 +72,9 @@ async function approve(req, res) {
   if (!vacancyId) return;
   try {
     const result = await meritList.approve(vacancyId, req.user.id);
+    await audit.record({
+      entityType: 'Vacancy', entityId: vacancyId, action: 'Merit list approved', actor: audit.actorFrom(req), details: result
+    });
     broadcastDashboardEvent('MeritListApproved', { vacancyId });
     res.json({ message: 'Merit list approved', vacancyId, ...result });
   } catch (err) {

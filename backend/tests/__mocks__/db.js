@@ -14,7 +14,7 @@ const mockDb = {
   education: { findMany: jest.fn() },
   certificate: { findMany: jest.fn() },
   examGrade: { findMany: jest.fn() },
-  auditLog: { create: jest.fn() },
+  auditLog: { create: jest.fn(), findMany: jest.fn() },
   jobRefSequence: { findUnique: jest.fn() },
   candidate: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   internalProfile: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },

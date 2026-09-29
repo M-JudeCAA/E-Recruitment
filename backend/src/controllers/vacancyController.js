@@ -5,6 +5,7 @@ const applicationModel = require('../models/applicationModel');
 const positionModel = require('../models/positionModel');
 const offerModel = require('../models/offerModel');
 const workflow = require('../services/workflowService');
+const audit = require('../services/auditService');
 const slaModel = require('../models/slaModel');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { toPublicVacancy } = require('../utils/publicVacancy');
@@ -127,6 +128,10 @@ async function create(req, res) {
     status: 'PendingApproval',
     ...buildVacancyCreateData(position, validatedReportsToId, req.body, req.user.id)
   });
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancy.id, action: 'Vacancy created', actor: audit.actorFrom(req),
+    details: { jobRef: vacancy.jobRef }
+  });
   broadcastDashboardEvent('VacancyPendingApproval', { vacancyId: vacancy.id });
   res.status(201).json(vacancy);
 }
@@ -174,6 +179,14 @@ async function readvertise(req, res) {
     status: 'PendingApproval',
     readvertisedFromId: vacancy.id,
     ...buildVacancyCreateData(position, vacancy.reportsToPositionId, req.body, req.user.id)
+  });
+  await audit.record({
+    entityType: 'Vacancy', entityId: created.id, action: 'Vacancy created (readvertisement)', actor: audit.actorFrom(req),
+    details: { jobRef: created.jobRef, readvertisedFromId: vacancy.id }
+  });
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancy.id, action: 'Vacancy readvertised', actor: audit.actorFrom(req),
+    details: { readvertisedAsId: created.id, jobRef: created.jobRef }
   });
   broadcastDashboardEvent('VacancyPendingApproval', { vacancyId: created.id });
   res.status(201).json(created);
@@ -248,6 +261,10 @@ async function update(req, res) {
   }
 
   const updated = await vacancyModel.update(vacancyId, data);
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy edited', actor: audit.actorFrom(req),
+    before: vacancy, after: updated, fields: Object.keys(data)
+  });
   res.json(updated);
 }
 
@@ -306,6 +323,11 @@ async function approve(req, res) {
   // VacancyApproval can now be tracked and escalated by the SLA checker,
   // since approvedAt finally gives it a clean "resolved" signal.
   await slaModel.resolveEscalations('VacancyApproval', vacancyId);
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancyId,
+    action: vacancy.status === 'Closed' ? 'Vacancy re-opened' : 'Vacancy approved', actor: audit.actorFrom(req),
+    before: vacancy, after: updated, fields: ['status']
+  });
 
   broadcastDashboardEvent('VacancyApproved', { vacancyId });
   res.json(updated);
@@ -382,6 +404,12 @@ async function transitionPostingType(req, res) {
   });
 
   await workflow.logVacancyPostingTypeTransition(vacancyId, vacancy.postingType, postingType, req.user.id);
+  if (newDeadline !== undefined) {
+    await audit.record({
+      entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy edited', actor: audit.actorFrom(req),
+      before: vacancy, after: updated, fields: ['deadline', 'postingTypeLocked']
+    });
+  }
 
   res.json(updated);
 }
@@ -552,6 +580,10 @@ async function saveRanking(req, res) {
       })
     )
   );
+  await audit.recordMany(rankData.map(({ id, rank }) => ({
+    entityType: 'Application', entityId: id, action: 'Proposed for the interview shortlist', actor: audit.actorFrom(req),
+    details: { rank }
+  })));
   res.json(results);
 }
 

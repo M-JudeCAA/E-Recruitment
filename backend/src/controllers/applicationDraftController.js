@@ -3,6 +3,7 @@ const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
 const candidateModel = require('../models/candidateModel');
 const workflow = require('../services/workflowService');
+const audit = require('../services/auditService');
 const applicationDocumentModel = require('../models/applicationDocumentModel');
 const {
   screenApplication, scoreApplication, evaluateEssentialCriteria, assessEligibility
@@ -288,6 +289,10 @@ async function submit(req, res) {
     return res.status(409).json({ error: 'This application has already been submitted' });
   }
   const updated = await applicationModel.findById(applicationId);
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Application submitted', actor: audit.actorFrom(req),
+    before: application, after: updated, fields: ['status']
+  });
 
   await workflow.captureSnapshot({
     entityType: 'ApplicationSnapshot', entityId: applicationId, candidateId: req.user.id
@@ -350,6 +355,10 @@ async function withdraw(req, res) {
   const { reason } = req.body; // optional - candidate's prerogative, useful for HR reporting when given
   const updated = await applicationModel.update(applicationId, {
     status: 'Withdrawn', withdrawalReason: reason || null
+  });
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Application withdrawn by the candidate', actor: audit.actorFrom(req),
+    before: application, after: updated, fields: ['status'], comment: reason || null
   });
   res.json(updated);
 }

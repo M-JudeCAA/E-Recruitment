@@ -419,7 +419,7 @@ describe('transitionPostingType', () => {
       expect(prisma.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({
           entityType: 'Vacancy', entityId: 1, action: 'PostingTypeTransition', performedById: 2,
-          payload: { from, to }
+          payload: expect.objectContaining({ from, to, changes: { postingType: { from, to } } })
         })
       }));
       expect(res.json).toHaveBeenCalledWith({ id: 1, status: 'Open', postingType: to });

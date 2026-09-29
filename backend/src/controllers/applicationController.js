@@ -3,6 +3,7 @@ const applicationModel = require('../models/applicationModel');
 const vacancyModel = require('../models/vacancyModel');
 const shortlistCommitteeModel = require('../models/shortlistCommitteeModel');
 const workflow = require('../services/workflowService');
+const audit = require('../services/auditService');
 const meritList = require('../services/meritListService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { ROLE_RANK } = require('../middleware/auth');
@@ -149,6 +150,10 @@ async function shortlist(req, res) {
     return res.status(409).json({ error: 'This application was already updated - please refresh and try again' });
   }
 
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Proposed for the interview shortlist', actor: audit.actorFrom(req),
+    before: application, after: { status: 'ShortlistProposed', rank: rank ?? null }, fields: ['status', 'rank']
+  });
   const updated = await applicationModel.findById(applicationId, { vacancy: true });
   res.json(updated);
 }
@@ -190,6 +195,11 @@ async function reject(req, res) {
   if (result.count === 0) {
     return res.status(409).json({ error: 'This application was already updated - please refresh and try again' });
   }
+
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Application rejected', actor: audit.actorFrom(req),
+    before: application, after: { status: 'Rejected' }, fields: ['status'], comment: reason
+  });
 
   // The rejection itself already committed above - a notification/mail
   // failure here must not turn an otherwise-successful reject into a 500
@@ -235,6 +245,10 @@ async function approveShortlist(req, res) {
   }
 
   await applicationModel.approveShortlistForVacancy(vacancyId, req.user.id);
+  await audit.recordMany(proposed.map((application) => ({
+    entityType: 'Application', entityId: application.id, action: 'Interview shortlist approved', actor: audit.actorFrom(req),
+    before: application, after: { status: 'Shortlisted' }, fields: ['status']
+  })));
 
   const vacancy = await vacancyModel.findById(vacancyId);
   // The approval itself already committed above - a notification failure

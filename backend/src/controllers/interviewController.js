@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const prisma = require('../config/db');
+const auditService = require('../services/auditService');
 const interviewModel = require('../models/interviewModel');
 const applicationModel = require('../models/applicationModel');
 const panelMemberModel = require('../models/panelMemberModel');
@@ -1076,6 +1077,12 @@ async function finalizeRecommendation(req, res) {
     // the application move to "Interviewed".
     await applicationModel.update(round.applicationId, { status: 'Interviewed' });
   }
+  await auditService.record({
+    entityType: 'Application', entityId: round.applicationId,
+    action: recommendation === 'Reject' ? 'Application rejected (interview panel)' : `Interview finalized: ${recommendation}`,
+    actor: auditService.actorFrom(req),
+    details: { interviewRoundId: interviewId, recommendation }, comment: notes || null
+  });
   broadcastDashboardEvent('InterviewRecommendation', { interviewId, applicationId: round.applicationId, recommendation });
   res.json(round);
 }

@@ -582,10 +582,13 @@ describe('withdrawOffer', () => {
     });
     // Like a decline, a withdrawal releases the position to the next reserve.
     expect(prisma.application.update).toHaveBeenCalledWith({ where: { id: 45 }, data: { meritListStatus: 'Primary' } });
-    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: {
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
       entityType: 'Offer', entityId: 20, action: 'Offer withdrawn', performedById: 30,
-      payload: { previousStatus: 'Approved', reason: 'Position <filled>', promotedApplicationId: 45 }
-    } });
+      payload: expect.objectContaining({
+        previousStatus: 'Approved', reason: 'Position <filled>', promotedApplicationId: 45,
+        comment: 'Position <filled>', changes: { status: { from: 'Approved', to: 'Withdrawn' } }
+      })
+    }) });
     expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith({
       where: { taskType: 'OfferApproval', taskId: 20, resolvedAt: null }, data: { resolvedAt: expect.any(Date) }
     });

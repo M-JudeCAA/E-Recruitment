@@ -42,3 +42,15 @@ test('numbers job references per posting type and year, without gaps or reuse, e
   await prisma.vacancy.delete({ where: { id: last.id } });
   expect(expectStatus(await createVacancy('External'), 201).body.jobRef).toBe(`UCAA/ADV/EXT/007/${year}`);
 });
+
+test('records who changed what on a vacancy, with before and after values (FR-ATS-012)', async () => {
+  const vacancy = expectStatus(await createVacancy(), 201).body;
+  expectStatus(await api(tokens.hro).patch(`/api/vacancies/${vacancy.id}`, { positionsRequired: 3, salaryScale: 'U4' }), 200);
+
+  const history = expectStatus(await api(tokens.hro).get(`/api/audit/Vacancy/${vacancy.id}`), 200).body;
+  expect(history.map((h) => h.action)).toEqual(['Vacancy edited', 'Vacancy created']);
+  expect(history[0].performedBy.name).toContain('HR_Officer');
+  expect(history[0].changes).toEqual({
+    positionsRequired: { from: 1, to: 3 }, salaryScale: { from: null, to: 'U4' }
+  });
+});

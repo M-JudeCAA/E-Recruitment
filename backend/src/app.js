@@ -32,6 +32,7 @@ const delegationRoutes = require('./routes/delegations');
 const notificationRoutes = require('./routes/notifications');
 const dashboardRoutes = require('./routes/dashboard');
 const analyticsRoutes = require('./routes/analytics');
+const auditRoutes = require('./routes/audit');
 const { errorHandler } = require('./utils/errorResponse');
 
 const app = express();
@@ -84,6 +85,7 @@ app.use('/api/delegations', delegationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/audit', auditRoutes);
 
 // Catch-all error handler - logs the full error server-side but only ever
 // sends the client a sanitized message (never Prisma query text, database
