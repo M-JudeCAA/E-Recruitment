@@ -235,6 +235,7 @@ async function makeCandidate(spec) {
     token,
     json: {
       nationalId: nid, idType: 'NationalID', location: spec.location || 'Kampala, Uganda', workAuthorization: 'Yes',
+      districtOfOrigin: spec.districtOfOrigin || ['Wakiso', 'Mukono', 'Gulu', 'Mbarara', 'Jinja', 'Mbale'][n % 6],
       dateOfBirth: spec.dob, flyingHours: spec.flyingHours,
       linkedinUrl: n % 3 === 0 ? `https://www.linkedin.com/in/${slug(spec.name).replace(/\./g, '-')}` : undefined
     }
@@ -278,7 +279,7 @@ async function apply(c, vacancy, { submit = true, strong = true, desirable = {},
   await attachDocuments(c, draft.id);
   if (!submit) return draft;
   try {
-    const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: c.token });
+    const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: c.token, json: { consent: true } });
     if (submit === 'refused') throw new Error(`${c.name} was expected to be refused at submission for ${vacancy.title}, but was accepted`);
     return submitted;
   } catch (err) {

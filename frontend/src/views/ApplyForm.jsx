@@ -73,7 +73,7 @@ export default function ApplyForm() {
   // location, work authorization, LinkedIn/portfolio links. Separate from
   // internalProfileForm below, which is Internal-candidate-only.
   const [profileDetailsForm, setProfileDetailsForm] = useState({
-    nationalId: '', location: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '',
+    nationalId: '', location: '', districtOfOrigin: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '',
     dateOfBirth: '', flyingHours: ''
   });
   const [internalProfileForm, setInternalProfileForm] = useState({});
@@ -148,6 +148,7 @@ export default function ApplyForm() {
     setProfileDetailsForm({
       nationalId: res.data.nationalId || '',
       location: res.data.location || '',
+      districtOfOrigin: res.data.districtOfOrigin || '',
       workAuthorization: res.data.workAuthorization || '',
       linkedinUrl: res.data.linkedinUrl || '',
       portfolioUrl: res.data.portfolioUrl || '',
@@ -249,7 +250,9 @@ export default function ApplyForm() {
     switch (key) {
       case 'profile': {
         const missing = [];
-        if (!profileDetailsForm.location) missing.push('Current location');
+        if (!profileDetailsForm.location) missing.push('Place of residence');
+        // Required from National ID holders only - see utils/profileCompleteness.js.
+        if (profile?.idType === 'NationalID' && !profileDetailsForm.districtOfOrigin) missing.push('District of origin');
         if (!profileDetailsForm.nationalId) missing.push('National ID number');
         if (!profileDetailsForm.workAuthorization) missing.push('Work authorization');
         if (!(profile?.education?.length)) missing.push('At least one education entry');

@@ -10,6 +10,7 @@ export function getMissingProfileFields(candidate) {
   if (!candidate) return ['location', 'workAuthorization', 'nationalId', 'education', 'workExperience'];
 
   if (!candidate.location) missing.push('location');
+  if (candidate.idType === 'NationalID' && !candidate.districtOfOrigin) missing.push('districtOfOrigin');
   if (!candidate.workAuthorization) missing.push('workAuthorization');
 
   if (!candidate.nationalId) {
@@ -44,7 +45,8 @@ const BASE_FIELD_COUNT = 5;
 
 export function getProfileCompletionPercent(candidate) {
   if (!candidate) return 0;
-  const total = BASE_FIELD_COUNT + (candidate.candidateType === 'Internal' ? INTERNAL_PROFILE_FIELDS.length : 0);
+  const total = BASE_FIELD_COUNT + (candidate.idType === 'NationalID' ? 1 : 0)
+    + (candidate.candidateType === 'Internal' ? INTERNAL_PROFILE_FIELDS.length : 0);
   const missing = getMissingProfileFields(candidate).length;
   return Math.round(((total - missing) / total) * 100);
 }

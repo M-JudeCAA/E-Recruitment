@@ -42,7 +42,7 @@ async function createCandidate({ fullName, email, candidateType = 'External' }) 
   return prisma.candidate.create({
     data: {
       fullName, email, candidateType, passwordHash: await hash(), emailConfirmed: true,
-      location: 'Kampala', workAuthorization: 'Yes', idType: 'NationalID',
+      location: 'Kampala', districtOfOrigin: 'Wakiso', workAuthorization: 'Yes', idType: 'NationalID',
       nationalId: `CM90${String(nationalIdSeq).padStart(10, '0')}`,
       education: { create: [{ institution: 'Makerere University', qualificationLevelText: 'Bachelors', qualificationLevel: 'Bachelors', fieldOfStudy: 'Human Resource Management', yearCompleted: 2015 }] },
       workExperience: { create: [{ employer: 'Uganda Revenue Authority', jobTitle: 'HR Assistant', startDate: new Date('2016-01-01'), endDate: new Date('2022-12-31') }] }

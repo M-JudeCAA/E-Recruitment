@@ -46,7 +46,8 @@ export default function ReviewStep({
       i: stepIndexes.profile,
       title: 'Profile',
       rows: [
-        ['Location', profileDetails.location || '—'],
+        ['Place of residence', profileDetails.location || '—'],
+        ['District of origin', profileDetails.districtOfOrigin || '—'],
         ['National ID (NIN)', profileDetails.nationalId || '—'],
         ['Work authorization', WORK_AUTH_LABELS[profileDetails.workAuthorization] || '—'],
         ['Education entries', (profile?.education || []).length],

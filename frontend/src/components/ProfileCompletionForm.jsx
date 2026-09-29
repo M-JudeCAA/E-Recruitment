@@ -33,7 +33,7 @@ export default function ProfileCompletionForm({ onComplete }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({
-    idType: '', nationalId: '', location: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '',
+    idType: '', nationalId: '', location: '', districtOfOrigin: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '',
     dateOfBirth: '', flyingHours: ''
   });
   const [internalForm, setInternalForm] = useState({ employeeId: '', department: '', position: '', dateJoined: '', supervisorName: '', supervisorEmail: '' });
@@ -93,6 +93,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       idType: data.idType || '',
       nationalId: data.nationalId || '',
       location: data.location || '',
+      districtOfOrigin: data.districtOfOrigin || '',
       workAuthorization: data.workAuthorization || '',
       linkedinUrl: data.linkedinUrl || '',
       portfolioUrl: data.portfolioUrl || '',
@@ -122,6 +123,8 @@ export default function ProfileCompletionForm({ onComplete }) {
         if (form.idType === 'NationalID' && !validateNationalId(value)) return NATIONAL_ID_ERROR;
         return '';
       case 'location': return value ? '' : 'This field is required.';
+      // Required from National ID holders only - a foreign national has no Ugandan district.
+      case 'districtOfOrigin': return value || form.idType !== 'NationalID' ? '' : 'This field is required.';
       case 'workAuthorization': return value ? '' : 'This field is required.';
       default: return '';
     }
@@ -381,7 +384,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     setSubmitted(true);
     setMessage(''); setError('');
 
-    const candidateFields = ['idType', 'nationalId', 'location', 'workAuthorization'];
+    const candidateFields = ['idType', 'nationalId', 'location', 'districtOfOrigin', 'workAuthorization'];
     const hasCandidateError = candidateFields.some((f) => fieldError(f));
     const internalFields = ['employeeId', 'department', 'position', 'dateJoined', 'supervisorName', 'supervisorEmail'];
     const hasInternalError = isInternal && internalFields.some((f) => internalFieldError(f));
@@ -472,7 +475,7 @@ export default function ProfileCompletionForm({ onComplete }) {
         />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
-        <TextField label="Current location" hint="City, country" required
+        <TextField label="Place of residence" hint="Town or district, country" required
           value={form.location} onChange={setField('location')} onBlur={blur('location')} error={showError('location')} />
         <Select label="Authorized to work in Uganda?" required value={form.workAuthorization}
           onChange={setField('workAuthorization')} onBlur={blur('workAuthorization')} error={showError('workAuthorization')}>
@@ -482,6 +485,13 @@ export default function ProfileCompletionForm({ onComplete }) {
           <option value="Sponsorship">Would need sponsorship</option>
         </Select>
       </div>
+      {form.idType === 'NationalID' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
+          <TextField label="District of origin" hint="The Ugandan district you come from" required maxLength={100}
+            value={form.districtOfOrigin} onChange={setField('districtOfOrigin')} onBlur={blur('districtOfOrigin')}
+            error={showError('districtOfOrigin')} />
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
         <TextField label="LinkedIn" hint="Optional" placeholder="linkedin.com/in/..."
           value={form.linkedinUrl} onChange={setField('linkedinUrl')} />

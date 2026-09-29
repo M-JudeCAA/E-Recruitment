@@ -12,6 +12,9 @@ function getMissingProfileFields(candidate) {
   const missing = [];
 
   if (!candidate.location) missing.push('location');
+  // A foreign national has no Ugandan district of origin, so it is only
+  // required from National ID holders.
+  if (candidate.idType === 'NationalID' && !candidate.districtOfOrigin) missing.push('districtOfOrigin');
   if (!candidate.workAuthorization) missing.push('workAuthorization');
 
   if (!candidate.nationalId) {

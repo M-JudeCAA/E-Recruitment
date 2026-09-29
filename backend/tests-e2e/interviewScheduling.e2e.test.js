@@ -46,7 +46,7 @@ async function shortlistedVacancy(names) {
     const token = await candidateToken(candidate.email);
     const draft = expectStatus(await api(token).post('/api/applications', { vacancyId: vacancy.id, referees: REFEREES }), 201).body;
     await attachAcademicDocument(token, draft.id);
-    expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`), 200);
+    expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`, { consent: true }), 200);
     applicants.push({ token, applicationId: draft.id, candidateId: candidate.id });
   }
   const ids = applicants.map((a) => a.applicationId);

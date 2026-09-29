@@ -52,7 +52,7 @@ async function applyAs(candidate, vacancyId) {
   const token = await candidateToken(candidate.email);
   const draft = expectStatus(await api(token).post('/api/applications', { vacancyId, referees: REFEREES }), 201).body;
   await attachAcademicDocument(token, draft.id);
-  expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`), 200);
+  expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`, { consent: true }), 200);
   return { token, applicationId: draft.id };
 }
 

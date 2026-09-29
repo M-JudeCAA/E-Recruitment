@@ -507,7 +507,11 @@ model Candidate {
   // candidate ever submits, same principle as education/workExperience) -
   // added to back the application wizard's Profile step with real
   // persistence instead of fields that silently discard on submit.
-  location           String?
+  location           String?        // place of residence (FR-ATS-034)
+  // Uganda district the candidate comes from (FR-ATS-034) - required for
+  // profile completeness from National ID holders only; see
+  // utils/profileCompleteness.js.
+  districtOfOrigin   String?
   linkedinUrl        String?
   portfolioUrl       String?
   workAuthorization  String?        // 'Yes' | 'No' | 'Sponsorship'
@@ -771,6 +775,12 @@ model Application {
   // application can leave Draft - the same enforced-at-submission role
   // cvUrl used to play.
   referees         Json?
+
+  // Consent to UCAA processing and retaining the candidate's data for this
+  // application, given at submission (FR-ATS-038), and the version of the
+  // privacy notice it was given against (config/privacyNotice.js).
+  consentGivenAt       DateTime?
+  consentNoticeVersion String?
 
   interviewRounds  InterviewRound[]
   offer            Offer?

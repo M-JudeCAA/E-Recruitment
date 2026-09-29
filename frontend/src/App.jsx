@@ -37,6 +37,7 @@ import PanelScoreAccess from "./views/PanelScoreAccess";
 import PanelDayAccess from "./views/PanelDayAccess";
 import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
 import InterviewHub from "./views/InterviewHub";
+import PrivacyNotice from "./views/PrivacyNotice";
 import { RequireCandidate, RequireStaff, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
 
 // Padding lives here, not on the app shell - Navbar/Footer render outside
@@ -89,6 +90,8 @@ export default function App() {
             The unauthenticated staff entry points below are gated the
             opposite way instead (RequireStaffPort: staff port only). */}
         <Route element={<PaddedLayout />}>
+          {/* Public - candidates consent to it when applying (FR-ATS-038). */}
+          <Route path="/privacy" element={<PrivacyNotice />} />
           <Route
             path="/staff/forgot-password"
             element={

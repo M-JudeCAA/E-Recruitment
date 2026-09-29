@@ -201,8 +201,14 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
         <TextField label="Phone" value={profile?.phone || ''} disabled />
-        <TextField label="Current location" required hint="City, country" value={profileDetails.location} onChange={setProfileDetail('location')} />
+        <TextField label="Place of residence" required hint="Town or district, country" value={profileDetails.location} onChange={setProfileDetail('location')} />
       </div>
+      {profile?.idType === 'NationalID' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
+          <TextField label="District of origin" required hint="The Ugandan district you come from" maxLength={100}
+            value={profileDetails.districtOfOrigin} onChange={setProfileDetail('districtOfOrigin')} />
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
         <TextField label="National Identification Number (NIN)" required hint="As it appears on your National ID"
           value={profileDetails.nationalId} onChange={setProfileDetail('nationalId')} />

@@ -17,6 +17,7 @@ const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { countCompleteReferees } = require('../utils/referees');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { notify } = require('../services/notificationService');
+const { PRIVACY_NOTICE_VERSION } = require('../config/privacyNotice');
 
 // REPLACES the old single-step submit() entirely - having two parallel
 // "create an application" code paths (one direct-to-Submitted, one
@@ -216,6 +217,14 @@ async function submit(req, res) {
   if (countCompleteReferees(application.referees) < 3) {
     return res.status(400).json({ error: 'Three referees (with name, phone and email) are required before submitting' });
   }
+  // FR-ATS-038: the candidate agrees to UCAA processing and retaining their
+  // data, per the privacy notice, as part of submitting - never assumed.
+  if (req.body?.consent !== true) {
+    return res.status(400).json({
+      error: 'Please confirm that you consent to UCAA processing your personal data, as described in the privacy notice',
+      code: 'CONSENT_REQUIRED'
+    });
+  }
 
   const vacancy = await vacancyModel.findById(application.vacancyId);
   try {
@@ -273,6 +282,7 @@ async function submit(req, res) {
   const essentialCriteria = evaluateEssentialCriteria(candidate, vacancy);
   const data = {
     status: vacancy.reviewStartedAt ? 'UnderReview' : 'Submitted', submittedDate: new Date(),
+    consentGivenAt: new Date(), consentNoticeVersion: PRIVACY_NOTICE_VERSION,
     screeningPassed: screening.passed, screeningReasons: JSON.stringify(screening.reasons), screenedAt: new Date(),
     fieldOfStudyMatch: screening.fieldOfStudyMatch,
     shortlistScore: score.score, shortlistScoreReasons: JSON.stringify(score.reasons),

@@ -27,7 +27,10 @@ export default function GeneratedCvPrintLayout({ candidate, application, vacancy
   const referees = (a.referees || []).filter((r) => r?.name);
 
   const contactLine = [c.email, c.phone, c.location].filter(Boolean).join('  |  ');
-  const idLine = c.nationalId ? `${c.idType === 'Passport' ? 'Passport' : 'National ID'}: ${c.nationalId}` : null;
+  const idLine = [
+    c.nationalId ? `${c.idType === 'Passport' ? 'Passport' : 'National ID'}: ${c.nationalId}` : null,
+    c.districtOfOrigin ? `District of origin: ${c.districtOfOrigin}` : null
+  ].filter(Boolean).join('  |  ') || null;
 
   return (
     <div style={{ width: 794, boxSizing: 'border-box', fontFamily: BODY_FONT, color: '#000', fontSize: 15, lineHeight: 1.4, background: '#fff' }}>

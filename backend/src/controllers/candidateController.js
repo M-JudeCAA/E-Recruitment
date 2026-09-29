@@ -259,7 +259,7 @@ const WORK_AUTHORIZATION_VALUES = ['Yes', 'No', 'Sponsorship'];
 const ID_TYPE_VALUES = ['NationalID', 'Passport'];
 
 async function updateProfile(req, res) {
-  const { nationalId, idType, location, linkedinUrl, portfolioUrl, workAuthorization, dateOfBirth, flyingHours } = req.body;
+  const { nationalId, idType, location, districtOfOrigin, linkedinUrl, portfolioUrl, workAuthorization, dateOfBirth, flyingHours } = req.body;
   if (workAuthorization !== undefined && workAuthorization !== '' && !WORK_AUTHORIZATION_VALUES.includes(workAuthorization)) {
     return res.status(400).json({ error: `Work authorization must be one of: ${WORK_AUTHORIZATION_VALUES.join(', ')}` });
   }
@@ -281,6 +281,11 @@ async function updateProfile(req, res) {
   if (nationalId !== undefined) data.nationalId = nationalId || null;
   if (idType !== undefined) data.idType = idType || null;
   if (location !== undefined) data.location = location || null;
+  if (districtOfOrigin !== undefined) {
+    const district = typeof districtOfOrigin === 'string' ? districtOfOrigin.trim() : '';
+    if (district.length > 100) return res.status(400).json({ error: 'District of origin is too long' });
+    data.districtOfOrigin = district || null;
+  }
   if (linkedinUrl !== undefined) data.linkedinUrl = linkedinUrl || null;
   if (portfolioUrl !== undefined) data.portfolioUrl = portfolioUrl || null;
   if (workAuthorization !== undefined) data.workAuthorization = workAuthorization || null;

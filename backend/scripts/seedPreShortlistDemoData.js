@@ -77,7 +77,7 @@ async function registerAndConfirm({ fullName, email, nationalId }) {
 async function completeExternalProfile(candidateToken, { nationalId, education, workExperience }) {
   await api('PUT', '/api/candidates/me', {
     token: candidateToken,
-    json: { nationalId, idType: 'NationalID', location: 'Kampala, Uganda', workAuthorization: 'Yes' }
+    json: { nationalId, idType: 'NationalID', location: 'Kampala, Uganda', districtOfOrigin: 'Wakiso', workAuthorization: 'Yes' }
   });
   await api('POST', '/api/candidates/me/education', { token: candidateToken, json: education });
   await api('POST', '/api/candidates/me/work-experience', { token: candidateToken, json: workExperience });
@@ -107,7 +107,7 @@ async function submitApplication(candidateToken, { vacancyId, desirableResponses
   draftForm.append('disqualifyingResponses', JSON.stringify(disqualifyingResponses));
   draftForm.append('referees', refereesForm());
   const draft = await api('POST', '/api/applications', { token: candidateToken, form: draftForm });
-  const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: candidateToken });
+  const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: candidateToken, json: { consent: true } });
   return submitted;
 }
 

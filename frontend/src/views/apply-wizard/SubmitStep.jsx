@@ -40,6 +40,7 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
   const [error, setError] = useState('');
   const [refusal, setRefusal] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [consent, setConsent] = useState(false);
 
   // applicationId should always be set by the time this step is reachable
   // (ApplyForm.jsx now auto-saves a draft when leaving Documents/Questions)
@@ -47,9 +48,10 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
   // at /api/applications/undefined/submit if that save ever failed silently.
   const handleSubmit = async () => {
     if (!applicationId) { setError('Your application draft has not finished saving yet - please go back a step and try again.'); return; }
+    if (!consent) { setError('Please confirm your consent to the processing of your personal data before sending.'); return; }
     setError(''); setRefusal(null); setBusy(true);
     try {
-      await client.patch(`/api/applications/${applicationId}/submit`);
+      await client.patch(`/api/applications/${applicationId}/submit`, { consent: true });
       onSubmitted();
     } catch (err) {
       if (err.response?.data?.code === 'NOT_ELIGIBLE') setRefusal(err.response.data.reasons || []);
@@ -131,9 +133,18 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
           {eligibility?.eligible ? "You meet this role's requirements. " : ''}Once you send this, UCAA will confirm receipt by email.
         </p>
       )}
-      <button onClick={handleSubmit} disabled={busy || missingAcademic}
+      {/* FR-ATS-038 - explicit consent, never pre-ticked. */}
+      <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', fontSize: 13, maxWidth: 460, margin: '0 auto 20px', cursor: 'pointer' }}>
+        <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} style={{ marginTop: 3, flexShrink: 0 }} />
+        <span>
+          I consent to UCAA processing and keeping the personal data in this application to assess it and, if I am selected,
+          to appoint me, as described in the{' '}
+          <a href="/privacy" target="_blank" rel="noopener noreferrer">privacy notice</a>.
+        </span>
+      </label>
+      <button onClick={handleSubmit} disabled={busy || missingAcademic || !consent}
         className="inline-flex items-center gap-2"
-        style={{ background: 'var(--color-primary)', color: '#fff', padding: '12px 28px', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, border: 'none', cursor: 'pointer' }}>
+        style={{ background: 'var(--color-primary)', color: '#fff', padding: '12px 28px', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, border: 'none', cursor: (busy || missingAcademic || !consent) ? 'not-allowed' : 'pointer', opacity: (busy || missingAcademic || !consent) ? 0.6 : 1 }}>
         <Send size={15} /> {busy ? 'Sending...' : 'Send application'}
       </button>
       {error && <p style={{ fontSize: 13, color: 'var(--color-danger)', marginTop: 16 }}>{error}</p>}
