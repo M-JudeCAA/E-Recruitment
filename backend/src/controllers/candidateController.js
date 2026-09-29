@@ -249,21 +249,17 @@ async function deleteExamGrade(req, res) {
   res.json({ message: 'Exam grade entry deleted' });
 }
 
-const WORK_AUTHORIZATION_VALUES = ['Yes', 'No', 'Sponsorship'];
 
-// Candidate-level profile fields (location, NIN, work authorization,
+// Candidate-level profile fields (location, NIN, district of origin,
 // LinkedIn/portfolio links) - persist across every application this
 // candidate ever submits, same principle as education/workExperience.
 // nationalId already existed on Candidate (set at registration); this is
 // the first endpoint that lets a candidate edit it afterward.
 
 async function updateProfile(req, res) {
-  const { location, districtOfOrigin, linkedinUrl, portfolioUrl, workAuthorization, dateOfBirth, flyingHours } = req.body;
+  const { location, districtOfOrigin, linkedinUrl, portfolioUrl, dateOfBirth, flyingHours } = req.body;
   // The NIN is the only identity document a candidate gives (no passports).
   const nationalId = req.body.nationalId === undefined ? undefined : normalizeNationalId(req.body.nationalId);
-  if (workAuthorization !== undefined && workAuthorization !== '' && !WORK_AUTHORIZATION_VALUES.includes(workAuthorization)) {
-    return res.status(400).json({ error: `Work authorization must be one of: ${WORK_AUTHORIZATION_VALUES.join(', ')}` });
-  }
   // Deliberately doesn't describe the NIN format - just flags the entry as
   // wrong and asks for a correct one, matching the frontend's own message
   // (ProfileCompletionForm.jsx / validators.js).
@@ -281,7 +277,6 @@ async function updateProfile(req, res) {
   }
   if (linkedinUrl !== undefined) data.linkedinUrl = linkedinUrl || null;
   if (portfolioUrl !== undefined) data.portfolioUrl = portfolioUrl || null;
-  if (workAuthorization !== undefined) data.workAuthorization = workAuthorization || null;
   if (dateOfBirth !== undefined) data.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
   if (flyingHours !== undefined) data.flyingHours = flyingHours !== '' && flyingHours != null ? Number(flyingHours) : null;
 

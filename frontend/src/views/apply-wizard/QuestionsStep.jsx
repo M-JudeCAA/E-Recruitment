@@ -13,8 +13,7 @@ function IneligibleNote() {
 
 // Application-level answers - unlike the Profile step's candidate-level
 // fields, these vary per application and are saved onto this specific
-// Application row (see ApplyForm.jsx's saveDraft). Work authorization is
-// asked once, on the Profile step, rather than duplicated here.
+// Application row (see ApplyForm.jsx's saveDraft).
 //
 // desirableRequirements comes straight from the vacancy's Person
 // Specification (see VacancyAdvert) - each one gets its own question here,

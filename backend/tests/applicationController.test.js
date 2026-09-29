@@ -170,7 +170,7 @@ describe('submit', () => {
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Open', postingType: 'External', deadline: null });
     prisma.candidate.findUnique.mockResolvedValue({
-      id: 5, candidateType: 'External', location: null, workAuthorization: null, nationalId: null,
+      id: 5, candidateType: 'External', location: null, nationalId: null,
       education: [], workExperience: []
     });
     const req = { params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } };
@@ -193,7 +193,7 @@ describe('submit', () => {
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Open', postingType: 'External', deadline: null });
     prisma.candidate.findUnique.mockResolvedValue({
-      id: 5, candidateType: 'External', location: 'Kampala', workAuthorization: 'Yes', nationalId: 'CM90012345ABCD', districtOfOrigin: 'Wakiso',
+      id: 5, candidateType: 'External', location: 'Kampala', nationalId: 'CM90012345ABCD', districtOfOrigin: 'Wakiso',
       education: [{ id: 1 }], workExperience: [{ id: 1 }]
     });
     prisma.application.updateMany.mockResolvedValue({ count: 0 });
@@ -225,7 +225,7 @@ describe('submit', () => {
     });
     prisma.candidate.findUnique.mockResolvedValue({
       id: 5, email: 'jane@example.com', fullName: 'Jane Doe', candidateType: 'External',
-      location: 'Kampala', workAuthorization: 'Yes', nationalId: 'CM90012345ABCD', districtOfOrigin: 'Wakiso',
+      location: 'Kampala', nationalId: 'CM90012345ABCD', districtOfOrigin: 'Wakiso',
       education: [{ id: 1 }], workExperience: [{ id: 1 }]
     });
     prisma.application.updateMany.mockResolvedValue({ count: 1 });
@@ -250,7 +250,7 @@ describe('submit', () => {
   describe('screening at submission', () => {
     const completeCandidate = {
       id: 5, email: 'jane@example.com', fullName: 'Jane Doe', candidateType: 'External',
-      location: 'Kampala', workAuthorization: 'Yes', nationalId: 'CM90012345ABCD', districtOfOrigin: 'Wakiso',
+      location: 'Kampala', nationalId: 'CM90012345ABCD', districtOfOrigin: 'Wakiso',
       education: [{ id: 1, qualificationLevel: 'Diploma' }], workExperience: [{ id: 1, startDate: '2015-01-01', endDate: '2020-01-01' }]
     };
     const licenceQuestion = { id: 'q1', text: 'Do you hold a valid ATC licence?', requiredAnswer: 'Yes' };

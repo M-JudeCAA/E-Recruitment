@@ -1,7 +1,7 @@
 const { getMissingProfileFields } = require('../src/utils/profileCompleteness');
 
 const complete = {
-  candidateType: 'External', location: 'Entebbe', workAuthorization: 'Yes', districtOfOrigin: 'Wakiso',
+  candidateType: 'External', location: 'Entebbe', districtOfOrigin: 'Wakiso',
   nationalId: 'CM90012345ABCD', education: [{ id: 1 }], workExperience: [{ id: 1 }]
 };
 

@@ -511,7 +511,6 @@ model Candidate {
   districtOfOrigin   String?
   linkedinUrl        String?
   portfolioUrl       String?
-  workAuthorization  String?        // 'Yes' | 'No' | 'Sponsorship'
   // Optional avatar, same /api/files/:filename authenticated-serving
   // pattern as Application.cvUrl/coverLetterUrl - never a public URL.
   photoUrl           String?

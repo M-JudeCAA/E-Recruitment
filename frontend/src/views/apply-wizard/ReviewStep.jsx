@@ -9,7 +9,6 @@ export default function ReviewStep({
   profile, coverLetter, documents, referees, profileDetails, questions, internalProfile, candidateType, goTo, stepIndexes,
   desirableRequirements, desirableAnswers, disqualifyingRequirements, disqualifyingAnswers, vacancy
 }) {
-  const WORK_AUTH_LABELS = { Yes: 'Yes', No: 'No', Sponsorship: 'Would need sponsorship' };
   const RELOCATE_LABELS = { Yes: 'Yes', No: 'No', Depends: 'Depends on the offer' };
 
   // Reuses the exact GeneratedCvPrintLayout/downloadElementAsPdf pipeline
@@ -49,7 +48,6 @@ export default function ReviewStep({
         ['Place of residence', profileDetails.location || '—'],
         ['District of origin', profileDetails.districtOfOrigin || '—'],
         ['National ID (NIN)', profileDetails.nationalId || '—'],
-        ['Work authorization', WORK_AUTH_LABELS[profileDetails.workAuthorization] || '—'],
         ['Education entries', (profile?.education || []).length],
         ['Work experience entries', (profile?.workExperience || []).length],
       ],

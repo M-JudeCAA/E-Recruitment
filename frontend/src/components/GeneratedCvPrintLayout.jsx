@@ -14,7 +14,6 @@ const RULE_COLOR = '#CCCCCC';
 const sectionHeadingStyle = { fontSize: 20, fontWeight: 700, color: HEADING_COLOR, margin: '24px 0 10px', borderBottom: `1.5px solid ${HEADING_COLOR}`, paddingBottom: 4 };
 const rowStyle = { display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0', borderBottom: `1px solid ${RULE_COLOR}` };
 
-const WORK_AUTH_LABELS = { Yes: 'Authorized to work in Uganda', No: 'Not authorized to work in Uganda', Sponsorship: 'Would need sponsorship to work in Uganda' };
 const RELOCATE_LABELS = { Yes: 'Yes', No: 'No', Depends: 'Depends on the offer' };
 
 function formatDate(d) {
@@ -36,9 +35,7 @@ export default function GeneratedCvPrintLayout({ candidate, application, vacancy
     <div style={{ width: 794, boxSizing: 'border-box', fontFamily: BODY_FONT, color: '#000', fontSize: 15, lineHeight: 1.4, background: '#fff' }}>
       <h1 style={{ fontSize: 30, fontWeight: 700, margin: '0 0 4px' }}>{c.fullName}</h1>
       {contactLine && <p style={{ margin: '0 0 4px', color: '#333' }}>{contactLine}</p>}
-      <p style={{ margin: '0 0 4px', color: '#333' }}>
-        {[idLine, c.workAuthorization && WORK_AUTH_LABELS[c.workAuthorization]].filter(Boolean).join('  |  ')}
-      </p>
+      {idLine && <p style={{ margin: '0 0 4px', color: '#333' }}>{idLine}</p>}
       {(c.linkedinUrl || c.portfolioUrl) && (
         <p style={{ margin: '0 0 4px', color: '#333' }}>{[c.linkedinUrl, c.portfolioUrl].filter(Boolean).join('  |  ')}</p>
       )}

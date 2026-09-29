@@ -7,11 +7,10 @@ const INTERNAL_PROFILE_FIELDS = ['employeeId', 'department', 'position', 'dateJo
 
 export function getMissingProfileFields(candidate) {
   const missing = [];
-  if (!candidate) return ['location', 'districtOfOrigin', 'workAuthorization', 'nationalId', 'education', 'workExperience'];
+  if (!candidate) return ['location', 'districtOfOrigin', 'nationalId', 'education', 'workExperience'];
 
   if (!candidate.location) missing.push('location');
   if (!candidate.districtOfOrigin) missing.push('districtOfOrigin');
-  if (!candidate.workAuthorization) missing.push('workAuthorization');
 
   // The NIN is the only identity document accepted.
   if (!validateNationalId(candidate.nationalId)) missing.push('nationalId');
@@ -33,12 +32,12 @@ export function isProfileComplete(candidate) {
   return getMissingProfileFields(candidate).length === 0;
 }
 
-// Denominator matches getMissingProfileFields' own checks: the 6 base
-// fields it always checks (location, districtOfOrigin, workAuthorization,
-// nationalId, education, workExperience), plus INTERNAL_PROFILE_FIELDS when the
+// Denominator matches getMissingProfileFields' own checks: the 5 base
+// fields it always checks (location, districtOfOrigin, nationalId,
+// education, workExperience), plus INTERNAL_PROFILE_FIELDS when the
 // candidate is Internal - so this stays in lockstep with that function's
 // notion of "missing" without duplicating the field list.
-const BASE_FIELD_COUNT = 6;
+const BASE_FIELD_COUNT = 5;
 
 export function getProfileCompletionPercent(candidate) {
   if (!candidate) return 0;

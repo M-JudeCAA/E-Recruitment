@@ -33,7 +33,7 @@ export default function ProfileCompletionForm({ onComplete }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({
-    nationalId: '', location: '', districtOfOrigin: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '',
+    nationalId: '', location: '', districtOfOrigin: '', linkedinUrl: '', portfolioUrl: '',
     dateOfBirth: '', flyingHours: ''
   });
   const [internalForm, setInternalForm] = useState({ employeeId: '', department: '', position: '', dateJoined: '', supervisorName: '', supervisorEmail: '' });
@@ -93,7 +93,6 @@ export default function ProfileCompletionForm({ onComplete }) {
       nationalId: data.nationalId || '',
       location: data.location || '',
       districtOfOrigin: data.districtOfOrigin || '',
-      workAuthorization: data.workAuthorization || '',
       linkedinUrl: data.linkedinUrl || '',
       portfolioUrl: data.portfolioUrl || '',
       dateOfBirth: data.dateOfBirth ? data.dateOfBirth.slice(0, 10) : '',
@@ -122,7 +121,6 @@ export default function ProfileCompletionForm({ onComplete }) {
         return '';
       case 'location': return value ? '' : 'This field is required.';
       case 'districtOfOrigin': return value ? '' : 'This field is required.';
-      case 'workAuthorization': return value ? '' : 'This field is required.';
       default: return '';
     }
   };
@@ -381,7 +379,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     setSubmitted(true);
     setMessage(''); setError('');
 
-    const candidateFields = ['nationalId', 'location', 'districtOfOrigin', 'workAuthorization'];
+    const candidateFields = ['nationalId', 'location', 'districtOfOrigin'];
     const hasCandidateError = candidateFields.some((f) => fieldError(f));
     const internalFields = ['employeeId', 'department', 'position', 'dateJoined', 'supervisorName', 'supervisorEmail'];
     const hasInternalError = isInternal && internalFields.some((f) => internalFieldError(f));
@@ -473,13 +471,6 @@ export default function ProfileCompletionForm({ onComplete }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
         <TextField label="Place of residence" hint="Town or district, country" required
           value={form.location} onChange={setField('location')} onBlur={blur('location')} error={showError('location')} />
-        <Select label="Authorized to work in Uganda?" required value={form.workAuthorization}
-          onChange={setField('workAuthorization')} onBlur={blur('workAuthorization')} error={showError('workAuthorization')}>
-          <option value="">Select one</option>
-          <option value="Yes">Yes</option>
-          <option value="No">No</option>
-          <option value="Sponsorship">Would need sponsorship</option>
-        </Select>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
         <TextField label="LinkedIn" hint="Optional" placeholder="linkedin.com/in/..."

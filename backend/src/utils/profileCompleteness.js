@@ -13,7 +13,6 @@ function getMissingProfileFields(candidate) {
 
   if (!candidate.location) missing.push('location');
   if (!candidate.districtOfOrigin) missing.push('districtOfOrigin');
-  if (!candidate.workAuthorization) missing.push('workAuthorization');
 
   // The NIN is the only identity document accepted - a missing or invalid
   // one (including a passport number from before passports were dropped)

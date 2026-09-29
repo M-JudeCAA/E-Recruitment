@@ -204,18 +204,10 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
         <TextField label="Place of residence" required hint="Town or district, country" value={profileDetails.location} onChange={setProfileDetail('location')} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
-        <TextField label="District of origin" required hint="The Ugandan district you come from" maxLength={100}
-          value={profileDetails.districtOfOrigin} onChange={setProfileDetail('districtOfOrigin')} />
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
         <TextField label="National Identification Number (NIN)" required hint="As it appears on your National ID card" maxLength={14}
           value={profileDetails.nationalId} onChange={setProfileDetail('nationalId')} />
-        <Select label="Authorized to work in Uganda?" required value={profileDetails.workAuthorization} onChange={setProfileDetail('workAuthorization')}>
-          <option value="">Select one</option>
-          <option value="Yes">Yes</option>
-          <option value="No">No</option>
-          <option value="Sponsorship">Would need sponsorship</option>
-        </Select>
+        <TextField label="District of origin" required hint="The Ugandan district you come from" maxLength={100}
+          value={profileDetails.districtOfOrigin} onChange={setProfileDetail('districtOfOrigin')} />
       </div>
       <TextField label="LinkedIn or personal site" hint="Optional" placeholder="linkedin.com/in/..."
         value={profileDetails.linkedinUrl} onChange={setProfileDetail('linkedinUrl')} />

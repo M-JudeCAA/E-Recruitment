@@ -234,7 +234,7 @@ async function makeCandidate(spec) {
   await api('PUT', '/api/candidates/me', {
     token,
     json: {
-      nationalId: nid, location: spec.location || 'Kampala, Uganda', workAuthorization: 'Yes',
+      nationalId: nid, location: spec.location || 'Kampala, Uganda',
       districtOfOrigin: spec.districtOfOrigin || ['Wakiso', 'Mukono', 'Gulu', 'Mbarara', 'Jinja', 'Mbale'][n % 6],
       dateOfBirth: spec.dob, flyingHours: spec.flyingHours,
       linkedinUrl: n % 3 === 0 ? `https://www.linkedin.com/in/${slug(spec.name).replace(/\./g, '-')}` : undefined
