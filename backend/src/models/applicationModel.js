@@ -9,7 +9,7 @@ const prisma = require('../config/db');
 // GeneratedCvPrintLayout.jsx.
 const CANDIDATE_SELECT = {
   id: true, fullName: true, email: true, phone: true, candidateType: true,
-  location: true, linkedinUrl: true, portfolioUrl: true, workAuthorization: true,
+  location: true, districtOfOrigin: true, linkedinUrl: true, portfolioUrl: true, workAuthorization: true,
   nationalId: true, idType: true, dateOfBirth: true, flyingHours: true,
   education: true, workExperience: true, examGrades: true, certificates: true,
   internalProfile: true

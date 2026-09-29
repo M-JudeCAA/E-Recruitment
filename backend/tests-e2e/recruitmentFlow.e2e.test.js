@@ -244,3 +244,33 @@ test('hides vacancies from the wrong audience but keeps them open to their own a
   // Staff always see it.
   expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}`), 200);
 });
+
+test('exports the shortlisting report and the merit list as CSV, and records each export (FR-ATS-053)', async () => {
+  const vacancy = await createApprovedVacancy();
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
+  const amina = await createCandidate({ fullName: 'Amina, Nakato', email: 'amina@example.com' });
+  const brian = await createCandidate({ fullName: '=Brian Okello', email: 'brian@example.com' });
+  const a = await applyAs(amina, vacancy.id);
+  const b = await applyAs(brian, vacancy.id);
+  await shortlistAndInterview(vacancy.id, [a.applicationId, b.applicationId]);
+
+  const report = expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}/export/shortlisting-report`), 200);
+  expect(report.headers['content-type']).toContain('text/csv');
+  expect(report.headers['content-disposition']).toContain(`shortlisting-report-${vacancy.jobRef.replace(/\//g, '-')}.csv`);
+  const lines = report.text.replace('﻿', '').trim().split('\r\n');
+  expect(lines).toHaveLength(3);
+  expect(lines[0]).toMatch(/^Committee rank,/);
+  expect(lines[1]).toContain('"Amina, Nakato"');
+  expect(lines[2]).toContain("'=Brian Okello");
+  expect(lines[1]).toContain('Wakiso');
+
+  const merit = expectStatus(await api(tokens.hro).get(`/api/applications/vacancies/${vacancy.id}/merit-list/export`), 200);
+  const meritLines = merit.text.replace('﻿', '').trim().split('\r\n');
+  expect(meritLines.slice(1).map((l) => l.split(',').slice(0, 3).join(','))).toEqual(['1,Primary,Approved', '2,Reserve,Approved']);
+
+  // Candidates can't export anything.
+  expect((await api(a.token).get(`/api/vacancies/${vacancy.id}/export/shortlisting-report`)).status).toBe(403);
+
+  const history = expectStatus(await api(tokens.hro).get(`/api/audit/Vacancy/${vacancy.id}`), 200).body;
+  expect(history.map((h) => h.action)).toEqual(expect.arrayContaining(['Shortlisting report exported', 'Merit list exported']));
+});

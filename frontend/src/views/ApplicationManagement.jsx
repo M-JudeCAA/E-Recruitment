@@ -5,6 +5,7 @@ import { useAuth } from '../models/AuthContext';
 import { useDashboardEvents } from '../models/dashboardSocket';
 import HRSidebar from '../components/HRSidebar';
 import PageHeader from '../components/PageHeader';
+import CsvDownloadButton from '../components/CsvDownloadButton';
 import LiveIndicator from '../components/LiveIndicator';
 import StatsStrip from '../components/StatsStrip';
 import Card from '../components/Card';
@@ -478,6 +479,10 @@ export default function ApplicationManagement() {
           <Alert type="info" message="This vacancy hasn't been approved and published yet, so there are no applications to review. Approve it from the HR dashboard first." />
         ) : (
           <>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 'var(--spacing-sm)' }}>
+              <CsvDownloadButton url={`/api/vacancies/${vacancy.id}/export/shortlisting-report`} label="Export shortlisting report (CSV)"
+                fallbackName="shortlisting-report.csv" />
+            </div>
             <StageTabs stage={stage} counts={stageCounts} onChange={setStage} />
 
             {stage === 'shortlist' && (

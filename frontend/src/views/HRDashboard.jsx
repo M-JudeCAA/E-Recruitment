@@ -491,6 +491,11 @@ export default function HRDashboard() {
     { label: 'Pending approval', value: vacancies.filter((v) => v.status === 'PendingApproval').length, color: 'var(--color-warning)', statusValue: 'PendingApproval' },
     { label: 'Closed', value: vacancies.filter((v) => v.status === 'Closed').length, color: 'var(--color-text-muted)', statusValue: 'Closed' }
   ];
+  // Only shown when there is one - a returned vacancy is waiting on HR to revise and resubmit it.
+  const returnedCount = vacancies.filter((v) => v.status === 'Returned').length;
+  if (returnedCount > 0) {
+    vacancyStats.splice(1, 0, { label: 'Returned for revision', value: returnedCount, color: 'var(--color-warning)', statusValue: 'Returned' });
+  }
   const handleVacancyStatClick = (stat) => {
     setStatusFilter((current) => (current === stat.statusValue ? 'All' : stat.statusValue));
   };

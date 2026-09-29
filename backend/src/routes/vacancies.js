@@ -1,5 +1,6 @@
 const express = require('express');
 const controller = require('../controllers/vacancyController');
+const exportController = require('../controllers/exportController');
 const batchController = require('../controllers/vacancyReviewBatchController');
 const { authenticate, optionalAuthenticate, requireStaffRole } = require('../middleware/auth');
 
@@ -40,6 +41,8 @@ router.get('/admin', authenticate, requireStaffRole('HR_Officer'), controller.li
 // function's own comment.
 router.get('/:id', optionalAuthenticate, controller.getOne);
 router.get('/:id/applications', authenticate, requireStaffRole('HR_Officer'), controller.listApplications);
+// Spreadsheet of every applicant - the shortlisting report (FR-ATS-053).
+router.get('/:id/export/shortlisting-report', authenticate, requireStaffRole('HR_Officer'), exportController.shortlistReport);
 // Saving a shortlist ranking is the actual "review & shortlist candidates"
 // action, so it requires Senior HR Officer+, same as shortlist/interview
 // routes - unlike listApplications just above, which is a read-only view.

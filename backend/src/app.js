@@ -55,7 +55,9 @@ function parseTrustProxy(value) {
 app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 
 const { allowedOrigins } = require('./config/frontendUrl');
-app.use(cors({ origin: allowedOrigins }));
+// Content-Disposition is exposed so the SPA (another origin) can save a CSV
+// export under the filename the server gave it (CsvDownloadButton.jsx).
+app.use(cors({ origin: allowedOrigins, exposedHeaders: ['Content-Disposition'] }));
 app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));

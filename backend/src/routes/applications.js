@@ -2,6 +2,7 @@ const express = require('express');
 const controller = require('../controllers/applicationController');
 const draftController = require('../controllers/applicationDraftController');
 const meritListController = require('../controllers/meritListController');
+const exportController = require('../controllers/exportController');
 const offerController = require('../controllers/offerController');
 const { authenticate, requireStaffRole, requireCandidate } = require('../middleware/auth');
 const { upload, uploadSupportingDocument } = require('../middleware/upload');
@@ -51,6 +52,7 @@ router.post('/vacancies/:vacancyId/approve-shortlist', authenticate, requireStaf
 router.get('/merit-lists/pending-approval', authenticate, requireStaffRole('Principal_HR_Officer'), meritListController.listPendingApproval);
 router.get('/vacancies/:vacancyId/merit-list', authenticate, requireStaffRole('HR_Officer'), meritListController.getBoard);
 router.post('/vacancies/:vacancyId/merit-list', authenticate, requireStaffRole('Senior_HR_Officer'), meritListController.propose);
+router.get('/vacancies/:vacancyId/merit-list/export', authenticate, requireStaffRole('HR_Officer'), exportController.meritList);
 router.post('/vacancies/:vacancyId/merit-list/approve', authenticate, requireStaffRole('Principal_HR_Officer'), meritListController.approve);
 // Offers (offerController, lifecycle in offerService.js). Principal HR
 // Officer+ drafts, revises and withdraws; Manager/Director approve or return
