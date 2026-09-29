@@ -15,6 +15,7 @@ const mockDb = {
   certificate: { findMany: jest.fn() },
   examGrade: { findMany: jest.fn() },
   auditLog: { create: jest.fn() },
+  jobRefSequence: { findUnique: jest.fn() },
   candidate: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   internalProfile: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
   panelMember: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },
@@ -44,5 +45,9 @@ mockDb.$transaction = jest.fn((arg) => (typeof arg === 'function' ? arg(mockDb) 
 // Raw SQL - used for the vacancy row lock (SELECT ... FOR UPDATE) in
 // workflowService.acceptOfferTransactionally.
 mockDb.$queryRaw = jest.fn();
+
+// Raw SQL writes - the job reference counter upsert in
+// vacancyModel.createWithJobRef.
+mockDb.$executeRaw = jest.fn();
 
 module.exports = mockDb;

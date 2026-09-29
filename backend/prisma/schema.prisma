@@ -259,6 +259,17 @@ model Position {
   @@unique([name, departmentId])
 }
 
+// Running number behind Vacancy.jobRef (UCAA/ADV/{INT|EXT}/{NNN}/{YYYY}),
+// one row per posting type per year. Only ever incremented, so a number
+// is never reused - see utils/jobRefGenerator.js.
+model JobRefSequence {
+  typeCode   String @db.VarChar(3) // 'INT' | 'EXT'
+  year       Int
+  lastNumber Int
+
+  @@id([typeCode, year])
+}
+
 model Vacancy {
   id                   Int           @id @default(autoincrement())
   jobRef               String        @unique

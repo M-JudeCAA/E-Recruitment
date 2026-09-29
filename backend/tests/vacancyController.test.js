@@ -24,7 +24,7 @@ const seniorDans = { id: 200, name: 'CWG Director', departmentId: 2, level: 5, d
 
 beforeEach(() => {
   jest.clearAllMocks();
-  prisma.vacancy.count.mockResolvedValue(0); // no jobRef collision by default
+  prisma.jobRefSequence.findUnique.mockResolvedValue({ lastNumber: 1 }); // first advert of the year by default
 });
 
 describe('create', () => {
@@ -61,7 +61,7 @@ describe('create', () => {
     expect(prisma.vacancy.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         title: 'CWG Officer', positionId: 100, departmentId: 1, positionsRequired: 1,
-        jobRef: expect.stringMatching(/^UCAA\/ADV\/EXT\/\d{2}\/\d{4}$/)
+        jobRef: expect.stringMatching(/^UCAA\/ADV\/EXT\/001\/\d{4}$/)
       })
     }));
     expect(res.status).toHaveBeenCalledWith(201);
@@ -96,17 +96,21 @@ describe('create', () => {
     expect(prisma.vacancy.create).not.toHaveBeenCalled();
   });
 
-  test('appends a distinguishing suffix on a same-type, same-month jobRef collision', async () => {
+  test('numbers the jobRef from the per-type, per-year counter, inside the create transaction', async () => {
     prisma.position.findUnique.mockResolvedValue(officerCorp);
-    prisma.vacancy.count.mockResolvedValue(1); // one already exists with this prefix
+    prisma.jobRefSequence.findUnique.mockResolvedValue({ lastNumber: 42 });
     prisma.vacancy.create.mockResolvedValue({ id: 1 });
-    const req = { body: { positionId: '100', postingType: 'External' }, user: { id: 1 } };
+    const req = { body: { positionId: '100', postingType: 'Internal' }, user: { id: 1 } };
     const res = mockRes();
 
     await vacancyController.create(req, res);
 
+    expect(prisma.$transaction).toHaveBeenCalled();
+    expect(prisma.$executeRaw).toHaveBeenCalled();
+    const { typeCode_year: key } = prisma.jobRefSequence.findUnique.mock.calls[0][0].where;
+    expect(key.typeCode).toBe('INT');
     const data = prisma.vacancy.create.mock.calls[0][0].data;
-    expect(data.jobRef).toMatch(/^UCAA\/ADV\/EXT\/\d{2}\/\d{4}-2$/);
+    expect(data.jobRef).toBe(`UCAA/ADV/INT/042/${key.year}`);
   });
 
   test('sanitizes the jobPurpose on create', async () => {
@@ -556,7 +560,7 @@ describe('readvertise', () => {
       data: expect.objectContaining({
         readvertisedFromId: 42, status: 'PendingApproval', title: 'CWG Officer',
         positionId: 100, reportsToPositionId: 101, positionsRequired: 2, postingType: 'External',
-        jobRef: expect.stringMatching(/^UCAA\/ADV\/EXT\/\d{2}\/\d{4}$/), createdById: 1
+        jobRef: expect.stringMatching(/^UCAA\/ADV\/EXT\/001\/\d{4}$/), createdById: 1
       })
     }));
     expect(res.status).toHaveBeenCalledWith(201);

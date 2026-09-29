@@ -1,25 +1,35 @@
-// Generates: UCAA/ADV/{INT|EXT}/{MM}/{YYYY}
+// Generates: UCAA/ADV/{INT|EXT}/{NNN}/{YYYY} (FR-ATS-023, BR-ATS-04)
 //
-// Uniqueness: the format shown has no running number, so two vacancies of
-// the same type opened in the same month would otherwise collide. This
-// generator keeps the exact shown format for the first vacancy of a given
-// type+month+year, and only appends "-2", "-3", etc. for subsequent ones -
-// so the common case matches the image exactly, and collisions are still
-// distinguishable rather than silently duplicated.
+// NNN is a running number per posting type per year, zero-padded to three
+// digits (a 1000th advert in one year simply gets four). The number comes
+// from the JobRefSequence counter row, never from counting existing
+// vacancies, so a number is never handed out twice - not even after a
+// vacancy is deleted. See vacancyModel.createWithJobRef, which allocates
+// the number and creates the vacancy in one transaction, so a failed
+// insert doesn't burn a number either.
+//
+// Refs issued before this format (UCAA/ADV/EXT/09/2026, with an optional
+// -2 suffix) are left as they are. They can't collide with the new ones:
+// the month segment is two digits, the running number at least three.
+const { timeZone } = require('./interviewFormat');
+
 function typeCodeFor(postingType) {
-  // SIMPLIFIED - PostingType.Open no longer exists, so this is now a
-  // clean two-value match rather than a fallback covering three values.
   return postingType === 'Internal' ? 'INT' : 'EXT';
 }
 
-async function generateJobRef(postingType, date, countExistingWithPrefix) {
-  const typeCode = typeCodeFor(postingType);
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const yyyy = date.getFullYear();
-  const base = `UCAA/ADV/${typeCode}/${mm}/${yyyy}`;
-
-  const existingCount = await countExistingWithPrefix(base);
-  return existingCount === 0 ? base : `${base}-${existingCount + 1}`;
+// The year the advert is raised in, in APP_TIMEZONE - a vacancy raised just
+// after midnight on 1 January in Kampala belongs to the new year even when
+// the server runs in UTC.
+function refYear(date) {
+  try {
+    return Number(new Intl.DateTimeFormat('en-GB', { timeZone: timeZone(), year: 'numeric' }).format(date));
+  } catch (err) {
+    return date.getUTCFullYear();
+  }
 }
 
-module.exports = { generateJobRef, typeCodeFor };
+function formatJobRef(typeCode, number, year) {
+  return `UCAA/ADV/${typeCode}/${String(number).padStart(3, '0')}/${year}`;
+}
+
+module.exports = { typeCodeFor, refYear, formatJobRef };

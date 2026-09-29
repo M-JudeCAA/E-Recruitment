@@ -119,7 +119,7 @@ export async function downloadElementAsPdf(element, filename, { footerLeft } = {
   pdf.save(filename);
 }
 
-// A vacancy's jobRef ("UCAA/ADV/EXT/09/2026") contains characters that
+// A vacancy's jobRef ("UCAA/ADV/EXT/007/2026") contains characters that
 // are invalid or awkward in a filename.
 export function sanitizeFilenamePart(value) {
   return String(value || '').replace(/[\\/:*?"<>|]+/g, '-');

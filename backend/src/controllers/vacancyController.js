@@ -7,7 +7,6 @@ const offerModel = require('../models/offerModel');
 const workflow = require('../services/workflowService');
 const slaModel = require('../models/slaModel');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
-const { generateJobRef } = require('../utils/jobRefGenerator');
 const { toPublicVacancy } = require('../utils/publicVacancy');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
 const {
@@ -119,14 +118,7 @@ async function create(req, res) {
     validatedReportsToId = reportsTo.id;
   }
 
-  const jobRef = await generateJobRef(
-    postingType, // no fallback needed - already validated as required above
-    new Date(),
-    (prefix) => vacancyModel.countByJobRefPrefix(prefix)
-  );
-
-  const vacancy = await vacancyModel.create({
-    jobRef,
+  const vacancy = await vacancyModel.createWithJobRef(postingType, {
     // FIXED - this was never set at all, so every vacancy defaulted to
     // the schema default (previously 'Open') and was immediately visible
     // to candidates, bypassing approval entirely. The schema default is
@@ -178,14 +170,7 @@ async function readvertise(req, res) {
     return res.status(400).json({ error: 'The position behind this vacancy no longer exists' });
   }
 
-  const jobRef = await generateJobRef(
-    postingType,
-    new Date(),
-    (prefix) => vacancyModel.countByJobRefPrefix(prefix)
-  );
-
-  const created = await vacancyModel.create({
-    jobRef,
+  const created = await vacancyModel.createWithJobRef(postingType, {
     status: 'PendingApproval',
     readvertisedFromId: vacancy.id,
     ...buildVacancyCreateData(position, vacancy.reportsToPositionId, req.body, req.user.id)
