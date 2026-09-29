@@ -6,7 +6,7 @@ const internalProfileModel = require('../models/internalProfileModel');
 const pendingRegistrationModel = require('../models/pendingRegistrationModel');
 const { sendMail } = require('../utils/mailer');
 const { createToken, consumeToken } = require('../services/tokenService');
-const { validateEmail, validatePassword } = require('../utils/validators');
+const { validateEmail, validatePassword, validateNationalId, normalizeNationalId } = require('../utils/validators');
 const { frontendUrl } = require('../config/frontendUrl');
 
 // Only ever forwarded into a redirect target, never used for anything
@@ -22,7 +22,10 @@ const isValidReturnTo = (value) => typeof value === 'string' && RETURN_TO_RE.tes
 // design held the email hostage forever, since Candidate.email is unique
 // regardless of emailConfirmed.
 async function register(req, res) {
-  const { fullName, email, password, phone, nationalId, returnTo } = req.body;
+  const { fullName, email, password, phone, returnTo } = req.body;
+  // Optional at sign-up (it's required later, for a complete profile), but
+  // when given it must be a valid NIN - the only identity document accepted.
+  const nationalId = normalizeNationalId(req.body.nationalId) || null;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'fullName, email and password are required' });
   }
@@ -33,11 +36,15 @@ async function register(req, res) {
     return res.status(400).json({ error: 'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a digit, and a symbol' });
   }
 
+  if (nationalId && !validateNationalId(nationalId)) {
+    return res.status(400).json({ error: 'That doesn\'t look like a valid National Identification Number (NIN). Please check and enter it again.' });
+  }
+
   const existingCandidate = await candidateModel.findByEmail(email);
   if (existingCandidate) return res.status(409).json({ error: 'An account with this email already exists' });
 
   // Checked here, before the pending row/confirmation email ever exist, so
-  // a duplicate National ID/Passport is caught immediately rather than
+  // a duplicate NIN is caught immediately rather than
   // only surfacing as a raw unique-constraint error later in
   // confirmEmail() (see that function's own P2002 handling for the
   // residual race window this narrows but can't fully close - two people
@@ -46,7 +53,7 @@ async function register(req, res) {
   if (nationalId) {
     const existingByNationalId = await candidateModel.findByNationalId(nationalId);
     if (existingByNationalId) {
-      return res.status(409).json({ error: 'This National ID or Passport number is already registered on another account.' });
+      return res.status(409).json({ error: 'This NIN is already registered on another account.' });
     }
   }
 
@@ -120,7 +127,7 @@ async function confirmEmail(req, res) {
     res.json({ message: 'Email confirmed. You can now log in.' });
   } catch (err) {
     // register()'s own check narrows this to a genuine race (two people
-    // registering the same National ID/Passport within the same short
+    // registering the same NIN within the same short
     // window, both past that check before either confirms) rather than
     // the common case, but it can still happen. The confirmation token is
     // already single-use consumed by this point, so this exact link can
@@ -131,7 +138,7 @@ async function confirmEmail(req, res) {
     if (err.code === 'P2002' && pending) {
       await pendingRegistrationModel.remove(pending.id);
       return res.status(409).json({
-        error: 'This National ID or Passport number is already registered on another account. Please register again with the correct details.'
+        error: 'This NIN is already registered on another account. Please register again with the correct details.'
       });
     }
     sendError(res, err, 400);

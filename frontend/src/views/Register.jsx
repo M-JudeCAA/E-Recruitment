@@ -5,7 +5,7 @@ import PageHeader from "../components/PageHeader";
 import TextField from "../components/TextField";
 import Button from "../components/Button";
 import Alert from "../components/Alert";
-import { validateEmail, validatePassword, PASSWORD_HINT } from "../utils/validators";
+import { validateEmail, validatePassword, validateNationalId, PASSWORD_HINT, NATIONAL_ID_ERROR } from "../utils/validators";
 
 // Uganda Civil Aviation Authority brand palette
 const ucaa = {
@@ -42,6 +42,12 @@ function validate(values) {
     errors.confirmPassword = "Confirm your password.";
   } else if (values.confirmPassword !== values.password) {
     errors.confirmPassword = "Passwords do not match.";
+  }
+
+  // Optional here, but when given it must be a NIN - the only identity
+  // document accepted.
+  if (values.nationalId.trim() && !validateNationalId(values.nationalId)) {
+    errors.nationalId = NATIONAL_ID_ERROR;
   }
 
   return errors;
@@ -163,10 +169,13 @@ export default function Register() {
             error={showError("phone")}
           />
           <TextField
-            label="National ID / Passport"
-            hint="You can also add or refine this on your profile later"
+            label="National Identification Number (NIN)"
+            hint="As it appears on your National ID card. You can also add it on your profile later."
+            maxLength={14}
             value={form.nationalId}
             onChange={(e) => setForm({ ...form, nationalId: e.target.value })}
+            onBlur={blur("nationalId")}
+            error={showError("nationalId")}
           />
           <TextField
             label="Password"

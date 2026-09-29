@@ -490,15 +490,13 @@ model Candidate {
   email              String         @unique
   phone              String?
   candidateType      CandidateType
-  // Unique (not just per-idType) - a National ID or Passport number is a
-  // real-world identity document either way, and nothing should let two
-  // accounts claim the same one. NULL is exempt from this in MySQL (only
-  // actual duplicate values collide), so candidates who haven't set one
-  // yet never conflict with each other.
+  // The candidate's Uganda National Identification Number (NIN) - the only
+  // identity document accepted (passports were dropped, and with them the
+  // old idType column). Stored upper-cased and validated against
+  // NATIONAL_ID_RE (utils/validators.js). Unique - nothing should let two
+  // accounts claim the same NIN. NULL is exempt from this in MySQL, so
+  // candidates who haven't set one yet never conflict with each other.
   nationalId         String?        @unique
-  idType             String?        // 'NationalID' | 'Passport' - which format nationalId is meant to follow;
-                                     // the Uganda NIN regex is only enforced when this is 'NationalID', since a
-                                     // foreign candidate's passport format varies too much to validate meaningfully.
   emailConfirmed     Boolean        @default(false)
   passwordHash       String
   createdAt          DateTime       @default(now())
@@ -508,9 +506,8 @@ model Candidate {
   // added to back the application wizard's Profile step with real
   // persistence instead of fields that silently discard on submit.
   location           String?        // place of residence (FR-ATS-034)
-  // Uganda district the candidate comes from (FR-ATS-034) - required for
-  // profile completeness from National ID holders only; see
-  // utils/profileCompleteness.js.
+  // Uganda district the candidate comes from (FR-ATS-034) - required for a
+  // complete profile; see utils/profileCompleteness.js.
   districtOfOrigin   String?
   linkedinUrl        String?
   portfolioUrl       String?

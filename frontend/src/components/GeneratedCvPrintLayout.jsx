@@ -28,7 +28,7 @@ export default function GeneratedCvPrintLayout({ candidate, application, vacancy
 
   const contactLine = [c.email, c.phone, c.location].filter(Boolean).join('  |  ');
   const idLine = [
-    c.nationalId ? `${c.idType === 'Passport' ? 'Passport' : 'National ID'}: ${c.nationalId}` : null,
+    c.nationalId ? `NIN: ${c.nationalId}` : null,
     c.districtOfOrigin ? `District of origin: ${c.districtOfOrigin}` : null
   ].filter(Boolean).join('  |  ') || null;
 

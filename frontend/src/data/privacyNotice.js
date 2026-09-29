@@ -20,7 +20,7 @@ export const PRIVACY_NOTICE_SECTIONS = [
   {
     heading: 'What we collect',
     body: [
-      'Your account details (name, email address, phone number), your National ID or passport number, date of birth, '
+      'Your account details (name, email address, phone number), your National Identification Number (NIN), date of birth, '
         + 'place of residence and district of origin.',
       'Your education, work experience, certificates, exam grades and any other qualifications you add, and the documents '
         + 'you upload (CV, cover letter, academic documents).',

@@ -2,7 +2,7 @@ const candidateModel = require('../models/candidateModel');
 const internalProfileModel = require('../models/internalProfileModel');
 const applicationModel = require('../models/applicationModel');
 const profileEntriesModel = require('../models/profileEntriesModel');
-const { validateNationalId } = require('../utils/validators');
+const { validateNationalId, normalizeNationalId } = require('../utils/validators');
 const { checkAndFireCompletionEvent } = require('../services/profileCompletionService');
 const { fileUrl } = require('../middleware/upload');
 const { educationKey, workExperienceKey, certificateKey, examGradeKey } = require('../utils/entryDedup');
@@ -256,30 +256,23 @@ const WORK_AUTHORIZATION_VALUES = ['Yes', 'No', 'Sponsorship'];
 // candidate ever submits, same principle as education/workExperience.
 // nationalId already existed on Candidate (set at registration); this is
 // the first endpoint that lets a candidate edit it afterward.
-const ID_TYPE_VALUES = ['NationalID', 'Passport'];
 
 async function updateProfile(req, res) {
-  const { nationalId, idType, location, districtOfOrigin, linkedinUrl, portfolioUrl, workAuthorization, dateOfBirth, flyingHours } = req.body;
+  const { location, districtOfOrigin, linkedinUrl, portfolioUrl, workAuthorization, dateOfBirth, flyingHours } = req.body;
+  // The NIN is the only identity document a candidate gives (no passports).
+  const nationalId = req.body.nationalId === undefined ? undefined : normalizeNationalId(req.body.nationalId);
   if (workAuthorization !== undefined && workAuthorization !== '' && !WORK_AUTHORIZATION_VALUES.includes(workAuthorization)) {
     return res.status(400).json({ error: `Work authorization must be one of: ${WORK_AUTHORIZATION_VALUES.join(', ')}` });
   }
-  if (idType !== undefined && idType !== '' && !ID_TYPE_VALUES.includes(idType)) {
-    return res.status(400).json({ error: `ID type must be one of: ${ID_TYPE_VALUES.join(', ')}` });
-  }
-  // The Uganda NIN format is only enforced for candidates who declared
-  // their id as a National ID in this same request - a foreign candidate's
-  // passport format varies too much by country to validate meaningfully,
-  // and idType/nationalId are always submitted together by the frontend.
-  // Deliberately doesn't describe the NIN format - just flags the entry
-  // as wrong and asks for a correct one, matching the frontend's own
-  // validation message (ProfileCompletionForm.jsx / validators.js).
-  if (idType === 'NationalID' && nationalId && !validateNationalId(nationalId)) {
-    return res.status(400).json({ error: 'That doesn\'t look like a valid National ID number. Please check and enter it again.' });
+  // Deliberately doesn't describe the NIN format - just flags the entry as
+  // wrong and asks for a correct one, matching the frontend's own message
+  // (ProfileCompletionForm.jsx / validators.js).
+  if (nationalId && !validateNationalId(nationalId)) {
+    return res.status(400).json({ error: 'That doesn\'t look like a valid National Identification Number (NIN). Please check and enter it again.' });
   }
 
   const data = {};
   if (nationalId !== undefined) data.nationalId = nationalId || null;
-  if (idType !== undefined) data.idType = idType || null;
   if (location !== undefined) data.location = location || null;
   if (districtOfOrigin !== undefined) {
     const district = typeof districtOfOrigin === 'string' ? districtOfOrigin.trim() : '';
@@ -297,10 +290,10 @@ async function updateProfile(req, res) {
     candidate = await candidateModel.update(req.user.id, data);
   } catch (err) {
     // nationalId is @unique (see schema.prisma) - two accounts claiming
-    // the same National ID/Passport number surfaces here as a Prisma
+    // the same NIN surfaces here as a Prisma
     // P2002 rather than something worth exposing raw to the candidate.
     if (err.code === 'P2002' && err.meta?.target?.includes('nationalId')) {
-      return res.status(409).json({ error: 'This National ID or Passport number is already registered on another account.' });
+      return res.status(409).json({ error: 'This NIN is already registered on another account.' });
     }
     throw err;
   }

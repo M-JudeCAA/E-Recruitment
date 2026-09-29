@@ -8,7 +8,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
 // At least 8 chars, one lowercase, one uppercase, one digit, one symbol.
 const PASSWORD_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 
-// Uganda National ID: 14 chars - 'C' (citizen) + 'F'/'M' (gender) + 2-digit
+// Uganda National Identification Number (NIN) - the only identity document
+// a candidate gives. 14 chars - 'C' (citizen) + 'F'/'M' (gender) + 2-digit
 // birth year + 10 random alphanumeric characters.
 const NATIONAL_ID_RE = /^C[FM]\d{2}[A-Za-z0-9]{10}$/;
 
@@ -21,7 +22,13 @@ function validatePassword(password) {
 }
 
 function validateNationalId(nationalId) {
-  return !!nationalId && NATIONAL_ID_RE.test(nationalId.trim());
+  return typeof nationalId === 'string' && NATIONAL_ID_RE.test(nationalId.trim().toUpperCase());
 }
 
-module.exports = { validateEmail, validatePassword, validateNationalId, EMAIL_RE, PASSWORD_RE, NATIONAL_ID_RE };
+// How a NIN is stored: trimmed and upper-cased, so the same number typed in
+// a different case can't be registered to a second account.
+function normalizeNationalId(nationalId) {
+  return typeof nationalId === 'string' ? nationalId.trim().toUpperCase() : '';
+}
+
+module.exports = { validateEmail, validatePassword, validateNationalId, normalizeNationalId, EMAIL_RE, PASSWORD_RE, NATIONAL_ID_RE };

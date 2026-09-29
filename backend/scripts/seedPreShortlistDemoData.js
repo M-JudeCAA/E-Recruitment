@@ -77,7 +77,7 @@ async function registerAndConfirm({ fullName, email, nationalId }) {
 async function completeExternalProfile(candidateToken, { nationalId, education, workExperience }) {
   await api('PUT', '/api/candidates/me', {
     token: candidateToken,
-    json: { nationalId, idType: 'NationalID', location: 'Kampala, Uganda', districtOfOrigin: 'Wakiso', workAuthorization: 'Yes' }
+    json: { nationalId, location: 'Kampala, Uganda', districtOfOrigin: 'Wakiso', workAuthorization: 'Yes' }
   });
   await api('POST', '/api/candidates/me/education', { token: candidateToken, json: education });
   await api('POST', '/api/candidates/me/work-experience', { token: candidateToken, json: workExperience });

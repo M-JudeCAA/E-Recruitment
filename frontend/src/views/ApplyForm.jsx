@@ -20,6 +20,7 @@ import InternalProfileStep from './apply-wizard/InternalProfileStep';
 import ReviewStep from './apply-wizard/ReviewStep';
 import SubmitStep from './apply-wizard/SubmitStep';
 import { failedDisqualifyingRequirements } from '../utils/screeningQuestions';
+import { validateNationalId } from '../utils/validators';
 
 // A requirement's answerType (see ScreeningQuestionsEditor.jsx) decides how
 // its raw form-control value should be read: a 'number' row's TextField
@@ -251,9 +252,9 @@ export default function ApplyForm() {
       case 'profile': {
         const missing = [];
         if (!profileDetailsForm.location) missing.push('Place of residence');
-        // Required from National ID holders only - see utils/profileCompleteness.js.
-        if (profile?.idType === 'NationalID' && !profileDetailsForm.districtOfOrigin) missing.push('District of origin');
-        if (!profileDetailsForm.nationalId) missing.push('National ID number');
+        if (!profileDetailsForm.districtOfOrigin) missing.push('District of origin');
+        if (!profileDetailsForm.nationalId) missing.push('National Identification Number (NIN)');
+        else if (!validateNationalId(profileDetailsForm.nationalId)) missing.push('A valid National Identification Number (NIN)');
         if (!profileDetailsForm.workAuthorization) missing.push('Work authorization');
         if (!(profile?.education?.length)) missing.push('At least one education entry');
         if (!(profile?.workExperience?.length)) missing.push('At least one work experience entry');
