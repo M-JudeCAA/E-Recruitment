@@ -3,7 +3,10 @@ const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
 const candidateModel = require('../models/candidateModel');
 const workflow = require('../services/workflowService');
-const { screenApplication, scoreApplication, evaluateEssentialCriteria } = require('../services/screeningService');
+const applicationDocumentModel = require('../models/applicationDocumentModel');
+const {
+  screenApplication, scoreApplication, evaluateEssentialCriteria, assessEligibility
+} = require('../services/screeningService');
 const { fileUrl } = require('../middleware/upload');
 const {
   assertPostingTypeEligible, assertVacancyAcceptingApplications, assertBeforeDeadline
@@ -237,24 +240,43 @@ async function submit(req, res) {
     return res.status(422).json({ error: 'Please complete your profile before submitting an application' });
   }
 
-  // If HR has already opened this vacancy's review queue
-  // (reviewStartedAt set), a late-but-valid applicant should join that
-  // queue immediately, screened the same way the original batch was -
-  // not sit invisibly at Submitted until someone remembers to re-run
-  // Begin Review a second time.
-  let data = { status: 'Submitted', submittedDate: new Date() };
-  if (vacancy.reviewStartedAt) {
-    const result = screenApplication(application, candidate, vacancy);
-    const score = scoreApplication(application, candidate, vacancy);
-    const essentialCriteria = evaluateEssentialCriteria(candidate, vacancy);
-    data = {
-      ...data, status: 'UnderReview',
-      screeningPassed: result.passed, screeningReasons: JSON.stringify(result.reasons), screenedAt: new Date(),
-      fieldOfStudyMatch: result.fieldOfStudyMatch,
-      shortlistScore: score.score, shortlistScoreReasons: JSON.stringify(score.reasons),
-      essentialCriteriaResults: JSON.stringify(essentialCriteria)
-    };
+  if (await applicationDocumentModel.countByApplication(applicationId, 'Academic') === 0) {
+    return res.status(400).json({ error: 'Please upload at least one academic document (certificate or transcript) before submitting' });
   }
+
+  // Screening starts here, at the point of application: a candidate who
+  // doesn't meet the vacancy's minimums, or who answered a Disqualifying
+  // question the wrong way, never reaches the applicant pool. Their Draft
+  // stays as it is, so a profile that was merely out of date can be fixed
+  // and submitted again.
+  const eligibility = assessEligibility(application, candidate, vacancy);
+  if (eligibility.unanswered.length > 0) {
+    return res.status(400).json({
+      error: 'Please answer every eligibility question before submitting', unanswered: eligibility.unanswered
+    });
+  }
+  if (!eligibility.eligible) {
+    return res.status(422).json({
+      error: 'You do not meet the requirements for this vacancy, so this application cannot be submitted',
+      code: 'NOT_ELIGIBLE', reasons: eligibility.reasons
+    });
+  }
+
+  // Every submitted application carries its screening result from the
+  // start. If HR has already opened this vacancy's review queue
+  // (reviewStartedAt set), a late applicant also joins that queue
+  // immediately rather than sitting at Submitted until someone re-runs
+  // Begin Review.
+  const screening = screenApplication(application, candidate, vacancy);
+  const score = scoreApplication(application, candidate, vacancy);
+  const essentialCriteria = evaluateEssentialCriteria(candidate, vacancy);
+  const data = {
+    status: vacancy.reviewStartedAt ? 'UnderReview' : 'Submitted', submittedDate: new Date(),
+    screeningPassed: screening.passed, screeningReasons: JSON.stringify(screening.reasons), screenedAt: new Date(),
+    fieldOfStudyMatch: screening.fieldOfStudyMatch,
+    shortlistScore: score.score, shortlistScoreReasons: JSON.stringify(score.reasons),
+    essentialCriteriaResults: JSON.stringify(essentialCriteria)
+  };
 
   // Scoped to status: 'Draft' so a second, near-simultaneous submit call
   // for the same application (double click reaching the API, a retried
@@ -332,4 +354,76 @@ async function withdraw(req, res) {
   res.json(updated);
 }
 
-module.exports = { saveDraft, submit, withdraw };
+// The apply wizard's early screening check: whether this candidate, as
+// their profile stands now (and with the eligibility answers on their
+// draft, if they have one), may apply to this vacancy. Same rules submit()
+// enforces - see screeningService.assessEligibility. Only the reasons
+// derived from the candidate's own data are returned, never other
+// applicants' or HR's.
+async function eligibility(req, res) {
+  const vacancyId = Number(req.params.vacancyId);
+  if (!Number.isInteger(vacancyId)) return res.status(400).json({ error: 'Invalid vacancy id' });
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+
+  const [candidate, application] = await Promise.all([
+    candidateModel.findByIdWithRecords(req.user.id),
+    applicationModel.findFirst({ vacancyId, candidateId: req.user.id })
+  ]);
+  const result = assessEligibility(application, candidate, vacancy);
+  const academicDocuments = application
+    ? await applicationDocumentModel.countByApplication(application.id, 'Academic')
+    : 0;
+  res.json({ ...result, academicDocuments });
+}
+
+const DOCUMENT_CATEGORIES = ['Academic', 'Other'];
+const MAX_DOCUMENTS_PER_CATEGORY = 10;
+
+// Loads an application for a document change: must be the caller's own and
+// still a Draft - once submitted, what HR received is fixed.
+async function loadOwnDraft(req, res) {
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId)) { res.status(400).json({ error: 'Invalid application id' }); return null; }
+  const application = await applicationModel.findById(applicationId);
+  if (!application) { res.status(404).json({ error: 'Application not found' }); return null; }
+  if (application.candidateId !== req.user.id) { res.status(403).json({ error: 'This is not your application' }); return null; }
+  if (application.status !== 'Draft') {
+    res.status(422).json({ error: 'Documents can only be changed before the application is submitted' });
+    return null;
+  }
+  return application;
+}
+
+// One academic or other supporting document, uploaded as soon as the
+// candidate picks it (not held until the next draft save).
+async function addDocument(req, res) {
+  const application = await loadOwnDraft(req, res);
+  if (!application) return;
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const category = req.body.category;
+  if (!DOCUMENT_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: `Document category must be one of: ${DOCUMENT_CATEGORIES.join(', ')}` });
+  }
+  if (await applicationDocumentModel.countByApplication(application.id, category) >= MAX_DOCUMENTS_PER_CATEGORY) {
+    return res.status(422).json({ error: `You can attach at most ${MAX_DOCUMENTS_PER_CATEGORY} documents of this kind` });
+  }
+  const label = (req.body.label || '').trim().slice(0, 150) || null;
+  const document = await applicationDocumentModel.create({
+    applicationId: application.id, category, label,
+    fileUrl: fileUrl(req.file), originalName: req.file.originalname.slice(0, 190)
+  });
+  res.status(201).json(document);
+}
+
+async function removeDocument(req, res) {
+  const application = await loadOwnDraft(req, res);
+  if (!application) return;
+  const documentId = Number(req.params.documentId);
+  const document = Number.isInteger(documentId) ? await applicationDocumentModel.findById(documentId) : null;
+  if (!document || document.applicationId !== application.id) return res.status(404).json({ error: 'Document not found' });
+  await applicationDocumentModel.remove(documentId);
+  res.json({ id: documentId, removed: true });
+}
+
+module.exports = { saveDraft, submit, withdraw, eligibility, addDocument, removeDocument };

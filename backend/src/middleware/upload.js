@@ -2,7 +2,9 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const { ALLOWED_MIME, MAX_FILE_SIZE, ALLOWED_IMAGE_MIME, MAX_PHOTO_SIZE } = require('./uploadConstants');
+const {
+  ALLOWED_MIME, MAX_FILE_SIZE, ALLOWED_IMAGE_MIME, MAX_PHOTO_SIZE, ALLOWED_SUPPORTING_DOC_MIME
+} = require('./uploadConstants');
 const { AppError } = require('../utils/errorResponse');
 
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
@@ -44,10 +46,23 @@ const uploadPhoto = multer({
   limits: { fileSize: MAX_PHOTO_SIZE }
 });
 
+// Academic/other supporting documents on an application - same storage and
+// size cap as `upload`, but scanned images are accepted too.
+const uploadSupportingDocument = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_SUPPORTING_DOC_MIME.includes(file.mimetype)) {
+      return cb(new AppError('Only PDF, Word, JPG or PNG files are allowed', 400));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
 // Returns a URL path the frontend can use to reference the uploaded file,
 // via the authenticated /api/files route rather than a plain static mount.
 function fileUrl(file) {
   return file ? `/api/files/${file.filename}` : null;
 }
 
-module.exports = { upload, uploadPhoto, fileUrl };
+module.exports = { upload, uploadPhoto, uploadSupportingDocument, fileUrl };

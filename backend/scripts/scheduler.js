@@ -1,5 +1,8 @@
 // The scheduler worker: runs every maintenance job once at start-up and then
 // every SCHEDULER_INTERVAL_MINUTES (default 60), in a process of its own.
+// FAST_JOBS - checks where an hour is too coarse, like an interview session
+// not started 30 minutes after it was due - run every
+// SCHEDULER_FAST_INTERVAL_MINUTES (default 5) on their own timer.
 //
 //   npm run jobs        (node scripts/scheduler.js)
 //
@@ -29,14 +32,37 @@ const JOBS = [
   { name: 'cleanupPendingRegistrations', run: require('./cleanupPendingRegistrations').run },
   { name: 'cleanupVerificationTokens', run: () => require('./cleanupVerificationTokens').run() }
 ];
+const FAST_JOBS = [
+  { name: 'checkInterviewSessions', run: () => require('./checkInterviewSessions').run() }
+];
 
 const intervalMinutes = Number(process.env.SCHEDULER_INTERVAL_MINUTES || 60);
 if (!Number.isFinite(intervalMinutes) || intervalMinutes < 1) {
   console.error('SCHEDULER_INTERVAL_MINUTES must be a number of minutes, at least 1.');
   process.exit(1);
 }
+const fastIntervalMinutes = Number(process.env.SCHEDULER_FAST_INTERVAL_MINUTES || 5);
+if (!Number.isFinite(fastIntervalMinutes) || fastIntervalMinutes < 1) {
+  console.error('SCHEDULER_FAST_INTERVAL_MINUTES must be a number of minutes, at least 1.');
+  process.exit(1);
+}
 
 let cycleInProgress = false;
+let fastCycleInProgress = false;
+
+// Same no-overlap rule as runCycle, on its own flag so a slow hourly cycle
+// never holds up the quick checks.
+async function runFastCycle() {
+  if (fastCycleInProgress) return;
+  fastCycleInProgress = true;
+  try {
+    for (const job of FAST_JOBS) await runJob(job.name, job.run);
+  } catch (err) {
+    console.error('Fast maintenance cycle error:', err);
+  } finally {
+    fastCycleInProgress = false;
+  }
+}
 
 // Jobs run one after another, never overlapping: if a cycle is still going
 // when the next is due (a slow database), the next one is skipped.
@@ -57,14 +83,18 @@ async function runCycle() {
 }
 
 async function main() {
-  console.log(`Scheduler worker started - running ${JOBS.length} jobs every ${intervalMinutes} minute(s).`);
+  console.log(`Scheduler worker started - running ${JOBS.length} jobs every ${intervalMinutes} minute(s)`
+    + ` and ${FAST_JOBS.length} every ${fastIntervalMinutes} minute(s).`);
   await verifyMailTransport();
   await runCycle();
+  await runFastCycle();
   const timer = setInterval(runCycle, intervalMinutes * 60 * 1000);
+  const fastTimer = setInterval(runFastCycle, fastIntervalMinutes * 60 * 1000);
 
   const shutdown = async (signal) => {
     console.log(`${signal} received - scheduler worker stopping.`);
     clearInterval(timer);
+    clearInterval(fastTimer);
     await prisma.$disconnect();
     process.exit(0);
   };

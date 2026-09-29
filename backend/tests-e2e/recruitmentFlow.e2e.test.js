@@ -1,6 +1,6 @@
 const {
   prisma, resetDatabase, createStaff, createOrg, createCandidate,
-  staffToken, candidateToken, api, REFEREES, expectStatus
+  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument
 } = require('./helpers');
 
 // The whole recruitment lifecycle through the real API and a real database:
@@ -51,6 +51,7 @@ async function createApprovedVacancy({ positionsRequired = 1 } = {}) {
 async function applyAs(candidate, vacancyId) {
   const token = await candidateToken(candidate.email);
   const draft = expectStatus(await api(token).post('/api/applications', { vacancyId, referees: REFEREES }), 201).body;
+  await attachAcademicDocument(token, draft.id);
   expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`), 200);
   return { token, applicationId: draft.id };
 }

@@ -32,6 +32,11 @@ export const STATUS_COLORS = {
   // Verification
   Pending: 'var(--color-warning)', HR_Verified: 'var(--color-accent)',
   Discrepancy_Flagged: 'var(--color-danger)',
+  // Shortlisting committee band (ShortlistBand) and exercise stage
+  // (ShortlistExerciseStatus)
+  Unanimous: 'var(--color-accent)', Majority: 'var(--color-primary)',
+  Disputed: 'var(--color-warning)', NotQualified: 'var(--color-danger)',
+  Setup: 'var(--color-text-muted)', Rating: 'var(--color-warning)', Moderation: 'var(--color-warning)',
   // Not a real enum value - a derived tag shown next to a vacancy's title
   // when it was created via readvertise() (Vacancy.readvertisedFromId is
   // set). Reuses this same lookup/component rather than a bespoke badge.

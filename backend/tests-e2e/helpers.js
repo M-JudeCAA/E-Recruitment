@@ -79,6 +79,15 @@ const REFEREES = JSON.stringify([
   { name: 'Referee Three', phone: '0700000003', email: 'ref3@example.com' }
 ]);
 
+// submit() requires at least one academic document on the draft.
+async function attachAcademicDocument(token, applicationId) {
+  const res = await request(app).post(`/api/applications/${applicationId}/documents`)
+    .set('Authorization', `Bearer ${token}`)
+    .field('category', 'Academic')
+    .attach('file', Buffer.from('%PDF-1.4 test certificate'), { filename: 'certificate.pdf', contentType: 'application/pdf' });
+  return expectStatus(res, 201).body;
+}
+
 function expectStatus(res, status) {
   if (res.status !== status) {
     throw new Error(`Expected ${status} from ${res.req?.method} ${res.req?.path}, got ${res.status}: ${JSON.stringify(res.body)}`);
@@ -86,4 +95,4 @@ function expectStatus(res, status) {
   return res;
 }
 
-module.exports = { prisma, app, PASSWORD, resetDatabase, createStaff, createOrg, createCandidate, staffToken, candidateToken, api, REFEREES, expectStatus };
+module.exports = { prisma, app, PASSWORD, resetDatabase, createStaff, createOrg, createCandidate, staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument };

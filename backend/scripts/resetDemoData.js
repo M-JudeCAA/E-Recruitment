@@ -18,8 +18,10 @@ const prisma = require('../src/config/db');
 // SlaPolicy are deliberately absent.
 const TABLES = [
   'DelegationUsage', 'Delegation',
+  'ShortlistDecision', 'ShortlistRating', 'ShortlistAssignment', 'ShortlistMember', 'ShortlistExercise',
+  'PanelDayLink', 'InterviewDay',
   'PanelAccessToken', 'PanelMember', 'InterviewRound',
-  'Offer', 'Application',
+  'Offer', 'ApplicationDocument', 'Application',
   'CandidateNotification', 'VerificationToken', 'PendingCandidateRegistration',
   'InternalProfile', 'WorkExperience', 'Education', 'ExamGrade', 'Certificate', 'Candidate',
   'Notification', 'TaskEscalation', 'AuditLog', 'SystemHealth',
@@ -28,6 +30,9 @@ const TABLES = [
 
 const DELEGATE = {
   DelegationUsage: 'delegationUsage', Delegation: 'delegation',
+  ShortlistDecision: 'shortlistDecision', ShortlistRating: 'shortlistRating', ShortlistAssignment: 'shortlistAssignment',
+  ShortlistMember: 'shortlistMember', ShortlistExercise: 'shortlistExercise', PanelDayLink: 'panelDayLink', InterviewDay: 'interviewDay',
+  ApplicationDocument: 'applicationDocument',
   PanelAccessToken: 'panelAccessToken', PanelMember: 'panelMember', InterviewRound: 'interviewRound',
   Offer: 'offer', Application: 'application',
   CandidateNotification: 'candidateNotification', VerificationToken: 'verificationToken',

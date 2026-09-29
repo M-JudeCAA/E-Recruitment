@@ -226,8 +226,20 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
               {done.panelEmailed > 0
                 ? `${done.panelEmailed} panelist${done.panelEmailed === 1 ? '' : 's'} emailed a calendar invite covering their slots.`
                 : 'No panelist was emailed (none had an email, or you chose not to).'}
-              {' '}Send scoring links from the Interview Hub after each interview.
+              {' '}Each panelist has one scoring link per interview day, covering every candidate they see that day; it is in
+              their invitation, and can be sent again from the Interview Hub.
             </p>
+            {done.panelLinks?.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <span style={{ ...hintText, display: 'block', marginBottom: 4 }}>These panelists have no email - share their links by hand:</span>
+                {done.panelLinks.map((l) => (
+                  <div key={l.url} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: 13, width: 160, flexShrink: 0 }}>{l.name} · {l.dayLabel}</span>
+                    <input readOnly value={l.url} onFocus={(e) => e.target.select()} style={{ ...inputStyle, flex: 1, fontSize: 12 }} aria-label={`Scoring link for ${l.name}`} />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </Modal>

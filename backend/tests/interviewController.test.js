@@ -696,7 +696,10 @@ describe('recordPanelScore', () => {
 });
 
 describe('sendAllLinks', () => {
-  test('issues a link to every panelist who has not scored, returning the url only for those without an email', async () => {
+  test('issues a day link to every panelist who has not scored, returning the url only for those without an email', async () => {
+    prisma.panelDayLink.findMany.mockResolvedValue([]);
+    let nextId = 1;
+    prisma.panelDayLink.create.mockImplementation(({ data }) => Promise.resolve({ id: nextId++, ...data }));
     prisma.interviewRound.findUnique.mockResolvedValue(detailedRound({
       panelMembers: [
         { id: 1, name: 'Ann', email: 'ann@example.test', score: null },
@@ -712,8 +715,29 @@ describe('sendAllLinks', () => {
     const { results } = res.json.mock.calls[0][0];
     expect(results.map((r) => r.name)).toEqual(['Ann', 'Bob']);
     expect(results[0]).toEqual(expect.objectContaining({ emailed: true, url: undefined }));
-    expect(results[1]).toEqual(expect.objectContaining({ emailed: false, url: expect.stringContaining('/panel-score/') }));
-    expect(prisma.panelAccessToken.create).toHaveBeenCalledTimes(2);
+    expect(results[1]).toEqual(expect.objectContaining({ emailed: false, url: expect.stringContaining('/panel-day/') }));
+    // One link per panelist for the vacancy's day, in Kampala time.
+    expect(prisma.panelDayLink.create).toHaveBeenCalledTimes(2);
+    expect(prisma.panelDayLink.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ vacancyId: 3, day: '2030-10-01', panelistName: 'Ann', panelistEmail: 'ann@example.test' })
+    });
+    expect(prisma.panelAccessToken.create).not.toHaveBeenCalled();
+  });
+
+  test('re-sends a panelist\'s existing day link rather than replacing it', async () => {
+    prisma.panelDayLink.findMany.mockResolvedValue([
+      { id: 7, token: 'abc', vacancyId: 3, day: '2030-10-01', panelistName: 'Ann', panelistEmail: 'ann@example.test', staffUserId: null }
+    ]);
+    prisma.interviewRound.findUnique.mockResolvedValue(detailedRound({
+      panelMembers: [{ id: 1, name: 'Ann', email: 'ann@example.test', score: null }]
+    }));
+    sendMail.mockResolvedValue({ messageId: 'x' });
+    const res = mockRes();
+    await interviewController.sendAllLinks({ params: { interviewId: '1' }, body: {}, user: { id: 9 } }, res);
+
+    expect(prisma.panelDayLink.create).not.toHaveBeenCalled();
+    expect(prisma.panelDayLink.updateMany).not.toHaveBeenCalled();
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ html: expect.stringContaining('/panel-day/abc') }));
   });
 });
 

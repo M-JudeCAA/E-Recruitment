@@ -191,7 +191,7 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
     const res = await staffClient.post(`/api/interviews/panel-members/${m.id}/access-link`);
     setLinkResults(res.data.emailed ? null : [{ panelMemberId: m.id, name: m.name, emailed: false, url: res.data.url }]);
     return res.data;
-  }, (data) => (data.emailed ? `Scoring link emailed to ${m.name}. Any earlier link for them no longer works.` : `${m.name} has no email - share the link below.`));
+  }, (data) => (data.emailed ? `A new scoring link for the day was emailed to ${m.name}. Their earlier link no longer works.` : `${m.name} has no email - share the link below.`));
 
   const saveDetails = () => act('details', () => staffClient.patch(`/api/interviews/${round.id}`, {
     durationMinutes: Number(details.durationMinutes), mode: details.mode,
@@ -376,7 +376,7 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
                   </div>
                   <div style={hintText}>
                     {m.email || 'No email on file'}
-                    {!recused && m.score == null && m.activeLinkExpiresAt && <> · scoring link sent (valid until {new Date(m.activeLinkExpiresAt).toLocaleDateString()})</>}
+                    {!recused && m.score == null && m.activeLinkExpiresAt && <> · scoring link sent (works until {formatDateTime(m.activeLinkExpiresAt)})</>}
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
@@ -427,7 +427,7 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
 
         {linkResults?.some((r) => !r.emailed) && (
           <div style={{ background: 'var(--color-bg-subtle)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', marginBottom: 8 }}>
-            <span style={sectionLabel}>Links to share by hand (single-use, 14 days)</span>
+            <span style={sectionLabel}>Links to share by hand - each covers every candidate that panelist interviews on this day, and works only on the day</span>
             {linkResults.filter((r) => !r.emailed).map((r) => (
               <div key={r.panelMemberId} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
                 <span style={{ fontSize: 13, width: 140, flexShrink: 0 }}>{r.name}</span>

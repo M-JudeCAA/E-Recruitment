@@ -71,6 +71,7 @@ describe('candidateController.myApplications and offers', () => {
   test('an application whose offer is only recommended still reads as Interviewed, with no offer', async () => {
     prisma.application.findMany.mockResolvedValue([{
       id: 1, status: 'Offered', rank: 2, listStatus: null, meritRank: 1, meritListStatus: 'Primary', meritStatus: 'Approved',
+      committeeRank: 3, committeeBand: 'Majority', committeeScore: 71.5, committeeAgreement: 0.8,
       vacancy: { id: 3, title: 'ATC' }, interviewRounds: [],
       offer: { id: 9, status: 'Recommended', approvedDate: null, salaryAmount: 1 }
     }]);
@@ -81,6 +82,8 @@ describe('candidateController.myApplications and offers', () => {
     expect(app.offer).toBeNull();
     expect(app.meritListStatus).toBeUndefined();
     expect(app.rank).toBeUndefined();
+    // The shortlisting committee's view of them is HR's too.
+    for (const hidden of ['committeeRank', 'committeeBand', 'committeeScore', 'committeeAgreement']) expect(app[hidden]).toBeUndefined();
   });
 });
 

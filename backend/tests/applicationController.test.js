@@ -243,6 +243,148 @@ describe('submit', () => {
     }));
     expect(res.json).toHaveBeenCalled();
   });
+
+  // Screening at the point of application - an ineligible candidate never
+  // reaches the applicant pool.
+  describe('screening at submission', () => {
+    const completeCandidate = {
+      id: 5, email: 'jane@example.com', fullName: 'Jane Doe', candidateType: 'External',
+      location: 'Kampala', workAuthorization: 'Yes', nationalId: 'A1234567',
+      education: [{ id: 1, qualificationLevel: 'Diploma' }], workExperience: [{ id: 1, startDate: '2015-01-01', endDate: '2020-01-01' }]
+    };
+    const licenceQuestion = { id: 'q1', text: 'Do you hold a valid ATC licence?', requiredAnswer: 'Yes' };
+
+    function arrange({ application = {}, vacancy = {}, academicDocuments = 1 } = {}) {
+      prisma.application.findUnique.mockResolvedValue({
+        id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees,
+        candidate: { candidateType: 'External', internalProfile: null }, ...application
+      });
+      prisma.vacancy.findUnique.mockResolvedValue({
+        id: 10, status: 'Open', postingType: 'External', deadline: null, createdById: 42,
+        title: 'Air Traffic Controller', jobRef: 'UCAA/1', reviewStartedAt: null, ...vacancy
+      });
+      prisma.candidate.findUnique.mockResolvedValue(completeCandidate);
+      prisma.applicationDocument.count.mockResolvedValue(academicDocuments);
+      prisma.application.updateMany.mockResolvedValue({ count: 1 });
+      prisma.workExperience.findMany.mockResolvedValue([]);
+      prisma.education.findMany.mockResolvedValue([]);
+    }
+
+    test('refuses a submission with no academic document attached', async () => {
+      arrange({ academicDocuments: 0 });
+      const res = mockRes();
+
+      await applicationDraftController.submit({ params: { id: '1' }, user: { id: 5, candidateType: 'External' } }, res);
+
+      expect(prisma.applicationDocument.count).toHaveBeenCalledWith({ where: { applicationId: 1, category: 'Academic' } });
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(prisma.application.updateMany).not.toHaveBeenCalled();
+    });
+
+    test('refuses a candidate who answered a Disqualifying question the wrong way', async () => {
+      arrange({
+        vacancy: { disqualifyingRequirements: [licenceQuestion] },
+        application: { disqualifyingResponses: [{ ...licenceQuestion, answer: false }] }
+      });
+      const res = mockRes();
+
+      await applicationDraftController.submit({ params: { id: '1' }, user: { id: 5, candidateType: 'External' } }, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'NOT_ELIGIBLE', reasons: ['Disqualifying requirement not met: "Do you hold a valid ATC licence?"']
+      }));
+      expect(prisma.application.updateMany).not.toHaveBeenCalled();
+    });
+
+    test('refuses a candidate whose profile falls below the vacancy minimum', async () => {
+      arrange({ vacancy: { minimumEducationLevel: 'Bachelors' } });
+      const res = mockRes();
+
+      await applicationDraftController.submit({ params: { id: '1' }, user: { id: 5, candidateType: 'External' } }, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'NOT_ELIGIBLE' }));
+      expect(prisma.application.updateMany).not.toHaveBeenCalled();
+    });
+
+    test('refuses while a Disqualifying question is unanswered', async () => {
+      arrange({ vacancy: { disqualifyingRequirements: [licenceQuestion] }, application: { disqualifyingResponses: [] } });
+      const res = mockRes();
+
+      await applicationDraftController.submit({ params: { id: '1' }, user: { id: 5, candidateType: 'External' } }, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ unanswered: [licenceQuestion.text] }));
+      expect(prisma.application.updateMany).not.toHaveBeenCalled();
+    });
+
+    test('an eligible submission enters the pool already screened', async () => {
+      arrange({
+        vacancy: { disqualifyingRequirements: [licenceQuestion], minimumEducationLevel: 'Diploma' },
+        application: { disqualifyingResponses: [{ ...licenceQuestion, answer: true }] }
+      });
+      const res = mockRes();
+
+      await applicationDraftController.submit({ params: { id: '1' }, user: { id: 5, candidateType: 'External' } }, res);
+
+      expect(prisma.application.updateMany).toHaveBeenCalledWith({
+        where: { id: 1, status: 'Draft' },
+        data: expect.objectContaining({ status: 'Submitted', screeningPassed: true, screenedAt: expect.any(Date) })
+      });
+    });
+  });
+});
+
+describe('supporting documents', () => {
+  const file = { filename: 'abc.pdf', originalname: 'BSc transcript.pdf' };
+
+  test('attaches an academic document to the candidate\'s own draft', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, status: 'Draft' });
+    prisma.applicationDocument.count.mockResolvedValue(0);
+    prisma.applicationDocument.create.mockResolvedValue({ id: 7 });
+    const res = mockRes();
+
+    await applicationDraftController.addDocument({
+      params: { id: '1' }, user: { id: 5 }, file, body: { category: 'Academic', label: ' Transcript ' }
+    }, res);
+
+    expect(prisma.applicationDocument.create).toHaveBeenCalledWith({
+      data: { applicationId: 1, category: 'Academic', label: 'Transcript', fileUrl: '/api/files/abc.pdf', originalName: 'BSc transcript.pdf' }
+    });
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  test('refuses changes once the application has been submitted', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, status: 'Submitted' });
+    const res = mockRes();
+
+    await applicationDraftController.addDocument({ params: { id: '1' }, user: { id: 5 }, file, body: { category: 'Other' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.applicationDocument.create).not.toHaveBeenCalled();
+  });
+
+  test('refuses another candidate\'s application', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 99, status: 'Draft' });
+    const res = mockRes();
+
+    await applicationDraftController.removeDocument({ params: { id: '1', documentId: '7' }, user: { id: 5 } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(prisma.applicationDocument.delete).not.toHaveBeenCalled();
+  });
+
+  test('does not remove a document that belongs to a different application', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, status: 'Draft' });
+    prisma.applicationDocument.findUnique.mockResolvedValue({ id: 7, applicationId: 2 });
+    const res = mockRes();
+
+    await applicationDraftController.removeDocument({ params: { id: '1', documentId: '7' }, user: { id: 5 } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(prisma.applicationDocument.delete).not.toHaveBeenCalled();
+  });
 });
 
 describe('count', () => {

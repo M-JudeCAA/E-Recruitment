@@ -21,6 +21,7 @@ const { notify } = require('../src/services/notificationService');
 const { notifyCandidate } = require('../src/services/candidateNotificationService');
 const invitations = require('../src/services/interviewInvitationService');
 const { panelProgress } = require('../src/services/interviewService');
+const panelDayLinkService = require('../src/services/panelDayLinkService');
 
 const HOUR = 60 * 60 * 1000;
 const REMIND_WITHIN_MS = 24 * HOUR;
@@ -36,7 +37,15 @@ async function sendReminders(now) {
       console.error(`Interview reminder to candidate failed for round ${round.id}:`, err.message);
     }
   }
-  const panelEmailed = due.length ? await invitations.emailPanel(due, 'reminder') : 0;
+  // The reminder carries each panelist's scoring link for the day (the one
+  // already issued at booking, or a new one if there isn't one yet).
+  let links = [];
+  try {
+    if (due.length) links = await panelDayLinkService.linksForRounds(due);
+  } catch (err) {
+    console.error('Could not look up panel day links for reminders:', err.message);
+  }
+  const panelEmailed = due.length ? await invitations.emailPanel(due, 'reminder', { links }) : 0;
   for (const round of due) await interviewModel.update(round.id, { reminderSentAt: now });
   return { reminded: due.length, panelEmailed };
 }

@@ -1,6 +1,7 @@
 const { sendMail } = require('../utils/mailer');
 const { buildCalendar, interviewUid } = require('../utils/icsCalendar');
 const { formatWhen, durationOf, endOf, escapeHtml, describeSlot } = require('../utils/interviewFormat');
+const { linksHtml } = require('./panelDayLinkService');
 
 // Panelists usually have no system account, so email (with a calendar
 // invite attached) is how they learn they are on a panel, and when. One
@@ -68,12 +69,14 @@ function slotRow(round) {
 
 /**
  * Emails every (non-recused) panelist with an address about the given
- * rounds. kind: 'scheduled' | 'rescheduled' | 'cancelled'. rounds must be
+ * rounds. kind: 'scheduled' | 'rescheduled' | 'cancelled'. links (from
+ * panelDayLinkService.linksForRounds) puts each panelist's scoring link for
+ * each interview day in the same email. rounds must be
  * loaded with interviewModel.ROUND_INCLUDE. Never throws - an email problem
  * must not undo the scheduling action that triggered it (sendMail itself
  * already returns null on failure). Returns how many panelists were emailed.
  */
-async function emailPanel(rounds, kind, { reason } = {}) {
+async function emailPanel(rounds, kind, { reason, links = [] } = {}) {
   const byEmail = new Map();
   for (const round of rounds) {
     if (!round.scheduledDate) continue;
@@ -88,7 +91,8 @@ async function emailPanel(rounds, kind, { reason } = {}) {
   const heading = HEADINGS[kind];
   const cancelled = kind === 'cancelled';
   let sent = 0;
-  for (const { name, email, rounds: theirs } of byEmail.values()) {
+  for (const [key, { name, email, rounds: theirs }] of byEmail) {
+    const theirLinks = links.filter((l) => l.email && l.email.toLowerCase() === key);
     const ics = buildCalendar({
       method: cancelled ? 'CANCEL' : 'REQUEST',
       events: theirs.map((r) => panelEvent(r, { cancelled }))
@@ -101,7 +105,8 @@ async function emailPanel(rounds, kind, { reason } = {}) {
 <p>${heading.lead}</p>
 <table style="border-collapse:collapse;font-size:14px">${theirs.map(slotRow).join('')}</table>
 ${reason ? `<p>Reason: ${escapeHtml(reason)}</p>` : ''}
-${cancelled ? '' : '<p>A calendar invite is attached. HR will send you a separate, single-use link to submit your scores.</p>'}
+${cancelled ? '' : '<p>A calendar invite is attached.</p>'}
+${cancelled ? '' : theirLinks.length ? linksHtml(theirLinks) : '<p>HR will send you a link to submit your scores.</p>'}
 <p>UCAA Human Resources</p>`,
         attachments: [{
           filename: cancelled ? 'interview-cancelled.ics' : 'interview.ics',

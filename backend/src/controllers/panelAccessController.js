@@ -2,6 +2,7 @@ const { sendError } = require('../utils/errorResponse');
 const panelMemberModel = require('../models/panelMemberModel');
 const interviewModel = require('../models/interviewModel');
 const panelAccessService = require('../services/panelAccessService');
+const panelDayLinkService = require('../services/panelDayLinkService');
 const interviewService = require('../services/interviewService');
 const { notify } = require('../services/notificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
@@ -28,6 +29,14 @@ async function generateLink(req, res) {
   if (round && round.status !== 'Scheduled') {
     return res.status(422).json({ error: 'Scoring is closed for this interview' });
   }
+  if (round?.scheduledDate) {
+    // A fresh day link for this panelist (the old one stops working): it
+    // covers every candidate they interview for this vacancy that day.
+    const [link] = await panelDayLinkService.emailLinks(await panelDayLinkService.linksForRounds([round], {
+      createdById: req.user.id, fresh: true, onlyMemberIds: [panelMember.id]
+    }));
+    if (link) return res.status(201).json({ url: link.url, emailed: link.emailed });
+  }
   const { url, emailed } = await panelAccessService.issueLink(panelMember, round);
   res.status(201).json({ url, emailed });
 }
@@ -37,6 +46,13 @@ async function generateLink(req, res) {
 async function revokeAccess(req, res) {
   const panelMemberId = Number(req.params.panelMemberId);
   await panelAccessService.revokeOutstandingTokens(panelMemberId);
+  // Their day link too - which also stops it for any other candidate they
+  // were due to score that day; HR sends a fresh one if they should carry on.
+  const panelMember = await panelMemberModel.findById(panelMemberId);
+  if (panelMember) {
+    const round = await interviewModel.findDetailed(panelMember.interviewRoundId);
+    await panelDayLinkService.revokeForMember(panelMember, round);
+  }
   res.json({ message: 'Outstanding scoring links revoked' });
 }
 
@@ -135,4 +151,4 @@ async function recuseByToken(req, res) {
   }
 }
 
-module.exports = { generateLink, revokeAccess, viewByToken, submitByToken, recuseByToken };
+module.exports = { generateLink, revokeAccess, viewByToken, submitByToken, recuseByToken, tellSchedulerIfComplete };

@@ -9,12 +9,14 @@ const interviewService = require('../services/interviewService');
 const scheduling = require('../services/interviewSchedulingService');
 const invitations = require('../services/interviewInvitationService');
 const panelAccessService = require('../services/panelAccessService');
+const panelDayLinkService = require('../services/panelDayLinkService');
+const interviewDayModel = require('../models/interviewDayModel');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { AppError, sendError } = require('../utils/errorResponse');
 const { validateEmail } = require('../utils/validators');
 const { buildCalendar } = require('../utils/icsCalendar');
-const { endOf } = require('../utils/interviewFormat');
+const { endOf, localDay, dayBounds, formatDay } = require('../utils/interviewFormat');
 const { CLEARED_MERIT } = require('../services/meritListService');
 
 // Applications an interview can legitimately be scheduled against - mirrors
@@ -159,6 +161,24 @@ async function emailPanelSafely(rounds, kind, options) {
   }
 }
 
+// Each panelist's scoring link for every interview day these rounds fall
+// on (panelDayLinkService) - issued when the interviews are booked so the
+// invitation email carries it. A failure here must not undo the booking;
+// HR can send the links again from the Hub.
+async function dayLinksSafely(rounds, createdById) {
+  try {
+    return await panelDayLinkService.linksForRounds(rounds, { createdById });
+  } catch (err) {
+    console.error('Could not issue panel day links:', err);
+    return [];
+  }
+}
+
+// Links HR has to pass on by hand - panelists with no email on file.
+function unsentLinks(links) {
+  return links.filter((l) => !l.email).map(({ name, day, dayLabel, url }) => ({ name, day, dayLabel, url }));
+}
+
 function broadcast(action, round) {
   broadcastDashboardEvent('InterviewUpdated', { action, interviewId: round.id, applicationId: round.applicationId });
 }
@@ -242,10 +262,11 @@ async function schedule(req, res) {
   // where/when it is) - scheduledDate can still be null ("to be confirmed").
   await notifyCandidateSafely(application.candidateId, 'InterviewScheduled',
     invitations.candidateMessage('scheduled', round, application.vacancy.title));
-  const panelEmailed = req.body.notifyPanel === false ? 0 : await emailPanelSafely([round], 'scheduled');
+  const links = await dayLinksSafely([round], req.user.id);
+  const panelEmailed = req.body.notifyPanel === false ? 0 : await emailPanelSafely([round], 'scheduled', { links });
 
   broadcast('scheduled', round);
-  res.status(201).json({ ...decorate(round), panelEmailed });
+  res.status(201).json({ ...decorate(round), panelEmailed, panelLinks: unsentLinks(links) });
 }
 
 // Shared by the session preview and the session create: validates the
@@ -355,7 +376,8 @@ async function scheduleSession(req, res) {
     await notifyCandidateSafely(round.application.candidateId, 'InterviewScheduled',
       invitations.candidateMessage('scheduled', round, round.application.vacancy.title));
   }
-  const panelEmailed = req.body.notifyPanel === false ? 0 : await emailPanelSafely(rounds, 'scheduled');
+  const links = await dayLinksSafely(rounds, req.user.id);
+  const panelEmailed = req.body.notifyPanel === false ? 0 : await emailPanelSafely(rounds, 'scheduled', { links });
 
   await prisma.auditLog.create({
     data: {
@@ -364,7 +386,7 @@ async function scheduleSession(req, res) {
     }
   });
   broadcastDashboardEvent('InterviewUpdated', { action: 'session', sessionKey, vacancyId: session.vacancyId });
-  res.status(201).json({ sessionKey, rounds: rounds.map((r) => decorate(r)), panelEmailed });
+  res.status(201).json({ sessionKey, rounds: rounds.map((r) => decorate(r)), panelEmailed, panelLinks: unsentLinks(links) });
 }
 
 // What the scheduler needs to open on a vacancy: who can be scheduled, the
@@ -472,11 +494,12 @@ async function attention(req, res) {
 async function getById(req, res) {
   const round = await loadRoundOr404(req, res);
   if (!round) return;
-  const [links, siblings] = await Promise.all([
+  const [links, dayLinks, siblings] = await Promise.all([
     panelAccessTokenModel.findActiveForRound(round.id),
+    panelDayLinkService.activeLinksForRound(round),
     interviewModel.findByApplication(round.applicationId)
   ]);
-  const activeLinks = new Map(links.map((l) => [l.panelMemberId, l.expiresAt]));
+  const activeLinks = new Map([...links.map((l) => [l.panelMemberId, l.expiresAt]), ...dayLinks]);
   res.json({
     ...decorate(round, activeLinks),
     otherRounds: siblings
@@ -616,6 +639,8 @@ async function reschedule(req, res) {
     // A confirmation of the old time says nothing about the new one, and
     // the reminder/score-nudge clocks restart from the new time.
     candidateResponse: 'Pending', candidateResponseNote: null, candidateRespondedAt: null,
+    // Called in for the old time says nothing about the new one.
+    calledInAt: null, calledInById: null,
     reminderSentAt: null, scoreNudgeSentAt: null
   });
   if (result.count === 0) return res.status(409).json({ error: 'This interview was changed by someone else - refresh and try again' });
@@ -627,9 +652,137 @@ async function reschedule(req, res) {
   });
   await notifyCandidateSafely(updated.application.candidateId, 'InterviewRescheduled',
     invitations.candidateMessage('rescheduled', updated, updated.application.vacancy.title, { reason }));
-  const panelEmailed = req.body.notifyPanel === false ? 0 : await emailPanelSafely([updated], 'rescheduled', { reason });
+  // Moved to another day, the round now sits on that day's link.
+  const links = await dayLinksSafely([updated], req.user.id);
+  const panelEmailed = req.body.notifyPanel === false ? 0 : await emailPanelSafely([updated], 'rescheduled', { reason, links });
   broadcast('rescheduled', updated);
-  res.json({ ...decorate(updated), panelEmailed });
+  res.json({ ...decorate(updated), panelEmailed, panelLinks: unsentLinks(links) });
+}
+
+// ---------------------------------------------------------------------------
+// Interview sessions - HR runs each vacancy's interview day by hand
+// ---------------------------------------------------------------------------
+
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Validates the vacancy/day in the URL and loads the day's rounds and its
+// session row (null until started or alerted). Answers the error itself.
+async function loadDayOr404(req, res) {
+  const vacancyId = parseId(req.params.vacancyId);
+  const { day } = req.params;
+  if (!vacancyId || !DAY_RE.test(day || '')) { res.status(400).json({ error: 'Invalid vacancy or day' }); return null; }
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) { res.status(404).json({ error: 'Vacancy not found' }); return null; }
+  const { start, end } = dayBounds(day);
+  const [rounds, session] = await Promise.all([
+    interviewModel.findForVacancyDay(vacancyId, start, end),
+    interviewDayModel.find(vacancyId, day)
+  ]);
+  return { vacancy, day, rounds, session };
+}
+
+async function describeDay({ vacancy, day, rounds, session }) {
+  const staffIds = [session?.startedById, session?.endedById].filter(Boolean);
+  const staffRows = staffIds.length
+    ? await prisma.staffUser.findMany({ where: { id: { in: staffIds } }, select: { id: true, name: true } })
+    : [];
+  const nameOf = (id) => staffRows.find((s) => s.id === id)?.name || null;
+  const held = rounds.filter((r) => r.status !== 'Cancelled');
+  return {
+    vacancy: { id: vacancy.id, jobRef: vacancy.jobRef, title: vacancy.title },
+    day,
+    dayLabel: formatDay(day),
+    isToday: day === localDay(new Date()),
+    firstStart: held[0]?.scheduledDate || null,
+    session: {
+      state: panelDayLinkService.sessionState(session, day),
+      startedAt: session?.startedAt || null,
+      startedBy: nameOf(session?.startedById),
+      endedAt: session?.endedAt || null,
+      endedBy: nameOf(session?.endedById),
+      closesAt: panelDayLinkService.closesAtOf(session, day),
+      notStartedAlertAt: session?.notStartedAlertAt || null
+    },
+    rounds: rounds.map((r) => decorate(r))
+  };
+}
+
+// The session view for one vacancy's interview day.
+async function getDay(req, res) {
+  const loaded = await loadDayOr404(req, res);
+  if (!loaded) return;
+  res.json(await describeDay(loaded));
+}
+
+// Starting the session is what opens the panelists' day links for scoring
+// (each candidate still has to be called in). Only on the day itself.
+async function startDay(req, res) {
+  const loaded = await loadDayOr404(req, res);
+  if (!loaded) return;
+  const { vacancy, day, rounds } = loaded;
+  if (day !== localDay(new Date())) return res.status(422).json({ error: 'A session can only be started on the day of the interviews' });
+  if (!rounds.some((r) => r.status === 'Scheduled')) {
+    return res.status(422).json({ error: 'There are no interviews still to hold for this vacancy today' });
+  }
+  const row = await interviewDayModel.ensure(vacancy.id, day);
+  const result = await interviewDayModel.start(row.id, req.user.id, new Date());
+  if (result.count === 0) return res.status(409).json({ error: 'This interview session has already been started' });
+
+  await prisma.auditLog.create({
+    data: { entityType: 'Vacancy', entityId: vacancy.id, action: 'Interview session started', performedById: req.user.id, payload: { day } }
+  });
+  broadcastDashboardEvent('InterviewUpdated', { action: 'sessionStarted', vacancyId: vacancy.id, day });
+  res.json(await describeDay({ ...loaded, session: await interviewDayModel.find(vacancy.id, day) }));
+}
+
+// Ending the session gives panelists a grace period to finish scoring, then
+// their day links close. Candidates never called in are listed back so HR
+// can reschedule them or mark them as no-shows.
+async function endDay(req, res) {
+  const loaded = await loadDayOr404(req, res);
+  if (!loaded) return;
+  const { vacancy, day, session, rounds } = loaded;
+  if (panelDayLinkService.sessionState(session, day) !== 'running') {
+    return res.status(422).json({ error: 'Only a running interview session can be ended' });
+  }
+  const now = new Date();
+  const closesAt = new Date(now.getTime() + panelDayLinkService.GRACE_MS);
+  const result = await interviewDayModel.end(session.id, req.user.id, now, closesAt);
+  if (result.count === 0) return res.status(409).json({ error: 'This interview session has already been ended' });
+
+  const notCalledIn = rounds.filter((r) => r.status === 'Scheduled' && !r.calledInAt);
+  await prisma.auditLog.create({
+    data: {
+      entityType: 'Vacancy', entityId: vacancy.id, action: 'Interview session ended', performedById: req.user.id,
+      payload: { day, notCalledInRoundIds: notCalledIn.map((r) => r.id) }
+    }
+  });
+  broadcastDashboardEvent('InterviewUpdated', { action: 'sessionEnded', vacancyId: vacancy.id, day });
+  res.json({
+    ...(await describeDay({ ...loaded, session: await interviewDayModel.find(vacancy.id, day) })),
+    notCalledIn: notCalledIn.map((r) => ({ id: r.id, candidateName: r.application.candidate.fullName }))
+  });
+}
+
+// HR calls the next candidate in: from now on the panel can score them on
+// their day links. Only while the session for that vacancy-day is running.
+async function callIn(req, res) {
+  const round = await loadRoundOr404(req, res);
+  if (!round) return;
+  if (!requireScheduled(round, res, 'called in')) return;
+  if (!round.scheduledDate) return res.status(422).json({ error: 'This interview has no date' });
+  const day = localDay(round.scheduledDate);
+  const session = await interviewDayModel.find(round.application.vacancy.id, day);
+  const state = panelDayLinkService.sessionState(session, day);
+  if (state === 'notStarted') return res.status(422).json({ error: 'Start the interview session before calling candidates in' });
+  if (state !== 'running') return res.status(422).json({ error: 'This interview session has ended' });
+
+  const result = await interviewModel.callIn(round.id, req.user.id, new Date());
+  if (result.count === 0) return res.status(409).json({ error: 'This candidate has already been called in' });
+  await audit(round.id, 'Candidate called in', req.user.id, { scheduledDate: round.scheduledDate });
+  const updated = await interviewModel.findDetailed(round.id);
+  broadcast('calledIn', updated);
+  res.json(decorate(updated));
 }
 
 // Called off before it happened. Every outstanding scoring link stops
@@ -833,9 +986,23 @@ async function sendAllLinks(req, res) {
   if (pending.length === 0) return res.status(422).json({ error: 'Every panelist has already scored' });
 
   const results = [];
-  for (const m of pending) {
-    const { url, emailed } = await panelAccessService.issueLink(m, round);
-    results.push({ panelMemberId: m.id, name: m.name, emailed, url: emailed ? undefined : url });
+  if (round.scheduledDate) {
+    // Each panelist's link for the day of this interview - it also covers
+    // every other candidate they interview for this vacancy that day. An
+    // existing link is re-sent rather than replaced.
+    const links = await panelDayLinkService.emailLinks(await panelDayLinkService.linksForRounds([round], {
+      createdById: req.user.id, onlyMemberIds: pending.map((m) => m.id)
+    }));
+    for (const m of pending) {
+      const link = links.find((l) => scheduling.samePerson({ name: l.name, email: l.email, staffUserId: l.staffUserId }, m));
+      if (link) results.push({ panelMemberId: m.id, name: m.name, emailed: link.emailed, url: link.emailed ? undefined : link.url });
+    }
+  } else {
+    // No date yet, so no day to attach a link to - a single-interview link.
+    for (const m of pending) {
+      const { url, emailed } = await panelAccessService.issueLink(m, round);
+      results.push({ panelMemberId: m.id, name: m.name, emailed, url: emailed ? undefined : url });
+    }
   }
   broadcast('links', round);
   res.status(201).json({ results });
@@ -934,5 +1101,9 @@ module.exports = {
   recusePanelMember: wrap(recusePanelMember),
   recordPanelScore: wrap(recordPanelScore),
   sendAllLinks: wrap(sendAllLinks),
-  finalizeRecommendation: wrap(finalizeRecommendation)
+  finalizeRecommendation: wrap(finalizeRecommendation),
+  getDay: wrap(getDay),
+  startDay: wrap(startDay),
+  endDay: wrap(endDay),
+  callIn: wrap(callIn)
 };

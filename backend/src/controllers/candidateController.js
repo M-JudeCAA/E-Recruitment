@@ -342,12 +342,14 @@ async function myApplications(req, res) {
   // (offerService.toCandidateOffer). Until then an Offered application
   // still reads as Interviewed, so the candidate never learns of an offer
   // that is only recommended - or that is then returned or withdrawn.
-  // Where they sit on the interview order and the merit list (Primary or
-  // Reserve) is HR's working information, not the candidate's.
+  // Where they sit on the interview order, the shortlisting committee's
+  // ranking and the merit list (Primary or Reserve) is HR's working
+  // information, not the candidate's.
   res.json(applications.map((a) => {
     const {
       rank, listStatus, meritRank, meritListStatus, meritStatus,
-      meritProposedAt, meritProposedById, meritApprovedAt, meritApprovedById, ...rest
+      meritProposedAt, meritProposedById, meritApprovedAt, meritApprovedById,
+      committeeRank, committeeBand, committeeScore, committeeAgreement, ...rest
     } = a;
     const offer = toCandidateOffer(a.offer);
     return {

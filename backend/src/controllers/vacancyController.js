@@ -502,6 +502,12 @@ async function saveRanking(req, res) {
 
   const vacancy = await vacancyModel.findById(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+  // A vacancy with a shortlisting committee takes its interview shortlist
+  // from the committee's ranking (shortlistCommitteeController.propose),
+  // which HR cannot reorder.
+  if (await prisma.shortlistExercise.findUnique({ where: { vacancyId } })) {
+    return res.status(409).json({ error: 'This vacancy is shortlisted by its committee - propose the shortlist from the committee ranking' });
+  }
 
   // Every id must actually belong to this vacancy - without this, a
   // crafted/stale request could rank an application that belongs to a

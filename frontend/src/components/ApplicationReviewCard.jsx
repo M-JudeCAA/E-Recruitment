@@ -169,6 +169,21 @@ export default function ApplicationReviewCard({
           Cover letter: {app.coverLetterUrl ? <a href={fileLink(app.coverLetterUrl)} target="_blank" rel="noreferrer">view</a> : 'none'}
         </span>
       </div>
+      {[['Academic', 'Academic documents'], ['Other', 'Other documents']].map(([category, heading]) => {
+        const docs = (app.documents || []).filter((d) => d.category === category);
+        if (docs.length === 0) return null;
+        return (
+          <div key={category} style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '4px 0', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <span>{heading}:</span>
+            {docs.map((d, i) => (
+              <span key={d.id}>
+                <a href={fileLink(d.fileUrl)} target="_blank" rel="noreferrer" title={d.originalName}>{d.label || d.originalName}</a>
+                {i < docs.length - 1 && ','}
+              </span>
+            ))}
+          </div>
+        );
+      })}
 
       {app.status === 'Rejected' && (
         <div style={{ fontSize: 13, color: 'var(--color-danger)', margin: '6px 0' }}>

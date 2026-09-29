@@ -4,7 +4,7 @@ const draftController = require('../controllers/applicationDraftController');
 const meritListController = require('../controllers/meritListController');
 const offerController = require('../controllers/offerController');
 const { authenticate, requireStaffRole, requireCandidate } = require('../middleware/auth');
-const { upload } = require('../middleware/upload');
+const { upload, uploadSupportingDocument } = require('../middleware/upload');
 
 const router = express.Router();
 
@@ -26,6 +26,15 @@ router.post('/', authenticate, requireCandidate,
 router.patch('/:id/submit', authenticate, requireCandidate, draftController.submit);
 // Candidate withdraws their own Draft or Submitted application.
 router.patch('/:id/withdraw', authenticate, requireCandidate, draftController.withdraw);
+// Screening at the point of application - may this candidate apply to this
+// vacancy? submit() enforces the same rules.
+router.get('/eligibility/:vacancyId', authenticate, requireCandidate, draftController.eligibility);
+// Academic and other supporting documents on the candidate's own Draft.
+router.post('/:id/documents', authenticate, requireCandidate,
+  uploadSupportingDocument.single('file'),
+  draftController.addDocument
+);
+router.delete('/:id/documents/:documentId', authenticate, requireCandidate, draftController.removeDocument);
 
 // "Review & shortlist candidates" is a Senior HR Officer+ capability per
 // the 5-tier permission table - an HR Officer can create/propose but not
