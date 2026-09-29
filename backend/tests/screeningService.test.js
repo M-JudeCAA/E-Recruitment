@@ -1,7 +1,7 @@
 const {
   screenApplication, scoreApplication, evaluateEssentialCriteria,
   highestEducationLevel, matchesFieldOfStudy, computeExperienceYears,
-  computeAge, evaluateAge, evaluateFlyingHours, evaluateExamGrades, evaluateCGPA
+  computeAge, evaluateAge, evaluateFlyingHours, evaluateExamGrades, evaluateCGPA, assessEligibility
 } = require('../src/services/screeningService');
 
 describe('highestEducationLevel', () => {
@@ -409,5 +409,47 @@ describe('computeExperienceYears', () => {
       { startDate: '2021-01-01', endDate: '2021-06-01' }
     ]);
     expect(years).toBeCloseTo(2, 1);
+  });
+});
+
+describe('assessEligibility', () => {
+  const candidate = {
+    education: [{ qualificationLevel: 'Bachelors' }],
+    workExperience: [{ startDate: '2015-01-01', endDate: '2020-01-01' }]
+  };
+  const question = { id: 'q1', text: 'Have you ever been convicted of a criminal offence?', requiredAnswer: 'No' };
+
+  test('eligible when the profile meets every minimum and no Disqualifying question is failed', () => {
+    const result = assessEligibility(
+      { disqualifyingResponses: [{ ...question, answer: false }] },
+      candidate,
+      { minimumEducationLevel: 'Diploma', minimumExperienceYears: 3, disqualifyingRequirements: [question] }
+    );
+    expect(result).toEqual({ eligible: true, reasons: [], unanswered: [] });
+  });
+
+  test('a wrong answer to a Disqualifying question makes the candidate ineligible', () => {
+    const result = assessEligibility({ disqualifyingResponses: [{ ...question, answer: true }] }, candidate, { disqualifyingRequirements: [question] });
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toEqual([`Disqualifying requirement not met: "${question.text}"`]);
+  });
+
+  test('missing profile data for a minimum counts against eligibility', () => {
+    const result = assessEligibility(null, candidate, { minimumAge: 21 });
+    expect(result.eligible).toBe(false);
+    expect(result.reasons[0]).toMatch(/Date of birth not on file/);
+  });
+
+  test('Qualifying (desirable) answers never block', () => {
+    const result = assessEligibility(
+      { desirableResponses: [{ id: 'd1', text: 'Do you hold a Masters?', answer: false }] },
+      candidate, { desirableRequirements: [{ id: 'd1', text: 'Do you hold a Masters?' }] }
+    );
+    expect(result.eligible).toBe(true);
+  });
+
+  test('lists Disqualifying questions not answered yet, without calling them failures', () => {
+    const result = assessEligibility(null, candidate, { disqualifyingRequirements: [question] });
+    expect(result).toEqual({ eligible: true, reasons: [], unanswered: [question.text] });
   });
 });

@@ -18,7 +18,8 @@ const JOBS = [
   { name: 'sendInterviewReminders', label: 'interview reminders and score follow-ups' },
   { name: 'expireOffers', label: 'offer deadline reminders and expiry' },
   { name: 'cleanupPendingRegistrations', label: 'cleanup of abandoned registrations' },
-  { name: 'cleanupVerificationTokens', label: 'cleanup of old confirmation and reset links' }
+  { name: 'cleanupVerificationTokens', label: 'cleanup of old confirmation and reset links' },
+  { name: 'checkInterviewSessions', label: 'alerts for interview sessions not started' }
 ];
 const STALE_AFTER_HOURS = 3;
 // A single failed email shows on the banner straight away (it is the

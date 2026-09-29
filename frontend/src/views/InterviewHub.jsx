@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  ChevronLeft, ChevronRight, CalendarPlus, MapPin, Video, Phone, AlertTriangle, Crown, Search, Trophy
+  ChevronLeft, ChevronRight, CalendarPlus, MapPin, Video, Phone, AlertTriangle, Crown, Search, Trophy, PlayCircle
 } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
@@ -18,6 +18,7 @@ import StatusBadge from '../components/StatusBadge';
 import LoadingState from '../components/LoadingState';
 import InterviewScheduler from '../components/interviews/InterviewScheduler';
 import InterviewRoundPanel from '../components/interviews/InterviewRoundPanel';
+import InterviewDayPanel from '../components/interviews/InterviewDayPanel';
 import { ROUND_LABELS, hintText, inputStyle, chipStyle } from '../components/interviews/formStyles';
 import {
   startOfWeek, addDays, sameDay, formatDay, timeRange, venueLabel, formatDateTime, errorMessage
@@ -95,8 +96,10 @@ function RoundList({ rounds, onOpen, showDate, empty }) {
 }
 
 // The day's interviews, with rounds booked together as one session shown
-// under a single session heading.
-function DayBlock({ day, rounds, onOpen }) {
+// under a single session heading. Each vacancy interviewing that day gets a
+// "Run session" button - the day is run as a session HR starts, calls
+// candidates in during, and ends (InterviewDayPanel).
+function DayBlock({ day, rounds, onOpen, onOpenDay }) {
   const groups = [];
   for (const r of rounds) {
     const last = groups[groups.length - 1];
@@ -113,6 +116,15 @@ function DayBlock({ day, rounds, onOpen }) {
         <span>{formatDay(day)}{today ? ' · Today' : ''}</span>
         <span style={hintText}>{rounds.length} interview{rounds.length === 1 ? '' : 's'}</span>
       </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '6px 12px', borderTop: '1px solid var(--color-border)' }}>
+        <span style={hintText}>Run session:</span>
+        {[...new Map(rounds.map((r) => [r.application.vacancy.id, r.application.vacancy])).values()].map((v) => (
+          <button key={v.id} type="button" style={chipStyle(today)} onClick={() => onOpenDay(v.id, toDateParam(day))}
+            title={`Start, run and end the interview session for ${v.title} on this day`}>
+            <PlayCircle size={12} /> {v.jobRef}
+          </button>
+        ))}
+      </div>
       {groups.map((g, i) => (
         <div key={g.sessionKey || `single-${i}`} style={g.sessionKey && g.rounds.length > 1 ? { borderLeft: '3px solid var(--color-primary)' } : undefined}>
           {g.sessionKey && g.rounds.length > 1 && (
@@ -127,7 +139,7 @@ function DayBlock({ day, rounds, onOpen }) {
   );
 }
 
-function Agenda({ vacancies, onOpen, reloadKey }) {
+function Agenda({ vacancies, onOpen, onOpenDay, reloadKey }) {
   const [params, setParams] = useSearchParams();
   const weekStart = useMemo(() => startOfWeek(params.get('week') ? new Date(`${params.get('week')}T00:00:00`) : new Date()), [params]);
   const vacancyId = params.get('vacancyId') || '';
@@ -192,7 +204,7 @@ function Agenda({ vacancies, onOpen, reloadKey }) {
       {rounds && rounds.length === 0 && (
         <Card><p style={{ margin: 0, color: 'var(--color-text-muted)' }}>No interviews {statusFilter ? 'booked' : ''} this week{vacancyId ? ' for this vacancy' : ''}.</p></Card>
       )}
-      {rounds && byDay.filter((d) => d.rounds.length).map((d) => <DayBlock key={d.day.toISOString()} day={d.day} rounds={d.rounds} onOpen={onOpen} />)}
+      {rounds && byDay.filter((d) => d.rounds.length).map((d) => <DayBlock key={d.day.toISOString()} day={d.day} rounds={d.rounds} onOpen={onOpen} onOpenDay={onOpenDay} />)}
     </div>
   );
 }
@@ -354,6 +366,8 @@ export default function InterviewHub() {
   const [params, setParams] = useSearchParams();
   const tab = TABS.some(([k]) => k === params.get('tab')) ? params.get('tab') : 'agenda';
   const openRoundId = Number(params.get('round')) || null;
+  // ?session=<vacancyId>_<YYYY-MM-DD> - the interview session panel.
+  const [sessionVacancyId, sessionDay] = (params.get('session') || '').split('_');
 
   const [attention, setAttention] = useState(null);
   const [vacancies, setVacancies] = useState([]);
@@ -424,7 +438,7 @@ export default function InterviewHub() {
           ))}
         </div>
 
-        {tab === 'agenda' && <Agenda vacancies={vacancies} onOpen={(id) => setParam('round', id)} reloadKey={reloadKey} />}
+        {tab === 'agenda' && <Agenda vacancies={vacancies} onOpen={(id) => setParam('round', id)} onOpenDay={(vacancyId, day) => setParam('session', `${vacancyId}_${day}`)} reloadKey={reloadKey} />}
         {tab === 'attention' && <Attention data={attention} onOpen={(id) => setParam('round', id)} onSchedule={(vacancyId) => setScheduler({ vacancyId })} canEdit={canEdit} />}
         {tab === 'scorecards' && <Scorecards vacancies={vacancies} onOpen={(id) => setParam('round', id)} reloadKey={reloadKey} />}
       </div>
@@ -435,6 +449,10 @@ export default function InterviewHub() {
           onClose={() => setScheduler(null)}
           onScheduled={refresh}
         />
+      )}
+      {sessionVacancyId && sessionDay && !openRoundId && (
+        <InterviewDayPanel vacancyId={Number(sessionVacancyId)} day={sessionDay} canEdit={canEdit} reloadKey={reloadKey}
+          onClose={() => setParam('session', null)} onOpenRound={(id) => setParam('round', id)} onChanged={refresh} />
       )}
       {openRoundId && (
         <InterviewRoundPanel roundId={openRoundId} onClose={() => setParam('round', null)} onChanged={refresh} />

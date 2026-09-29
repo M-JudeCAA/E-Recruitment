@@ -19,6 +19,7 @@ import QuestionsStep from './apply-wizard/QuestionsStep';
 import InternalProfileStep from './apply-wizard/InternalProfileStep';
 import ReviewStep from './apply-wizard/ReviewStep';
 import SubmitStep from './apply-wizard/SubmitStep';
+import { failedDisqualifyingRequirements } from '../utils/screeningQuestions';
 
 // A requirement's answerType (see ScreeningQuestionsEditor.jsx) decides how
 // its raw form-control value should be read: a 'number' row's TextField
@@ -98,6 +99,16 @@ export default function ApplyForm() {
   const emptyReferee = { name: '', relationship: '', organization: '', phone: '', email: '' };
   const [refereesForm, setRefereesForm] = useState([{ ...emptyReferee }, { ...emptyReferee }, { ...emptyReferee }]);
   const [coverLetter, setCoverLetter] = useState(null);
+  // Academic/other supporting documents already uploaded to this draft -
+  // DocumentsStep uploads/removes each one immediately, so this mirrors the
+  // server rather than holding files for the next save.
+  const [documents, setDocuments] = useState([]);
+  // Screening at the point of application (GET
+  // /api/applications/eligibility/:vacancyId): whether the candidate's
+  // profile, and the eligibility answers saved on their draft, let them
+  // apply. Shown on Job Details as an early warning and enforced on Submit
+  // (the backend refuses an ineligible submit regardless).
+  const [eligibility, setEligibility] = useState(null);
 
   const [stepIndex, setStepIndex] = useState(0);
   const [visited, setVisited] = useState({ 0: true });
@@ -186,6 +197,7 @@ export default function ApplyForm() {
         // 3 fixed slots.
         const savedReferees = existing.referees || [];
         setRefereesForm([0, 1, 2].map((i) => ({ ...emptyReferee, ...savedReferees[i] })));
+        setDocuments(existing.documents || []);
       }
       setApplicationsChecked(true);
     });
@@ -209,7 +221,7 @@ export default function ApplyForm() {
   const steps = [
     { key: 'jobDetails', label: 'Job Details', note: 'About this role' },
     { key: 'profile', label: 'Profile', note: 'Who you are' },
-    { key: 'documents', label: 'Documents', note: 'Cover letter & links' },
+    { key: 'documents', label: 'Documents', note: 'Academic & other files' },
     { key: 'referees', label: 'Referees', note: '3 references' },
     { key: 'questions', label: 'Questions', note: 'A few specifics' },
     ...(candidate?.candidateType === 'Internal'
@@ -267,6 +279,8 @@ export default function ApplyForm() {
         }
         return missing;
       }
+      case 'documents':
+        return documents.some((d) => d.category === 'Academic') ? [] : ['At least one academic document'];
       case 'questions': {
         const missing = [];
         if (!questionsForm.openToRelocate) missing.push('Open to relocating?');
@@ -294,6 +308,21 @@ export default function ApplyForm() {
     }
   };
   const currentStepErrors = stepErrors(steps[stepIndex].key);
+  // A Disqualifying question answered the wrong way ends the application
+  // here - Continue stays disabled on the Questions step (see below).
+  const failedEligibilityQuestions = vacancy
+    ? failedDisqualifyingRequirements(vacancy.disqualifyingRequirements, disqualifyingAnswers) : [];
+  const blockedByEligibility = steps[stepIndex].key === 'questions' && failedEligibilityQuestions.length > 0;
+
+  const currentStepKey = steps[stepIndex].key;
+  const applicationStatus = application?.status;
+  useEffect(() => {
+    if (!['jobDetails', 'review', 'submit'].includes(currentStepKey)) return;
+    if (applicationStatus && applicationStatus !== 'Draft') return;
+    client.get(`/api/applications/eligibility/${vacancyId}`)
+      .then((res) => setEligibility(res.data))
+      .catch(() => setEligibility(null));
+  }, [vacancyId, currentStepKey, applicationStatus]);
 
   // Application-level - CV/cover letter plus the Questions step answers,
   // all persisted through the same draft-save endpoint so "Save as draft"
@@ -477,6 +506,16 @@ export default function ApplyForm() {
                 and getting hard-clipped by the card's overflow:hidden above, no
                 matter what truncation styling exists further down the tree. */}
             <div className="flex-1 min-w-0 px-6 md:px-8 py-6 md:py-8">
+              {steps[stepIndex].key === 'jobDetails' && !alreadyDecided && eligibility?.reasons?.length > 0 && (
+                <div style={{ background: 'var(--color-warning-light)', color: 'var(--color-warning)', padding: 'var(--spacing-sm) var(--spacing-md)', borderRadius: 'var(--radius)', marginBottom: 'var(--spacing-md)', fontSize: 14 }}>
+                  <strong>Based on your profile, you do not currently meet this role's requirements:</strong>
+                  <ul style={{ margin: '6px 0', paddingLeft: 20 }}>
+                    {eligibility.reasons.map((r) => <li key={r}>{r}</li>)}
+                  </ul>
+                  You will not be able to submit an application unless your profile shows you meet them. If something is
+                  missing or out of date, you can fix it in the Profile step.
+                </div>
+              )}
               {steps[stepIndex].key === 'jobDetails' && <JobDetailsStep vacancy={vacancy} />}
               {steps[stepIndex].key === 'profile' && (
                 <ProfileStep profile={profile} onProfileChange={loadProfile}
@@ -485,6 +524,7 @@ export default function ApplyForm() {
               )}
               {steps[stepIndex].key === 'documents' && (
                 <DocumentsStep coverLetter={coverLetter} setCoverLetter={(file) => { setDirty(true); setCoverLetter(file); }}
+                  applicationId={application?.id} documents={documents} onDocumentsChange={setDocuments}
                   portfolioUrl={profileDetailsForm.portfolioUrl}
                   setPortfolioUrl={(e) => { setDirty(true); setProfileDetailsForm({ ...profileDetailsForm, portfolioUrl: e.target.value }); }} />
               )}
@@ -508,14 +548,15 @@ export default function ApplyForm() {
                   set={(key) => (e) => { setDirty(true); setInternalProfileForm({ ...internalProfileForm, [key]: e.target.value }); }} />
               )}
               {steps[stepIndex].key === 'review' && (
-                <ReviewStep profile={profile} coverLetter={coverLetter} referees={refereesForm} vacancy={vacancy}
+                <ReviewStep profile={profile} coverLetter={coverLetter} documents={documents} referees={refereesForm} vacancy={vacancy}
                   profileDetails={profileDetailsForm} questions={questionsForm} internalProfile={internalProfileForm}
                   candidateType={candidate?.candidateType} goTo={goTo} stepIndexes={stepIndexes}
                   desirableRequirements={vacancy.desirableRequirements} desirableAnswers={desirableAnswers}
                   disqualifyingRequirements={vacancy.disqualifyingRequirements} disqualifyingAnswers={disqualifyingAnswers} />
               )}
               {steps[stepIndex].key === 'submit' && (
-                <SubmitStep vacancy={vacancy} applicationId={application?.id} status={application?.status}
+                <SubmitStep vacancy={vacancy} applicationId={application?.id} status={application?.status} eligibility={eligibility}
+                  goToStep={(key) => goTo(stepIndexes[key])}
                   onSubmitted={() => setApplication({ ...application, status: 'Submitted' })}
                   onWithdrawn={() => navigate('/dashboard/applications')} />
               )}
@@ -531,6 +572,12 @@ export default function ApplyForm() {
               {currentStepErrors.length > 0 && (
                 <p style={{ fontSize: 13, color: 'var(--color-danger)', marginTop: 16 }}>
                   Before continuing, please complete: {currentStepErrors.join(', ')}
+                </p>
+              )}
+              {blockedByEligibility && (
+                <p style={{ fontSize: 13, color: 'var(--color-danger)', marginTop: 16 }}>
+                  You are not eligible for this role because of your answer to: {failedEligibilityQuestions.map((r) => `"${r.text}"`).join(', ')}.
+                  If you answered by mistake, change your answer to continue.
                 </p>
               )}
 
@@ -552,7 +599,7 @@ export default function ApplyForm() {
                           {saving ? 'Saving...' : 'Save as draft'}
                         </Button>
                       )}
-                      <Button type="button" disabled={continuing || currentStepErrors.length > 0} onClick={async () => {
+                      <Button type="button" disabled={continuing || currentStepErrors.length > 0 || blockedByEligibility} onClick={async () => {
                         setContinuing(true);
                         try {
                           // persistAll guarantees an Application draft row

@@ -32,7 +32,8 @@ const HR_LIST_INCLUDE = {
   },
   interviewRounds: HR_ROUNDS_INCLUDE,
   offer: true,
-  rejectedBy: { select: { name: true } }
+  rejectedBy: { select: { name: true } },
+  documents: { orderBy: { uploadedAt: 'asc' } }
 };
 
 // candidateType/search both narrow on the related Candidate row, so they
@@ -90,7 +91,8 @@ module.exports = {
       candidate: { select: CANDIDATE_SELECT },
       interviewRounds: HR_ROUNDS_INCLUDE,
       offer: true,
-      rejectedBy: { select: { name: true } }
+      rejectedBy: { select: { name: true } },
+      documents: { orderBy: { uploadedAt: 'asc' } }
     },
     orderBy: [{ rank: 'asc' }, { shortlistScore: 'desc' }]
   }),
@@ -106,7 +108,7 @@ module.exports = {
   countForHr: (filters) => prisma.application.count({ where: buildHrWhere(filters) }),
   findByCandidate: (candidateId) => prisma.application.findMany({
     where: { candidateId },
-    include: { vacancy: true, interviewRounds: true, offer: true },
+    include: { vacancy: true, interviewRounds: true, offer: true, documents: { orderBy: { uploadedAt: 'asc' } } },
     orderBy: { createdAt: 'desc' }
   }),
   // url is always a single scalar path (see fileController.js's one caller,
@@ -114,7 +116,7 @@ module.exports = {
   // "urls", misleadingly suggesting array support the OR clause below
   // doesn't actually provide).
   findOwnedByCandidate: (candidateId, url) => prisma.application.findFirst({
-    where: { candidateId, OR: [{ cvUrl: url }, { coverLetterUrl: url }] }
+    where: { candidateId, OR: [{ cvUrl: url }, { coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] }
   }),
   findByVacancyAndStatus: (vacancyId, status) => prisma.application.findMany({
     where: { vacancyId, status }

@@ -1,17 +1,22 @@
 // Demo-data seeder that populates an EMPTY database (after
 // scripts/resetDemoData.js) with vacancies at every stage of the current
-// selection workflow - vacancy approval, applications and screening, the
-// interview shortlist, the Interview Hub (sessions, rubrics, panel scoring,
-// recusal, no-shows, reschedules, cancellations), the post-interview merit
-// list, and the full offer lifecycle (returned/revised, issued, accepted,
-// declined, expired, withdrawn, with reserve promotion) - leaving real actions
-// for each staff tier to perform live.
+// selection workflow - vacancy approval; applications with academic documents,
+// screened at the point of application (ineligible candidates are left as
+// refused drafts); the shortlisting committee (setup, blind rating,
+// moderation with chair and acting-chair rulings, closing, proposing from
+// the ranking); the Interview Hub (sessions run on the day, candidates called
+// in, rubrics, panel scoring, recusal, no-shows, reschedules, cancellations,
+// and a session booked for today to run live); the post-interview merit list;
+// and the full offer lifecycle (returned/revised, issued, accepted, declined,
+// expired, withdrawn, with reserve promotion) - leaving real actions for each
+// staff tier, committee member, panelist and candidate to perform live.
 //
 // Drives the real API (every business rule runs) by starting the Express app
 // in-process on a free port with SMTP_HOST=json, so no email leaves the
 // machine. Direct DB access is used only where the API has no way in: reading
-// email-confirmation tokens, and back-dating timestamps so the history reads
-// like weeks of real work rather than one minute.
+// email-confirmation tokens and committee members' link tokens, and
+// back-dating timestamps so the history reads like weeks of real work rather
+// than one run.
 //
 // Usage (the API does not need to be running):
 //   node scripts/resetDemoData.js --yes
@@ -27,10 +32,13 @@ process.env.SMTP_HOST = 'json';
 const prisma = require('../src/config/db');
 const app = require('../src/app');
 const { runJob } = require('../src/utils/jobRunner');
+const { frontendUrl } = require('../src/config/frontendUrl');
 
 const PASSWORD = 'DemoPass123!';
 const STAFF_PASSWORD = 'ChangeMe123!';
 const DAY = 24 * 60 * 60 * 1000;
+const HOUR = 60 * 60 * 1000;
+const MINUTE = 60 * 1000;
 const NOW = Date.now();
 const TZ = '+03:00'; // Africa/Kampala, no daylight saving
 
@@ -57,7 +65,12 @@ async function api(method, path, { token, json, form, ip } = {}) {
   const text = await res.text();
   let data;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
-  if (!res.ok) throw new Error(`${method} ${path} -> ${res.status}: ${JSON.stringify(data)}`);
+  if (!res.ok) {
+    const err = new Error(`${method} ${path} -> ${res.status}: ${JSON.stringify(data)}`);
+    err.status = res.status;
+    err.body = data;
+    throw err;
+  }
   return data;
 }
 
@@ -65,7 +78,7 @@ const ago = (days) => new Date(NOW - days * DAY);
 const daysAgoOf = (date) => (NOW - new Date(date).getTime()) / DAY;
 
 function klaDate(date) {
-  return new Date(new Date(date).getTime() + 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return new Date(new Date(date).getTime() + 3 * HOUR).toISOString().slice(0, 10);
 }
 
 // YYYY-MM-DD of the n-th working day after today (Kampala).
@@ -101,11 +114,70 @@ const STAFF_EMAILS = {
   hro: 'hro@caa.co.ug', shro: 'shro@caa.co.ug', phro: 'phro@caa.co.ug', manager: 'manager@caa.co.ug', dhra: 'dhra@caa.co.ug'
 };
 const T = {}; // staff tokens
+const STAFF_ID = {};
 
 async function loginStaff() {
   for (const [key, email] of Object.entries(STAFF_EMAILS)) {
     const r = await api('POST', '/api/staff/auth/login', { json: { email, password: STAFF_PASSWORD } });
     T[key] = r.token;
+    STAFF_ID[key] = (await prisma.staffUser.findUnique({ where: { email } })).id;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Documents - small but real PDFs, so HR and committee members can open them
+// ---------------------------------------------------------------------------
+
+function pdfDocument(title, lines) {
+  const esc = (s) => String(s).replace(/[^\x20-\x7e]/g, '-').replace(/[\\()]/g, (m) => `\\${m}`);
+  const text = [
+    `BT /F1 18 Tf 60 780 Td (${esc(title)}) Tj ET`,
+    ...lines.map((l, i) => `BT /F1 11 Tf 60 ${740 - i * 20} Td (${esc(l)}) Tj ET`),
+    'BT /F1 8 Tf 60 60 Td (Demonstration document generated for the UCAA e-Recruitment system.) Tj ET'
+  ].join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${Buffer.byteLength(text)} >>\nstream\n${text}\nendstream`
+  ];
+  let out = '%PDF-1.4\n';
+  const offsets = [];
+  objects.forEach((o, i) => {
+    offsets.push(Buffer.byteLength(out));
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(out);
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`
+    + offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')
+    + `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, 'latin1');
+}
+
+async function uploadDocument(c, applicationId, category, label, title, lines) {
+  const form = new FormData();
+  form.append('category', category);
+  form.append('label', label);
+  form.append('file', new Blob([pdfDocument(title, lines)], { type: 'application/pdf' }), `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.pdf`);
+  return api('POST', `/api/applications/${applicationId}/documents`, { token: c.token, form });
+}
+
+// The candidate's academic documents (their highest qualification, plus a
+// transcript for a degree), and sometimes a copy of their national ID.
+async function attachDocuments(c, applicationId) {
+  const e = c.education[0];
+  await uploadDocument(c, applicationId, 'Academic', `${e.qualificationLevel} certificate`, `${e.institution}`, [
+    'This is to certify that', c.name, `was awarded a ${e.qualificationLevel} in ${e.fieldOfStudy}`, `in the year ${e.yearCompleted}.`
+  ]);
+  if (['Bachelors', 'Masters'].includes(e.qualificationLevel)) {
+    await uploadDocument(c, applicationId, 'Academic', 'Academic transcript', `${e.institution} - Academic transcript`, [
+      `Student: ${c.name}`, `Programme: ${e.qualificationLevel} of ${e.fieldOfStudy}`,
+      e.cgpa ? `Cumulative grade point average: ${e.cgpa} / 5.0` : 'Classification: Pass', `Completed: ${e.yearCompleted}`
+    ]);
+  }
+  for (const cert of (c.certs || []).slice(0, 1)) {
+    await uploadDocument(c, applicationId, 'Other', cert.name, cert.issuingOrganization, [`Awarded to ${c.name}`, cert.name, `Issued ${cert.issueDate}`]);
   }
 }
 
@@ -179,6 +251,9 @@ async function makeCandidate(spec) {
 
 // Answers default to meeting every eligibility question, and to "yes" on the
 // desirable ones for stronger candidates; desirable/disq override by index.
+// submit: true (must go through), false (left as a draft), or 'refused' (the
+// candidate tries, and the eligibility check at submission turns them away -
+// the draft stays, exactly as it would for a real applicant).
 async function apply(c, vacancy, { submit = true, strong = true, desirable = {}, disq = {}, why } = {}) {
   const desirableResponses = (vacancy.desirableRequirements || []).map((r, i) => ({
     id: r.id,
@@ -200,8 +275,16 @@ async function apply(c, vacancy, { submit = true, strong = true, desirable = {},
   form.append('disqualifyingResponses', JSON.stringify(disqualifyingResponses));
   form.append('referees', referees(c));
   const draft = await api('POST', '/api/applications', { token: c.token, form });
+  await attachDocuments(c, draft.id);
   if (!submit) return draft;
-  return api('PATCH', `/api/applications/${draft.id}/submit`, { token: c.token });
+  try {
+    const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: c.token });
+    if (submit === 'refused') throw new Error(`${c.name} was expected to be refused at submission for ${vacancy.title}, but was accepted`);
+    return submitted;
+  } catch (err) {
+    if (submit === 'refused' && err.body?.code === 'NOT_ELIGIBLE') return { ...draft, refusedReasons: err.body.reasons };
+    throw err;
+  }
 }
 
 const edu = (institution, qualificationLevel, fieldOfStudy, yearCompleted, cgpa) => ({ institution, qualificationLevel, fieldOfStudy, yearCompleted, cgpa });
@@ -226,13 +309,6 @@ async function createVacancy(body, approver = 'manager') {
 
 const beginReview = (vacancyId) => api('PATCH', `/api/vacancies/${vacancyId}/begin-review`, { token: T.shro });
 const reject = (applicationId, reason) => api('PATCH', `/api/applications/${applicationId}/reject`, { token: T.shro, json: { reason } });
-
-async function proposeShortlist(vacancyId, applicationIds) {
-  const apps = await api('GET', `/api/vacancies/${vacancyId}/applications`, { token: T.shro });
-  const versions = Object.fromEntries(apps.map((a) => [a.id, a.rankVersion]));
-  return api('POST', `/api/vacancies/${vacancyId}/rank`, { token: T.shro, json: { applicationIds, applicationRankVersions: versions } });
-}
-
 const approveShortlist = (vacancyId) => api('POST', `/api/applications/vacancies/${vacancyId}/approve-shortlist`, { token: T.phro });
 
 async function verifyInternal(candidateId, decision, comments) {
@@ -241,6 +317,125 @@ async function verifyInternal(candidateId, decision, comments) {
   form.append('comments', comments);
   return api('PATCH', `/api/verification/candidates/${candidateId}/verify`, { token: T.shro, form });
 }
+
+// The application window closes - rating can only open after the deadline.
+// (retime() later sets the deadline the history should show.)
+const closeApplications = (vacancyId) => prisma.vacancy.update({ where: { id: vacancyId }, data: { deadline: ago(0.2) } });
+
+// ---------------------------------------------------------------------------
+// Shortlisting committee
+// ---------------------------------------------------------------------------
+
+const DESIRABLE_BASE = { strong: 5, good: 4, fair: 3, weak: 2 };
+
+// One member's ratings of one applicant. profile: strong | good | fair | weak;
+// notMet: the index of an essential criterion the majority find not met;
+// dispute: the index of an essential criterion the raters split on
+// (Met / Partly / Not met), which the chair must then settle.
+function ratingsFor(criteria, { profile = 'good', notMet = null, dispute = null }, memberIdx, salt) {
+  const essentials = criteria.filter((c) => c.kind === 'Essential');
+  return criteria.map((c, i) => {
+    if (c.kind === 'Essential') {
+      const e = essentials.indexOf(c);
+      if (dispute === e) {
+        const value = [2, 1, 0][memberIdx % 3];
+        return { criterionId: c.id, value, comment: value === 0 ? 'The application does not show this clearly enough for me to accept it.' : null };
+      }
+      if (notMet === e && memberIdx % 3 !== 2) {
+        return { criterionId: c.id, value: 0, comment: 'Not demonstrated in the application or the documents provided.' };
+      }
+      if (profile === 'fair' && e === 0 && memberIdx === 1) return { criterionId: c.id, value: 1, comment: 'Only partly shown.' };
+      return { criterionId: c.id, value: 2, comment: null };
+    }
+    const wobble = (memberIdx + i + salt) % 3 === 0 ? -1 : 0;
+    return { criterionId: c.id, value: Math.min(5, Math.max(1, DESIRABLE_BASE[profile] + wobble)), comment: null };
+  });
+}
+
+const committeeMember = (name, role, isChair) => ({ name, role, email: `${slug(name)}@example.com`, isChair: !!isChair });
+
+// Runs the committee for a vacancy up to `stopAt` (Setup | Rating | Moderation
+// | Closed | Proposed). profiles: { applicationId: { profile, notMet, dispute } }.
+// conflicts: [[memberIdx, applicationId, reason]]. partial: { memberIdx: n
+// applicants rated } for members who haven't submitted. rulings: [{
+// applicationId, criterion (essential index), outcome, reason, byMemberIdx }].
+async function runCommittee(vacancy, members, {
+  profiles = {}, conflicts = [], partial = {}, actingChairs = [], rulings = [], stopAt = 'Proposed', proposeCount, ratersPerApplicant
+} = {}) {
+  const base = `/api/shortlist-committee/vacancies/${vacancy.id}`;
+  await api('POST', base, { token: T.shro });
+  if (ratersPerApplicant) await api('PATCH', base, { token: T.shro, json: { ratersPerApplicant } });
+  for (const m of members) await api('POST', `${base}/members`, { token: T.shro, json: { name: m.name, email: m.email, isChair: m.isChair } });
+  if (stopAt === 'Setup') return null;
+
+  await closeApplications(vacancy.id);
+  await api('POST', `${base}/open`, { token: T.shro });
+  const exercise = await prisma.shortlistExercise.findUnique({ where: { vacancyId: vacancy.id }, include: { members: { orderBy: { id: 'asc' } } } });
+  const rows = exercise.members;
+  const criteria = exercise.criteria;
+
+  for (const [idx, member] of rows.entries()) {
+    const view = await api('GET', `/api/shortlist-panel/${member.token}`);
+    const limit = idx in partial ? partial[idx] : view.applicants.length;
+    for (const [k, a] of view.applicants.entries()) {
+      const conflict = conflicts.find(([mi, appId]) => mi === idx && appId === a.applicationId);
+      if (conflict) {
+        await api('POST', `/api/shortlist-panel/${member.token}/applicants/${a.applicationId}/conflict`, { json: { reason: conflict[2] } });
+        continue;
+      }
+      if (k >= limit) continue;
+      await api('PUT', `/api/shortlist-panel/${member.token}/applicants/${a.applicationId}/ratings`, {
+        json: { ratings: ratingsFor(criteria, profiles[a.applicationId] || {}, idx, a.applicationId) }
+      });
+    }
+    if (!(idx in partial)) await api('POST', `/api/shortlist-panel/${member.token}/submit`);
+  }
+  for (const { applicationId, memberIdx } of actingChairs) {
+    await api('PUT', `${base}/acting-chairs`, { token: T.shro, json: { applicationId, memberId: rows[memberIdx].id } });
+  }
+  if (stopAt === 'Rating') return { exercise, members: rows };
+
+  await api('POST', `${base}/moderation`, { token: T.shro, json: { force: true } });
+  if (stopAt === 'Moderation') return { exercise, members: rows };
+
+  const essentials = criteria.filter((c) => c.kind === 'Essential');
+  for (const r of rulings) {
+    const by = rows[r.byMemberIdx ?? rows.findIndex((m) => m.isChair)];
+    await api('PUT', `/api/shortlist-panel/${by.token}/decisions`, {
+      json: { applicationId: r.applicationId, criterionId: essentials[r.criterion].id, outcome: r.outcome, reason: r.reason }
+    });
+  }
+  await api('POST', `${base}/close`, { token: T.shro });
+  if (stopAt === 'Closed') return { exercise, members: rows };
+  const proposed = await api('POST', `${base}/propose`, { token: T.shro, json: { count: proposeCount } });
+  return { exercise, members: rows, proposed: proposed.applicationIds };
+}
+
+// The committee's milestones, back-dated (days ago).
+async function retimeCommittee(vacancyId, { created, opened, moderation, closed }) {
+  const ex = await prisma.shortlistExercise.findUnique({ where: { vacancyId }, include: { members: { orderBy: { id: 'asc' } } } });
+  if (!ex) return;
+  const data = { createdAt: ago(created) };
+  if (ex.ratingOpenedAt) data.ratingOpenedAt = ago(opened);
+  if (ex.moderationStartedAt) data.moderationStartedAt = ago(moderation);
+  if (ex.closedAt) data.closedAt = ago(closed);
+  await prisma.shortlistExercise.update({ where: { id: ex.id }, data });
+  const end = moderation ?? 0.2;
+  for (const [i, m] of ex.members.entries()) {
+    await prisma.shortlistMember.update({ where: { id: m.id }, data: { createdAt: ago(created - 0.05) } });
+    if (!m.submittedAt) continue;
+    const when = ago(opened - ((opened - end) * (i + 1)) / (ex.members.length + 1));
+    await prisma.shortlistMember.update({ where: { id: m.id }, data: { submittedAt: when } });
+    await prisma.shortlistRating.updateMany({ where: { assignment: { memberId: m.id } }, data: { updatedAt: when } });
+  }
+  if (moderation != null) {
+    await prisma.shortlistDecision.updateMany({ where: { exerciseId: ex.id }, data: { decidedAt: ago(Math.max(0.05, (closed ?? moderation) + 0.2)) } });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Interviews
+// ---------------------------------------------------------------------------
 
 const panel = (list) => list.map(([name, trade, isChair]) => ({ name, trade, email: `${slug(name)}@example.com`, isChair: !!isChair }));
 
@@ -259,19 +454,59 @@ const scheduleOne = (applicationId, opts) => api('POST', `/api/interviews/applic
 
 // Moves rounds back in time: they were booked in the future (so candidates
 // could confirm them), and this turns them into interviews that took place.
-async function shiftRounds(rounds, days) {
+// The panelists' day links move to the new day with them.
+async function shiftRounds(vacancyId, rounds, days) {
+  const moved = new Map();
   for (const round of rounds) {
-    await prisma.interviewRound.update({
-      where: { id: round.id },
-      data: { scheduledDate: new Date(new Date(round.scheduledDate).getTime() - days * DAY) }
+    const from = new Date(round.scheduledDate);
+    const to = new Date(from.getTime() - days * DAY);
+    moved.set(klaDate(from), klaDate(to));
+    await prisma.interviewRound.update({ where: { id: round.id }, data: { scheduledDate: to } });
+  }
+  for (const [from, to] of moved) {
+    await prisma.panelDayLink.updateMany({ where: { vacancyId, day: from }, data: { day: to } });
+  }
+}
+
+// Every past interview day of a vacancy as HR ran it: the session started
+// just before the first interview and ended after the last, with each
+// candidate who attended called in.
+async function recordHeldDays(vacancyId) {
+  const rounds = await prisma.interviewRound.findMany({
+    where: { application: { vacancyId }, scheduledDate: { lt: new Date(NOW) }, status: { not: 'Cancelled' } },
+    orderBy: { scheduledDate: 'asc' }
+  });
+  const byDay = new Map();
+  for (const r of rounds) {
+    const day = klaDate(r.scheduledDate);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(r);
+  }
+  for (const [day, list] of byDay) {
+    const first = new Date(list[0].scheduledDate).getTime();
+    const last = Math.max(...list.map((r) => new Date(r.scheduledDate).getTime() + (r.durationMinutes || 60) * MINUTE));
+    await prisma.interviewDay.upsert({
+      where: { vacancyId_day: { vacancyId, day } },
+      update: {},
+      create: {
+        vacancyId, day,
+        startedAt: new Date(first - 15 * MINUTE), startedById: STAFF_ID.shro,
+        endedAt: new Date(last + 10 * MINUTE), endedById: STAFF_ID.shro, closesAt: new Date(last + 25 * MINUTE),
+        createdAt: new Date(first - 15 * MINUTE)
+      }
     });
+    for (const r of list.filter((x) => x.status !== 'NoShow')) {
+      await prisma.interviewRound.update({
+        where: { id: r.id }, data: { calledInAt: new Date(new Date(r.scheduledDate).getTime() - 2 * MINUTE), calledInById: STAFF_ID.shro }
+      });
+    }
   }
 }
 
 const respond = (c, round, response, note) => api('PATCH', `/api/candidates/me/interviews/${round.id}/respond`, { token: c.token, json: { response, note } });
 
 // Ratings (1-5) per rubric criterion that land near a 0-100 target.
-function ratingsFor(criteria, target, salt) {
+function rubricRatings(criteria, target, salt) {
   const wobble = [0, 0.4, -0.4, 0.2, -0.2];
   return Object.fromEntries(criteria.map((c, i) => [c.id, Math.min(5, Math.max(1, Math.round(target / 20 + wobble[(i + salt) % wobble.length])))]));
 }
@@ -282,7 +517,7 @@ const COMMENTS = {
   low: ['Struggled with the core technical questions.', 'Answers were generic and lacked practical examples.', 'Limited understanding of what the role requires.']
 };
 
-// Proxy-scores panelists on HR's side: { panelIndex: target 0-100 }.
+// Scores recorded by HR on the panelists' behalf: { panelIndex: target 0-100 }.
 async function score(round, targets) {
   for (const [idx, target] of Object.entries(targets)) {
     const m = round.panelMembers[idx];
@@ -291,7 +526,7 @@ async function score(round, targets) {
     await api('PATCH', `/api/interviews/panel-members/${m.id}/score`, {
       token: T.shro,
       json: round.criteria
-        ? { criterionScores: ratingsFor(round.criteria, target, salt), comments: COMMENTS[band][salt % 3] }
+        ? { criterionScores: rubricRatings(round.criteria, target, salt), comments: COMMENTS[band][salt % 3] }
         : { score: target, comments: COMMENTS[band][salt % 3] }
     });
   }
@@ -304,6 +539,10 @@ async function hold(round, targets, recommendation, notes) {
   await score(round, Object.fromEntries(targets.map((t, i) => [i, t])));
   await finalize(round, recommendation, notes);
 }
+
+// ---------------------------------------------------------------------------
+// Merit list and offers
+// ---------------------------------------------------------------------------
 
 async function proposeMerit(vacancyId, applicationIds) {
   const board = await api('GET', `/api/applications/vacancies/${vacancyId}/merit-list`, { token: T.shro });
@@ -357,7 +596,7 @@ async function retime(vacancyId, t) {
   if (v.postingTypeChangedAt && t.changed != null) data.postingTypeChangedAt = ago(t.changed);
   await prisma.vacancy.update({ where: { id: vacancyId }, data });
 
-  const apps = await prisma.application.findMany({ where: { vacancyId }, orderBy: { id: 'asc' }, include: { interviewRounds: true } });
+  const apps = await prisma.application.findMany({ where: { vacancyId }, orderBy: { id: 'asc' }, include: { interviewRounds: true, documents: true } });
   const from = t.created - 1.1;
   const to = t.deadline != null && t.deadline > 0 ? t.deadline + 0.3 : 0.2;
   for (let i = 0; i < apps.length; i += 1) {
@@ -365,7 +604,7 @@ async function retime(vacancyId, t) {
     const sub = from - ((from - to) * (i + 1)) / (apps.length + 1);
     const d = { createdAt: ago(sub + 0.08) };
     if (a.submittedDate) d.submittedDate = ago(sub);
-    if (a.screenedAt && t.review != null) d.screenedAt = ago(Math.min(t.review, sub - 0.01));
+    if (a.screenedAt) d.screenedAt = ago(t.review != null ? Math.min(t.review, sub - 0.001) : sub - 0.001);
     if (a.shortlistProposedAt && t.slProposed != null) d.shortlistProposedAt = ago(t.slProposed);
     if (a.shortlistApprovedAt && t.slApproved != null) d.shortlistApprovedAt = ago(t.slApproved);
     if (a.meritProposedAt && t.meritProposed != null) d.meritProposedAt = ago(t.meritProposed);
@@ -377,6 +616,7 @@ async function retime(vacancyId, t) {
         : ago(t.rejected ?? Math.max(0.1, (t.review ?? 1) - 0.4));
     }
     await prisma.application.update({ where: { id: a.id }, data: d });
+    await prisma.applicationDocument.updateMany({ where: { applicationId: a.id }, data: { uploadedAt: ago(sub + 0.05) } });
 
     for (const r of a.interviewRounds) {
       if (!r.scheduledDate || new Date(r.scheduledDate).getTime() > NOW) continue;
@@ -388,10 +628,11 @@ async function retime(vacancyId, t) {
       await prisma.interviewRound.update({ where: { id: r.id }, data: rd });
       await prisma.panelMember.updateMany({
         where: { interviewRoundId: r.id, submittedAt: { not: null } },
-        data: { submittedAt: new Date(when + 3 * 60 * 60 * 1000) }
+        data: { submittedAt: new Date(when + 3 * HOUR) }
       });
     }
   }
+  await prisma.panelDayLink.updateMany({ where: { vacancyId }, data: { createdAt: ago(t.slApproved != null ? t.slApproved - 0.3 : 0.1) } });
 }
 
 // ---------------------------------------------------------------------------
@@ -429,6 +670,7 @@ async function seedOrg() {
     ['ais', 'Aeronautical Information Officer', 'AIM/DANS', 1],
     ['avsec', 'Aviation Security Officer', 'AVSEC/DAAS', 1],
     ['avsecSenior', 'Senior Aviation Security Officer', 'AVSEC/DAAS', 2],
+    ['avsecManager', 'Manager Aviation Security', 'AVSEC/DAAS', 3],
     ['fireFighter', 'Fire Fighter', 'ARFFS/DAAS', 1],
     ['fireOfficer', 'Fire Officer', 'ARFFS/DAAS', 2],
     ['itSupport', 'IT Support Officer', 'IT/CORP', 1],
@@ -445,11 +687,9 @@ async function seedOrg() {
   }
   log(`  ${positions.length} positions created`);
 
-  const staff = await api('GET', '/api/staff-users', { token: T.phro });
-  const shro = staff.find((s) => s.email === STAFF_EMAILS.shro);
   await api('POST', '/api/delegations', {
     token: T.phro,
-    json: { delegateId: shro.id, startDate: dateOnly(-2), endDate: dateOnly(5), reason: 'Covering Principal HR Officer approvals during annual leave.' }
+    json: { delegateId: STAFF_ID.shro, startDate: dateOnly(-2), endDate: dateOnly(5), reason: 'Covering Principal HR Officer approvals during annual leave.' }
   });
   log('  Delegation: Principal HR Officer -> Senior HR Officer (active this week)\n');
 }
@@ -460,6 +700,14 @@ async function seedOrg() {
 
 const purpose = (summary, duties) => `<p>${summary}</p><p><strong>Principal accountabilities</strong></p><ul>${duties.map((d) => `<li>${d}</li>`).join('')}</ul>`;
 const LIVE = [];
+
+const COMMITTEES = {
+  finance: [committeeMember('Christine Namutebi', 'Manager Finance', true), committeeMember('Joel Byamugisha', 'Principal Accountant'), committeeMember('Sarah Achola', 'Manager Internal Audit')],
+  fire: [committeeMember('Samuel Wandera', 'Chief Fire Officer', true), committeeMember('Isaac Ochieng', 'Station Officer, ARFFS'), committeeMember('Peter Kalule', 'Aerodrome Safety Manager')],
+  atc: [committeeMember('Stephen Tumwine', 'Director Air Navigation Services', true), committeeMember('Josephine Nabwire', 'Manager Air Traffic Management'), committeeMember('Richard Opio', 'Senior Air Traffic Control Officer')],
+  it: [committeeMember('Patrick Mugisha', 'Manager Information Technology', true), committeeMember('Brian Tumwesigye', 'Senior Systems Administrator'), committeeMember('Irene Kobusingye', 'Principal Systems Analyst')],
+  avsec: [committeeMember('Ronald Ssemwogerere', 'Manager Aviation Security', true), committeeMember('Moses Okiror', 'Principal AVSEC Officer'), committeeMember('Harriet Namaganda', 'Airport Manager, Entebbe')]
+};
 
 // Senior Accountant - finished: an offer withdrawn before approval, the
 // reserve promoted, offered and accepted -> Filled.
@@ -474,10 +722,10 @@ async function scenarioFilled() {
       'Prepare monthly management accounts and year-end financial statements', 'Reconcile ledgers, bank accounts and aeronautical revenue collections',
       'Support internal and external audits', 'Supervise and coach accountants in the section'
     ]),
-    essentialRequirements: ['Bachelor\'s degree in Accounting, Finance or Commerce', 'Full professional qualification (CPA, ACCA or CIMA)', 'At least 4 years of post-qualification experience'],
+    essentialRequirements: ['Full professional qualification (CPA, ACCA or CIMA)', 'Experience preparing IFRS financial statements'],
     desirableRequirements: [{ text: 'Do you have experience with an ERP system (SAP, Oracle or Microsoft Dynamics)?', answerType: 'yesno' }, { text: 'Are you a full member of ICPAU?', answerType: 'yesno' }],
     disqualifyingRequirements: [{ text: 'Do you hold a full professional accounting qualification (CPA/ACCA/CIMA)?', requiredAnswer: 'Yes' }],
-    specialSkills: ['Advanced Excel and financial modelling', 'Attention to detail and integrity']
+    specialSkills: ['Advanced Excel and financial modelling']
   }, 'dhra');
 
   const [x, y, z] = await inBatches([
@@ -489,7 +737,9 @@ async function scenarioFilled() {
   const ay = await apply(y, v);
   const az = await apply(z, v, { strong: false });
   await beginReview(v.id);
-  await proposeShortlist(v.id, [ax.id, ay.id, az.id]);
+  await runCommittee(v, COMMITTEES.finance, {
+    profiles: { [ax.id]: { profile: 'strong' }, [ay.id]: { profile: 'good' }, [az.id]: { profile: 'fair' } }, proposeCount: 3
+  });
   await approveShortlist(v.id);
 
   const rounds = await scheduleSession(v.id, [ax.id, ay.id, az.id], {
@@ -498,10 +748,11 @@ async function scenarioFilled() {
     panelMembers: panel([['Christine Namutebi', 'Manager Finance', true], ['Florence Akello', 'Human Resource Representative'], ['Joel Byamugisha', 'Principal Accountant']]),
     criteria: [{ name: 'Technical accounting (IFRS, PFMA)', weight: 3 }, { name: 'Analysis and problem solving', weight: 2 }, { name: 'Communication', weight: 2 }, { name: 'Leadership and integrity', weight: 2 }]
   });
-  await shiftRounds(Object.values(rounds), 21);
+  await shiftRounds(v.id, Object.values(rounds), 21);
   await hold(rounds[ax.id], [86, 82, 88], 'Shortlist');
   await hold(rounds[ay.id], [78, 80, 74], 'Shortlist');
   await hold(rounds[az.id], [52, 48, 56], 'Reject', 'Did not show the IFRS knowledge expected at senior level.');
+  await recordHeldDays(v.id);
   const S = daysAgoOf(rounds[ax.id].scheduledDate) + 21;
 
   await proposeMerit(v.id, [ax.id, ay.id]);
@@ -515,11 +766,12 @@ async function scenarioFilled() {
   await approveOffer(oy.id, 'dhra');
   await api('PATCH', `/api/applications/offers/${oy.id}/accept`, { token: y.token });
 
-  await retime(v.id, { created: S + 12, deadline: S + 4, review: S + 3, slProposed: S + 2.6, slApproved: S + 2.2, meritProposed: S - 2, meritApproved: S - 2.5 });
+  await retime(v.id, { created: S + 18, deadline: S + 9, review: S + 8.5, slProposed: S + 3.5, slApproved: S + 3, meritProposed: S - 2, meritApproved: S - 2.5 });
+  await retimeCommittee(v.id, { created: S + 8.4, opened: S + 8, moderation: S + 4.5, closed: S + 4 });
   await offerDates(ox.id, { recommended: S - 3, decided: S - 4 });
   await offerDates(oy.id, { recommended: S - 4.5, approved: S - 5.5, decided: S - 8 });
   await prisma.vacancy.update({ where: { id: v.id }, data: { filledAt: ago(S - 8) } });
-  log(`  ${v.jobRef}: Rebecca's offer withdrawn -> Emmanuel promoted from reserve, offered, accepted -> Filled\n`);
+  log(`  ${v.jobRef}: committee ranked 3 -> all interviewed; Rebecca's offer withdrawn -> Emmanuel promoted, offered, accepted -> Filled\n`);
 }
 
 // Fire Officer - a decline and an expiry, each promoting the next reserve.
@@ -532,7 +784,7 @@ async function scenarioDeclineExpire() {
     jobPurpose: purpose('To lead a watch of the Aerodrome Rescue and Fire Fighting Service, keeping Entebbe at ICAO Category 9 readiness.', [
       'Command a fire and rescue watch during aircraft incidents', 'Plan and run live-fire and extrication drills', 'Inspect and maintain fire tenders and rescue equipment', 'Keep incident and training records'
     ]),
-    essentialRequirements: ['Diploma in Fire Science, Disaster Management or a related field', 'At least 3 years as a fire fighter, 1 of them leading a crew', 'Valid Class CE driving permit'],
+    essentialRequirements: ['At least 1 year leading a fire crew', 'Valid Class CE driving permit'],
     desirableRequirements: [{ text: 'Do you hold an ICAO ARFF Supervisor certificate?', answerType: 'yesno' }, { text: 'How many live aircraft-fire drills have you led?', answerType: 'number', minValue: 5 }],
     disqualifyingRequirements: [{ text: 'Do you hold a valid Class CE driving permit?', requiredAnswer: 'Yes' }, { text: 'Are you able to work 24-hour shift rotations?', requiredAnswer: 'Yes' }]
   });
@@ -554,7 +806,14 @@ async function scenarioDeclineExpire() {
   for (const c of cands) apps[c.name] = await apply(c, v, { strong: c !== j });
   const ids = cands.map((c) => apps[c.name].id);
   await beginReview(v.id);
-  await proposeShortlist(v.id, ids);
+  await runCommittee(v, COMMITTEES.fire, {
+    profiles: {
+      [apps[g.name].id]: { profile: 'strong' }, [apps[i.name].id]: { profile: 'strong' }, [apps[h.name].id]: { profile: 'good' },
+      [apps[k.name].id]: { profile: 'good' }, [apps[j.name].id]: { profile: 'fair', dispute: 3 }
+    },
+    rulings: [{ applicationId: apps[j.name].id, criterion: 3, outcome: 'Met', reason: 'Her TotalEnergies role included leading the site fire team on shift - accepted as crew-leading experience.' }],
+    proposeCount: 5
+  });
   await approveShortlist(v.id);
 
   const rounds = await scheduleSession(v.id, ids, {
@@ -563,13 +822,14 @@ async function scenarioDeclineExpire() {
     panelMembers: panel([['Samuel Wandera', 'Chief Fire Officer', true], ['Agnes Nakiwala', 'Human Resource Representative'], ['Isaac Ochieng', 'Station Officer, ARFFS']]),
     criteria: [{ name: 'Incident command', weight: 3 }, { name: 'Practical drill', weight: 3 }, { name: 'ARFF regulations (ICAO Annex 14)', weight: 2 }, { name: 'Communication', weight: 1 }]
   });
-  await shiftRounds(Object.values(rounds), 21);
+  await shiftRounds(v.id, Object.values(rounds), 21);
   const R = (c) => rounds[apps[c.name].id];
   await hold(R(g), [88, 85, 90], 'Shortlist');
   await hold(R(i), [84, 80, 82], 'Shortlist');
   await hold(R(h), [76, 78, 72], 'Shortlist');
   await hold(R(k), [72, 70, 74], 'Shortlist');
   await hold(R(j), [64, 60, 66], 'Hold', 'Good potential; limited crew-leading experience.');
+  await recordHeldDays(v.id);
   const S = daysAgoOf(R(g).scheduledDate) + 21;
 
   await proposeMerit(v.id, ids);
@@ -586,14 +846,15 @@ async function scenarioDeclineExpire() {
   await offerDates(oi.id, { recommended: S - 3, approved: S - 4 });
   await runJob('expireOffers', require('./expireOffers').run);
   const expired = await prisma.offer.findUnique({ where: { id: oi.id } });
-  await prisma.offer.update({ where: { id: oi.id }, data: { decidedAt: new Date(expired.responseDeadline.getTime() + 60 * 60 * 1000) } });
+  await prisma.offer.update({ where: { id: oi.id }, data: { decidedAt: new Date(expired.responseDeadline.getTime() + HOUR) } });
 
   const oh = await recommendOffer(apps[h.name].id, terms);
   await approveOffer(oh.id);
   await offerDates(oh.id, { recommended: S - 8.5, approved: S - 9.5 });
 
-  await retime(v.id, { created: S + 12, deadline: S + 4, review: S + 3, slProposed: S + 2.6, slApproved: S + 2.2, meritProposed: S - 2, meritApproved: S - 2.5 });
-  log(`  ${v.jobRef}: Geoffrey declined -> Henry promoted, offered (awaiting answer); Irene's offer expired -> Kenneth promoted; Josephine (Hold) in reserve\n`);
+  await retime(v.id, { created: S + 18, deadline: S + 9, review: S + 8.5, slProposed: S + 3.5, slApproved: S + 3, meritProposed: S - 2, meritApproved: S - 2.5 });
+  await retimeCommittee(v.id, { created: S + 8.4, opened: S + 8, moderation: S + 4.5, closed: S + 4 });
+  log(`  ${v.jobRef}: committee split on Josephine, chair ruled; Geoffrey declined -> Henry promoted and offered (awaiting answer); Irene's offer expired -> Kenneth promoted\n`);
   LIVE.push(`${v.jobRef} Fire Officer - recommend Kenneth Ssali (promoted to Primary after an expiry) for an offer [Principal HR Officer]`);
   LIVE.push(`${v.jobRef} Fire Officer - Henry Tumusiime (${h.email}) can accept or decline his issued offer [candidate]`);
 }
@@ -611,10 +872,10 @@ async function scenarioOffers() {
     jobPurpose: purpose('To provide safe, orderly and expeditious air traffic control services within the Entebbe Terminal Control Area.', [
       'Provide aerodrome and approach control services', 'Coordinate with adjacent units and airline operators', 'Keep ATC logs and occurrence reports', 'Take part in contingency and emergency exercises'
     ]),
-    essentialRequirements: ['Bachelor\'s degree in a science, engineering or aviation discipline', 'A-Level passes in Mathematics and Physics', 'Able to obtain an ICAO Class 3 medical certificate'],
+    essentialRequirements: ['Able to obtain an ICAO Class 3 medical certificate'],
     desirableRequirements: [{ text: 'Do you hold an ATC licence or student ATC licence?', answerType: 'yesno' }, { text: 'What is your ICAO English Language Proficiency level (1-6)?', answerType: 'number', minValue: 4 }],
     disqualifyingRequirements: [{ text: 'Are you willing to work rostered night and weekend shifts?', requiredAnswer: 'Yes' }],
-    generalKnowledge: ['ICAO Annex 11 and Doc 4444', 'Basic aviation meteorology'], specialSkills: ['Situational awareness under pressure', 'Clear radiotelephony']
+    generalKnowledge: ['ICAO Annex 11 and Doc 4444'], specialSkills: ['Clear radiotelephony']
   });
 
   const cands = await inBatches([
@@ -624,19 +885,23 @@ async function scenarioOffers() {
     ['Allan Mwesigwa', 'M', '1996-07-03', 'Aviation Management', 3.5, 'Kenya Airways (Entebbe)', 'Station Agent'],
     ['Patience Kyomuhendo', 'F', '1995-12-19', 'Physics', 3.4, 'Uganda National Meteorological Authority', 'Weather Observer'],
     ['Ivan Ssebunya', 'M', '1996-09-28', 'Electrical Engineering', 3.3, 'Aviation Handling Services', 'Ramp Supervisor'],
-    ['Collins Wafula', 'M', '1997-05-06', 'Computer Science', 3.1, 'Jambojet', 'Customer Service Agent']
+    ['Collins Wafula', 'M', '1997-05-06', 'Computer Science', 3.1, 'Jambojet', 'Customer Service Agent'],
+    ['Nathan Kizza', 'M', '1996-01-15', 'Statistics', 3.2, 'Uganda Bureau of Statistics', 'Data Clerk']
   ].map(([name, sex, dob, field, cgpa, employer, title]) => ({
     name, sex, dob,
     education: [edu(field.includes('Aviation') ? 'Kyambogo University' : 'Makerere University', 'Bachelors', field, 2018, cgpa)],
     work: [job(employer, title, 4)],
     exams: [alevel('Mathematics', cgpa > 3.5 ? 'A' : 'B'), alevel('Physics', cgpa > 3.5 ? 'B' : 'C'), olevel('English Language', '2')]
   })), 4, makeCandidate);
-  const [a, b, c, d, e, f, x] = cands;
+  const [a, b, c, d, e, f, x, nathan] = cands;
   const apps = {};
-  for (const cand of cands) apps[cand.name] = await apply(cand, v, { strong: cand !== x });
-  const ids = cands.map((cand) => apps[cand.name].id);
+  for (const cand of cands) apps[cand.name] = await apply(cand, v, { strong: ![x, nathan].includes(cand) });
+  const interviewees = [a, b, c, d, e, f, x];
+  const ids = interviewees.map((cand) => apps[cand.name].id);
   await beginReview(v.id);
-  await proposeShortlist(v.id, ids);
+  const profiles = Object.fromEntries(interviewees.map((cand, idx) => [apps[cand.name].id, { profile: idx < 2 ? 'strong' : idx < 5 ? 'good' : 'fair' }]));
+  profiles[apps[nathan.name].id] = { profile: 'weak', notMet: 1 };
+  await runCommittee(v, COMMITTEES.atc, { profiles, proposeCount: 7 });
   await approveShortlist(v.id);
 
   const rounds = await scheduleSession(v.id, ids, {
@@ -646,7 +911,7 @@ async function scenarioOffers() {
     panelMembers: panel([['Josephine Nabwire', 'Manager Air Traffic Management', true], ['Richard Opio', 'Senior Air Traffic Control Officer'], ['Diana Kyeyune', 'Human Resource Representative']]),
     criteria: [{ name: 'Aviation technical knowledge', weight: 3 }, { name: 'Spatial reasoning (simulator)', weight: 3 }, { name: 'Communication and phraseology', weight: 2 }, { name: 'Decision making under pressure', weight: 2 }]
   });
-  await shiftRounds(Object.values(rounds), 14);
+  await shiftRounds(v.id, Object.values(rounds), 14);
   const R = (cand) => rounds[apps[cand.name].id];
   await hold(R(a), [90, 88, 86], 'Shortlist');
   await hold(R(b), [86, 84, 88], 'Shortlist');
@@ -655,6 +920,7 @@ async function scenarioOffers() {
   await hold(R(e), [74, 72, 76], 'Shortlist');
   await hold(R(f), [66, 64, 62], 'Hold', 'Borderline on the simulator; keep in reserve.');
   await hold(R(x), [44, 50, 46], 'Reject', 'Weak spatial reasoning on the simulator exercise.');
+  await recordHeldDays(v.id);
   const S = daysAgoOf(R(a).scheduledDate) + 14;
 
   await proposeMerit(v.id, [a, b, c, d, e, f].map((cand) => apps[cand.name].id));
@@ -687,8 +953,9 @@ async function scenarioOffers() {
   const oc = await recommendOffer(apps[c.name].id, terms);
   await offerDates(oc.id, { recommended: 2 });
 
-  await retime(v.id, { created: S + 12, deadline: S + 4, review: S + 3, slProposed: S + 2.6, slApproved: S + 2.2, meritProposed: S - 1.5, meritApproved: S - 2 });
-  log(`  ${v.jobRef}: Brenda accepted (1/4 filled); Daniel's offer returned, revised and issued; Allan's returned; Esther's awaiting approval; Patience + Ivan in reserve; Collins rejected by the panel\n`);
+  await retime(v.id, { created: S + 18, deadline: S + 9, review: S + 8.5, slProposed: S + 3.5, slApproved: S + 3, meritProposed: S - 1.5, meritApproved: S - 2 });
+  await retimeCommittee(v.id, { created: S + 8.4, opened: S + 8, moderation: S + 4.5, closed: S + 4 });
+  log(`  ${v.jobRef}: committee found Nathan not qualified; Brenda accepted (1/4); Daniel's offer returned, revised and issued; Allan's returned; Esther's awaiting approval; Patience + Ivan in reserve\n`);
   LIVE.push(`${v.jobRef} ATC Officer I - approve or return Esther Nabwire's offer, overdue on its SLA [Manager/Director]`);
   LIVE.push(`${v.jobRef} ATC Officer I - revise Allan Mwesigwa's returned offer [Principal HR Officer]`);
   LIVE.push(`${v.jobRef} ATC Officer I - Daniel Opolot (${b.email}) can accept or decline his issued offer [candidate]`);
@@ -704,7 +971,7 @@ async function scenarioMeritProposed() {
     jobPurpose: purpose('To administer the Authority\'s server, virtualisation and identity infrastructure, including systems that support air navigation services.', [
       'Administer Windows and Linux servers and the VMware cluster', 'Manage Active Directory, Microsoft 365 and backup schedules', 'Patch and harden systems against the UCAA security baseline', 'Document configurations and support disaster-recovery tests'
     ]),
-    essentialRequirements: ['Bachelor\'s degree in Computer Science, IT or Computer Engineering', 'At least 3 years administering production servers'],
+    essentialRequirements: ['Hands-on administration of production Linux and Windows servers'],
     desirableRequirements: [{ text: 'Do you hold RHCSA, MCSA or an equivalent certification?', answerType: 'yesno' }, { text: 'Have you administered a VMware or Hyper-V cluster?', answerType: 'yesno' }],
     disqualifyingRequirements: [{ text: 'Are you available for after-hours on-call support?', requiredAnswer: 'Yes' }]
   });
@@ -725,7 +992,9 @@ async function scenarioMeritProposed() {
   const [s1, s2, h1, r1] = cands;
   const ids = cands.map((cand) => apps[cand.name].id);
   await beginReview(v.id);
-  await proposeShortlist(v.id, ids);
+  await runCommittee(v, COMMITTEES.it, {
+    profiles: { [ids[0]]: { profile: 'strong' }, [ids[1]]: { profile: 'good' }, [ids[2]]: { profile: 'good' }, [ids[3]]: { profile: 'fair' } }, proposeCount: 4
+  });
   await approveShortlist(v.id);
   const rounds = await scheduleSession(v.id, ids, {
     startsAt: at(workday(2), '10:00'), mode: 'Virtual', meetingLink: 'https://meet.example.com/ucaa-sysadmin-panel',
@@ -733,18 +1002,33 @@ async function scenarioMeritProposed() {
     panelMembers: panel([['Patrick Mugisha', 'Manager Information Technology', true], ['Florence Akello', 'Human Resource Representative'], ['Brian Tumwesigye', 'Senior Systems Administrator']]),
     criteria: [{ name: 'Linux and Windows administration', weight: 3 }, { name: 'Networking and security', weight: 2 }, { name: 'Troubleshooting scenario', weight: 3 }, { name: 'Communication', weight: 1 }]
   });
-  await shiftRounds(Object.values(rounds), 14);
+  await shiftRounds(v.id, Object.values(rounds), 14);
   const R = (cand) => rounds[apps[cand.name].id];
   await hold(R(s1), [86, 82, 84], 'Shortlist');
   await hold(R(s2), [80, 78, 76], 'Shortlist');
   await hold(R(h1), [66, 62, 68], 'Hold');
   await hold(R(r1), [48, 52, 46], 'Reject', 'Limited server administration depth for this level.');
+  await recordHeldDays(v.id);
   const S = daysAgoOf(R(s1).scheduledDate) + 14;
   await proposeMerit(v.id, [s1, s2, h1].map((cand) => apps[cand.name].id));
-  await retime(v.id, { created: S + 12, deadline: S + 4, review: S + 3, slProposed: S + 2.6, slApproved: S + 2.2, meritProposed: 1 });
+  await retime(v.id, { created: S + 18, deadline: S + 9, review: S + 8.5, slProposed: S + 3.5, slApproved: S + 3, meritProposed: 1 });
+  await retimeCommittee(v.id, { created: S + 8.4, opened: S + 8, moderation: S + 4.5, closed: S + 4 });
   log(`  ${v.jobRef}: Arnold (Primary), Sharon + Timothy (Reserve) proposed; Faith rejected by the panel\n`);
   LIVE.push(`${v.jobRef} Systems Administrator - approve the proposed merit list [Principal HR Officer]`);
   return cands;
+}
+
+// A time for today's session that is still ahead, or the next working day
+// if too little of today is left.
+function todaysSessionStart() {
+  const local = new Date(NOW + 3 * HOUR);
+  const dow = local.getUTCDay();
+  const minutes = local.getUTCHours() * 60 + local.getUTCMinutes();
+  const start = Math.ceil((minutes + 60) / 30) * 30;
+  if (dow === 0 || dow === 6 || start + 180 > 18 * 60) return { when: at(workday(1), '09:00'), today: false };
+  const hh = String(Math.floor(start / 60)).padStart(2, '0');
+  const mm = String(start % 60).padStart(2, '0');
+  return { when: at(klaDate(NOW), `${hh}:${mm}`), today: true };
 }
 
 // Aviation Security Officer - the Interview Hub in full swing.
@@ -758,10 +1042,10 @@ async function scenarioInterviews() {
     jobPurpose: purpose('To protect civil aviation against acts of unlawful interference by screening passengers, baggage, cargo and staff at Entebbe International Airport.', [
       'Screen passengers and cabin baggage using X-ray and walk-through metal detectors', 'Control access to security-restricted areas', 'Patrol the airside perimeter and report breaches', 'Support contingency and bomb-threat drills'
     ]),
-    essentialRequirements: ['Diploma in Security Studies, Criminology, Social Sciences or a related field', 'A credit in O-Level English Language', 'At least 1 year of security or law-enforcement experience'],
+    essentialRequirements: ['Security or law-enforcement experience'],
     desirableRequirements: [{ text: 'Do you hold an ICAO AVSEC Basic certificate?', answerType: 'yesno' }, { text: 'Have you operated X-ray screening equipment?', answerType: 'yesno' }],
     disqualifyingRequirements: [{ text: 'Are you willing to work rotating day and night shifts?', requiredAnswer: 'Yes' }, { text: 'Have you ever been convicted of a criminal offence?', requiredAnswer: 'No' }],
-    specialSkills: ['Vigilance and attention to detail', 'Calm, courteous conduct with the public']
+    specialSkills: ['Vigilance and attention to detail']
   });
 
   const cands = await inBatches([
@@ -785,14 +1069,22 @@ async function scenarioInterviews() {
     exams: [olevel('English Language', String(2 + (idx % 4))), olevel('Mathematics', String(3 + (idx % 4)))],
     certs: idx % 2 ? [] : [cert('ICAO AVSEC Basic', 'East African School of Aviation', 1, 3)]
   })), 4, makeCandidate);
-  const apps = {};
-  for (const [idx, cand] of cands.entries()) apps[cand.name] = await apply(cand, v, { strong: idx % 2 === 0 });
   const who = Object.fromEntries(cands.map((cand) => [cand.name.split(' ')[0], cand]));
+  const apps = {};
+  for (const [idx, cand] of cands.entries()) {
+    apps[cand.name] = await apply(cand, v, { strong: idx % 2 === 0, submit: cand === who.Bosco ? 'refused' : true });
+  }
   const A = (first) => apps[who[first].name].id;
 
   await beginReview(v.id);
-  await reject(A('Bosco'), 'Above the maximum age of 35 set for this entry-level role at the application deadline.');
-  await proposeShortlist(v.id, ['Frank', 'Grace', 'Hassan', 'Janet', 'Moses', 'Winnie', 'Ronald', 'Lydia', 'Samuel', 'Christine', 'Paul', 'Agnes'].map(A));
+  const names = ['Frank', 'Grace', 'Hassan', 'Janet', 'Moses', 'Winnie', 'Ronald', 'Lydia', 'Samuel', 'Christine', 'Paul', 'Agnes'];
+  const profiles = Object.fromEntries(names.map((n, idx) => [A(n), { profile: idx < 2 ? 'strong' : idx % 3 === 0 ? 'fair' : 'good' }]));
+  profiles[A('Janet')] = { profile: 'fair', dispute: 1 };
+  await runCommittee(v, COMMITTEES.avsec, {
+    profiles,
+    rulings: [{ applicationId: A('Janet'), criterion: 1, outcome: 'Met', reason: 'Two years as a guard commander counts as the minimum experience - the committee accepts it.' }],
+    proposeCount: 12
+  });
   await approveShortlist(v.id);
 
   const avsecPanel = panel([['Ronald Ssemwogerere', 'Manager Aviation Security', true], ['Diana Kyeyune', 'Human Resource Representative'], ['Moses Okiror', 'Principal AVSEC Officer']]);
@@ -807,7 +1099,7 @@ async function scenarioInterviews() {
     panelMembers: avsecPanel, criteria: rubric
   });
   for (const first of heldNames) await respond(who[first], held[A(first)], 'Confirmed');
-  await shiftRounds(Object.values(held), 7);
+  await shiftRounds(v.id, Object.values(held), 7);
   const H = (first) => held[A(first)];
   // A panelist declared a conflict of interest for Frank before scoring.
   await api('PATCH', `/api/interviews/panel-members/${H('Frank').panelMembers[2].id}/recuse`, {
@@ -819,17 +1111,18 @@ async function scenarioInterviews() {
   await hold(H('Hassan'), [70, 66, 68], 'Hold', 'Adequate; keep in view if the top candidates decline.');
   await hold(H('Janet'), [44, 50, 42], 'Reject', 'Could not explain basic screening procedures.');
   await score(H('Moses'), { 0: 78, 1: 74, 2: 80 }); // all scores in - ready to finalize
-  await score(H('Winnie'), { 0: 72 }); // two panelists still to score
-  await api('POST', `/api/interviews/${H('Winnie').id}/access-links`, { token: T.shro });
+  await score(H('Winnie'), { 0: 72 }); // two panelists never scored before the day closed
   await api('PATCH', `/api/interviews/${H('Ronald').id}/no-show`, { token: T.shro, json: { notes: 'Did not arrive; phone unreachable on the day.' } });
+  await recordHeldDays(v.id);
   const S = daysAgoOf(H('Frank').scheduledDate) + 7;
 
-  // Session B - later this week.
+  // Session B - today (or the next working day if the day is nearly over).
+  const { when: sessionB, today } = todaysSessionStart();
   const upcoming = await scheduleSession(v.id, ['Lydia', 'Samuel', 'Christine'].map(A), {
-    startsAt: at(workday(3), '09:00'), ...venue, panelMembers: avsecPanel, criteria: rubric
+    startsAt: sessionB, ...venue, panelMembers: avsecPanel, criteria: rubric
   });
   await respond(who.Lydia, upcoming[A('Lydia')], 'Confirmed');
-  await respond(who.Samuel, upcoming[A('Samuel')], 'RescheduleRequested', 'I sit my final diploma exam that morning - any time after 2pm, or the following Monday, would work.');
+  await respond(who.Samuel, upcoming[A('Samuel')], 'RescheduleRequested', 'My final diploma exam was moved to this morning - any time from Thursday would work.');
 
   // Ronald's second chance, online.
   const second = await scheduleOne(A('Ronald'), {
@@ -851,13 +1144,19 @@ async function scenarioInterviews() {
     token: T.shro, json: { reason: 'Moving to the in-person format used for everyone else - to be re-booked.' }
   });
 
-  await retime(v.id, { created: S + 14, deadline: S + 6, review: S + 5, slProposed: S + 4, slApproved: S + 3.5 });
-  log(`  ${v.jobRef}: last week - Frank + Grace Shortlist, Hassan Hold, Janet Reject, Moses ready to finalize, Winnie awaiting 2 scores (links sent), Ronald no-show`);
-  log('  coming up - Lydia confirmed, Samuel asked to reschedule, Christine not answered, Ronald round 2, Paul moved by HR; Agnes cancelled, awaiting a new slot; Bosco rejected at review\n');
-  LIVE.push(`${v.jobRef} AVSEC Officer - finalize Moses Kyeyune, handle Samuel Okiror's reschedule request, re-book Agnes Nakato [Interview Hub, Senior HR Officer]`);
+  await retime(v.id, { created: S + 18, deadline: S + 9, review: S + 8.5, slProposed: S + 3.5, slApproved: S + 3 });
+  await retimeCommittee(v.id, { created: S + 8.4, opened: S + 8, moderation: S + 4.5, closed: S + 4 });
+
+  const sessionDay = klaDate(sessionB);
+  const links = await prisma.panelDayLink.findMany({ where: { vacancyId: v.id, day: sessionDay, revokedAt: null }, orderBy: { id: 'asc' } });
+  log(`  ${v.jobRef}: Bosco refused at submission (over the age limit); committee ruled on Janet; last week - Frank + Grace Shortlist, Hassan Hold, Janet Reject, Moses ready to finalize, Winnie missing 2 scores, Ronald no-show`);
+  log(`  ${today ? 'today' : sessionDay} - session for Lydia (confirmed), Samuel (asked to reschedule), Christine (no answer); Ronald round 2 and Paul (moved by HR) later; Agnes cancelled, awaiting a new slot\n`);
+  LIVE.push(`${v.jobRef} AVSEC Officer - ${today ? 'run TODAY\'s' : `run the ${sessionDay}`} interview session in the Interview Hub (start it, call candidates in); finalize Moses Kyeyune; handle Samuel Okiror's reschedule request; re-book Agnes Nakato [Senior HR Officer]`);
+  for (const l of links) LIVE.push(`    panelist day link - ${l.panelistName}: ${frontendUrl}/panel-day/${l.token}`);
 }
 
-// Senior ATC Officer (Internal) - verification states and a proposed shortlist.
+// Senior ATC Officer (Internal) - verification states, a committee with a
+// conflicted member, and the proposed shortlist awaiting approval.
 async function scenarioInternalShortlist() {
   log('=== Senior Air Traffic Control Officer (Internal) - shortlist awaiting approval ===');
   const v = await createVacancy({
@@ -867,7 +1166,7 @@ async function scenarioInternalShortlist() {
     jobPurpose: purpose('To supervise a watch of the Entebbe approach and aerodrome control units and act as On-the-Job Training Instructor.', [
       'Supervise watch operations and staffing', 'Conduct on-the-job training and competency checks', 'Investigate and report ATS occurrences', 'Contribute to ATM safety cases'
     ]),
-    essentialRequirements: ['Valid ATC licence with Aerodrome and Approach ratings', 'At least 5 years as a rated controller', 'Currently employed by UCAA'],
+    essentialRequirements: ['Valid ATC licence with Aerodrome and Approach ratings', 'Currently employed by UCAA'],
     desirableRequirements: [{ text: 'Do you hold an OJTI endorsement?', answerType: 'yesno' }],
     disqualifyingRequirements: [{ text: 'Do you hold a valid ICAO Class 3 medical certificate?', requiredAnswer: 'Yes' }]
   }, 'dhra');
@@ -895,15 +1194,75 @@ async function scenarioInternalShortlist() {
   await verifyInternal(esther.id, 'HR_Verified', 'Employment and grade confirmed with the ATM department; the licence copy on file is current.');
   await verifyInternal(rachel.id, 'Discrepancy_Flagged', 'Declared position is ATC Officer II but the HR file shows Assistant ATC Officer - referred to the supervisor.');
   await beginReview(v.id);
-  await proposeShortlist(v.id, [apps[david.name].id, apps[esther.name].id]);
-  await retime(v.id, { created: 21, deadline: 8, review: 7, slProposed: 2 });
-  log(`  ${v.jobRef}: David + Esther (HR_Verified) proposed; ${quinn.name} Pending verification; Rachel Discrepancy_Flagged\n`);
-  LIVE.push(`${v.jobRef} Senior ATC Officer (Internal) - approve the proposed shortlist [Principal HR Officer]; verify Quinn Ateenyi [Senior HR Officer]`);
+  await runCommittee(v, COMMITTEES.atc, {
+    profiles: {
+      [apps[david.name].id]: { profile: 'strong' }, [apps[esther.name].id]: { profile: 'good' },
+      [apps[quinn.name].id]: { profile: 'fair' }, [apps[rachel.name].id]: { profile: 'weak', notMet: 2 }
+    },
+    conflicts: [[1, apps[esther.name].id, 'I am her line supervisor.']],
+    proposeCount: 2
+  });
+  await retime(v.id, { created: 22, deadline: 11, review: 10.5, slProposed: 2 });
+  await retimeCommittee(v.id, { created: 10.4, opened: 10, moderation: 3, closed: 2.5 });
+  log(`  ${v.jobRef}: committee (Josephine stood down for Esther) ranked David, Esther, Quinn; Rachel not qualified; David + Esther proposed; Quinn Pending verification, Rachel Discrepancy_Flagged\n`);
+  LIVE.push(`${v.jobRef} Senior ATC Officer (Internal) - approve the committee's proposed shortlist [Principal HR Officer]; verify Quinn Ateenyi [Senior HR Officer]`);
 }
 
-// IT Support Officer - screened, ready to shortlist.
-async function scenarioUnderReview(sysadminCandidates) {
-  log('=== IT Support Officer (External) - screened, ready to shortlist ===');
+// Senior Aviation Security Officer - committee at moderation: the chair has
+// a disputed item to settle, and for the applicant the chair stood down from
+// an acting chair rules instead.
+async function scenarioModeration() {
+  log('=== Senior Aviation Security Officer (External) - committee at moderation ===');
+  const v = await createVacancy({
+    positionId: POS.avsecSenior.id, reportsToPositionId: POS.avsecManager.id,
+    postingType: 'External', positionsRequired: 1, deadline: dateOnly(20), employmentCategory: 'FullTime', location: 'Entebbe International Airport',
+    salaryScale: 'U5 (UGX 2,900,000 - 3,700,000 per month)', minimumEducationLevel: 'Bachelors', minimumExperienceYears: 5,
+    jobPurpose: purpose('To supervise an aviation security shift and the screening checkpoints at Entebbe International Airport.', [
+      'Supervise screeners and access-control staff on shift', 'Run quality-control tests on screening checkpoints', 'Report and follow up security occurrences', 'Train and certify screeners'
+    ]),
+    essentialRequirements: ['At least 2 years supervising security staff', 'ICAO AVSEC certification (Basic or higher)'],
+    desirableRequirements: [{ text: 'Are you a certified AVSEC instructor?', answerType: 'yesno' }, { text: 'Have you run covert tests of screening checkpoints?', answerType: 'yesno' }],
+    disqualifyingRequirements: [{ text: 'Have you ever been convicted of a criminal offence?', requiredAnswer: 'No' }]
+  });
+  const cands = await inBatches([
+    ['Norah Kyalimpa', 'F', '1988-05-14', 'Uganda Police Force (Aviation Police)', 'Assistant Inspector', 9],
+    ['Simon Etyang', 'M', '1986-09-01', 'G4S Secure Solutions', 'Security Manager', 11],
+    ['Beatrice Auma', 'F', '1990-02-27', 'Kenya Airports Authority', 'Senior Security Officer', 7],
+    ['Charles Mayanja', 'M', '1987-12-09', 'Serena Hotels', 'Chief Security Officer', 8],
+    ['Diana Nakanwagi', 'F', '1991-07-19', 'Uganda Revenue Authority', 'Enforcement Officer', 6]
+  ].map(([name, sex, dob, employer, title, years]) => ({
+    name, sex, dob,
+    education: [edu('Makerere University', 'Bachelors', 'Security and Strategic Studies', 2012, 3.4)],
+    work: [job(employer, title, years)],
+    certs: [cert('ICAO AVSEC Basic', 'East African School of Aviation', 4, 5)]
+  })), 3, makeCandidate);
+  const apps = {};
+  for (const cand of cands) apps[cand.name] = await apply(cand, v, { strong: cand.name !== 'Diana Nakanwagi' });
+  const [norah, simon, beatrice, charles, diana] = cands.map((c) => apps[c.name].id);
+  await beginReview(v.id);
+  const members = [...COMMITTEES.avsec, committeeMember('Gerald Otim', 'Head of Airport Operations')];
+  await runCommittee(v, members, {
+    ratersPerApplicant: 3,
+    profiles: {
+      [norah]: { profile: 'strong' }, [simon]: { profile: 'good' }, [beatrice]: { profile: 'good', dispute: 3 },
+      [charles]: { profile: 'fair', dispute: 2 }, [diana]: { profile: 'weak', notMet: 2 }
+    },
+    conflicts: [[0, charles, 'He worked under me at a previous employer.']],
+    actingChairs: [{ applicationId: charles, memberIdx: 1 }],
+    stopAt: 'Moderation'
+  });
+  await retime(v.id, { created: 18, deadline: 6, review: 5.5 });
+  await retimeCommittee(v.id, { created: 5.4, opened: 5, moderation: 0.5 });
+  const ex = await prisma.shortlistExercise.findUnique({ where: { vacancyId: v.id }, include: { members: { orderBy: { id: 'asc' } } } });
+  log(`  ${v.jobRef}: rating closed; Beatrice's AVSEC certification disputed (chair to rule); the chair stood down for Charles, so Moses Okiror rules on his disputed item\n`);
+  LIVE.push(`${v.jobRef} Senior AVSEC Officer - committee chair rules on Beatrice Auma: ${frontendUrl}/shortlist-panel/${ex.members[0].token}`);
+  LIVE.push(`${v.jobRef} Senior AVSEC Officer - acting chair rules on Charles Mayanja: ${frontendUrl}/shortlist-panel/${ex.members[1].token}`);
+  LIVE.push(`${v.jobRef} Senior AVSEC Officer - then close the exercise and propose the interview shortlist [Senior HR Officer]`);
+}
+
+// IT Support Officer - committee rating in progress.
+async function scenarioRating(sysadminCandidates) {
+  log('=== IT Support Officer (External) - committee rating in progress ===');
   const v = await createVacancy({
     positionId: POS.itSupport.id, reportsToPositionId: POS.sysadmin.id,
     postingType: 'External', positionsRequired: 2, deadline: dateOnly(20), employmentCategory: 'FullTime', location: 'Entebbe International Airport',
@@ -912,7 +1271,7 @@ async function scenarioUnderReview(sysadminCandidates) {
     jobPurpose: purpose('To provide first- and second-line ICT support to UCAA staff at Entebbe International Airport and the Head Office.', [
       'Resolve hardware, software and network incidents through the service desk', 'Set up and maintain end-user devices and printers', 'Support airport flight-information display systems', 'Keep the IT asset register up to date'
     ]),
-    essentialRequirements: ['Bachelor\'s degree in IT, Computer Science or a related field', 'At least 1 year of IT support experience'],
+    essentialRequirements: ['Service-desk or IT support experience'],
     desirableRequirements: [{ text: 'Do you hold CompTIA A+ or CCNA?', answerType: 'yesno' }, { text: 'How many years of service-desk experience do you have?', answerType: 'number', minValue: 2 }],
     disqualifyingRequirements: [{ text: 'Are you willing to work shifts, including weekends and public holidays?', requiredAnswer: 'Yes' }]
   });
@@ -923,19 +1282,32 @@ async function scenarioUnderReview(sysadminCandidates) {
     { name: 'Patrick Mulindwa', sex: 'M', dob: '1998-10-30', education: [edu('Uganda Institute of Information and Communications Technology', 'Diploma', 'Computer Science', 2019)], work: [job('Computer Point Uganda', 'Technician', 5)] },
     { name: 'Sandra Nansamba', sex: 'F', dob: '1997-12-12', education: [edu('Makerere University', 'Bachelors', 'Information Technology', 2020, 3.6)], work: [job('Uganda Airlines', 'IT Support Officer', 3)] }
   ], 3, makeCandidate);
-  await apply(linda, v);
-  await apply(nicholas, v);
-  await apply(olivia, v, { strong: false });
-  const pat = await apply(patrick, v, { strong: false });
-  await apply(sandra, v, { disq: { 0: false } });
+  const al = await apply(linda, v);
+  const an = await apply(nicholas, v);
+  const ao = await apply(olivia, v, { strong: false });
+  // Both turned away at submission: below the minimum qualification, and a
+  // "No" to shift work. Their drafts stay on their dashboards.
+  await apply(patrick, v, { strong: false, submit: 'refused' });
+  await apply(sandra, v, { disq: { 0: false }, submit: 'refused' });
   // Two of the Systems Administrator candidates applied here as well.
-  await apply(sysadminCandidates[2], v);
-  await apply(sysadminCandidates[3], v, { strong: false });
+  const at1 = await apply(sysadminCandidates[2], v);
+  const af = await apply(sysadminCandidates[3], v, { strong: false });
   await beginReview(v.id);
-  await reject(pat.id, 'A Bachelor\'s degree is the minimum qualification for this role.');
-  await retime(v.id, { created: 20, deadline: 7, review: 6 });
-  log(`  ${v.jobRef}: 7 applications screened; Patrick rejected (below minimum education); Sandra failed the shift-work question\n`);
-  LIVE.push(`${v.jobRef} IT Support Officer - rank and propose the interview shortlist [Senior HR Officer]`);
+  await runCommittee(v, COMMITTEES.it, {
+    profiles: {
+      [al.id]: { profile: 'strong' }, [an.id]: { profile: 'good' }, [ao.id]: { profile: 'fair' },
+      [at1.id]: { profile: 'good' }, [af.id]: { profile: 'fair' }
+    },
+    conflicts: [[1, al.id, 'We worked together at MTN Uganda until last year.']],
+    partial: { 2: 2 },
+    stopAt: 'Rating'
+  });
+  await retime(v.id, { created: 20, deadline: 5, review: 4.5 });
+  await retimeCommittee(v.id, { created: 4.4, opened: 4 });
+  const ex = await prisma.shortlistExercise.findUnique({ where: { vacancyId: v.id }, include: { members: { orderBy: { id: 'asc' } } } });
+  log(`  ${v.jobRef}: 5 applicants being rated (Patrick and Sandra were refused at submission); Patrick Mugisha and Brian Tumwesigye submitted (Brian stood down for Linda); Irene Kobusingye has rated 2 of 5\n`);
+  LIVE.push(`${v.jobRef} IT Support Officer - Irene Kobusingye finishes rating and submits: ${frontendUrl}/shortlist-panel/${ex.members[2].token}`);
+  LIVE.push(`${v.jobRef} IT Support Officer - then close rating (moderation), close the exercise and propose the shortlist [Senior HR Officer]`);
 }
 
 // AIS Officer - closed without an appointment, then readvertised.
@@ -947,20 +1319,20 @@ async function scenarioClosedReadvertised() {
     jobPurpose: purpose('To collect, verify and publish aeronautical information (AIP, NOTAMs, charts) for Ugandan airspace.', [
       'Process and issue NOTAMs', 'Maintain the Uganda AIP and its amendments', 'Provide pre-flight information briefings', 'Support the AIM quality management system'
     ]),
-    essentialRequirements: ['Diploma in Aeronautical Information Management or a related aviation field', 'At least 2 years in an AIS/AIM unit'],
+    essentialRequirements: ['Training in aeronautical information services'],
     desirableRequirements: [{ text: 'Are you trained on an AIXM-based AIM system?', answerType: 'yesno' }],
     disqualifyingRequirements: []
   };
   const v = await createVacancy({ positionId: POS.ais.id, ...body, deadline: dateOnly(20) });
   const [tom, ruth] = await inBatches([
-    { name: 'Tom Odongo', sex: 'M', dob: '1994-03-08', education: [edu('East African School of Aviation', 'Certificate', 'Aeronautical Information Services', 2018)], work: [job('Aviation Handling Services', 'Flight Operations Assistant', 1)] },
+    { name: 'Tom Odongo', sex: 'M', dob: '1994-03-08', education: [edu('East African School of Aviation', 'Diploma', 'Aeronautical Information Services', 2018)], work: [job('Aviation Handling Services', 'Flight Operations Assistant', 3)] },
     { name: 'Ruth Kemigisha', sex: 'F', dob: '1993-11-19', education: [edu('East African School of Aviation', 'Diploma', 'Aeronautical Information Management', 2016)], work: [job('Kenya Airports Authority', 'AIS Officer', 5)] }
   ], 2, makeCandidate);
   const tomApp = await apply(tom, v, { strong: false });
   const ruthApp = await apply(ruth, v);
   await api('PATCH', `/api/applications/${ruthApp.id}/withdraw`, { token: ruth.token, json: { reason: 'I have accepted a promotion with my current employer.' } });
   await beginReview(v.id);
-  await reject(tomApp.id, 'Does not meet the minimum Diploma qualification or the 2 years of AIS experience required.');
+  await reject(tomApp.id, 'The AIS training claimed on the application could not be confirmed with the training school.');
   await api('PATCH', `/api/vacancies/${v.id}/close`, { token: T.phro });
   await retime(v.id, { created: 26, deadline: 12, review: 11, rejected: 10.5 });
 
@@ -970,9 +1342,9 @@ async function scenarioClosedReadvertised() {
   log(`  ${v.jobRef} closed (one withdrawal, one rejection) -> readvertised as ${re.jobRef} asking 1 year's experience, now Open\n`);
 }
 
-// Fire Fighter - open and receiving applications.
+// Fire Fighter - open, receiving applications; the committee is being set up.
 async function scenarioOpen() {
-  log('=== Fire Fighter (External) - open, receiving applications ===');
+  log('=== Fire Fighter (External) - open, committee being set up ===');
   const v = await createVacancy({
     positionId: POS.fireFighter.id, reportsToPositionId: POS.fireOfficer.id,
     postingType: 'External', positionsRequired: 4, deadline: dateOnly(18), employmentCategory: 'FullTime', location: 'Entebbe International Airport',
@@ -980,7 +1352,7 @@ async function scenarioOpen() {
     jobPurpose: purpose('To provide aerodrome rescue and fire-fighting cover so that aircraft operations at Entebbe meet ICAO Category 9 requirements.', [
       'Respond to aircraft and domestic fire emergencies', 'Operate and maintain fire tenders and rescue equipment', 'Take part in daily drills and physical training', 'Carry out fire-safety inspections of airport premises'
     ]),
-    essentialRequirements: ['Uganda Advanced Certificate of Education (UACE) and a certificate in fire safety or a related field', 'Aged 18 to 28 at the application deadline', 'Physically fit and able to pass a medical examination'],
+    essentialRequirements: ['Uganda Advanced Certificate of Education (UACE)', 'Physically fit and able to pass a medical examination'],
     desirableRequirements: [{ text: 'Do you hold a valid driving permit?', answerType: 'yesno' }, { text: 'Have you completed a basic fire-fighting course?', answerType: 'yesno' }],
     disqualifyingRequirements: [{ text: 'Are you able to swim 50 metres unaided?', requiredAnswer: 'Yes' }]
   });
@@ -1000,8 +1372,11 @@ async function scenarioOpen() {
   await apply(robert, v, { submit: false });
   const s = await apply(stella, v);
   await api('PATCH', `/api/applications/${s.id}/withdraw`, { token: stella.token, json: { reason: 'Relocating to Mbarara.' } });
-  await retime(v.id, { created: 6 });
-  log(`  ${v.jobRef}: 4 submitted, Robert still in draft, Stella withdrew\n`);
+  await beginReview(v.id);
+  await runCommittee(v, COMMITTEES.fire, { stopAt: 'Setup' });
+  await retime(v.id, { created: 6, review: 0.5 });
+  await retimeCommittee(v.id, { created: 0.4 });
+  log(`  ${v.jobRef}: 4 submitted, Robert still in draft, Stella withdrew; committee of 3 invited, rating opens after the deadline\n`);
 }
 
 // Flight Operations Inspector - posted Internal, switched to External.
@@ -1014,7 +1389,7 @@ async function scenarioTransitioned() {
     jobPurpose: purpose('To certify and oversee air operators against the Civil Aviation (Operation of Aircraft) Regulations.', [
       'Conduct AOC certification and renewal inspections', 'Perform ramp and en-route inspections', 'Review operations manuals and training programmes', 'Investigate operational occurrences'
     ]),
-    essentialRequirements: ['Bachelor\'s degree or an ATPL', 'At least 3,000 flight hours on multi-engine aircraft', 'At least 5 years in commercial air operations'],
+    essentialRequirements: ['Experience in commercial air operations on multi-engine aircraft'],
     desirableRequirements: [{ text: 'Do you hold a type rating on a transport-category jet?', answerType: 'yesno' }],
     disqualifyingRequirements: [{ text: 'Do you hold, or have you held, an ATPL?', requiredAnswer: 'Yes' }]
   }, 'dhra');
@@ -1024,9 +1399,9 @@ async function scenarioTransitioned() {
     { name: 'Capt. Miriam Nalubega', sex: 'F', dob: '1986-12-22', flyingHours: 2400, education: [edu('Soroti Flying School', 'Diploma', 'Commercial Pilot Training', 2009)], work: [job('Eagle Air', 'First Officer', 9)], certs: [cert('CPL with instrument rating', 'Uganda Civil Aviation Authority', 10)] }
   ], 2, makeCandidate);
   await apply(pilot1, v);
-  await apply(pilot2, v, { strong: false });
+  await apply(pilot2, v, { strong: false, submit: 'refused' });
   await retime(v.id, { created: 9, changed: 4 });
-  log(`  ${v.jobRef}: no internal applicants -> switched to External by the Manager; 2 pilots applied (one short of 3,000 hours)\n`);
+  log(`  ${v.jobRef}: no internal applicants -> switched to External by the Manager; Andrew applied; Miriam refused at submission (2,400 of 3,000 flying hours)\n`);
 }
 
 async function scenarioPendingApproval() {
@@ -1036,7 +1411,7 @@ async function scenarioPendingApproval() {
     postingType: 'External', positionsRequired: 2, deadline: dateOnly(28), employmentCategory: 'FullTime', location: 'UCAA Head Office — Entebbe',
     salaryScale: 'U6 (UGX 2,000,000 - 2,600,000 per month)', minimumEducationLevel: 'Bachelors', minimumExperienceYears: 2,
     jobPurpose: purpose('To process payments, receipts and reconciliations for the Finance department.', ['Process supplier payments', 'Reconcile aeronautical revenue', 'Prepare VAT and PAYE returns']),
-    essentialRequirements: ['Bachelor\'s degree in Accounting or Finance', 'CPA or ACCA (at least part-qualified)'],
+    essentialRequirements: ['CPA or ACCA (at least part-qualified)'],
     desirableRequirements: [{ text: 'Are you a full member of ICPAU?', answerType: 'yesno' }],
     disqualifyingRequirements: []
   }, null);
@@ -1046,7 +1421,7 @@ async function scenarioPendingApproval() {
     postingType: 'Internal', positionsRequired: 1, deadline: dateOnly(21), employmentCategory: 'FullTime', location: 'UCAA Head Office — Entebbe',
     salaryScale: 'U6 (UGX 2,000,000 - 2,600,000 per month)', minimumEducationLevel: 'Bachelors', minimumExperienceYears: 2,
     jobPurpose: purpose('To support recruitment, onboarding and staff records for the Directorate of Human Resource and Administration.', ['Coordinate recruitment logistics', 'Maintain personnel files', 'Support the performance-management cycle']),
-    essentialRequirements: ['Bachelor\'s degree in Human Resource Management or a related field', 'Currently employed by UCAA'],
+    essentialRequirements: ['Currently employed by UCAA'],
     desirableRequirements: [], disqualifyingRequirements: []
   }, null);
   log(`  ${acc.jobRef} Accountant (3 days old - past its approval SLA), ${hr.jobRef} HR Officer (Internal)\n`);
@@ -1065,19 +1440,20 @@ async function finish() {
     const created = new Date(first - (1 + (c.id % 3)) * DAY);
     await prisma.candidate.update({
       where: { id: c.id },
-      data: { createdAt: created, profileCompletedAt: c.profileCompletedAt ? new Date(created.getTime() + 2 * 60 * 60 * 1000) : null }
+      data: { createdAt: created, profileCompletedAt: c.profileCompletedAt ? new Date(created.getTime() + 2 * HOUR) : null }
     });
   }
 
-  log('=== Maintenance jobs (SLA escalations, deadline notices, interview reminders, offer expiry) ===');
-  for (const name of ['checkSlaEscalations', 'checkVacancyDeadlines', 'sendInterviewReminders', 'expireOffers', 'cleanupPendingRegistrations', 'cleanupVerificationTokens']) {
+  log('=== Maintenance jobs (SLA escalations, deadline notices, interview reminders, sessions, offer expiry) ===');
+  for (const name of ['checkSlaEscalations', 'checkVacancyDeadlines', 'sendInterviewReminders', 'expireOffers', 'cleanupPendingRegistrations', 'cleanupVerificationTokens', 'checkInterviewSessions']) {
     const mod = require(`./${name}`);
     await runJob(name, () => mod.run());
   }
 
   // Staff inboxes: routine notices read, anything that asks for action unread.
   const ACTIONABLE = ['VacancyApproval', 'DepartmentApproval', 'OfferApproval', 'MeritListProposed', 'OfferReturned',
-    'InterviewRescheduleRequested', 'InterviewReadyToFinalize', 'InterviewScoresOverdue', 'OfferDeclined', 'OfferExpired', 'VacancyDeadlinePassed'];
+    'InterviewRescheduleRequested', 'InterviewReadyToFinalize', 'InterviewScoresOverdue', 'InterviewSessionNotStarted',
+    'OfferDeclined', 'OfferExpired', 'VacancyDeadlinePassed'];
   await prisma.notification.updateMany({ where: { taskType: { notIn: ACTIONABLE } }, data: { readAt: new Date() } });
 }
 
@@ -1098,7 +1474,8 @@ async function main() {
     const sysadminCandidates = await scenarioMeritProposed();
     await scenarioInterviews();
     await scenarioInternalShortlist();
-    await scenarioUnderReview(sysadminCandidates);
+    await scenarioModeration();
+    await scenarioRating(sysadminCandidates);
     await scenarioClosedReadvertised();
     await scenarioOpen();
     await scenarioTransitioned();
@@ -1106,7 +1483,8 @@ async function main() {
     await finish();
 
     log('\n=== Done ===');
-    log(`${await prisma.vacancy.count()} vacancies, ${await prisma.candidate.count()} candidates, ${await prisma.application.count()} applications, `
+    log(`${await prisma.vacancy.count()} vacancies, ${await prisma.candidate.count()} candidates, ${await prisma.application.count()} applications `
+      + `(${await prisma.applicationDocument.count()} documents), ${await prisma.shortlistExercise.count()} committees, `
       + `${await prisma.interviewRound.count()} interview rounds, ${await prisma.offer.count()} offers.`);
     log('\nLeft for live actions:');
     for (const line of LIVE) log(`  - ${line}`);
@@ -1119,7 +1497,9 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error('\nSEED FAILED:', e);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((e) => {
+    console.error('\nSEED FAILED:', e);
+    process.exitCode = 1;
+  });
+}

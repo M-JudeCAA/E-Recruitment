@@ -124,10 +124,10 @@ export default function ScreeningQuestionsEditor({ desirableItems, disqualifying
               {row.answerType === 'number'
                 ? (row.usage === 'qualifying'
                   ? `Preview: candidates are asked "${row.text.trim()}" and answer with a number - reaching at least ${row.minValue} is shown to you as a match, but never fails automated screening.`
-                  : `Preview: candidates are asked "${row.text.trim()}" and answer with a number - below ${row.minValue} fails automated screening.`)
+                  : `Preview: candidates are asked "${row.text.trim()}" and answer with a number - anyone below ${row.minValue} cannot submit an application.`)
                 : (row.usage === 'qualifying'
                   ? `Preview: candidates are asked "${row.text.trim()}" - answering the other way is shown to you as a flag, but never fails automated screening.`
-                  : `Preview: candidates are asked "${row.text.trim()}" - must answer ${row.requiredAnswer} or the application is flagged as ineligible in automated screening.`)}
+                  : `Preview: candidates are asked "${row.text.trim()}" - anyone who doesn't answer ${row.requiredAnswer} cannot submit an application.`)}
             </div>
           )}
         </div>

@@ -1,7 +1,8 @@
 const {
   prisma, resetDatabase, createStaff, createOrg, createCandidate,
-  staffToken, candidateToken, api, REFEREES, expectStatus
+  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument
 } = require('./helpers');
+const { localDay } = require('../src/utils/interviewFormat');
 
 // The Interview Hub against a real database: a bulk-scheduled session with
 // a shared panel and rubric, clash detection, the candidate asking to move,
@@ -44,6 +45,7 @@ async function shortlistedVacancy(names) {
     const candidate = await createCandidate({ fullName, email: `c${i}@example.com` });
     const token = await candidateToken(candidate.email);
     const draft = expectStatus(await api(token).post('/api/applications', { vacancyId: vacancy.id, referees: REFEREES }), 201).body;
+    await attachAcademicDocument(token, draft.id);
     expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`), 200);
     applicants.push({ token, applicationId: draft.id, candidateId: candidate.id });
   }
@@ -123,15 +125,21 @@ test('a bulk session is planned, booked, rescheduled, cancelled, scored and fina
   expect(moved.candidateResponse).toBe('Pending');
   expectStatus(await api(amy.token).patch(`/api/candidates/me/interviews/${moved.id}/respond`, { response: 'Confirmed' }), 200);
 
-  // Cate's interview is cancelled: she goes back to Shortlisted and any
-  // scoring link already sent for it stops working.
+  // The external assessor (no email) gets one link for the whole day: it
+  // lists all three candidates. Cate's interview is then cancelled - she
+  // goes back to Shortlisted, and the link shows her as cancelled.
   const cateRound = roundOf(cate.applicationId);
   const links = expectStatus(await api(tokens.shro).post(`/api/interviews/${cateRound.id}/access-links`), 201).body.results;
   const externalLink = links.find((l) => l.name === 'External Assessor').url;
+  const dayToken = externalLink.split('/panel-day/')[1];
+  const dayView = expectStatus(await api().get(`/api/panel-day/${dayToken}`), 200).body;
+  expect(dayView.day).toBe('2031-03-04');
+  expect(dayView.sessionState).toBe('notStarted');
+  expect(dayView.candidates.map((c) => c.candidateName)).toEqual(['Ben Byaru', 'Cate Chebet', 'Amy Apio']);
   expectStatus(await api(tokens.shro).patch(`/api/interviews/${cateRound.id}/cancel`, { reason: 'Candidate withdrew verbally' }), 200);
   expect((await prisma.application.findUnique({ where: { id: cate.applicationId } })).status).toBe('Shortlisted');
-  const token = externalLink.split('/panel-score/')[1];
-  expect((await api().get(`/api/panel-access/${token}`)).status).toBe(410);
+  const afterCancel = expectStatus(await api().get(`/api/panel-day/${dayToken}`), 200).body;
+  expect(afterCancel.candidates.find((c) => c.candidateName === 'Cate Chebet').state).toBe('cancelled');
 
   // Ben's panel scores: the chair's proxied by HR against the rubric, the
   // external assessor's through their own link.
@@ -143,12 +151,33 @@ test('a bulk session is planned, booked, rescheduled, cancelled, scored and fina
     criterionScores: { [tech.id]: 5, [comms.id]: 3 }, comments: 'Excellent technical depth'
   }), 200);
 
+  // Scoring follows the session HR runs on the day, so Ben's interview is
+  // moved to today first. Reissuing gives a fresh link and the old one stops
+  // working.
+  await prisma.interviewRound.update({ where: { id: benRound.id }, data: { scheduledDate: new Date(Date.now() - 1000) } });
+  const today = localDay(new Date());
   const link = expectStatus(await api(tokens.shro).post(`/api/interviews/panel-members/${assessor.id}/access-link`), 201).body.url;
-  const panelToken = link.split('/panel-score/')[1];
-  const view = expectStatus(await api().get(`/api/panel-access/${panelToken}`), 200).body;
-  expect(view.criteria.map((c) => c.name)).toEqual(['Technical knowledge', 'Communication']);
-  expect((await api().patch(`/api/panel-access/${panelToken}/score`, { criterionScores: { [tech.id]: 9 } })).status).toBe(400);
-  expectStatus(await api().patch(`/api/panel-access/${panelToken}/score`, { criterionScores: { [tech.id]: 4, [comms.id]: 4 } }), 200);
+  const panelToken = link.split('/panel-day/')[1];
+  expect(panelToken).not.toBe(dayToken);
+
+  // Nothing can be scored until HR starts the session and calls Ben in.
+  expect((await api().patch(`/api/panel-day/${panelToken}/score`, { panelMemberId: assessor.id, score: 80 })).status).toBe(423);
+  expect((await api(tokens.shro).patch(`/api/interviews/${benRound.id}/call-in`)).status).toBe(422);
+  expect((await api(tokens.hro).post(`/api/interviews/vacancies/${vacancy.id}/days/${today}/start`)).status).toBe(403);
+  const started = expectStatus(await api(tokens.shro).post(`/api/interviews/vacancies/${vacancy.id}/days/${today}/start`), 200).body;
+  expect(started.session.state).toBe('running');
+  const waiting = expectStatus(await api().get(`/api/panel-day/${panelToken}`), 200).body;
+  expect(waiting.candidates.find((c) => c.candidateName === 'Ben Byaru').state).toBe('waiting');
+  expectStatus(await api(tokens.shro).patch(`/api/interviews/${benRound.id}/call-in`), 200);
+
+  const view = expectStatus(await api().get(`/api/panel-day/${panelToken}`), 200).body;
+  expect(view.sessionState).toBe('running');
+  const benEntry = view.candidates.find((c) => c.candidateName === 'Ben Byaru');
+  expect(benEntry.state).toBe('open');
+  expect(benEntry.criteria.map((c) => c.name)).toEqual(['Technical knowledge', 'Communication']);
+  expect((await api().patch(`/api/panel-day/${panelToken}/score`, { panelMemberId: assessor.id, criterionScores: { [tech.id]: 9 } })).status).toBe(400);
+  expectStatus(await api().patch(`/api/panel-day/${panelToken}/score`, { panelMemberId: assessor.id, criterionScores: { [tech.id]: 4, [comms.id]: 4 } }), 200);
+  expect((await api().patch(`/api/panel-day/${panelToken}/score`, { panelMemberId: assessor.id, criterionScores: { [tech.id]: 4, [comms.id]: 4 } })).status).toBe(410);
 
   // (3*1 + 1*0.6)/4 = 90 and (3*0.8 + 1*0.8)/4 = 80 -> average 85.
   const scored = await prisma.interviewRound.findUnique({ where: { id: benRound.id } });

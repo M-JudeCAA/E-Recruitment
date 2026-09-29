@@ -291,6 +291,9 @@ model Vacancy {
   createdBy            StaffUser     @relation("VacancyCreatedBy", fields: [createdById], references: [id])
   createdAt            DateTime      @default(now())
   applications         Application[]
+  panelDayLinks        PanelDayLink[]
+  interviewDays        InterviewDay[]
+  shortlistExercise    ShortlistExercise?
 
   // Declaring pre-existing drift, not adding new columns: approvedAt,
   // approvedById (with its FK already live), and rejectionReason already
@@ -753,8 +756,46 @@ model Application {
 
   interviewRounds  InterviewRound[]
   offer            Offer?
+  // Academic certificates/transcripts and any other supporting documents
+  // the candidate attaches in the wizard's Documents step. submit()
+  // requires at least one Academic document.
+  documents        ApplicationDocument[]
+
+  // The shortlisting committee's result (ShortlistExercise), snapshotted
+  // when HR closes the exercise: the band, the weighted consensus score
+  // (0-100), how united the committee was (0-1) and the rank it gives.
+  // Tied applicants share a rank. The interview shortlist is then taken
+  // strictly from the top of this order - HR cannot reorder it.
+  committeeRank      Int?
+  committeeBand      ShortlistBand?
+  committeeScore     Float?
+  committeeAgreement Float?
+  shortlistAssignments ShortlistAssignment[]
 
   @@unique([vacancyId, candidateId])
+}
+
+enum ApplicationDocumentCategory {
+  Academic // certificates, transcripts, result slips
+  Other    // professional certificates, licences, testimonials, anything else relevant
+}
+
+// One uploaded file attached to an application (see Application.documents).
+// Served through the authenticated /api/files route like coverLetterUrl -
+// fileController lets a candidate read only files on their own
+// applications. Only added/removed while the application is a Draft, and
+// deleted with it when a draft is cancelled.
+model ApplicationDocument {
+  id            Int                         @id @default(autoincrement())
+  applicationId Int
+  application   Application                 @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  category      ApplicationDocumentCategory
+  label         String?                     // candidate's own description, e.g. "BSc transcript"
+  fileUrl       String
+  originalName  String
+  uploadedAt    DateTime                    @default(now())
+
+  @@index([applicationId])
 }
 
 model PanelMember {
@@ -789,6 +830,170 @@ model PanelMember {
   recusedAt        DateTime?
   recusalReason    String?        @db.Text
   accessTokens     PanelAccessToken[]
+}
+
+// A panelist's scoring link for one interview day of one vacancy: it opens
+// every interview on that vacancy that day where this person sits on the
+// panel, so they score all their candidates from one page. Which rounds it
+// covers is worked out at request time from the rounds' own dates and panels
+// (panelDayLinkService), so a reschedule or a panel change is picked up
+// without re-issuing. It only works on that day - from an hour before the
+// first interview to local midnight (APP_TIMEZONE) - and each candidate can
+// be scored once. The panelist is identified the same way clash detection
+// does (interviewSchedulingService.samePerson): account, else email, else name.
+// One vacancy's interviews on one day (APP_TIMEZONE) run as a session that
+// HR starts and ends by hand. Nothing can be scored on a panelist's day link
+// until the session is started, and then only candidates HR has called in
+// (InterviewRound.calledInAt). Ending it gives panelists a 15-minute grace
+// period (closesAt) to finish scoring, then the day links close. The row is
+// created when the session starts, or earlier by scripts/
+// checkInterviewSessions.js to record that HR was told it hadn't started
+// 30 minutes after the first interview was due (notStartedAlertAt).
+model InterviewDay {
+  id                Int       @id @default(autoincrement())
+  vacancyId         Int
+  vacancy           Vacancy   @relation(fields: [vacancyId], references: [id])
+  day               String    // YYYY-MM-DD in APP_TIMEZONE
+  startedAt         DateTime?
+  startedById       Int?
+  endedAt           DateTime?
+  endedById         Int?
+  closesAt          DateTime? // endedAt + the grace period
+  notStartedAlertAt DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@unique([vacancyId, day])
+}
+
+enum ShortlistExerciseStatus {
+  Setup       // HR is building the assessment sheet and inviting the committee
+  Rating      // members rate their assigned applicants, blind to each other
+  Moderation  // ratings closed; the chair settles disputed items
+  Closed      // results snapshotted onto the applications
+}
+
+enum ShortlistBand {
+  Unanimous    // every essential criterion met in the view of every rater
+  Majority     // every essential criterion met by majority (or the chair's decision)
+  Disputed     // an essential criterion with no clear majority - the chair must decide
+  NotQualified // an essential criterion a majority (or the chair) found not met
+}
+
+// A vacancy's shortlisting exercise: a committee of people outside HR (HR
+// staff cannot sit on it) rates every screened applicant against the job's
+// requirements, and the system ranks the pool from how the raters agree or
+// disagree - see shortlistCommitteeService.js for the rules. criteria is
+// [{ id, kind: 'Essential'|'Desirable', label, weight, source, autoKey? }]
+// and is frozen when rating opens. With a large pool each applicant is rated
+// by ratersPerApplicant members, after a calibration set of
+// calibrationCount applicants that every member rates.
+model ShortlistExercise {
+  id                    Int                     @id @default(autoincrement())
+  vacancyId             Int                     @unique
+  vacancy               Vacancy                 @relation(fields: [vacancyId], references: [id])
+  status                ShortlistExerciseStatus @default(Setup)
+  criteria              Json
+  ratersPerApplicant    Int                     @default(3)
+  calibrationCount      Int                     @default(10)
+  // [{ applicationId, memberId }] - a member HR names to rule on one
+  // applicant's disputed items in the chair's place, when the chair declared
+  // a conflict of interest for that applicant.
+  actingChairs          Json?
+  ratingDeadline        DateTime?
+  createdById           Int
+  createdAt             DateTime                @default(now())
+  ratingOpenedAt        DateTime?
+  ratingOpenedById      Int?
+  moderationStartedAt   DateTime?
+  moderationStartedById Int?
+  closedAt              DateTime?
+  closedById            Int?
+  members               ShortlistMember[]
+  decisions             ShortlistDecision[]
+}
+
+// A committee member - never an HR account (checked against StaffUser by
+// email). Works through a private link (token); reissuing replaces the
+// token. The chair is chosen per exercise by HR and can be changed until
+// the exercise closes. submittedAt locks the member's ratings.
+model ShortlistMember {
+  id          Int                   @id @default(autoincrement())
+  exerciseId  Int
+  exercise    ShortlistExercise     @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  name        String
+  email       String
+  isChair     Boolean               @default(false)
+  token       String                @unique
+  submittedAt DateTime?
+  createdAt   DateTime              @default(now())
+  assignments ShortlistAssignment[]
+
+  @@unique([exerciseId, email])
+}
+
+// Which applicants a member rates. A member who declares a conflict of
+// interest for an applicant (conflictAt) doesn't rate them.
+model ShortlistAssignment {
+  id             Int               @id @default(autoincrement())
+  memberId       Int
+  member         ShortlistMember   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  applicationId  Int
+  application    Application       @relation(fields: [applicationId], references: [id])
+  calibration    Boolean           @default(false)
+  conflictAt     DateTime?
+  conflictReason String?           @db.Text
+  ratings        ShortlistRating[]
+
+  @@unique([memberId, applicationId])
+  @@index([applicationId])
+}
+
+// One member's rating of one applicant on one criterion. Essential: 0 not
+// met, 1 partly met, 2 met. Desirable: 1-5. Editable until the member
+// submits; no history is kept.
+model ShortlistRating {
+  id           Int                 @id @default(autoincrement())
+  assignmentId Int
+  assignment   ShortlistAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  criterionId  String
+  value        Int
+  comment      String?             @db.Text
+  updatedAt    DateTime            @updatedAt
+
+  @@unique([assignmentId, criterionId])
+}
+
+// The chair's ruling on a disputed essential criterion for one applicant,
+// made at moderation. decidedByName is a snapshot - the chair can change.
+model ShortlistDecision {
+  id                Int               @id @default(autoincrement())
+  exerciseId        Int
+  exercise          ShortlistExercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  applicationId     Int
+  criterionId       String
+  outcome           String            // 'Met' | 'NotMet'
+  reason            String            @db.Text
+  decidedByMemberId Int?
+  decidedByName     String
+  decidedAt         DateTime          @default(now())
+
+  @@unique([exerciseId, applicationId, criterionId])
+}
+
+model PanelDayLink {
+  id            Int       @id @default(autoincrement())
+  token         String    @unique
+  vacancyId     Int
+  vacancy       Vacancy   @relation(fields: [vacancyId], references: [id])
+  day           String    // YYYY-MM-DD in APP_TIMEZONE
+  panelistName  String
+  panelistEmail String?
+  staffUserId   Int?
+  createdById   Int?
+  createdAt     DateTime  @default(now())
+  revokedAt     DateTime? // replaced by a fresh link, or withdrawn by HR
+
+  @@index([vacancyId, day])
 }
 
 model PanelAccessToken {
@@ -856,6 +1061,12 @@ model InterviewRound {
   // as Vacancy.deadlineNotifiedAt); reminderSentAt is cleared on reschedule.
   reminderSentAt  DateTime?
   scoreNudgeSentAt DateTime?
+  // Set when HR calls the candidate in during a running interview session
+  // (InterviewDay) - the moment panelists can start scoring them on their
+  // day link. Cleared on reschedule. calledInById is the staff member who
+  // called them in (a snapshot id, like the audit log's performedById).
+  calledInAt      DateTime?
+  calledInById    Int?
   score           Float?      // computed: average of this round's non-recused PanelMember scores
   recommendation  String?     // Shortlist / Hold / Reject - a deliberate HR judgment, not an average
   conductedById   Int?
@@ -1080,6 +1291,10 @@ enum SlaTaskType {
   // An issued offer passed its response deadline unanswered - to every
   // Principal_HR_Officer (scripts/expireOffers.js). taskId is the offer id.
   OfferExpired
+  // An interview session was not started 30 minutes after its first
+  // interview was due - to whoever scheduled those interviews
+  // (scripts/checkInterviewSessions.js). taskId is the first round id.
+  InterviewSessionNotStarted
 }
 
 model SlaPolicy {

@@ -30,3 +30,22 @@ export function validateDocumentFile(file) {
   }
   return '';
 }
+
+// Academic and other supporting documents - the document types above plus
+// scanned images, matching ALLOWED_SUPPORTING_DOC_MIME in uploadConstants.js.
+export const ALLOWED_SUPPORTING_DOC_MIME = [...ALLOWED_DOCUMENT_MIME, 'image/jpeg', 'image/png'];
+export const ALLOWED_SUPPORTING_DOC_EXTENSIONS = [...ALLOWED_DOCUMENT_EXTENSIONS, '.jpg', '.jpeg', '.png'];
+
+export function validateSupportingDocumentFile(file) {
+  if (!file) return '';
+  const nameLower = file.name.toLowerCase();
+  const hasAllowedExtension = ALLOWED_SUPPORTING_DOC_EXTENSIONS.some((ext) => nameLower.endsWith(ext));
+  const mimeOk = ALLOWED_SUPPORTING_DOC_MIME.includes(file.type) || (file.type === '' && hasAllowedExtension);
+  if (!mimeOk) {
+    return 'Only PDF, Word, JPG or PNG files are allowed.';
+  }
+  if (file.size > MAX_DOCUMENT_SIZE) {
+    return 'This file is larger than the 10MB limit.';
+  }
+  return '';
+}

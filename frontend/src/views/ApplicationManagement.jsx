@@ -14,6 +14,7 @@ import Select from '../components/Select';
 import TextField from '../components/TextField';
 import ApplicationReviewCard from '../components/ApplicationReviewCard';
 import ShortlistPipelineBoard from '../components/ShortlistPipelineBoard';
+import ShortlistCommittee from '../components/ShortlistCommittee';
 import VacancyInterviewsPanel from '../components/VacancyInterviewsPanel';
 import MeritListBoard from '../components/MeritListBoard';
 import ViewSwitcher from '../components/ViewSwitcher';
@@ -200,6 +201,9 @@ export default function ApplicationManagement() {
 
   // --- Mode A: cross-vacancy queue state ---
   const [queue, setQueue] = useState(null); // { data, total, page, limit }
+  // True once the vacancy has a shortlisting committee - the board then
+  // stops offering hand-ranking (the committee's order is final).
+  const [committeeManaged, setCommitteeManaged] = useState(false);
   const [queueLoading, setQueueLoading] = useState(false);
 
   const { download: downloadGeneratedCv, hiddenPrintArea, downloadingId } = useGeneratedCvDownload();
@@ -487,10 +491,15 @@ export default function ApplicationManagement() {
                   </Card>
                 )}
 
+                {vacancy.reviewStartedAt && (
+                  <ShortlistCommittee vacancy={vacancy} staffRole={staff?.role} reloadKey={meritReloadKey}
+                    onChanged={loadVacancyMode} onManagedChange={setCommitteeManaged} />
+                )}
+
                 <ShortlistPipelineBoard
                   vacancy={vacancy} applications={vacancyApps} staffRole={staff?.role}
                   onUpdated={loadVacancyMode} onDownloadCv={downloadGeneratedCv} downloadingId={downloadingId}
-                  onGoToStage={setStage}
+                  onGoToStage={setStage} committeeManaged={committeeManaged}
                 />
               </>
             )}

@@ -22,6 +22,12 @@ router.get('/vacancies/:vacancyId/scorecard', ...read, controller.scorecard);
 router.post('/vacancies/:vacancyId/plan', ...write, controller.planSession);
 router.post('/vacancies/:vacancyId/sessions', ...write, controller.scheduleSession);
 router.post('/applications/:applicationId/interviews', ...write, controller.schedule);
+// One vacancy's interview day, run as a session: HR starts it, calls each
+// candidate in (which opens them for scoring on the panel's day links), and
+// ends it (15-minute grace, then the links close).
+router.get('/vacancies/:vacancyId/days/:day', ...read, controller.getDay);
+router.post('/vacancies/:vacancyId/days/:day/start', ...write, controller.startDay);
+router.post('/vacancies/:vacancyId/days/:day/end', ...write, controller.endDay);
 
 router.patch('/panel-members/:panelMemberId', ...write, controller.updatePanelMember);
 router.delete('/panel-members/:panelMemberId', ...write, controller.removePanelMember);
@@ -36,6 +42,7 @@ router.patch('/:interviewId', ...write, controller.update);
 router.patch('/:interviewId/reschedule', ...write, controller.reschedule);
 router.patch('/:interviewId/cancel', ...write, controller.cancel);
 router.patch('/:interviewId/no-show', ...write, controller.markNoShow);
+router.patch('/:interviewId/call-in', ...write, controller.callIn);
 router.post('/:interviewId/panel-members', ...write, controller.addPanelMember);
 router.post('/:interviewId/access-links', ...write, controller.sendAllLinks);
 router.patch('/:interviewId/finalize', ...write, controller.finalizeRecommendation);

@@ -299,10 +299,12 @@ function CompareDrawer({ apps, onClose }) {
 // onDownloadCv/downloadingId: passed through from the parent's single
 // useGeneratedCvDownload instance, so this board doesn't spin up a second
 // hidden print area of its own.
-export default function ShortlistPipelineBoard({ vacancy, applications, staffRole, onUpdated, onDownloadCv, downloadingId, onGoToStage }) {
+export default function ShortlistPipelineBoard({ vacancy, applications, staffRole, onUpdated, onDownloadCv, downloadingId, onGoToStage, committeeManaged = false }) {
   const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
   const rank = ROLE_RANK[staffRole] || 0;
-  const canRank = rank >= ROLE_RANK.Senior_HR_Officer;
+  // A committee-run vacancy takes its shortlist from the committee's ranking
+  // (ShortlistCommittee.jsx) - no hand-ranking here.
+  const canRank = rank >= ROLE_RANK.Senior_HR_Officer && !committeeManaged;
   const canApprove = rank >= ROLE_RANK.Principal_HR_Officer;
 
   const byId = useMemo(() => Object.fromEntries(applications.map((a) => [a.id, a])), [applications]);

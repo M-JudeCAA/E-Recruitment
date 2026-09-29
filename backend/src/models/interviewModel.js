@@ -104,6 +104,11 @@ module.exports = {
   // Same guard idea for cancel/no-show/reschedule: only a round that is
   // still Scheduled can move, so two people acting at once can't both win.
   updateIfScheduled: (id, data) => prisma.interviewRound.updateMany({ where: { id, status: 'Scheduled' }, data }),
+  // HR calling a candidate in during a running session - only once, and
+  // only while the round is still Scheduled.
+  callIn: (id, staffId, at) => prisma.interviewRound.updateMany({
+    where: { id, status: 'Scheduled', calledInAt: null }, data: { calledInAt: at, calledInById: staffId }
+  }),
   countByApplication: (applicationId) => prisma.interviewRound.count({ where: { applicationId } }),
   findByApplication: (applicationId) => prisma.interviewRound.findMany({ where: { applicationId } }),
 
@@ -141,6 +146,22 @@ module.exports = {
     where: { application: { vacancyId } },
     include: ROUND_INCLUDE,
     orderBy: [{ createdAt: 'desc' }]
+  }),
+
+  // Every round of a vacancy that falls in [start, end) - one interview day,
+  // for a panelist's day link (panelDayLinkService).
+  findForVacancyDay: (vacancyId, start, end) => prisma.interviewRound.findMany({
+    where: { application: { vacancyId }, scheduledDate: { gte: start, lt: end } },
+    include: ROUND_INCLUDE,
+    orderBy: [{ scheduledDate: 'asc' }, { id: 'asc' }]
+  }),
+
+  // scripts/checkInterviewSessions.js - interviews still to hold whose time
+  // fell in [from, to].
+  scheduledDue: (from, to) => prisma.interviewRound.findMany({
+    where: { status: 'Scheduled', scheduledDate: { gte: from, lte: to } },
+    include: ROUND_INCLUDE,
+    orderBy: { scheduledDate: 'asc' }
   }),
 
   // scripts/sendInterviewReminders.js

@@ -20,6 +20,10 @@ module.exports = {
   findById: (id) => prisma.panelMember.findUnique({ where: { id } }),
   findWithRound: (id) => prisma.panelMember.findUnique({ where: { id }, include: { interviewRound: true } }),
   update: (id, data) => prisma.panelMember.update({ where: { id }, data }),
+  // A panelist's own submission through a day link - scoped to "not scored
+  // and not stood down yet", so a double-click or a second open tab can't
+  // record twice. count 0 means someone got there first.
+  updateIfOpen: (id, data) => prisma.panelMember.updateMany({ where: { id, score: null, recusedAt: null }, data }),
   // Only one chair per round - clearing the others before setting a new one.
   clearChair: (interviewRoundId) => prisma.panelMember.updateMany({
     where: { interviewRoundId, isChair: true }, data: { isChair: false }

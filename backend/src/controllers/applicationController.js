@@ -1,6 +1,7 @@
 const { sendError } = require('../utils/errorResponse');
 const applicationModel = require('../models/applicationModel');
 const vacancyModel = require('../models/vacancyModel');
+const shortlistCommitteeModel = require('../models/shortlistCommitteeModel');
 const workflow = require('../services/workflowService');
 const meritList = require('../services/meritListService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
@@ -124,6 +125,11 @@ async function shortlist(req, res) {
 
   const application = await applicationModel.findById(applicationId, { vacancy: true });
   if (!application) return res.status(404).json({ error: 'Application not found' });
+  // Same rule as vacancyController.saveRanking: a committee-run vacancy is
+  // shortlisted only from the committee's ranking.
+  if (await shortlistCommitteeModel.hasExercise(application.vacancyId)) {
+    return res.status(409).json({ error: 'This vacancy is shortlisted by its committee - propose the shortlist from the committee ranking' });
+  }
   if (NOT_SHORTLISTABLE.includes(application.status)) {
     return res.status(422).json({ error: `An application at status "${application.status}" cannot be shortlisted here` });
   }
