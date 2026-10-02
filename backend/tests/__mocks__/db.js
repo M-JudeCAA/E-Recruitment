@@ -8,7 +8,7 @@ const mockDb = {
   shortlistAssignment: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), createMany: jest.fn(), update: jest.fn() },
   shortlistRating: { upsert: jest.fn(), deleteMany: jest.fn() },
   shortlistDecision: { upsert: jest.fn() },
-  vacancy: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+  vacancy: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   offer: { update: jest.fn(), updateMany: jest.fn(), count: jest.fn(), create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), groupBy: jest.fn() },
   workExperience: { findMany: jest.fn() },
   education: { findMany: jest.fn() },

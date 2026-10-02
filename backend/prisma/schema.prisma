@@ -472,6 +472,25 @@ model Vacancy {
   // machine-checked (too subjective to screen automatically).
   generalKnowledge       Json?
   specialSkills          Json?
+  // The person specification's "Desirable" items as written on the
+  // requisition - advert text only. Distinct from desirableRequirements,
+  // which are the Qualifying screening questions HR adds.
+  desirableQualifications Json?
+
+  // The EXCO-approved, signed requisition the vacancy was created from
+  // (services/requisitionService.js) - no vacancy is created without one.
+  // The document is a stored upload served through /api/files (staff only);
+  // requisitionDetails is the snapshot of what was read from it ({ format,
+  // fields: { key: { value, confidence } }, missing, warnings, editedFields
+  // - the form fields HR changed from it }). requisitionDocumentHash
+  // (sha256 of the file, unique) stops one document opening two vacancies; a
+  // readvertisement carries the rest over but not the hash. All staff-only.
+  requisitionDocumentUrl  String?
+  requisitionDocumentName String?
+  requisitionDocumentHash String?  @unique @db.VarChar(64)
+  requisitionUploadedAt   DateTime?
+  requisitionUploadedById Int?
+  requisitionDetails      Json?
 
   // Why `title` is kept as a denormalized snapshot rather than always
   // reading through `position.name`: if a Position is later renamed, past

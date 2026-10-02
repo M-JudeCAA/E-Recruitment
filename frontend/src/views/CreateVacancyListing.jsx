@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Building2, CalendarClock, FileText } from 'lucide-react';
+import { Building2, CalendarClock, FileText, FileCheck2 } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import HRSidebar from '../components/HRSidebar';
 import PageHeader from '../components/PageHeader';
@@ -13,6 +13,7 @@ import Alert from '../components/Alert';
 import Modal from '../components/Modal';
 import VacancyAdvertFields from '../components/VacancyAdvertFields';
 import VacancyAdvert from '../components/VacancyAdvert';
+import RequisitionPanel from '../components/RequisitionPanel';
 
 const emptyForm = {
   departmentId: '', positionId: '', reportsToPositionId: '',
@@ -30,7 +31,8 @@ const emptyForm = {
   // Vacancy.minimumAge/maximumAge/minimumFlyingHours/requiredExamGrades.
   minimumAge: '', maximumAge: '', minimumFlyingHours: '', minimumCGPA: '', requiredExamGrades: [],
   jobPurpose: '', essentialRequirements: [],
-  desirableRequirements: [], disqualifyingRequirements: [], generalKnowledge: [], specialSkills: []
+  desirableRequirements: [], disqualifyingRequirements: [], generalKnowledge: [], specialSkills: [],
+  desirableQualifications: []
 };
 
 const EMPLOYMENT_CATEGORY_LABELS = { FullTime: 'Full-time', Contract: 'Contract', FixedTermContract: 'Fixed Term Contract' };
@@ -95,6 +97,10 @@ export default function CreateVacancyListing() {
   const [creating, setCreating] = useState(false); // double-submission lock
   const [error, setError] = useState('');
   const [previewData, setPreviewData] = useState(null);
+  // The EXCO-approved requisition this vacancy is created from - nothing
+  // below it is shown until one has been read (see RequisitionPanel).
+  const [requisition, setRequisition] = useState(null);
+  const [requisitionConfirmed, setRequisitionConfirmed] = useState(false);
 
   useEffect(() => {
     staffClient.get('/api/departments/approved')
@@ -139,6 +145,35 @@ export default function CreateVacancyListing() {
     }
   };
 
+  // Fills the form from what was read off the requisition, loading the
+  // position and reports-to lists the matched organogram entries need.
+  const applyRequisition = async (result) => {
+    setRequisition(result);
+    setRequisitionConfirmed(false);
+    setError('');
+    const p = result.prefill || {};
+    const next = { ...emptyForm };
+    for (const [key, value] of Object.entries(p)) next[key] = Array.isArray(value) ? value : String(value);
+    if (p.positionsRequired) next.positionsRequired = Number(p.positionsRequired);
+    setCustomLocation(!!(p.location && !LOCATIONS.includes(p.location)));
+    try {
+      if (p.departmentId) {
+        setDepartmentPositions((await staffClient.get(`/api/departments/${p.departmentId}/positions`)).data);
+      } else {
+        setDepartmentPositions([]);
+      }
+      setReportsToOptions(p.positionId ? (await staffClient.get(`/api/positions/${p.positionId}/senior-options`)).data : []);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not load the positions for the matched department');
+    }
+    setForm(next);
+  };
+
+  const replaceRequisition = () => {
+    setRequisition(null);
+    setRequisitionConfirmed(false);
+  };
+
   // Resolves the currently-selected department/position/reports-to ids
   // into display names for the preview - the form only holds ids, so this
   // is the one place that needs the lookup lists already loaded for the
@@ -160,16 +195,20 @@ export default function CreateVacancyListing() {
       minimumAge: form.minimumAge, maximumAge: form.maximumAge,
       minimumFlyingHours: form.minimumFlyingHours, minimumCGPA: form.minimumCGPA, requiredExamGrades: form.requiredExamGrades,
       desirableRequirements: form.desirableRequirements,
-      generalKnowledge: form.generalKnowledge, specialSkills: form.specialSkills
+      generalKnowledge: form.generalKnowledge, specialSkills: form.specialSkills, desirableQualifications: form.desirableQualifications
     });
   };
 
   const createVacancy = async (e) => {
     e.preventDefault();
     if (creating) return; // a double-click or slow-network retry must not create two vacancies
+    if (!requisition) { setError('Upload the EXCO-approved requisition first.'); return; }
+    if (!requisitionConfirmed) { setError('Confirm that the requisition has been approved and signed by EXCO.'); return; }
     setError(''); setCreating(true);
     try {
-      const res = await staffClient.post('/api/vacancies', form);
+      const res = await staffClient.post('/api/vacancies', {
+        ...form, requisitionDocument: requisition.document, requisitionConfirmed: true
+      });
       navigate('/hr', { state: { vacancyCreatedMessage: `Vacancy created (Ref: ${res.data.jobRef}). It needs Manager or Director approval to open.` } });
     } catch (err) {
       const errs = err.response?.data?.errors;
@@ -184,7 +223,7 @@ export default function CreateVacancyListing() {
         <HRSidebar active="vacancies" />
 
         <div style={{ flex: 1, minWidth: 0 }}>
-      <PageHeader title="New Listing" subtitle="Create a new vacancy for approval" />
+      <PageHeader title="New Listing" subtitle="Create a vacancy from an EXCO-approved requisition" />
       <p style={{ marginTop: -12, marginBottom: 'var(--spacing-md)' }}>
         <Link to="/hr">&larr; Back to vacancies</Link>
       </p>
@@ -192,6 +231,14 @@ export default function CreateVacancyListing() {
       <Alert type="error" message={error} />
 
       <form onSubmit={createVacancy} style={{ maxWidth: 820 }}>
+        <Card style={{ padding: 'var(--spacing-lg)' }}>
+          <SectionHeader icon={FileCheck2} title="Approved requisition"
+            description="The job details come from the requisition EXCO approved and signed." />
+          <RequisitionPanel requisition={requisition} onRead={applyRequisition} onReplace={replaceRequisition}
+            confirmed={requisitionConfirmed} onConfirmChange={setRequisitionConfirmed} />
+        </Card>
+
+        {requisition && (<>
         <Card style={{ padding: 'var(--spacing-lg)' }}>
           <SectionHeader icon={Building2} title="Position"
             description="Where this role sits in the organization, and how many openings it has." />
@@ -286,7 +333,7 @@ export default function CreateVacancyListing() {
 
         <Card style={{ padding: 'var(--spacing-lg)' }}>
           <SectionHeader icon={FileText} title="Job purpose & requirements"
-            description="The actual advert content - what candidates read and answer when they apply." />
+            description="Read from the requisition - check it. Screening criteria and questions aren't on the requisition: add them here." />
           <VacancyAdvertFields values={form} onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))} />
         </Card>
 
@@ -303,9 +350,13 @@ export default function CreateVacancyListing() {
           <Button type="button" variant="ghost" onClick={() => navigate('/hr')}>Cancel</Button>
           <div style={{ display: 'flex', gap: 10 }}>
             <Button type="button" variant="secondary" onClick={previewForm}>Preview advert</Button>
-            <Button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create listing'}</Button>
+            <Button type="submit" disabled={creating || !requisitionConfirmed}
+              title={requisitionConfirmed ? undefined : 'Confirm the EXCO approval above first'}>
+              {creating ? 'Creating...' : 'Create listing'}
+            </Button>
           </div>
         </div>
+        </>)}
       </form>
 
       {previewData && (

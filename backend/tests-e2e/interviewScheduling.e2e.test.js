@@ -1,6 +1,6 @@
 const {
   prisma, resetDatabase, createStaff, createOrg, createCandidate,
-  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument
+  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition
 } = require('./helpers');
 const { localDay } = require('../src/utils/interviewFormat');
 
@@ -35,7 +35,7 @@ const inDays = (d) => new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString
 const SESSION_START = '2031-03-04T06:00:00.000Z'; // Tuesday 09:00 Kampala
 
 async function shortlistedVacancy(names) {
-  const vacancy = expectStatus(await api(tokens.hro).post('/api/vacancies', {
+  const vacancy = expectStatus(await createVacancyFromRequisition(tokens.hro, {
     positionId: org.position.id, postingType: 'External', deadline: inDays(30), positionsRequired: 1
   }), 201).body;
   expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);

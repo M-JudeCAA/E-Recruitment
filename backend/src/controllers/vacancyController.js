@@ -8,6 +8,8 @@ const workflow = require('../services/workflowService');
 const audit = require('../services/auditService');
 const slaModel = require('../models/slaModel');
 const { notify } = require('../services/notificationService');
+const requisitionService = require('../services/requisitionService');
+const { sendRequisitionError } = require('./requisitionController');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { toPublicVacancy } = require('../utils/publicVacancy');
 const { escapeHtml } = require('../utils/interviewFormat');
@@ -38,7 +40,7 @@ function buildVacancyCreateData(position, reportsToPositionId, body, createdById
     minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy,
     minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
     jobPurpose, essentialRequirements, desirableRequirements, disqualifyingRequirements,
-    generalKnowledge, specialSkills,
+    generalKnowledge, specialSkills, desirableQualifications,
     location, employmentCategory, internalSalaryRange, recruiterNotes,
     positionsRequired } = body;
 
@@ -72,6 +74,7 @@ function buildVacancyCreateData(position, reportsToPositionId, body, createdById
     disqualifyingRequirements: normalizeDisqualifyingRequirements(disqualifyingRequirements) ?? [],
     generalKnowledge: normalizeStringList(generalKnowledge) ?? [],
     specialSkills: normalizeStringList(specialSkills) ?? [],
+    desirableQualifications: normalizeStringList(desirableQualifications) ?? [],
     location: location || null,
     employmentCategory: employmentCategory || null,
     internalSalaryRange: internalSalaryRange || null,
@@ -121,7 +124,19 @@ async function create(req, res) {
     validatedReportsToId = reportsTo.id;
   }
 
-  const vacancy = await vacancyModel.createWithJobRef(postingType, {
+  // Only from an uploaded, EXCO-approved requisition - re-read from the
+  // stored document here, never taken from the request.
+  let requisition;
+  try {
+    requisition = await requisitionService.forCreate(req.body, req.user.id);
+  } catch (err) {
+    return sendRequisitionError(res, err);
+  }
+
+  let vacancy;
+  try {
+    vacancy = await vacancyModel.createWithJobRef(postingType, {
+    ...requisition,
     // FIXED - this was never set at all, so every vacancy defaulted to
     // the schema default (previously 'Open') and was immediately visible
     // to candidates, bypassing approval entirely. The schema default is
@@ -129,10 +144,22 @@ async function create(req, res) {
     // defense - this explicit value doesn't rely on that default alone.
     status: 'PendingApproval',
     ...buildVacancyCreateData(position, validatedReportsToId, req.body, req.user.id)
-  });
+    });
+  } catch (err) {
+    // The same requisition submitted twice at once - the unique hash lets
+    // only one through.
+    if (err.code === 'P2002' && String(err.meta?.target || '').includes('requisitionDocumentHash')) {
+      return res.status(409).json({ error: 'This requisition has just been used for another vacancy.', code: 'DUPLICATE_REQUISITION' });
+    }
+    throw err;
+  }
   await audit.record({
     entityType: 'Vacancy', entityId: vacancy.id, action: 'Vacancy created', actor: audit.actorFrom(req),
-    details: { jobRef: vacancy.jobRef }
+    details: {
+      jobRef: vacancy.jobRef,
+      requisition: requisition.requisitionDocumentName,
+      editedFromRequisition: requisition.requisitionDetails.editedFields
+    }
   });
   broadcastDashboardEvent('VacancyPendingApproval', { vacancyId: vacancy.id });
   res.status(201).json(vacancy);
@@ -180,6 +207,8 @@ async function readvertise(req, res) {
   const created = await vacancyModel.createWithJobRef(postingType, {
     status: 'PendingApproval',
     readvertisedFromId: vacancy.id,
+    // Re-running the same approved position - same requisition.
+    ...requisitionService.carriedOver(vacancy),
     ...buildVacancyCreateData(position, vacancy.reportsToPositionId, req.body, req.user.id)
   });
   await audit.record({
@@ -209,7 +238,7 @@ async function update(req, res) {
     minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy,
     minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
     jobPurpose, essentialRequirements, desirableRequirements, disqualifyingRequirements,
-    generalKnowledge, specialSkills,
+    generalKnowledge, specialSkills, desirableQualifications,
     location, employmentCategory, internalSalaryRange, recruiterNotes } = req.body;
   const fieldErrors = validateVacancyEditableFields({
     positionsRequired, postingType, deadline, employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA
@@ -248,6 +277,8 @@ async function update(req, res) {
   if (normalizedGeneralKnowledge !== undefined) data.generalKnowledge = normalizedGeneralKnowledge;
   const normalizedSpecialSkills = normalizeStringList(specialSkills);
   if (normalizedSpecialSkills !== undefined) data.specialSkills = normalizedSpecialSkills;
+  const normalizedDesirableQualifications = normalizeStringList(desirableQualifications);
+  if (normalizedDesirableQualifications !== undefined) data.desirableQualifications = normalizedDesirableQualifications;
   if (location !== undefined) data.location = location || null;
   if (employmentCategory !== undefined) data.employmentCategory = employmentCategory || null;
   if (internalSalaryRange !== undefined) data.internalSalaryRange = internalSalaryRange || null;

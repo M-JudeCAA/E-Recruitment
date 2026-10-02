@@ -21,6 +21,7 @@
 // Internal candidate left un-verified (Pending) so HR verification is
 // something left to do by hand, not pre-seeded away.
 const prisma = require('../src/config/db');
+const { createVacancyFromRequisition } = require('./lib/demoVacancy');
 
 const BASE = process.env.API_BASE || 'http://localhost:4000';
 const STAMP = Date.now();
@@ -121,9 +122,7 @@ async function main() {
   const deadline = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
 
   console.log('\nCreating External vacancy...');
-  const extVacancy = await api('POST', '/api/vacancies', {
-    token: hroToken,
-    json: {
+  const extVacancy = await createVacancyFromRequisition(api, hroToken, {
       positionId: POSITION_ID,
       postingType: 'External',
       positionsRequired: 2,
@@ -144,14 +143,11 @@ async function main() {
       disqualifyingRequirements: [
         { text: 'Are you willing to relocate to Entebbe if required?', requiredAnswer: 'Yes' }
       ]
-    }
   });
   console.log(`  Vacancy ${extVacancy.id} (${extVacancy.jobRef}) - PendingApproval`);
 
   console.log('Creating Internal vacancy...');
-  const intVacancy = await api('POST', '/api/vacancies', {
-    token: hroToken,
-    json: {
+  const intVacancy = await createVacancyFromRequisition(api, hroToken, {
       positionId: POSITION_ID,
       postingType: 'Internal',
       positionsRequired: 1,
@@ -170,7 +166,6 @@ async function main() {
       disqualifyingRequirements: [
         { text: "Do you have your supervisor's endorsement to apply?", requiredAnswer: 'Yes' }
       ]
-    }
   });
   console.log(`  Vacancy ${intVacancy.id} (${intVacancy.jobRef}) - PendingApproval`);
 

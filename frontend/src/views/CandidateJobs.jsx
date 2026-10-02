@@ -365,6 +365,7 @@ export default function CandidateJobs() {
             desirableRequirements={detailsVacancy.desirableRequirements}
             generalKnowledge={detailsVacancy.generalKnowledge}
             specialSkills={detailsVacancy.specialSkills}
+            desirableQualifications={detailsVacancy.desirableQualifications}
           />
         </Modal>
       )}

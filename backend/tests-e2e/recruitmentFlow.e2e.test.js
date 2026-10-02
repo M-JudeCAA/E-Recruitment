@@ -1,6 +1,6 @@
 const {
   prisma, resetDatabase, createStaff, createOrg, createCandidate,
-  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument
+  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition
 } = require('./helpers');
 
 // The whole recruitment lifecycle through the real API and a real database:
@@ -41,7 +41,7 @@ const OFFER_TERMS = {
 };
 
 async function createApprovedVacancy({ positionsRequired = 1 } = {}) {
-  const created = expectStatus(await api(tokens.hro).post('/api/vacancies', {
+  const created = expectStatus(await createVacancyFromRequisition(tokens.hro, {
     positionId: org.position.id, postingType: 'External', deadline: inDays(30), positionsRequired,
     internalSalaryRange: 'UGX 10-12M', recruiterNotes: 'HR only'
   }), 201).body;

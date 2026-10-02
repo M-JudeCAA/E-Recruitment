@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const request = require('supertest');
 const prisma = require('../src/config/db');
 const app = require('../src/app');
+const { buildRequisitionDocx } = require('../scripts/lib/requisitionDocument');
 
 const PASSWORD = 'ChangeMe123!';
 let passwordHash;
@@ -88,6 +89,28 @@ async function attachAcademicDocument(token, applicationId) {
   return expectStatus(res, 201).body;
 }
 
+// Uploads an EXCO-approved requisition (a generated Word document - see
+// scripts/lib/requisitionDocument.js) and returns what the server read from
+// it. Each call makes a distinct document, since one document can only
+// ever open one vacancy.
+let requisitionSeq = 0;
+async function uploadRequisition(token, spec = {}) {
+  requisitionSeq += 1;
+  const docx = await buildRequisitionDocx({ excoMinute: `EXCO MIN ${requisitionSeq}/2026`, ...spec });
+  const res = await request(app).post('/api/vacancies/requisition')
+    .set('Authorization', `Bearer ${token}`)
+    .attach('document', docx, { filename: 'Job Opening Request.docx', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  return expectStatus(res, 200).body;
+}
+
+// Creates a vacancy the only way the API allows - from an uploaded
+// requisition - with `body` as the reviewed form. Returns the raw response.
+async function createVacancyFromRequisition(token, body, spec = {}) {
+  const requisition = await uploadRequisition(token, spec);
+  return request(app).post('/api/vacancies').set('Authorization', `Bearer ${token}`)
+    .send({ ...body, requisitionDocument: requisition.document, requisitionConfirmed: true });
+}
+
 function expectStatus(res, status) {
   if (res.status !== status) {
     throw new Error(`Expected ${status} from ${res.req?.method} ${res.req?.path}, got ${res.status}: ${JSON.stringify(res.body)}`);
@@ -95,4 +118,7 @@ function expectStatus(res, status) {
   return res;
 }
 
-module.exports = { prisma, app, PASSWORD, resetDatabase, createStaff, createOrg, createCandidate, staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument };
+module.exports = {
+  prisma, app, PASSWORD, resetDatabase, createStaff, createOrg, createCandidate, staffToken, candidateToken, api, REFEREES,
+  expectStatus, attachAcademicDocument, uploadRequisition, createVacancyFromRequisition
+};

@@ -1,7 +1,22 @@
 jest.mock('../src/config/db', () => require('./__mocks__/db'));
+// create() reads the uploaded requisition from disk - covered by
+// requisitionService.test.js; here it resolves to the columns it records.
+jest.mock('../src/services/requisitionService', () => ({
+  ...jest.requireActual('../src/services/requisitionService'),
+  forCreate: jest.fn()
+}));
 
 const prisma = require('../src/config/db');
 const vacancyController = require('../src/controllers/vacancyController');
+const requisitionService = require('../src/services/requisitionService');
+const { AppError } = require('../src/utils/errorResponse');
+
+const REQUISITION_COLUMNS = {
+  requisitionDocumentUrl: '/api/files/requisition-11111111-1111-1111-1111-111111111111.docx',
+  requisitionDocumentName: 'Job opening request.docx', requisitionDocumentHash: 'a'.repeat(64),
+  requisitionUploadedAt: new Date(), requisitionUploadedById: 1,
+  requisitionDetails: { format: 'docx', fields: {}, missing: [], warnings: [], editedFields: ['salaryScale'] }
+};
 
 function mockRes() {
   const res = {};
@@ -24,10 +39,50 @@ const seniorDans = { id: 200, name: 'CWG Director', departmentId: 2, level: 5, d
 
 beforeEach(() => {
   jest.clearAllMocks();
+  requisitionService.forCreate.mockResolvedValue(REQUISITION_COLUMNS);
   prisma.jobRefSequence.findUnique.mockResolvedValue({ lastNumber: 1 }); // first advert of the year by default
 });
 
 describe('create', () => {
+  // FR: a vacancy is created only from an uploaded, EXCO-approved requisition.
+  test('refuses without a usable requisition, passing on why', async () => {
+    prisma.position.findUnique.mockResolvedValue(officerCorp);
+    const err = new AppError('Upload the EXCO-approved, signed requisition first', 400);
+    err.code = 'REQUISITION_REQUIRED';
+    requisitionService.forCreate.mockRejectedValue(err);
+    const res = mockRes();
+
+    await vacancyController.create({ body: { positionId: '100', postingType: 'External' }, user: { id: 1 } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'REQUISITION_REQUIRED' }));
+    expect(prisma.vacancy.create).not.toHaveBeenCalled();
+  });
+
+  test('keeps the requisition on the vacancy and records what HR changed from it', async () => {
+    prisma.position.findUnique.mockResolvedValue(officerCorp);
+    prisma.vacancy.create.mockResolvedValue({ id: 7, jobRef: 'UCAA/ADV/EXT/001/2026' });
+    const body = { positionId: '100', postingType: 'External', requisitionDocument: { filename: 'x' }, requisitionConfirmed: true };
+
+    await vacancyController.create({ body, user: { id: 1 } }, mockRes());
+
+    expect(requisitionService.forCreate).toHaveBeenCalledWith(body, 1);
+    expect(prisma.vacancy.create.mock.calls[0][0].data).toEqual(expect.objectContaining(REQUISITION_COLUMNS));
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      action: 'Vacancy created',
+      payload: expect.objectContaining({ requisition: 'Job opening request.docx', editedFromRequisition: ['salaryScale'] })
+    }) });
+  });
+
+  test('answers 409 when the same requisition is used by a simultaneous create', async () => {
+    prisma.position.findUnique.mockResolvedValue(officerCorp);
+    prisma.vacancy.create.mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002', meta: { target: 'Vacancy_requisitionDocumentHash_key' } }));
+    const res = mockRes();
+    await vacancyController.create({ body: { positionId: '100', postingType: 'External' }, user: { id: 1 } }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'DUPLICATE_REQUISITION' }));
+  });
+
   test('rejects when positionId does not resolve to a real position', async () => {
     prisma.position.findUnique.mockResolvedValue(null);
     const req = { body: { positionId: '999' }, user: { id: 1 } };
@@ -662,6 +717,21 @@ describe('readvertise', () => {
       })
     }));
     expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  test("carries the original's requisition over - but not its hash, which stays with the original", async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 42, status: 'Closed', positionId: 100, ...REQUISITION_COLUMNS });
+    prisma.position.findUnique.mockResolvedValue(officerCorp);
+    prisma.vacancy.create.mockResolvedValue({ id: 43 });
+
+    await vacancyController.readvertise({ params: { id: '42' }, body: { postingType: 'External' }, user: { id: 1 } }, mockRes());
+
+    const { data } = prisma.vacancy.create.mock.calls[0][0];
+    expect(data).toEqual(expect.objectContaining({
+      requisitionDocumentUrl: REQUISITION_COLUMNS.requisitionDocumentUrl, requisitionDetails: REQUISITION_COLUMNS.requisitionDetails
+    }));
+    expect(data.requisitionDocumentHash).toBeUndefined();
+    expect(requisitionService.forCreate).not.toHaveBeenCalled();
   });
 });
 

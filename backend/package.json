@@ -37,6 +37,7 @@
   },
   "devDependencies": {
     "jest": "^29.7.0",
+    "jszip": "^3.10.2",
     "nodemon": "^3.1.4",
     "prisma": "^5.20.0",
     "supertest": "^7.3.0"

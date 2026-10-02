@@ -262,7 +262,7 @@ export default function HRDashboard() {
       minimumAge: editForm.minimumAge, maximumAge: editForm.maximumAge,
       minimumFlyingHours: editForm.minimumFlyingHours, minimumCGPA: editForm.minimumCGPA, requiredExamGrades: editForm.requiredExamGrades,
       desirableRequirements: editForm.desirableRequirements,
-      generalKnowledge: editForm.generalKnowledge, specialSkills: editForm.specialSkills
+      generalKnowledge: editForm.generalKnowledge, specialSkills: editForm.specialSkills, desirableQualifications: editForm.desirableQualifications
     });
   };
 
@@ -363,7 +363,8 @@ export default function HRDashboard() {
     desirableRequirements: v.desirableRequirements || [],
     disqualifyingRequirements: v.disqualifyingRequirements || [],
     generalKnowledge: v.generalKnowledge || [],
-    specialSkills: v.specialSkills || []
+    specialSkills: v.specialSkills || [],
+    desirableQualifications: v.desirableQualifications || []
   });
 
   // Only the fields that remain editable post-creation - positionId,
@@ -419,7 +420,7 @@ export default function HRDashboard() {
       minimumAge: readvertiseForm.minimumAge, maximumAge: readvertiseForm.maximumAge,
       minimumFlyingHours: readvertiseForm.minimumFlyingHours, minimumCGPA: readvertiseForm.minimumCGPA, requiredExamGrades: readvertiseForm.requiredExamGrades,
       desirableRequirements: readvertiseForm.desirableRequirements,
-      generalKnowledge: readvertiseForm.generalKnowledge, specialSkills: readvertiseForm.specialSkills
+      generalKnowledge: readvertiseForm.generalKnowledge, specialSkills: readvertiseForm.specialSkills, desirableQualifications: readvertiseForm.desirableQualifications
     });
   };
 

@@ -57,8 +57,13 @@ export default function VacancyAdvertPrintLayout({
   jobPurpose, essentialRequirements,
   minimumEducationLevel, minimumExperienceYears, preferredFieldOfStudy,
   minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
-  desirableRequirements, generalKnowledge, specialSkills
+  desirableRequirements, desirableQualifications, generalKnowledge, specialSkills
 }) {
+  // The requisition's own desirable items, then HR's Qualifying questions.
+  const desirableItems = [
+    ...(desirableQualifications || []).map((text, i) => ({ key: `q${i}`, text })),
+    ...(desirableRequirements || []).map((r, i) => ({ key: r.id || `r${i}`, text: r.text }))
+  ];
   const siteUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
   const ageRequirementText = [minimumAge ? `${minimumAge}+` : null, maximumAge ? `${maximumAge} or under` : null].filter(Boolean).join(', ');
@@ -103,7 +108,7 @@ export default function VacancyAdvertPrintLayout({
 
   const personSpecRows = [
     essentialItems.length > 0 && ['Essential Requirements', essentialItems],
-    desirableRequirements?.length > 0 && ['Desirable Requirements', desirableRequirements.map((r) => r.text)],
+    desirableItems.length > 0 && ['Desirable Requirements', desirableItems.map((d) => d.text)],
     generalKnowledge?.length > 0 && ['General Knowledge and Cognitive Aptitude', generalKnowledge]
   ].filter(Boolean);
 
@@ -191,7 +196,7 @@ export default function VacancyAdvertPrintLayout({
                   <td style={tableLabelCellStyle}>{label}</td>
                   <td style={tableCellStyle}>
                     <NumberedList items={items} style={{ marginBottom: 0 }}
-                      getKey={label === 'Desirable Requirements' ? (item, idx) => desirableRequirements[idx].id || idx : undefined} />
+                      getKey={label === 'Desirable Requirements' ? (item, idx) => desirableItems[idx].key : undefined} />
                   </td>
                 </tr>
               ))}

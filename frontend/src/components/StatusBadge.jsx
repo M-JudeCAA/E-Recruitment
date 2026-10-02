@@ -7,6 +7,9 @@ import React from 'react';
 export const STATUS_COLORS = {
   // Panel/interview recommendation
   Shortlist: 'var(--color-accent)', Hold: 'var(--color-warning)', Reject: 'var(--color-danger)',
+  // How sure the requisition reader is of a value it read (RequisitionPanel)
+  HighConfidence: 'var(--color-accent)', MediumConfidence: 'var(--color-warning)',
+  LowConfidence: 'var(--color-danger)', NotFound: 'var(--color-text-muted)',
   // Merit list place (Application.meritListStatus)
   Primary: 'var(--color-accent)', Reserve: 'var(--color-primary)',
   // Vacancy

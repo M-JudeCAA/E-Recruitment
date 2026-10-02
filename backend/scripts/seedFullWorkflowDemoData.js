@@ -33,6 +33,7 @@ const prisma = require('../src/config/db');
 const app = require('../src/app');
 const { runJob } = require('../src/utils/jobRunner');
 const { frontendUrl } = require('../src/config/frontendUrl');
+const { createVacancyFromRequisition } = require('./lib/demoVacancy');
 
 const PASSWORD = 'DemoPass123!';
 const STAFF_PASSWORD = 'ChangeMe123!';
@@ -303,7 +304,8 @@ const alevel = (subject, grade) => ({ level: 'ALevel', subject, grade });
 // ---------------------------------------------------------------------------
 
 async function createVacancy(body, approver = 'manager') {
-  const v = await api('POST', '/api/vacancies', { token: T.hro, json: body });
+  // From an uploaded EXCO requisition, the only way a vacancy can be created.
+  const v = await createVacancyFromRequisition(api, T.hro, body);
   if (approver) await api('PATCH', `/api/vacancies/${v.id}/approve`, { token: T[approver] });
   return v;
 }

@@ -1,5 +1,5 @@
 const {
-  prisma, resetDatabase, createStaff, createOrg, staffToken, api, expectStatus
+  prisma, resetDatabase, createStaff, createOrg, staffToken, api, expectStatus, createVacancyFromRequisition, uploadRequisition
 } = require('./helpers');
 
 // Vacancy-level rules from the September 2026 UCAA requirements: job
@@ -21,7 +21,7 @@ beforeEach(async () => {
 });
 
 function createVacancy(postingType = 'External') {
-  return api(tokens.hro).post('/api/vacancies', {
+  return createVacancyFromRequisition(tokens.hro, {
     positionId: org.position.id, postingType, positionsRequired: 1,
     deadline: new Date(Date.now() + 14 * 86400000).toISOString()
   });
@@ -89,4 +89,79 @@ test('an approver returns a vacancy with a comment; HR revises and resubmits it;
   expect((await api(tokens.hro).patch(`/api/vacancies/${second.id}/resubmit`)).status).toBe(422);
   expect((await api(tokens.manager).patch(`/api/vacancies/${second.id}/approve`)).status).toBe(422);
   expect((await api(tokens.hro).patch(`/api/vacancies/${second.id}`, { salaryScale: 'U3' })).status).toBe(422);
+});
+
+describe('creating a vacancy from the EXCO-approved requisition', () => {
+  const request = require('supertest');
+  const { app, createCandidate, candidateToken } = require('./helpers');
+  const { buildRequisitionDocx, buildScannedPdf } = require('../scripts/lib/requisitionDocument');
+  const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  const upload = (buffer, filename, contentType) => request(app).post('/api/vacancies/requisition')
+    .set('Authorization', `Bearer ${tokens.hro}`).attach('document', buffer, { filename, contentType });
+
+  test('reads the document, pre-fills the form, and keeps the requisition with the vacancy', async () => {
+    // Nothing is created without a requisition.
+    const bare = await api(tokens.hro).post('/api/vacancies', { positionId: org.position.id, postingType: 'External' });
+    expect(bare.status).toBe(400);
+    expect(bare.body.code).toBe('REQUISITION_REQUIRED');
+
+    const docx = await buildRequisitionDocx({ excoMinute: 'EXCO MIN 77/2026' });
+    const read = expectStatus(await upload(docx, 'Job Opening Request - HR Analyst.docx', DOCX), 200).body;
+    expect(read.organogram.department).toEqual(expect.objectContaining({ id: org.department.id, confidence: 'high' }));
+    expect(read.organogram.position).toEqual(expect.objectContaining({ id: org.position.id, confidence: 'high' }));
+    expect(read.prefill).toEqual(expect.objectContaining({
+      departmentId: org.department.id, positionId: org.position.id, positionsRequired: 2, postingType: 'External', salaryScale: 'U5'
+    }));
+    // "Reports to: Manager Human Resources" isn't on this test organogram.
+    expect(read.warnings.join(' ')).toMatch(/Manager Human Resources.*not on the organogram/);
+
+    // HR confirms the EXCO approval, adds screening, and creates it.
+    const form = { ...read.prefill, deadline: new Date(Date.now() + 14 * 86400000).toISOString(), minimumEducationLevel: 'Bachelors' };
+    const unconfirmed = await api(tokens.hro).post('/api/vacancies', { ...form, requisitionDocument: read.document });
+    expect(unconfirmed.body.code).toBe('REQUISITION_NOT_CONFIRMED');
+    const vacancy = expectStatus(await api(tokens.hro).post('/api/vacancies', {
+      ...form, requisitionDocument: read.document, requisitionConfirmed: true
+    }), 201).body;
+    expect(vacancy).toEqual(expect.objectContaining({
+      requisitionDocumentUrl: read.document.url, requisitionDocumentName: 'Job Opening Request - HR Analyst.docx',
+      salaryScale: 'U5', positionsRequired: 2, minimumEducationLevel: 'Bachelors',
+      desirableQualifications: ['Membership of the Human Resource Managers Association of Uganda.']
+    }));
+    expect(vacancy.requisitionDetails.fields.excoReference.value).toBe('EXCO MIN 77/2026');
+    expect(vacancy.requisitionDetails.editedFields).toEqual([]);
+
+    // The same document can't open a second vacancy.
+    const again = await upload(docx, 'copy.docx', DOCX);
+    expect(again.status).toBe(409);
+    expect(again.body).toEqual(expect.objectContaining({ code: 'DUPLICATE_REQUISITION', existingVacancy: expect.objectContaining({ id: vacancy.id }) }));
+
+    // Staff can open the document; candidates never see it or what was read from it.
+    expectStatus(await api(tokens.hro).get(read.document.url), 200);
+    expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
+    const candidate = await createCandidate({ fullName: 'Grace Achieng', email: 'grace@example.com' });
+    const cToken = await candidateToken(candidate.email);
+    expect((await api(cToken).get(read.document.url)).status).toBe(403);
+    const publicView = expectStatus(await api(cToken).get(`/api/vacancies/${vacancy.id}`), 200).body;
+    expect(Object.keys(publicView).filter((k) => k.startsWith('requisition'))).toEqual([]);
+    expect(publicView.desirableQualifications).toHaveLength(1);
+
+    // A readvertisement runs on the same requisition.
+    expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/close`, { reason: 'No suitable candidates' }), 200);
+    const re = expectStatus(await api(tokens.hro).post(`/api/vacancies/${vacancy.id}/readvertise`, {
+      postingType: 'External', positionsRequired: 2, deadline: new Date(Date.now() + 20 * 86400000).toISOString()
+    }), 201).body;
+    expect(re.requisitionDocumentUrl).toBe(read.document.url);
+    expect(re.requisitionDocumentHash).toBeNull();
+  });
+
+  test('refuses scanned documents and formats it cannot read', async () => {
+    const scanned = await upload(buildScannedPdf(), 'scan.pdf', 'application/pdf');
+    expect(scanned.status).toBe(422);
+    expect(scanned.body.code).toBe('SCANNED_DOCUMENT');
+
+    const doc = await upload(Buffer.from('legacy'), 'old.doc', 'application/msword');
+    expect(doc.status).toBe(422);
+    const image = await upload(Buffer.from('jpeg'), 'photo.jpg', 'image/jpeg');
+    expect(image.status).toBe(422);
+  });
 });

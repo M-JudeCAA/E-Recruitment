@@ -59,10 +59,32 @@ const uploadSupportingDocument = multer({
   limits: { fileSize: MAX_FILE_SIZE }
 });
 
+// The EXCO-approved requisition a vacancy is created from - only formats
+// whose text can be read (services/requisitionService.js), stored under a
+// recognisable requisition-<uuid> name so it can't be confused with (or
+// passed off as) any other upload.
+const REQUISITION_EXT = {
+  'application/pdf': '.pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx'
+};
+const uploadRequisition = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => cb(null, `requisition-${uuidv4()}${REQUISITION_EXT[file.mimetype]}`)
+  }),
+  fileFilter: (req, file, cb) => {
+    if (!REQUISITION_EXT[file.mimetype]) {
+      return cb(new AppError('Upload the requisition as a PDF or a Word (.docx) document. Older .doc files and scanned images cannot be read.', 422));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
 // Returns a URL path the frontend can use to reference the uploaded file,
 // via the authenticated /api/files route rather than a plain static mount.
 function fileUrl(file) {
   return file ? `/api/files/${file.filename}` : null;
 }
 
-module.exports = { upload, uploadPhoto, uploadSupportingDocument, fileUrl };
+module.exports = { upload, uploadPhoto, uploadSupportingDocument, uploadRequisition, fileUrl };
