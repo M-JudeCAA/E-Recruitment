@@ -103,7 +103,7 @@ async function getStatus(now = new Date()) {
 async function alertDirectors(key, message, now) {
   const claimed = await systemHealthModel.claimAlert(key, now, ALERT_WINDOW_MS);
   if (claimed.count === 0) return false;
-  const directors = await prisma.staffUser.findMany({ where: { role: 'Director' }, select: { id: true } });
+  const directors = await prisma.staffUser.findMany({ where: { role: 'Director', active: true }, select: { id: true } });
   await Promise.all(directors.map((d) => notificationModel.create({
     recipientId: d.id, channel: 'InApp', taskType: 'SystemHealthAlert', taskId: 0, message
   })));

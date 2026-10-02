@@ -46,10 +46,12 @@ const HR_LIST_INCLUDE = {
 // stays in place underneath it as defense-in-depth (every needsActionOr
 // branch is already non-Draft by construction, so this never excludes
 // anything real).
-function buildHrWhere({ vacancyId, status, departmentId, candidateType, screeningPassed, search, needsActionOr }) {
+function buildHrWhere({ vacancyId, status, departmentId, candidateType, screeningPassed, search, needsActionOr, excludeVacancyIds }) {
   const where = { status: status || { not: 'Draft' } };
   if (needsActionOr) where.OR = needsActionOr;
   if (vacancyId) where.vacancyId = vacancyId;
+  // Vacancies the viewer applied for (conflictOfInterestService).
+  else if (excludeVacancyIds?.length) where.vacancyId = { notIn: excludeVacancyIds };
   if (departmentId) where.vacancy = { departmentId };
   const candidateWhere = {};
   if (candidateType) candidateWhere.candidateType = candidateType;
@@ -170,7 +172,9 @@ module.exports = {
     where: { status: 'Shortlisted', offer: null },
     select: { id: true, vacancy: { select: { id: true, jobRef: true, title: true } } }
   }),
-  countAll: () => prisma.application.count({ where: { status: { not: 'Draft' } } }),
+  countAll: (excludeVacancyIds = []) => prisma.application.count({
+    where: { status: { not: 'Draft' }, ...(excludeVacancyIds.length ? { vacancyId: { notIn: excludeVacancyIds } } : {}) }
+  }),
   // Same Draft exclusion, scoped to one vacancy.
   countByVacancy: (vacancyId) => prisma.application.count({ where: { vacancyId, status: { not: 'Draft' } } }),
   // include is optional (undefined -> Prisma returns scalars only, same

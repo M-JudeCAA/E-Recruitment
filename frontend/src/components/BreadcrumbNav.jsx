@@ -28,7 +28,8 @@ const ROUTE_TRAILS = [
   { path: '/hr/home', trail: [{ label: 'Home' }] },
   { path: '/hr', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Vacancies' }] },
   { path: '/hr/departments', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Departments' }] },
-  { path: '/hr/staff-management', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Staff & Delegations' }] },
+  { path: '/hr/staff-management', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Delegations' }] },
+  { path: '/hr/staff-accounts', trail: [{ label: 'Staff accounts' }] },
   {
     path: '/hr/vacancy/:id',
     trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Vacancies', to: '/hr' }, { label: 'Vacancy Details' }]
@@ -40,8 +41,6 @@ const ROUTE_TRAILS = [
   { path: '/hr/approvals', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Approvals Center' }] },
   { path: '/hr/analytics', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Analytics' }] },
 
-  { path: '/staff/forgot-password', trail: [{ label: 'Staff Login', to: '/staff/login' }, { label: 'Forgot Password' }] },
-  { path: '/staff/reset-password', trail: [{ label: 'Staff Login', to: '/staff/login' }, { label: 'Reset Password' }] },
 
   { path: '/panel-score/:token', trail: [{ label: 'Interview Scoring' }] }
 ];

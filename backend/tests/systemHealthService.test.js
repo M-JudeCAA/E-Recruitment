@@ -79,7 +79,7 @@ describe('checkAndAlert', () => {
     expect(prisma.systemHealth.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ key: 'mail' }), data: { alertedAt: NOW }
     }));
-    expect(prisma.staffUser.findMany).toHaveBeenCalledWith({ where: { role: 'Director' }, select: { id: true } });
+    expect(prisma.staffUser.findMany).toHaveBeenCalledWith({ where: { role: 'Director', active: true }, select: { id: true } });
     expect(prisma.notification.create).toHaveBeenCalledTimes(2);
     expect(prisma.notification.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ recipientId: 40, channel: 'InApp', taskType: 'SystemHealthAlert', taskId: 0 })

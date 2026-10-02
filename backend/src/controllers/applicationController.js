@@ -1,3 +1,4 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const { sendError } = require('../utils/errorResponse');
 const applicationModel = require('../models/applicationModel');
 const vacancyModel = require('../models/vacancyModel');
@@ -17,7 +18,7 @@ const { ROLE_RANK } = require('../middleware/auth');
 // Cross-vacancy total for HRHome's KPI card - one count query instead of
 // fetching every vacancy's application list and summing client-side.
 async function count(req, res) {
-  const total = await applicationModel.countAll();
+  const total = await applicationModel.countAll(await conflictOfInterest.conflictedVacancyIds(req));
   res.json({ count: total });
 }
 
@@ -51,6 +52,12 @@ async function list(req, res) {
   }
   if (sort && !VALID_SORTS.includes(sort)) {
     return res.status(400).json({ error: 'Invalid sort' });
+  }
+  // Never the applicants of a vacancy the viewer applied for.
+  const excludeVacancyIds = await conflictOfInterest.conflictedVacancyIds(req);
+  if (vacancyId !== undefined && excludeVacancyIds.includes(Number(vacancyId))) {
+    const err = new conflictOfInterest.ApplicantConflictError();
+    return res.status(err.status).json({ error: err.message, code: err.code });
   }
 
   // "Needs my action" - a role-aware shortcut through the queue, not a new
@@ -89,7 +96,8 @@ async function list(req, res) {
     candidateType: candidateType || undefined,
     screeningPassed: screeningPassed === 'true' ? true : screeningPassed === 'false' ? false : undefined,
     search: search?.trim() || undefined,
-    needsActionOr
+    needsActionOr,
+    excludeVacancyIds
   };
   const take = Math.min(Number(limit) || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const pageNum = Math.max(Number(page) || 1, 1);

@@ -29,3 +29,14 @@ require('./realtime/dashboardSocket').init(httpServer);
 // Report wrong SMTP settings the moment the API starts, not after the
 // first candidate misses an email - see utils/mailer.js. Never throws.
 verifyMailTransport();
+
+// Staff and internal candidates sign in with Microsoft (services/entraAuthService.js).
+// Say so at start-up when it isn't set up, rather than on the first sign-in.
+{
+  const entra = require('./services/entraAuthService');
+  for (const app of ['staff', 'candidate']) {
+    if (!entra.isConfigured(app)) console.warn(`Microsoft sign-in (${app}) is not configured - set ENTRA_TENANT_ID and ENTRA_${app.toUpperCase()}_CLIENT_ID.`);
+  }
+  if (process.env.BREAK_GLASS_LOGIN === 'true') console.warn('BREAK_GLASS_LOGIN is on: system administrators can sign in with a password. Turn it off once Microsoft sign-in works again.');
+  if (process.env.DEV_PASSWORD_LOGIN === 'true' && process.env.NODE_ENV === 'production') console.warn('DEV_PASSWORD_LOGIN is ignored in production.');
+}

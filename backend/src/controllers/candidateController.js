@@ -16,8 +16,9 @@ const { toCandidateInterview } = require('../utils/candidateInterview');
 // to the candidate's own browser as JSON, so it must never ride along.
 function omitPasswordHash(candidate) {
   if (!candidate) return candidate;
-  const { passwordHash, ...safe } = candidate;
-  return safe;
+  const { passwordHash, entraObjectId, ...safe } = candidate;
+  // Whether they sign in with Microsoft, without the identifier itself.
+  return { ...safe, signsInWithMicrosoft: Boolean(entraObjectId) };
 }
 
 async function me(req, res) {

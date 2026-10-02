@@ -1,3 +1,4 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const crypto = require('crypto');
 const prisma = require('../config/db');
 const auditService = require('../services/auditService');
@@ -441,6 +442,7 @@ async function list(req, res) {
   const status = typeof req.query.status === 'string'
     ? req.query.status.split(',').filter((s) => ROUND_STATUSES.includes(s))
     : undefined;
+  const conflicted = await conflictOfInterest.conflictedVacancyIds(req);
   const rounds = await interviewModel.list({
     from: parseDateParam(req.query.from),
     to: parseDateParam(req.query.to),
@@ -449,17 +451,22 @@ async function list(req, res) {
     search: cleanText(req.query.search, 100) || undefined,
     sessionKey: cleanText(req.query.sessionKey, 40) || undefined
   });
-  res.json(rounds.map((r) => decorate(r)));
+  // Never the interviews of a vacancy the viewer applied for.
+  res.json(rounds.filter((r) => !conflicted.includes(r.application?.vacancy?.id)).map((r) => decorate(r)));
 }
 
 // Everything in the interview pipeline that is waiting on somebody, bucketed
 // so the Hub can show HR what to do next rather than just what exists.
 async function attention(req, res) {
   const now = new Date();
-  const [open, shortlisted] = await Promise.all([
+  const [openAll, shortlistedAll, conflicted] = await Promise.all([
     interviewModel.openRounds(),
-    applicationModel.findShortlistedUnscheduled()
+    applicationModel.findShortlistedUnscheduled(),
+    conflictOfInterest.conflictedVacancyIds(req)
   ]);
+  // Never a vacancy the viewer applied for.
+  const open = openAll.filter((r) => !conflicted.includes(r.application?.vacancy?.id));
+  const shortlisted = shortlistedAll.filter((a) => !conflicted.includes(a.vacancy?.id));
   const rounds = open.map((r) => decorate(r));
   const past = (r) => r.scheduledDate && new Date(r.scheduledDate) <= now;
 

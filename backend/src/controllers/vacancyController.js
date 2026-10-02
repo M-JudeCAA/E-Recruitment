@@ -1,3 +1,4 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const { sendError, classifyError } = require('../utils/errorResponse');
 const prisma = require('../config/db');
 const vacancyModel = require('../models/vacancyModel');
@@ -668,7 +669,9 @@ async function listPublic(req, res) {
 // directorates). Both are gone; every staff member sees every vacancy.
 async function listForAdmin(req, res) {
   const vacancies = await vacancyModel.findManyForAdmin({});
-  res.json(vacancies);
+  // A vacancy the viewer applied for isn't theirs to run (conflictOfInterestService).
+  const conflicted = await conflictOfInterest.conflictedVacancyIds(req);
+  res.json(conflicted.length ? vacancies.filter((v) => !conflicted.includes(v.id)) : vacancies);
 }
 
 // Shared by staff (VacancyDetail.jsx, ApplicationManagement.jsx - via
@@ -689,7 +692,14 @@ async function getOne(req, res) {
   if (!Number.isInteger(vacancyId)) return res.status(404).json({ error: 'Not found' });
   const vacancy = await vacancyModel.findByIdWithDetails(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Not found' });
-  if (req.user?.type === 'staff') return res.json(vacancy);
+  if (req.user?.type === 'staff') {
+    try {
+      await conflictOfInterest.assertNotApplicant(req, vacancyId);
+    } catch (err) {
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    return res.json(vacancy);
+  }
 
   const listedForViewer = PUBLIC_STATUSES.includes(vacancy.status)
     && vacancy.postingType === viewerPostingType(req.user);

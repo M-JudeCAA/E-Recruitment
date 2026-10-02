@@ -1,3 +1,4 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const prisma = require('../config/db');
 const offerModel = require('../models/offerModel');
 const slaModel = require('../models/slaModel');
@@ -97,9 +98,10 @@ async function listPendingApproval(req, res) {
   const { page, limit } = req.query;
   const take = Math.min(Number(limit) || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const pageNum = Math.max(Number(page) || 1, 1);
+  const excludeVacancyIds = await conflictOfInterest.conflictedVacancyIds(req);
   const [data, total] = await Promise.all([
-    offerModel.findManyPendingApproval({ skip: (pageNum - 1) * take, take }),
-    offerModel.countPendingApproval()
+    offerModel.findManyPendingApproval({ skip: (pageNum - 1) * take, take, excludeVacancyIds }),
+    offerModel.countPendingApproval(excludeVacancyIds)
   ]);
   res.json({ data, total, page: pageNum, limit: take });
 }
@@ -113,9 +115,14 @@ async function list(req, res) {
   if (vacancyId !== undefined && !parseId(vacancyId)) return res.status(400).json({ error: 'Invalid vacancyId filter' });
   const take = Math.min(Number(limit) || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const pageNum = Math.max(Number(page) || 1, 1);
+  const excludeVacancyIds = await conflictOfInterest.conflictedVacancyIds(req);
+  if (vacancyId && excludeVacancyIds.includes(Number(vacancyId))) {
+    const err = new conflictOfInterest.ApplicantConflictError();
+    return res.status(err.status).json({ error: err.message, code: err.code });
+  }
   const result = await offerService.list({
     status: status || undefined, vacancyId: vacancyId ? Number(vacancyId) : undefined,
-    expiringSoon: expiringSoon === 'true', skip: (pageNum - 1) * take, take
+    expiringSoon: expiringSoon === 'true', skip: (pageNum - 1) * take, take, excludeVacancyIds
   });
   res.json({ ...result, page: pageNum, limit: take });
 }

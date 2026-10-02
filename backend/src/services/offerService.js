@@ -288,10 +288,14 @@ const EXPIRING_WITHIN_MS = 3 * DAY_MS;
  * The cross-vacancy offer tracker: a page of offers (filtered by status,
  * vacancy or "expiring soon"), plus a count per status for the whole set.
  */
-async function list({ status, vacancyId, expiringSoon, skip, take }, now = new Date()) {
+// excludeVacancyIds: vacancies the viewer applied for (conflictOfInterestService).
+async function list({ status, vacancyId, expiringSoon, skip, take, excludeVacancyIds = [] }, now = new Date()) {
   const where = {};
   if (status) where.status = status;
-  if (vacancyId) where.application = { vacancyId };
+  const onVacancy = vacancyId
+    ? { application: { vacancyId } }
+    : excludeVacancyIds.length ? { application: { vacancyId: { notIn: excludeVacancyIds } } } : {};
+  Object.assign(where, onVacancy);
   if (expiringSoon) {
     where.status = 'Approved';
     where.responseDeadline = { gt: now, lte: new Date(now.getTime() + EXPIRING_WITHIN_MS) };
@@ -299,11 +303,11 @@ async function list({ status, vacancyId, expiringSoon, skip, take }, now = new D
   const [data, total, grouped, expiring] = await Promise.all([
     prisma.offer.findMany({ where, include: LIST_INCLUDE, orderBy: [{ id: 'desc' }], skip, take }),
     prisma.offer.count({ where }),
-    prisma.offer.groupBy({ by: ['status'], _count: { _all: true }, ...(vacancyId ? { where: { application: { vacancyId } } } : {}) }),
+    prisma.offer.groupBy({ by: ['status'], _count: { _all: true }, ...(Object.keys(onVacancy).length ? { where: onVacancy } : {}) }),
     prisma.offer.count({
       where: {
         status: 'Approved', responseDeadline: { gt: now, lte: new Date(now.getTime() + EXPIRING_WITHIN_MS) },
-        ...(vacancyId ? { application: { vacancyId } } : {})
+        ...onVacancy
       }
     })
   ]);

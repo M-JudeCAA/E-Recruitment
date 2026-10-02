@@ -84,10 +84,17 @@ export default function VacancyDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [vacancy, setVacancy] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    staffClient.get(`/api/vacancies/${id}`).then((res) => setVacancy(res.data));
+    setLoadError('');
+    staffClient.get(`/api/vacancies/${id}`)
+      .then((res) => setVacancy(res.data))
+      // e.g. 409 APPLICANT_CONFLICT: the viewer applied for this vacancy.
+      .catch((err) => setLoadError(err.response?.data?.error || 'Could not load this vacancy'));
   }, [id]);
+
+  if (loadError) return <Alert type="error" message={loadError} />;
 
   if (!vacancy) {
     return (

@@ -1,3 +1,4 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const { sendError } = require('../utils/errorResponse');
 const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
@@ -325,6 +326,10 @@ async function submit(req, res) {
     vacancy.createdById, 'NewApplicationSubmitted', applicationId,
     `${candidate.fullName} applied for "${vacancy.title}" (${vacancy.jobRef}).`
   );
+
+  // A UCAA staff member applying - the conflict-of-interest rule shuts them
+  // out of the vacancy; this tells HR so someone else runs it.
+  await conflictOfInterest.flagStaffApplicant(candidate, vacancy, applicationId);
 
   broadcastDashboardEvent('ApplicationSubmitted', { applicationId, vacancyId: vacancy.id });
   res.json(updated);

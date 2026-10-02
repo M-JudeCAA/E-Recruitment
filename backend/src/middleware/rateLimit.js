@@ -66,6 +66,11 @@ function authLimiters(scope) {
       createRateLimiter({ name: `${scope} login per address`, windowMs: 15 * MINUTE, max: 100, keyFrom: byIp }),
       createRateLimiter({ name: `${scope} login per account`, windowMs: 15 * MINUTE, max: 10, keyFrom: byEmail })
     ],
+    // Microsoft sign-in has no password to guess here (Entra does that
+    // part), so only the per-address limit applies.
+    entra: [
+      createRateLimiter({ name: `${scope} Microsoft sign-in per address`, windowMs: 15 * MINUTE, max: 100, keyFrom: byIp })
+    ],
     forgotPassword: [
       createRateLimiter({ name: `${scope} password reset per address`, windowMs: 60 * MINUTE, max: 20, keyFrom: byIp }),
       createRateLimiter({ name: `${scope} password reset per account`, windowMs: 60 * MINUTE, max: 5, keyFrom: byEmail })

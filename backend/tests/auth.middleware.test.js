@@ -3,8 +3,17 @@ jest.mock('../src/models/delegationModel', () => ({
   logUsage: jest.fn()
 }));
 
+jest.mock('../src/models/staffModel', () => ({ findAuthState: jest.fn() }));
+
 const delegationModel = require('../src/models/delegationModel');
-const { requireStaffRole, requireCandidate, ROLE_RANK } = require('../src/middleware/auth');
+const staffModel = require('../src/models/staffModel');
+const { requireStaffRole, requireSystemAdmin, requireCandidate, ROLE_RANK } = require('../src/middleware/auth');
+
+// A staff session whose account, as stored now, has this role.
+function asStaff(role, id = 1, extra = {}) {
+  staffModel.findAuthState.mockResolvedValue({ id, role, active: true, isSystemAdmin: false, ...extra });
+  return { type: 'staff', role, id };
+}
 
 function mockRes() {
   const res = {};
@@ -40,7 +49,7 @@ describe('requireStaffRole', () => {
 
   test('rejects an HR Officer trying to perform a Principal HR Officer action (no delegation)', async () => {
     delegationModel.findActiveForDelegate.mockResolvedValue(null);
-    const req = { user: { type: 'staff', role: 'HR_Officer', id: 1 } };
+    const req = { user: asStaff('HR_Officer', 1) };
     const res = mockRes();
     const next = jest.fn();
 
@@ -51,7 +60,7 @@ describe('requireStaffRole', () => {
   });
 
   test('allows a Director to perform an HR Officer-level action (cumulative hierarchy)', async () => {
-    const req = { user: { type: 'staff', role: 'Director', id: 1 } };
+    const req = { user: asStaff('Director', 1) };
     const res = mockRes();
     const next = jest.fn();
 
@@ -63,7 +72,7 @@ describe('requireStaffRole', () => {
 
   test('rejects a Senior HR Officer trying to perform a Manager-level action (no delegation)', async () => {
     delegationModel.findActiveForDelegate.mockResolvedValue(null);
-    const req = { user: { type: 'staff', role: 'Senior_HR_Officer', id: 1 } };
+    const req = { user: asStaff('Senior_HR_Officer', 1) };
     const res = mockRes();
     const next = jest.fn();
 
@@ -74,7 +83,7 @@ describe('requireStaffRole', () => {
   });
 
   test('allows an exact role match', async () => {
-    const req = { user: { type: 'staff', role: 'Principal_HR_Officer', id: 1 } };
+    const req = { user: asStaff('Principal_HR_Officer', 1) };
     const res = mockRes();
     const next = jest.fn();
 
@@ -87,7 +96,7 @@ describe('requireStaffRole', () => {
   // verification table (Section 2).
   describe('delegation awareness', () => {
     test('own-role-sufficient: never queries for a delegation at all (avoids the extra DB call)', async () => {
-      const req = { user: { type: 'staff', role: 'Principal_HR_Officer', id: 1 } };
+      const req = { user: asStaff('Principal_HR_Officer', 1) };
       const res = mockRes();
       const next = jest.fn();
 
@@ -99,7 +108,7 @@ describe('requireStaffRole', () => {
 
     test('no-delegation-fails: own role insufficient and no active delegation -> 403', async () => {
       delegationModel.findActiveForDelegate.mockResolvedValue(null);
-      const req = { user: { type: 'staff', role: 'HR_Officer', id: 5 } };
+      const req = { user: asStaff('HR_Officer', 5) };
       const res = mockRes();
       const next = jest.fn();
 
@@ -113,7 +122,7 @@ describe('requireStaffRole', () => {
       delegationModel.findActiveForDelegate.mockResolvedValue({
         id: 42, delegatorId: 2, delegator: { role: 'Principal_HR_Officer' }
       });
-      const req = { user: { type: 'staff', role: 'HR_Officer', id: 5 }, method: 'PATCH', originalUrl: '/api/vacancies/12/approve' };
+      const req = { user: asStaff('HR_Officer', 5), method: 'PATCH', originalUrl: '/api/vacancies/12/approve' };
       const res = mockRes();
       const next = jest.fn();
 
@@ -129,7 +138,7 @@ describe('requireStaffRole', () => {
       delegationModel.findActiveForDelegate.mockResolvedValue({
         id: 43, delegatorId: 3, delegator: { role: 'Senior_HR_Officer' }
       });
-      const req = { user: { type: 'staff', role: 'HR_Officer', id: 5 }, method: 'PATCH', originalUrl: '/api/x' };
+      const req = { user: asStaff('HR_Officer', 5), method: 'PATCH', originalUrl: '/api/x' };
       const res = mockRes();
       const next = jest.fn();
 
@@ -141,7 +150,7 @@ describe('requireStaffRole', () => {
     });
 
     test('delegation-irrelevant-when-own-role-enough: own role already qualifies, so an active delegation (if any) is neither consulted nor logged', async () => {
-      const req = { user: { type: 'staff', role: 'Manager', id: 1 }, method: 'PATCH', originalUrl: '/api/x' };
+      const req = { user: asStaff('Manager', 1), method: 'PATCH', originalUrl: '/api/x' };
       const res = mockRes();
       const next = jest.fn();
 
@@ -151,6 +160,88 @@ describe('requireStaffRole', () => {
       expect(delegationModel.findActiveForDelegate).not.toHaveBeenCalled();
       expect(delegationModel.logUsage).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('the account as it is now, not as the token remembers it', () => {
+  test('a deactivated account is refused even with a valid token', async () => {
+    const req = { user: asStaff('Director', 1, { active: false }) };
+    const res = mockRes();
+    const next = jest.fn();
+
+    await requireStaffRole('HR_Officer')(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('a role lowered since sign-in applies at once', async () => {
+    staffModel.findAuthState.mockResolvedValue({ id: 1, role: 'HR_Officer', active: true, isSystemAdmin: false });
+    delegationModel.findActiveForDelegate.mockResolvedValue(null);
+    const req = { user: { type: 'staff', role: 'Director', id: 1 } };
+    const res = mockRes();
+    const next = jest.fn();
+
+    await requireStaffRole('Manager')(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(req.user.role).toBe('HR_Officer');
+  });
+
+  test('an accounts-only system administrator passes no HR gate', async () => {
+    delegationModel.findActiveForDelegate.mockResolvedValue(null);
+    const req = { user: asStaff(null, 1, { isSystemAdmin: true }) };
+    const res = mockRes();
+    const next = jest.fn();
+
+    await requireStaffRole('HR_Officer')(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('requireSystemAdmin', () => {
+  test('lets a system administrator through', async () => {
+    const req = { user: asStaff(null, 1, { isSystemAdmin: true }) };
+    const res = mockRes();
+    const next = jest.fn();
+
+    await requireSystemAdmin()(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+  });
+
+  test('refuses even a Director who is not a system administrator', async () => {
+    const req = { user: asStaff('Director') };
+    const res = mockRes();
+    const next = jest.fn();
+
+    await requireSystemAdmin()(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('refuses a deactivated administrator', async () => {
+    const req = { user: asStaff(null, 1, { isSystemAdmin: true, active: false }) };
+    const res = mockRes();
+    const next = jest.fn();
+
+    await requireSystemAdmin()(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('refuses a candidate', async () => {
+    const req = { user: { type: 'candidate', id: 1 } };
+    const res = mockRes();
+    const next = jest.fn();
+
+    await requireSystemAdmin()(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 });
 

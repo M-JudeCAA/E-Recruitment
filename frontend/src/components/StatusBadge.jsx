@@ -32,6 +32,8 @@ export const STATUS_COLORS = {
   Scheduled: 'var(--color-primary)', Completed: 'var(--color-accent)', Held: 'var(--color-accent)',
   Cancelled: 'var(--color-text-muted)', NoShow: 'var(--color-danger)',
   Confirmed: 'var(--color-accent)', RescheduleRequested: 'var(--color-warning)',
+  // Staff account state (StaffAccounts.jsx)
+  Active: 'var(--color-accent)', Deactivated: 'var(--color-text-muted)',
   // Verification
   Pending: 'var(--color-warning)', HR_Verified: 'var(--color-accent)',
   Discrepancy_Flagged: 'var(--color-danger)',

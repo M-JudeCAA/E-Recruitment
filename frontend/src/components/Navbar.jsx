@@ -5,6 +5,7 @@ import NotificationBell from "./NotificationBell";
 import CandidateNotificationBell from "./CandidateNotificationBell";
 import ProfileMenu from "./ProfileMenu";
 import { candidateFileSrc } from "../utils/fileSrc";
+import { staffHome } from "./ProtectedRoute";
 import ucaaLogo from "../assets/ucaa-logo.png";
 
 // CHANGED - was a separate, hardcoded palette disconnected from
@@ -24,14 +25,11 @@ const linkStyle = {
   fontWeight: 500,
 };
 
-// Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK.
-const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 
 export default function Navbar() {
   const { candidate, staff, logoutCandidate, logoutStaff } = useAuth();
   // Manager/Director land on the reimagined Executive Overview instead of
   // the HR Officer's operational Home - see HRSidebar.jsx/ExecutiveDashboard.jsx.
-  const isExecutive = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Manager;
 
   return (
     <nav
@@ -72,7 +70,7 @@ export default function Navbar() {
             account"/"Sign in" CTAs don't make sense once already signed
             in), or the guest landing page otherwise. */}
         <Link
-          to={staff ? (isExecutive ? "/hr/executive" : "/hr/home") : candidate ? "/dashboard" : "/"}
+          to={staff ? staffHome(staff) : candidate ? "/dashboard" : "/"}
           style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}
         >
           <span
@@ -142,7 +140,7 @@ export default function Navbar() {
                 always-visible chip + separate "Staff log out" button. */}
             <ProfileMenu
               name={staff?.name}
-              subtitle={staff?.role?.replace(/_/g, ' ')}
+              subtitle={staff?.role ? staff.role.replace(/_/g, ' ') : 'System administrator'}
               email={staff?.email}
               onLogout={logoutStaff}
             />

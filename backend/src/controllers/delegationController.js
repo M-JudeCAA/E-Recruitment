@@ -27,7 +27,7 @@ async function create(req, res) {
   }
 
   const delegate = await staffModel.findById(Number(delegateId));
-  if (!delegate) return res.status(400).json({ error: 'Delegate must be a valid staff account' });
+  if (!delegate || !delegate.active) return res.status(400).json({ error: 'Delegate must be an active staff account' });
   if (delegate.role !== requiredDelegateRole) {
     return res.status(400).json({
       error: `Delegate must be a ${requiredDelegateRole.replace(/_/g, ' ')}`

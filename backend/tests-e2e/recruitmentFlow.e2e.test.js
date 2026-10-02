@@ -274,3 +274,37 @@ test('exports the shortlisting report and the merit list as CSV, and records eac
   const history = expectStatus(await api(tokens.hro).get(`/api/audit/Vacancy/${vacancy.id}`), 200).body;
   expect(history.map((h) => h.action)).toEqual(expect.arrayContaining(['Shortlisting report exported', 'Merit list exported']));
 });
+
+test('a staff member who applies is shut out of that vacancy, and only that one', async () => {
+  const vacancy = await createApprovedVacancy();
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
+  const other = await createApprovedVacancy();
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${other.id}/approve`), 200);
+  // The Senior HR Officer's candidate account - same person, matched by
+  // email (in real use, also by their Microsoft identity). External here
+  // only because the vacancy is.
+  const sam = await createCandidate({ fullName: 'Sam Senior', email: 'shro@caa.co.ug' });
+  const alice = await createCandidate({ fullName: 'Alice Nakato', email: 'alice@example.com' });
+  await applyAs(sam, vacancy.id);
+  const a = await applyAs(alice, vacancy.id);
+
+  // Shut out of running the vacancy they applied for...
+  const refused = await api(tokens.shro).get(`/api/vacancies/${vacancy.id}/applications`);
+  expect(refused.status).toBe(409);
+  expect(refused.body.code).toBe('APPLICANT_CONFLICT');
+  expect((await api(tokens.shro).get(`/api/vacancies/${vacancy.id}`)).status).toBe(409);
+  expect((await api(tokens.shro).patch(`/api/applications/${a.applicationId}/reject`, { reason: 'x' })).status).toBe(409);
+  expect((await api(tokens.shro).get(`/api/applications/vacancies/${vacancy.id}/merit-list`)).status).toBe(409);
+  const queue = expectStatus(await api(tokens.shro).get('/api/applications'), 200).body;
+  expect(queue.data.some((row) => row.vacancyId === vacancy.id)).toBe(false);
+  const adminList = expectStatus(await api(tokens.shro).get('/api/vacancies/admin'), 200).body;
+  expect(adminList.map((v) => v.id)).not.toContain(vacancy.id);
+
+  // ...but not out of any other vacancy, and nobody else is affected.
+  expectStatus(await api(tokens.shro).get(`/api/vacancies/${other.id}/applications`), 200);
+  expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}/applications`), 200);
+
+  // The Principal HR Officers were told.
+  const notices = await prisma.notification.findMany({ where: { taskType: 'StaffApplicantConflict', channel: 'InApp' } });
+  expect(notices.map((n) => n.recipientId).sort()).toEqual([staff.phro.id, staff.phro2.id].sort());
+});

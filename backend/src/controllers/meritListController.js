@@ -1,3 +1,4 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const meritList = require('../services/meritListService');
 const audit = require('../services/auditService');
 const { notifyAllWithRole } = require('../services/notificationService');
@@ -83,7 +84,9 @@ async function approve(req, res) {
 }
 
 async function listPendingApproval(req, res) {
-  res.json(await meritList.listPendingApproval());
+  const conflicted = await conflictOfInterest.conflictedVacancyIds(req);
+  const pending = await meritList.listPendingApproval();
+  res.json(pending.filter((entry) => !conflicted.includes(entry.vacancy.id)));
 }
 
 module.exports = { getBoard, propose, approve, listPendingApproval };

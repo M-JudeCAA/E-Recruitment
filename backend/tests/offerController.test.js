@@ -322,7 +322,7 @@ describe('acceptOffer / declineOffer ownership check', () => {
     await offerController.accept(req, res);
 
     expect(res.status).toHaveBeenCalledWith(409);
-    expect(prisma.staffUser.findMany).toHaveBeenCalledWith({ where: { role: 'Principal_HR_Officer' }, select: { id: true } });
+    expect(prisma.staffUser.findMany).toHaveBeenCalledWith({ where: { role: 'Principal_HR_Officer', active: true }, select: { id: true } });
     expect(prisma.notification.create).toHaveBeenCalledWith({ data: expect.objectContaining({
       recipientId: 30, channel: 'InApp', taskType: 'VacancyFilledWithOpenOffers', taskId: 20,
       message: expect.stringMatching(/UCAA\/ADV\/EXT\/09\/2026 \(Pilot\) \(application #44\).*every position is already filled/)
