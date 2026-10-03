@@ -8,7 +8,7 @@ const prisma = require('../config/db');
 // reads to build the on-demand CV HR generates for an applicant - see
 // GeneratedCvPrintLayout.jsx.
 const CANDIDATE_SELECT = {
-  id: true, fullName: true, email: true, phone: true, candidateType: true,
+  id: true, fullName: true, email: true, phone: true, phoneKey: true, candidateType: true,
   location: true, districtOfOrigin: true, linkedinUrl: true, portfolioUrl: true,
   nationalId: true, dateOfBirth: true, flyingHours: true,
   education: true, workExperience: true, examGrades: true, certificates: true,
@@ -115,6 +115,12 @@ module.exports = {
   // built from one filename) - named singular here (it previously read
   // "urls", misleadingly suggesting array support the OR clause below
   // doesn't actually provide).
+  // The application a stored file belongs to, whoever owns it - for the
+  // data access log when staff open a document.
+  findByFileUrl: (url) => prisma.application.findFirst({
+    where: { OR: [{ cvUrl: url }, { coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] },
+    select: { id: true, vacancyId: true, candidateId: true }
+  }),
   findOwnedByCandidate: (candidateId, url) => prisma.application.findFirst({
     where: { candidateId, OR: [{ cvUrl: url }, { coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] }
   }),

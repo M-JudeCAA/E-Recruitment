@@ -10,6 +10,8 @@ const audit = require('../services/auditService');
 const slaModel = require('../models/slaModel');
 const { notify } = require('../services/notificationService');
 const requisitionService = require('../services/requisitionService');
+const duplicateApplicants = require('../services/duplicateApplicantService');
+const accessLog = require('../services/accessLogService');
 const { sendRequisitionError } = require('./requisitionController');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { toPublicVacancy } = require('../utils/publicVacancy');
@@ -704,7 +706,8 @@ async function listApplications(req, res) {
   const vacancyId = Number(req.params.id);
   if (!Number.isInteger(vacancyId)) return res.status(400).json({ error: 'Invalid vacancy id' });
   const applications = await applicationModel.findByVacancy(vacancyId);
-  res.json(applications);
+  await accessLog.record(req, { action: 'Viewed the applicants', vacancyId, candidateIds: applications.map((a) => a.candidateId) });
+  res.json(await duplicateApplicants.annotate(applications));
 }
 
 async function saveRanking(req, res) {

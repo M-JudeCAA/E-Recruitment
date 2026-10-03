@@ -83,6 +83,7 @@ async function shortlistReport(vacancyId) {
   return {
     vacancy,
     count: rows.length,
+    candidateIds: rows.map((a) => a.candidateId),
     filename: `shortlisting-report-${fileSlug(vacancy.jobRef)}.csv`,
     csv: toCsv(SHORTLIST_COLUMNS, rows)
   };
@@ -106,6 +107,7 @@ async function meritListReport(vacancyId) {
   return {
     vacancy: board.vacancy,
     count: board.entries.length,
+    candidateIds: board.entries.map((e) => e.candidateId),
     filename: `merit-list-${fileSlug(board.vacancy.jobRef)}.csv`,
     csv: toCsv(MERIT_COLUMNS, board.entries)
   };

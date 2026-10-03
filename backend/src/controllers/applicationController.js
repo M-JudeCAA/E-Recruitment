@@ -3,6 +3,8 @@ const applicationModel = require('../models/applicationModel');
 const vacancyModel = require('../models/vacancyModel');
 const shortlistCommitteeModel = require('../models/shortlistCommitteeModel');
 const workflow = require('../services/workflowService');
+const duplicateApplicants = require('../services/duplicateApplicantService');
+const accessLog = require('../services/accessLogService');
 const audit = require('../services/auditService');
 const meritList = require('../services/meritListService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
@@ -97,7 +99,10 @@ async function list(req, res) {
     applicationModel.findManyForHr({ ...filters, skip, take, sort }),
     applicationModel.countForHr(filters)
   ]);
-  res.json({ data, total, page: pageNum, limit: take });
+  await accessLog.record(req, {
+    action: 'Viewed the application queue', vacancyId: filters.vacancyId ?? null, candidateIds: data.map((a) => a.candidateId)
+  });
+  res.json({ data: await duplicateApplicants.annotate(data), total, page: pageNum, limit: take });
 }
 
 // Same terminal/out-of-reach statuses reject() already refuses, plus the

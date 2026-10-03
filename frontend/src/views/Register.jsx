@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import client from "../models/apiClient";
 import PageHeader from "../components/PageHeader";
 import TextField from "../components/TextField";
 import Button from "../components/Button";
 import Alert from "../components/Alert";
+import Modal from "../components/Modal";
 import { validateEmail, validatePassword, validateNationalId, PASSWORD_HINT, NATIONAL_ID_ERROR } from "../utils/validators";
 
 // Uganda Civil Aviation Authority brand palette
@@ -76,6 +77,8 @@ export default function Register() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [duplicatePrompt, setDuplicatePrompt] = useState(false);
+  const navigate = useNavigate();
 
   const errors = validate(form);
   const showError = (field) => (touched[field] || submitted) ? errors[field] : undefined;
@@ -91,10 +94,19 @@ export default function Register() {
       setError("Please fix the highlighted fields.");
       return;
     }
+    await register(false);
+  };
 
+  // FR-ATS-037: the server asks first when the phone number is already on
+  // another account (POSSIBLE_DUPLICATE_ACCOUNT); notMe re-sends once the
+  // person says it isn't theirs.
+  const register = async (notMe) => {
+    setDuplicatePrompt(false);
     setSubmitting(true);
     try {
-      const res = await client.post("/api/candidates/auth/register", { ...form, returnTo: validReturnTo });
+      const res = await client.post("/api/candidates/auth/register", {
+        ...form, returnTo: validReturnTo, ...(notMe ? { confirmNotDuplicate: true } : {}),
+      });
       setMessage(
         `${res.data.message} (Account type: ${res.data.candidateType})`,
       );
@@ -109,7 +121,8 @@ export default function Register() {
       setTouched({});
       setSubmitted(false);
     } catch (err) {
-      setError(err.response?.data?.error || "Something went wrong");
+      if (err.response?.data?.code === "POSSIBLE_DUPLICATE_ACCOUNT") setDuplicatePrompt(true);
+      else setError(err.response?.data?.error || "Something went wrong");
     } finally {
       setSubmitting(false);
     }
@@ -208,6 +221,25 @@ export default function Register() {
           </Link>
         </p>
       </div>
+      {duplicatePrompt && (
+        <Modal
+          title="Do you already have an account?"
+          onClose={() => setDuplicatePrompt(false)}
+          footer={<>
+            <Button variant="ghost" onClick={() => register(true)} disabled={submitting}>It's not me - create my account</Button>
+            <Button onClick={() => navigate("/login")}>Sign in instead</Button>
+          </>}
+        >
+          <p style={{ marginTop: 0 }}>
+            An account already uses the phone number <strong>{form.phone}</strong>. If it is yours, sign in to it - or{" "}
+            <Link to="/forgot-password">reset its password</Link> if you've forgotten it - rather than creating a second
+            account: applications from two accounts for the same person can't both be considered.
+          </p>
+          <p style={{ marginBottom: 0, fontSize: 13, color: "var(--color-text-muted)" }}>
+            If someone else (a family member, say) uses this number, you can carry on.
+          </p>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import Button from './Button';
 import StatusBadge from './StatusBadge';
 import Modal from './Modal';
 import AuditTrail from './AuditTrail';
+import AccessLog from './AccessLog';
 import TextArea from './TextArea';
 import { fileLink } from '../utils/fileLink';
 import { safeJsonParse } from '../utils/safeJsonParse';
@@ -140,6 +141,12 @@ export default function ApplicationReviewCard({
             : app.rank && <span> &middot; Interview order #{app.rank}</span>}
           {app.shortlistScore != null && (
             <span style={{ color: 'var(--color-text-muted)', marginLeft: 8, fontSize: 13 }}>&middot; Score {app.shortlistScore.toFixed(1)}</span>
+          )}
+          {app.possibleDuplicates?.length > 0 && (
+            <span title={app.possibleDuplicates.map((d) => `Application #${d.applicationId} (${d.candidateName}) - ${d.reason.toLowerCase()}`).join('; ')}
+              style={{ color: 'var(--color-danger)', marginLeft: 8, fontSize: 13 }}>
+              &#9888; Possible duplicate of {app.possibleDuplicates.map((d) => `${d.candidateName} (#${d.applicationId})`).join(', ')} - same phone number
+            </span>
           )}
           {app.screeningPassed === false && (
             <span title={safeJsonParse(app.screeningReasons, []).join('; ')}
@@ -388,6 +395,7 @@ export default function ApplicationReviewCard({
       </div>
 
       <AuditTrail entityType="Application" entityId={app.id} />
+      {rank >= ROLE_RANK.Manager && <AccessLog applicationId={app.id} />}
 
       {activeModal === 'reject' && (
         <Modal

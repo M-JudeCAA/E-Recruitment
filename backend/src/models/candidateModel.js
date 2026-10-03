@@ -6,6 +6,8 @@ module.exports = {
   // immediate error at registration time rather than letting a duplicate
   // only surface later as a raw constraint violation.
   findByNationalId: (nationalId) => prisma.candidate.findUnique({ where: { nationalId } }),
+  // Any account already using this phone number (utils/phoneKey.js).
+  findByPhoneKey: (phoneKey) => prisma.candidate.findFirst({ where: { phoneKey }, select: { id: true } }),
   findById: (id, include) => prisma.candidate.findUnique({ where: { id }, include }),
   create: (data) => prisma.candidate.create({ data }),
   update: (id, data) => prisma.candidate.update({ where: { id }, data }),

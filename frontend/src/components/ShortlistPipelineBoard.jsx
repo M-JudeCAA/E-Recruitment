@@ -159,6 +159,12 @@ function PipelineCard({
                 </span>
               )}
               <VerificationChip app={app} />
+              {app.possibleDuplicates?.length > 0 && (
+                <span title={`Same phone number as ${app.possibleDuplicates.map((d) => `${d.candidateName} (#${d.applicationId})`).join(', ')}`}
+                  style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-danger)' }}>
+                  &#9888; Possible duplicate
+                </span>
+              )}
             </div>
             {(app.status === 'UnderReview' || app.status === 'Submitted' || app.status === 'ShortlistProposed' || app.status === 'Shortlisted') && (
               <div style={{ marginTop: 3 }}><PersistedStatusPill status={app.status} /></div>

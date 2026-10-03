@@ -7,6 +7,7 @@ const pendingRegistrationModel = require('../models/pendingRegistrationModel');
 const { sendMail } = require('../utils/mailer');
 const { createToken, consumeToken } = require('../services/tokenService');
 const { validateEmail, validatePassword, validateNationalId, normalizeNationalId } = require('../utils/validators');
+const { phoneKey } = require('../utils/phoneKey');
 const { frontendUrl } = require('../config/frontendUrl');
 
 // Only ever forwarded into a redirect target, never used for anything
@@ -55,6 +56,18 @@ async function register(req, res) {
     if (existingByNationalId) {
       return res.status(409).json({ error: 'This NIN is already registered on another account.' });
     }
+  }
+
+  // FR-ATS-037: a phone number another account already uses is most
+  // likely the same person signing up again. Ask before going ahead -
+  // without saying which account it is - and let them carry on if it isn't
+  // them (a family can share a phone). Email and NIN can't repeat at all.
+  const key = phoneKey(phone);
+  if (key && req.body.confirmNotDuplicate !== true && await candidateModel.findByPhoneKey(key)) {
+    return res.status(409).json({
+      error: 'An account already uses this phone number. If it is yours, sign in or reset your password instead of creating a second account.',
+      code: 'POSSIBLE_DUPLICATE_ACCOUNT'
+    });
   }
 
   const existingPending = await pendingRegistrationModel.findByEmail(email);
@@ -113,7 +126,7 @@ async function confirmEmail(req, res) {
     }
 
     const candidate = await candidateModel.create({
-      fullName: pending.fullName, email: pending.email, phone: pending.phone,
+      fullName: pending.fullName, email: pending.email, phone: pending.phone, phoneKey: phoneKey(pending.phone),
       nationalId: pending.nationalId, candidateType: pending.candidateType,
       passwordHash: pending.passwordHash, emailConfirmed: true
     });

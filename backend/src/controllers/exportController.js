@@ -1,5 +1,6 @@
 const exportService = require('../services/exportService');
 const audit = require('../services/auditService');
+const accessLog = require('../services/accessLogService');
 const { sendCsv } = require('../utils/csv');
 const { sendError } = require('../utils/errorResponse');
 
@@ -28,6 +29,7 @@ function exporter(build, action) {
     await audit.record({
       entityType: 'Vacancy', entityId: vacancyId, action, actor: audit.actorFrom(req), details: { rows: report.count }
     });
+    await accessLog.record(req, { action, vacancyId, candidateIds: report.candidateIds || [] });
     sendCsv(res, report.filename, report.csv);
   };
 }

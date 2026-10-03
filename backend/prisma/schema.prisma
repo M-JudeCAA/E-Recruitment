@@ -278,6 +278,30 @@ model VacancyDraft {
   @@index([requisitionFilename])
 }
 
+// Who looked at candidate data, and when (FR-ATS-081) - changes are in
+// AuditLog; this is the read side: applicant lists, the application queue,
+// opened documents, exports, and what shortlisting committee members view
+// through their links. Written by services/accessLogService.js, which
+// records a repeated identical view once per 10 minutes. candidateIds lists
+// whose data the view showed, so "who saw this candidate" is one query.
+model DataAccessLog {
+  id            Int      @id @default(autoincrement())
+  at            DateTime @default(now())
+  actorType     String   @db.VarChar(20) // 'staff' | 'committee'
+  staffUserId   Int?
+  actorLabel    String?  // a committee member's name and email
+  action        String
+  vacancyId     Int?
+  applicationId Int?
+  candidateIds  Json?
+  detail        Json?
+  ip            String?  @db.VarChar(64)
+
+  @@index([at])
+  @@index([staffUserId])
+  @@index([applicationId])
+}
+
 // Running number behind Vacancy.jobRef (UCAA/ADV/{INT|EXT}/{NNN}/{YYYY}),
 // one row per posting type per year. Only ever incremented, so a number
 // is never reused - see utils/jobRefGenerator.js.
@@ -533,6 +557,12 @@ model Candidate {
   fullName           String
   email              String         @unique
   phone              String?
+  // The phone number's last nine digits (utils/phoneKey.js), so +256 772
+  // 123456 and 0772123456 match. Not unique - a family can share a phone -
+  // but a match is how a second account for the same person is caught
+  // (FR-ATS-037): asked about at registration, flagged to HR on applicant
+  // lists. Email and NIN are unique outright.
+  phoneKey           String?        @db.VarChar(9)
   candidateType      CandidateType
   // The candidate's Uganda National Identification Number (NIN) - the only
   // identity document accepted (passports were dropped, and with them the
@@ -589,6 +619,8 @@ model Candidate {
   internalProfile    InternalProfile?
   verificationTokens VerificationToken[]
   notifications      CandidateNotification[]
+
+  @@index([phoneKey])
 }
 
 model WorkExperience {
