@@ -71,7 +71,6 @@ describe('read (step 1: upload and review)', () => {
   test('refuses a scanned document and deletes the stored copy', async () => {
     const file = await store(buildScannedPdf(), 'pdf');
     await expect(requisitionService.read(file)).rejects.toMatchObject({ status: 422, code: 'SCANNED_DOCUMENT' });
-    await new Promise((r) => setTimeout(r, 20));
     expect(fs.existsSync(path.join(uploadDir, file.filename))).toBe(false);
   });
 

@@ -30,7 +30,8 @@ const JOBS = [
   { name: 'sendInterviewReminders', run: require('./sendInterviewReminders').run },
   { name: 'expireOffers', run: require('./expireOffers').run },
   { name: 'cleanupPendingRegistrations', run: require('./cleanupPendingRegistrations').run },
-  { name: 'cleanupVerificationTokens', run: () => require('./cleanupVerificationTokens').run() }
+  { name: 'cleanupVerificationTokens', run: () => require('./cleanupVerificationTokens').run() },
+  { name: 'cleanupRequisitionUploads', run: () => require('./cleanupRequisitionUploads').run() }
 ];
 const FAST_JOBS = [
   { name: 'checkInterviewSessions', run: () => require('./checkInterviewSessions').run() }

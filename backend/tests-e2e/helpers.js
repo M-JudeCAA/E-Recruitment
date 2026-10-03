@@ -12,9 +12,15 @@ async function resetDatabase() {
   const tables = await prisma.$queryRaw`
     SELECT TABLE_NAME AS name FROM information_schema.TABLES
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME <> '_prisma_migrations'`;
-  await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
-  for (const { name } of tables) await prisma.$executeRawUnsafe(`TRUNCATE TABLE \`${name}\``);
-  await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
+  // FOREIGN_KEY_CHECKS is per connection and Prisma pools connections, so
+  // every statement must run on the same one - an interactive transaction
+  // pins it. (Run separately, a TRUNCATE could land on a connection that
+  // still has the checks on, failing at random.)
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
+    for (const { name } of tables) await tx.$executeRawUnsafe(`TRUNCATE TABLE \`${name}\``);
+    await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
+  }, { timeout: 30000 });
 }
 
 async function hash() {

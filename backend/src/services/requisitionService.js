@@ -180,7 +180,7 @@ async function read(file) {
     const existing = await findVacancyWithHash(stored.hash);
     if (existing) throw duplicateError(existing);
   } catch (err) {
-    fs.rm(path.join(uploadDir, file.filename), { force: true }, () => {});
+    await fs.promises.rm(path.join(uploadDir, file.filename), { force: true }).catch(() => {});
     throw err;
   }
   const organogram = await matchOrganogram(stored.parsed.fields);
