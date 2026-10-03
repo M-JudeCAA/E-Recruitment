@@ -27,6 +27,8 @@ import { STATUS_COLORS } from '../components/StatusBadge';
 import VacancyDraftsList from '../components/VacancyDraftsList';
 import { urgencyOf } from '../utils/slaUrgency';
 import { debounce } from '../utils/debounce';
+import { useConfirm } from '../components/ConfirmDialog';
+import { approveVacancy as approveVacancyRequest } from '../utils/approveVacancy';
 
 function UrgencyBadge({ followUp }) {
   const urgency = urgencyOf(followUp);
@@ -80,6 +82,7 @@ function daysLeftLabel(deadline) {
 }
 
 export default function HRDashboard() {
+  const confirm = useConfirm();
   const { staff } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -270,8 +273,7 @@ export default function HRDashboard() {
   const approve = async (id) => {
     setError(''); setRowActionBusy('approve');
     try {
-      await staffClient.patch(`/api/vacancies/${id}/approve`);
-      load();
+      if (await approveVacancyRequest(id, confirm)) load();
     } catch (err) {
       setError(err.response?.data?.error || 'Approval failed');
     } finally {

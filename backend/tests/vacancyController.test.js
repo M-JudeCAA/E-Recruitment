@@ -428,6 +428,28 @@ describe('approve', () => {
     expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
   });
 
+  // FR-ATS-018
+  test('a vacancy on an unapproved job description needs the approver to authorise the exception, which is recorded', async () => {
+    const jdException = { reason: 'JD revision is with the DG', requestedById: 5 };
+    const pending = { id: 1, status: 'PendingApproval', createdById: 5, requisitionDetails: { jdStatus: 'notApproved', jdException } };
+    prisma.vacancy.findUnique.mockResolvedValue(pending);
+    const refused = mockRes();
+    await vacancyController.approve({ params: { id: '1' }, body: {}, user: { id: 2, role: 'Manager' } }, refused);
+    expect(refused.status).toHaveBeenCalledWith(422);
+    expect(refused.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'JD_EXCEPTION_NOT_AUTHORISED' }));
+    expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
+
+    prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+    await vacancyController.approve({ params: { id: '1' }, body: { authoriseJdException: true }, user: { id: 2, role: 'Manager' } }, mockRes());
+    const { data } = prisma.vacancy.updateMany.mock.calls[0][0];
+    expect(data.requisitionDetails.jdException).toEqual(expect.objectContaining({
+      reason: 'JD revision is with the DG', authorisedById: 2, authorisedByRole: 'Manager', authorisedAt: expect.any(String)
+    }));
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      payload: expect.objectContaining({ comment: expect.stringMatching(/Authorised the exception.*JD revision is with the DG/) })
+    }) });
+  });
+
   test('answers 409 when another approver acted first', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5 });
     prisma.vacancy.updateMany.mockResolvedValue({ count: 0 });
@@ -1123,5 +1145,52 @@ describe('update - moving the deadline (FR-ATS-027)', () => {
     const res = mockRes();
     await vacancyController.update({ params: { id: '1' }, body: { salaryScale: 'U3' }, user: { id: 2 } }, res);
     expect(res.status).toHaveBeenCalledWith(422);
+  });
+});
+
+describe('screening questions - at most 5 per advert (FR-ATS-032)', () => {
+  const q = (n, kind) => Array.from({ length: n }, (_, i) => (kind === 'd'
+    ? { text: `Disqualifying ${i}?`, requiredAnswer: 'Yes' }
+    : { text: `Qualifying ${i}?`, answerType: 'yesno' }));
+
+  test('create refuses six, Qualifying and Disqualifying counted together', async () => {
+    prisma.position.findUnique.mockResolvedValue(officerCorp);
+    const res = mockRes();
+    await vacancyController.create({ body: {
+      positionId: '100', postingType: 'External', desirableRequirements: q(3), disqualifyingRequirements: q(3, 'd')
+    }, user: { id: 1 } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json.mock.calls[0][0].errors.join(' ')).toMatch(/at most 5 screening questions/);
+    expect(prisma.vacancy.create).not.toHaveBeenCalled();
+  });
+
+  test('create accepts five', async () => {
+    prisma.position.findUnique.mockResolvedValue(officerCorp);
+    prisma.vacancy.create.mockResolvedValue({ id: 1 });
+    const res = mockRes();
+    await vacancyController.create({ body: {
+      positionId: '100', postingType: 'External', desirableRequirements: q(2), disqualifyingRequirements: q(3, 'd')
+    }, user: { id: 1 } }, res);
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  test('an edit cannot take an advert past five, counting the list it does not send', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', desirableRequirements: q(3), disqualifyingRequirements: q(2, 'd') });
+    const res = mockRes();
+    await vacancyController.update({ params: { id: '1' }, body: { desirableRequirements: q(4) }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+  });
+
+  test('an advert created before the cap can still be edited, as long as no question is added', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open', desirableRequirements: q(4), disqualifyingRequirements: q(3, 'd') });
+    prisma.vacancy.update.mockResolvedValue({ id: 1 });
+    const res = mockRes();
+    await vacancyController.update({ params: { id: '1' }, body: { salaryScale: 'U4', desirableRequirements: q(4) }, user: { id: 2 } }, res);
+    expect(prisma.vacancy.update).toHaveBeenCalled();
+
+    const more = mockRes();
+    await vacancyController.update({ params: { id: '1' }, body: { desirableRequirements: q(5) }, user: { id: 2 } }, more);
+    expect(more.status).toHaveBeenCalledWith(400);
   });
 });

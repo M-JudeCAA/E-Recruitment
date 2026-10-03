@@ -303,7 +303,9 @@ export default function CreateVacancyListing() {
           {loadingDraft
             ? <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: 0 }}>Opening your draft...</p>
             : <RequisitionPanel requisition={requisition} onRead={applyRequisition} onReplace={replaceRequisition}
-                confirmed={requisitionConfirmed} onConfirmChange={setRequisitionConfirmed} />}
+                confirmed={requisitionConfirmed} onConfirmChange={setRequisitionConfirmed}
+                jdExceptionReason={form.jdExceptionReason}
+                onJdExceptionReasonChange={(jdExceptionReason) => setForm((prev) => ({ ...prev, jdExceptionReason }))} />}
         </Card>
 
         {requisition && (<>

@@ -6,6 +6,7 @@ import { fileLink } from '../utils/fileLink';
 import Button from './Button';
 import Alert from './Alert';
 import StatusBadge from './StatusBadge';
+import TextArea from './TextArea';
 
 // Step 1 of a new vacancy: the EXCO-approved, signed requisition. HR uploads
 // it (POST /api/vacancies/requisition); the server reads the job details out
@@ -59,7 +60,7 @@ function MatchLine({ label, wanted, match }) {
   );
 }
 
-export default function RequisitionPanel({ requisition, onRead, onReplace, confirmed, onConfirmChange }) {
+export default function RequisitionPanel({ requisition, onRead, onReplace, confirmed, onConfirmChange, jdExceptionReason, onJdExceptionReasonChange }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null); // { message, existingVacancy? }
@@ -160,6 +161,14 @@ export default function RequisitionPanel({ requisition, onRead, onReplace, confi
           </tbody>
         </table>
       </div>
+
+      {requisition.jdStatus === 'notApproved' && (
+        <div style={{ marginTop: 16 }}>
+          <TextArea label="Reason for creating this vacancy on an unapproved job description" required rows={3}
+            hint="FR-ATS-018: the approver of the vacancy must authorise this exception before it opens."
+            value={jdExceptionReason || ''} onChange={(e) => onJdExceptionReasonChange(e.target.value)} />
+        </div>
+      )}
 
       <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 14, marginTop: 16, cursor: 'pointer' }}>
         <input type="checkbox" checked={confirmed} onChange={(e) => onConfirmChange(e.target.checked)} style={{ marginTop: 3, flexShrink: 0 }} />

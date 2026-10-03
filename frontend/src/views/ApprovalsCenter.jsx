@@ -22,6 +22,8 @@ import OfferSummary from '../components/offers/OfferSummary';
 import ReasonDialog from '../components/ReasonDialog';
 import OfferActions from '../components/offers/OfferActions';
 import { formatSalary } from '../components/offers/offerFormat';
+import { useConfirm } from '../components/ConfirmDialog';
+import { approveVacancy as approveVacancyRequest } from '../utils/approveVacancy';
 
 const MS_PER_DAY = 86400000;
 
@@ -97,6 +99,7 @@ function SectionHeader({ icon: Icon, title, count }) {
 const OFFERS_PAGE_SIZE = 10;
 
 export default function ApprovalsCenter() {
+  const confirm = useConfirm();
   const { staff } = useAuth();
   const [vacancies, setVacancies] = useState(null);
   // Offers is paginated (GET /api/applications/offers/pending-approval now
@@ -192,7 +195,7 @@ export default function ApprovalsCenter() {
   const approveVacancy = (id) => runBusy(`vacancy-approve-${id}`, async () => {
     setError(''); setMessage('');
     try {
-      await staffClient.patch(`/api/vacancies/${id}/approve`);
+      if (!(await approveVacancyRequest(id, confirm))) return;
       setMessage('Vacancy approved.');
       loadVacancies();
     } catch (err) {

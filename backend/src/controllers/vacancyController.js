@@ -16,7 +16,7 @@ const { toPublicVacancy } = require('../utils/publicVacancy');
 const { escapeHtml } = require('../utils/interviewFormat');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
 const {
-  validateVacancyEditableFields,
+  validateVacancyEditableFields, screeningQuestionCountError,
   normalizeStringList, normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades
 } = require('../utils/vacancyValidation');
 
@@ -108,6 +108,10 @@ async function create(req, res) {
   const fieldErrors = validateVacancyEditableFields({
     positionsRequired, postingType, deadline, employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA
   });
+  const questionError = screeningQuestionCountError(
+    normalizeDesirableRequirements(req.body.desirableRequirements), normalizeDisqualifyingRequirements(req.body.disqualifyingRequirements)
+  );
+  if (questionError) fieldErrors.push(questionError);
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
   // Reports-To must be a genuinely senior position in the exact same
@@ -199,6 +203,10 @@ async function readvertise(req, res) {
   const fieldErrors = validateVacancyEditableFields({
     positionsRequired, postingType, deadline, employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA
   });
+  const questionError = screeningQuestionCountError(
+    normalizeDesirableRequirements(req.body.desirableRequirements), normalizeDisqualifyingRequirements(req.body.disqualifyingRequirements)
+  );
+  if (questionError) fieldErrors.push(questionError);
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
   // Re-fetched rather than trusting the closed row's own title/department -
@@ -249,6 +257,12 @@ async function update(req, res) {
   const fieldErrors = validateVacancyEditableFields({
     positionsRequired, postingType, deadline, employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA
   }, { partial: true });
+  const countOf = (list) => (Array.isArray(list) ? list.length : 0);
+  const nextDesirable = normalizeDesirableRequirements(desirableRequirements) ?? vacancy.desirableRequirements;
+  const nextDisqualifying = normalizeDisqualifyingRequirements(disqualifyingRequirements) ?? vacancy.disqualifyingRequirements;
+  const questionError = screeningQuestionCountError(nextDesirable, nextDisqualifying,
+    countOf(vacancy.desirableRequirements) + countOf(vacancy.disqualifyingRequirements));
+  if (questionError) fieldErrors.push(questionError);
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
   if (vacancy.status === 'Rejected') return res.status(422).json({ error: 'A rejected vacancy can no longer be edited' });
@@ -494,9 +508,27 @@ async function approve(req, res) {
     return sendError(res, err, 422);
   }
 
+  // FR-ATS-018: created on a job description that isn't approved - the
+  // approver authorises that exception explicitly, and it is recorded.
+  const jdException = vacancy.requisitionDetails?.jdException;
+  const needsJdAuthorisation = jdException && !jdException.authorisedAt;
+  if (needsJdAuthorisation && req.body?.authoriseJdException !== true) {
+    return res.status(422).json({
+      error: `This vacancy was created on a job description that is not approved (reason given: ${jdException.reason}). `
+        + 'Approving it authorises that exception - confirm to go ahead.',
+      code: 'JD_EXCEPTION_NOT_AUTHORISED'
+    });
+  }
+
   const result = await vacancyModel.updateIfStatus(vacancyId, vacancy.status, {
     status: 'Open', approvedAt: new Date(), approvedById: req.user.id,
-    approvedByRole: req.user.role // the role snapshot itself
+    approvedByRole: req.user.role, // the role snapshot itself
+    ...(needsJdAuthorisation ? {
+      requisitionDetails: {
+        ...vacancy.requisitionDetails,
+        jdException: { ...jdException, authorisedById: req.user.id, authorisedByRole: req.user.role, authorisedAt: new Date().toISOString() }
+      }
+    } : {})
   });
   if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
   const updated = await vacancyModel.findById(vacancyId);
@@ -507,7 +539,8 @@ async function approve(req, res) {
   await audit.record({
     entityType: 'Vacancy', entityId: vacancyId,
     action: vacancy.status === 'Closed' ? 'Vacancy re-opened' : 'Vacancy approved', actor: audit.actorFrom(req),
-    before: vacancy, after: updated, fields: ['status']
+    before: vacancy, after: updated, fields: ['status'],
+    ...(needsJdAuthorisation ? { comment: `Authorised the exception for an unapproved job description: ${jdException.reason}` } : {})
   });
 
   broadcastDashboardEvent('VacancyApproved', { vacancyId });

@@ -171,3 +171,41 @@ describe('editedFields', () => {
     expect(requisitionService.editedFields(prefill, { specialSkills: [] })).toEqual(['specialSkills']);
   });
 });
+
+describe('job description status (FR-ATS-018)', () => {
+  test.each([
+    ['Approved', 'approved'], ['APPROVED', 'approved'], ['Not Approved', 'notApproved'], ['Pending approval', 'notApproved'],
+    ['Draft', 'notApproved'], ['Under review', 'notApproved'], ['N/A', 'unknown']
+  ])('"%s" reads as %s', (raw, expected) => {
+    expect(requisitionService.jdApproval({ jdStatus: { value: raw } })).toBe(expected);
+  });
+
+  test('a JD the requisition does not mention is unknown, not refused', () => {
+    expect(requisitionService.jdApproval({})).toBe('unknown');
+  });
+
+  test('reading a requisition with an unapproved JD warns HR first', async () => {
+    const file = await store(await buildRequisitionDocx({ jdStatus: 'Not Approved' }));
+    const result = await requisitionService.read(file);
+    expect(result.jdStatus).toBe('notApproved');
+    expect(result.warnings[0]).toMatch(/job description is not approved/);
+  });
+
+  test('creating on an unapproved JD needs the reason for the exception, and records it', async () => {
+    const file = await store(await buildRequisitionDocx({ jdStatus: 'Not Approved' }));
+    const body = { requisitionDocument: { filename: file.filename }, requisitionConfirmed: true };
+    await expect(requisitionService.forCreate(body, 7)).rejects.toMatchObject({ status: 422, code: 'JD_NOT_APPROVED' });
+    await expect(requisitionService.forCreate({ ...body, jdExceptionReason: 'short' }, 7)).rejects.toMatchObject({ code: 'JD_NOT_APPROVED' });
+
+    const columns = await requisitionService.forCreate({ ...body, jdExceptionReason: 'JD revision is with the DG; the post is safety-critical.' }, 7);
+    expect(columns.requisitionDetails).toEqual(expect.objectContaining({
+      jdStatus: 'notApproved',
+      jdException: expect.objectContaining({ reason: 'JD revision is with the DG; the post is safety-critical.', requestedById: 7 })
+    }));
+  });
+
+  test('a readvertisement needs the exception authorised again', () => {
+    const vacancy = { requisitionDetails: { jdException: { reason: 'r', requestedById: 7, requestedAt: 'x', authorisedById: 2, authorisedAt: 'y' } } };
+    expect(requisitionService.carriedOver(vacancy).requisitionDetails.jdException).toEqual({ reason: 'r', requestedById: 7, requestedAt: 'x' });
+  });
+});

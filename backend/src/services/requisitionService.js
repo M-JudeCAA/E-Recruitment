@@ -173,6 +173,21 @@ async function readStored(filename) {
  * the review data. A document that can't be read, or that already backs a
  * vacancy, is deleted again and refused.
  */
+// FR-ATS-018: an advert can't go out on a job description that isn't
+// approved, unless an exception is authorised. The requisition states the
+// JD status; 'unknown' when it doesn't say (or says something unclear).
+function jdApproval(fields) {
+  const raw = fields.jdStatus?.value;
+  if (!raw) return 'unknown';
+  if (/\bnot\s+approved\b|\bunapproved\b|\bpending\b|\bdraft\b|\bunder\s+review\b|\bawaiting\b/i.test(raw)) return 'notApproved';
+  if (/\bapproved\b/i.test(raw)) return 'approved';
+  return 'unknown';
+}
+
+const JD_NOT_APPROVED_WARNING = 'The requisition says the job description is not approved. A vacancy can only be created on it '
+  + 'as an exception: give the reason, and whoever approves the vacancy must authorise it.';
+const MIN_EXCEPTION_REASON = 10;
+
 async function read(file) {
   let stored;
   try {
@@ -194,7 +209,11 @@ async function read(file) {
     labels: stored.parsed.labels,
     missing: stored.parsed.missing,
     organogram: { department: organogram.department, position: organogram.position, reportsTo: organogram.reportsTo },
-    warnings: [...stored.parsed.warnings, ...organogram.warnings],
+    warnings: [
+      ...(jdApproval(stored.parsed.fields) === 'notApproved' ? [JD_NOT_APPROVED_WARNING] : []),
+      ...stored.parsed.warnings, ...organogram.warnings
+    ],
+    jdStatus: jdApproval(stored.parsed.fields),
     prefill: prefillFrom(stored.parsed.fields, organogram)
   };
 }
@@ -240,6 +259,19 @@ async function forCreate(body, createdById) {
   const existing = await findVacancyWithHash(stored.hash);
   if (existing) throw duplicateError(existing);
 
+  // A JD that isn't approved needs an exception, with a reason; the
+  // vacancy's approver must then authorise it (vacancyController.approve).
+  let jdException = null;
+  if (jdApproval(stored.parsed.fields) === 'notApproved') {
+    const reason = typeof body.jdExceptionReason === 'string' ? body.jdExceptionReason.trim().slice(0, 2000) : '';
+    if (reason.length < MIN_EXCEPTION_REASON) {
+      const err = new AppError('The job description on this requisition is not approved. Give the reason for the exception to create the vacancy anyway.', 422);
+      err.code = 'JD_NOT_APPROVED';
+      throw err;
+    }
+    jdException = { reason, requestedById: createdById, requestedAt: new Date().toISOString() };
+  }
+
   const organogram = await matchOrganogram(stored.parsed.fields);
   const prefill = prefillFrom(stored.parsed.fields, organogram);
   return {
@@ -253,7 +285,9 @@ async function forCreate(body, createdById) {
       fields: stored.parsed.fields,
       missing: stored.parsed.missing,
       warnings: stored.parsed.warnings,
-      editedFields: editedFields(prefill, body)
+      editedFields: editedFields(prefill, body),
+      jdStatus: jdApproval(stored.parsed.fields),
+      ...(jdException ? { jdException } : {})
     }
   };
 }
@@ -265,10 +299,14 @@ function carriedOver(vacancy) {
     requisitionDocumentName: vacancy.requisitionDocumentName,
     requisitionUploadedAt: vacancy.requisitionUploadedAt,
     requisitionUploadedById: vacancy.requisitionUploadedById,
-    requisitionDetails: vacancy.requisitionDetails
+    // A JD exception must be authorised afresh by whoever approves the
+    // readvertisement.
+    requisitionDetails: vacancy.requisitionDetails?.jdException
+      ? { ...vacancy.requisitionDetails, jdException: { reason: vacancy.requisitionDetails.jdException.reason, requestedById: vacancy.requisitionDetails.jdException.requestedById, requestedAt: vacancy.requisitionDetails.jdException.requestedAt } }
+      : vacancy.requisitionDetails
     // requisitionDocumentHash stays with the original only - it marks the
     // vacancy the document was first used for.
   };
 }
 
-module.exports = { read, forCreate, carriedOver, matchOrganogram, prefillFrom, jobPurposeHtml, editedFields, FILENAME_RE };
+module.exports = { read, forCreate, carriedOver, jdApproval, matchOrganogram, prefillFrom, jobPurposeHtml, editedFields, FILENAME_RE };

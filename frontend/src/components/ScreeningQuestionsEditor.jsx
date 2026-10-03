@@ -25,6 +25,10 @@ const numberInputStyle = { ...selectStyle, width: 70 };
 // spread silently reverts the first call's change - the row would appear
 // to "duplicate" into both arrays instead of moving. One patch object
 // covering both keys avoids that entirely.
+// FR-ATS-032 - matches MAX_SCREENING_QUESTIONS in
+// backend/src/utils/vacancyValidation.js, which enforces it.
+export const MAX_SCREENING_QUESTIONS = 5;
+
 export default function ScreeningQuestionsEditor({ desirableItems, disqualifyingItems, onChange }) {
   const desirable = desirableItems || [];
   const disqualifying = disqualifyingItems || [];
@@ -132,7 +136,17 @@ export default function ScreeningQuestionsEditor({ desirableItems, disqualifying
           )}
         </div>
       ))}
-      <Button type="button" variant="ghost" style={{ padding: '4px 10px', fontSize: 13 }} onClick={addRow}>+ Add screening question</Button>
+      {rows.length < MAX_SCREENING_QUESTIONS ? (
+        <Button type="button" variant="ghost" style={{ padding: '4px 10px', fontSize: 13 }} onClick={addRow}>
+          + Add screening question ({rows.length} of {MAX_SCREENING_QUESTIONS})
+        </Button>
+      ) : (
+        <p style={{ fontSize: 12, color: rows.length > MAX_SCREENING_QUESTIONS ? 'var(--color-danger)' : 'var(--color-text-muted)', margin: '4px 0 0' }}>
+          {rows.length > MAX_SCREENING_QUESTIONS
+            ? `This advert has ${rows.length} screening questions, more than the ${MAX_SCREENING_QUESTIONS} now allowed. It can keep them, but no more can be added - remove some to make room.`
+            : `This advert has the most screening questions allowed (${MAX_SCREENING_QUESTIONS}). Remove one to add another.`}
+        </p>
+      )}
     </div>
   );
 }

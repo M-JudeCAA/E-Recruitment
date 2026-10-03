@@ -56,6 +56,14 @@ function RequisitionCard({ vacancy }) {
           </tbody>
         </table>
       )}
+      {details.jdException && (
+        <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--color-warning)', overflowWrap: 'anywhere' }}>
+          Created on a job description that is not approved. Reason given: {details.jdException.reason}
+          {details.jdException.authorisedAt
+            ? ` - exception authorised ${new Date(details.jdException.authorisedAt).toLocaleDateString()}${details.jdException.authorisedByRole ? ` (${details.jdException.authorisedByRole})` : ''}.`
+            : ' - awaiting the approver\'s authorisation.'}
+        </p>
+      )}
       {edited.length > 0 && (
         <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--color-warning)' }}>
           Changed from the requisition when the vacancy was created: {edited.join(', ')}.
