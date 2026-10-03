@@ -24,6 +24,7 @@ import DataTable from '../components/DataTable';
 import BoardView from '../components/BoardView';
 import LoadMoreControl from '../components/LoadMoreControl';
 import { STATUS_COLORS } from '../components/StatusBadge';
+import VacancyDraftsList from '../components/VacancyDraftsList';
 import { urgencyOf } from '../utils/slaUrgency';
 import { debounce } from '../utils/debounce';
 
@@ -527,6 +528,8 @@ export default function HRDashboard() {
 
       <Alert type="success" message={message} />
       <Alert type="error" message={error} />
+
+      <VacancyDraftsList />
 
       {/* Filter bar (#2) - text search plus status/department/posting-type/
           directorate filters and a sort order, all over the already-loaded

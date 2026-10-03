@@ -16,6 +16,7 @@ const mockDb = {
   examGrade: { findMany: jest.fn() },
   auditLog: { create: jest.fn(), findMany: jest.fn() },
   jobRefSequence: { findUnique: jest.fn() },
+  vacancyDraft: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn(), deleteMany: jest.fn() },
   candidate: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   internalProfile: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
   panelMember: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },

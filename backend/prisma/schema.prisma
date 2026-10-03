@@ -194,6 +194,7 @@ model StaffUser {
   delegationsReceived   Delegation[]      @relation("DelegationTo")
   delegationsAuthorized Delegation[]      @relation("DelegationAuthorizedBy")
   notifications         Notification[]
+  vacancyDrafts         VacancyDraft[]    @relation("VacancyDraftCreatedBy")
 }
 
 model Directorate {
@@ -251,6 +252,30 @@ model Position {
   // The same title can exist in more than one department (confirmed) -
   // uniqueness is per-department, not organisation-wide.
   @@unique([name, departmentId])
+}
+
+// A vacancy being written, before it is created - saved by hand or
+// automatically from the New Listing page (vacancyDraftController.js).
+// Private to the staff member writing it. Deliberately not a Vacancy row:
+// a draft has no job reference, no status, and must never appear in a
+// vacancy list. `requisition` is what was read from the uploaded EXCO
+// requisition (so the review panel comes back as it was), `form` the
+// form as typed; requisitionFilename keeps that upload from being cleared
+// by scripts/cleanupRequisitionUploads.js. Creating the vacancy deletes
+// the draft. updatedAt guards against two tabs overwriting each other.
+model VacancyDraft {
+  id                  Int       @id @default(autoincrement())
+  createdById         Int
+  createdBy           StaffUser @relation("VacancyDraftCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  title               String?
+  form                Json
+  requisition         Json?
+  requisitionFilename String?   @db.VarChar(191)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([createdById])
+  @@index([requisitionFilename])
 }
 
 // Running number behind Vacancy.jobRef (UCAA/ADV/{INT|EXT}/{NNN}/{YYYY}),

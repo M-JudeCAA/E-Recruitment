@@ -1,6 +1,7 @@
 const { sendError, classifyError } = require('../utils/errorResponse');
 const prisma = require('../config/db');
 const vacancyModel = require('../models/vacancyModel');
+const vacancyDraftModel = require('../models/vacancyDraftModel');
 const applicationModel = require('../models/applicationModel');
 const positionModel = require('../models/positionModel');
 const offerModel = require('../models/offerModel');
@@ -152,6 +153,11 @@ async function create(req, res) {
       return res.status(409).json({ error: 'This requisition has just been used for another vacancy.', code: 'DUPLICATE_REQUISITION' });
     }
     throw err;
+  }
+  // The draft it was written in has served its purpose.
+  const draftId = Number(req.body.draftId);
+  if (Number.isInteger(draftId) && draftId > 0) {
+    await vacancyDraftModel.removeMine(draftId, req.user.id).catch((err) => console.error(`Failed to remove vacancy draft ${draftId}:`, err));
   }
   await audit.record({
     entityType: 'Vacancy', entityId: vacancy.id, action: 'Vacancy created', actor: audit.actorFrom(req),

@@ -74,6 +74,14 @@ describe('create', () => {
     }) });
   });
 
+  test('removes the draft the vacancy was written in - only the creator\'s own', async () => {
+    prisma.position.findUnique.mockResolvedValue(officerCorp);
+    prisma.vacancy.create.mockResolvedValue({ id: 7, jobRef: 'UCAA/ADV/EXT/001/2026' });
+    prisma.vacancyDraft.deleteMany.mockResolvedValue({ count: 1 });
+    await vacancyController.create({ body: { positionId: '100', postingType: 'External', draftId: 12 }, user: { id: 1 } }, mockRes());
+    expect(prisma.vacancyDraft.deleteMany).toHaveBeenCalledWith({ where: { id: 12, createdById: 1 } });
+  });
+
   test('answers 409 when the same requisition is used by a simultaneous create', async () => {
     prisma.position.findUnique.mockResolvedValue(officerCorp);
     prisma.vacancy.create.mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002', meta: { target: 'Vacancy_requisitionDocumentHash_key' } }));

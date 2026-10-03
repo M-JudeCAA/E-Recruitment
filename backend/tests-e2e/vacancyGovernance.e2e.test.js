@@ -1,5 +1,6 @@
+const request = require('supertest');
 const {
-  prisma, resetDatabase, createStaff, createOrg, staffToken, api, expectStatus, createVacancyFromRequisition, uploadRequisition
+  prisma, app, resetDatabase, createStaff, createOrg, staffToken, api, expectStatus, createVacancyFromRequisition, uploadRequisition
 } = require('./helpers');
 
 // Vacancy-level rules from the September 2026 UCAA requirements: job
@@ -92,8 +93,7 @@ test('an approver returns a vacancy with a comment; HR revises and resubmits it;
 });
 
 describe('creating a vacancy from the EXCO-approved requisition', () => {
-  const request = require('supertest');
-  const { app, createCandidate, candidateToken } = require('./helpers');
+  const { createCandidate, candidateToken } = require('./helpers');
   const { buildRequisitionDocx, buildScannedPdf } = require('../scripts/lib/requisitionDocument');
   const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   const upload = (buffer, filename, contentType) => request(app).post('/api/vacancies/requisition')
@@ -164,4 +164,49 @@ describe('creating a vacancy from the EXCO-approved requisition', () => {
     const image = await upload(Buffer.from('jpeg'), 'photo.jpg', 'image/jpeg');
     expect(image.status).toBe(422);
   });
+});
+
+test('a vacancy being written is saved as a private draft, and creating it removes the draft', async () => {
+  const other = await createStaff('HR_Officer', 'hro2@caa.co.ug');
+  const otherToken = await staffToken(other.email);
+  const read = await uploadRequisition(tokens.hro);
+
+  const draft = expectStatus(await api(tokens.hro).post('/api/vacancy-drafts', { form: read.prefill, requisition: read }), 201).body;
+  expect(draft.title).toBe('HR Analyst');
+
+  // Saved again over the version this window loaded...
+  const saved = expectStatus(await request(app).put(`/api/vacancy-drafts/${draft.id}`).set('Authorization', `Bearer ${tokens.hro}`)
+    .send({ form: { ...read.prefill, salaryScale: 'U4' }, requisition: read, baseUpdatedAt: draft.updatedAt }), 200).body;
+  // ...but a second window still holding the old version can't overwrite it.
+  const stale = await request(app).put(`/api/vacancy-drafts/${draft.id}`).set('Authorization', `Bearer ${tokens.hro}`)
+    .send({ form: read.prefill, requisition: read, baseUpdatedAt: draft.updatedAt });
+  expect(stale.status).toBe(409);
+  expect(stale.body.code).toBe('DRAFT_CHANGED');
+
+  // Private to its writer.
+  expect(expectStatus(await api(otherToken).get('/api/vacancy-drafts'), 200).body).toEqual([]);
+  expect((await api(otherToken).get(`/api/vacancy-drafts/${draft.id}`)).status).toBe(404);
+  const loaded = expectStatus(await api(tokens.hro).get(`/api/vacancy-drafts/${draft.id}`), 200).body;
+  expect(loaded.form.salaryScale).toBe('U4');
+  expect(new Date(loaded.updatedAt).toISOString()).toBe(new Date(saved.updatedAt).toISOString());
+
+  // The cleanup job keeps the draft's requisition.
+  const cleanup = require('../scripts/cleanupRequisitionUploads');
+  await cleanup.run(new Date(Date.now() + cleanup.GRACE_MS + 60000));
+  expectStatus(await api(tokens.hro).get(read.document.url), 200);
+
+  expectStatus(await api(tokens.hro).post('/api/vacancies', {
+    ...loaded.form, deadline: new Date(Date.now() + 14 * 86400000).toISOString(),
+    requisitionDocument: read.document, requisitionConfirmed: true, draftId: draft.id
+  }), 201);
+  expect(expectStatus(await api(tokens.hro).get('/api/vacancy-drafts'), 200).body).toEqual([]);
+});
+
+test('the cleanup job removes requisition uploads nothing refers to', async () => {
+  const unused = await uploadRequisition(tokens.hro);
+  const cleanup = require('../scripts/cleanupRequisitionUploads');
+  expect(await cleanup.run(new Date())).toMatch(/0 unused/); // still within its grace period
+  expectStatus(await api(tokens.hro).get(unused.document.url), 200);
+  await cleanup.run(new Date(Date.now() + cleanup.GRACE_MS + 60000));
+  expect((await api(tokens.hro).get(unused.document.url)).status).toBe(404);
 });

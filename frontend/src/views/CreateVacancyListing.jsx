@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Building2, CalendarClock, FileText, FileCheck2 } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import HRSidebar from '../components/HRSidebar';
@@ -14,6 +14,7 @@ import Modal from '../components/Modal';
 import VacancyAdvertFields from '../components/VacancyAdvertFields';
 import VacancyAdvert from '../components/VacancyAdvert';
 import RequisitionPanel from '../components/RequisitionPanel';
+import useVacancyDraft from '../models/useVacancyDraft';
 
 const emptyForm = {
   departmentId: '', positionId: '', reportsToPositionId: '',
@@ -102,6 +103,22 @@ export default function CreateVacancyListing() {
   const [requisition, setRequisition] = useState(null);
   const [requisitionConfirmed, setRequisitionConfirmed] = useState(false);
 
+  // Drafts: the form (and what was read from the requisition) is saved as
+  // HR works - automatically, or with "Save draft" - and reopened from the
+  // vacancy list via ?draft=<id>. The EXCO confirmation is never saved; it
+  // is given fresh each time the vacancy is created.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openedDraftId = useRef(searchParams.get('draft'));
+  const [loadingDraft, setLoadingDraft] = useState(!!openedDraftId.current);
+  const [creatingPause, setCreatingPause] = useState(false);
+  const [draftMessage, setDraftMessage] = useState('');
+  const onDraftCreated = useCallback((id) => setSearchParams({ draft: String(id) }, { replace: true }), [setSearchParams]);
+  const draft = useVacancyDraft({
+    values: { form, requisition },
+    enabled: !!requisition && !loadingDraft && !creatingPause,
+    onCreated: onDraftCreated
+  });
+
   useEffect(() => {
     staffClient.get('/api/departments/approved')
       .then((res) => setApprovedDepartments(res.data))
@@ -145,6 +162,40 @@ export default function CreateVacancyListing() {
     }
   };
 
+  // The position and reports-to lists a department/position choice needs.
+  const loadOrganogramLists = async (departmentId, positionId) => {
+    setDepartmentPositions(departmentId ? (await staffClient.get(`/api/departments/${departmentId}/positions`)).data : []);
+    setReportsToOptions(positionId ? (await staffClient.get(`/api/positions/${positionId}/senior-options`)).data : []);
+  };
+
+  // Reopening a saved draft.
+  useEffect(() => {
+    const id = openedDraftId.current;
+    if (!id) return;
+    (async () => {
+      try {
+        const { data } = await staffClient.get(`/api/vacancy-drafts/${id}`);
+        const loadedForm = { ...emptyForm, ...data.form };
+        await loadOrganogramLists(loadedForm.departmentId, loadedForm.positionId).catch(() => {});
+        setCustomLocation(!!(loadedForm.location && !LOCATIONS.includes(loadedForm.location)));
+        setRequisition(data.requisition || null);
+        setForm(loadedForm);
+        draft.markLoaded(data, { form: loadedForm, requisition: data.requisition || null });
+      } catch (err) {
+        setError(err.response?.status === 404 ? 'That draft no longer exists - it may have been used to create a vacancy, or deleted.' : (err.response?.data?.error || 'Could not open the draft'));
+        setSearchParams({}, { replace: true });
+      } finally {
+        setLoadingDraft(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const saveDraftNow = async () => {
+    setDraftMessage('');
+    if (await draft.saveNow()) setDraftMessage('Draft saved. You can finish it later from Vacancies.');
+  };
+
   // Fills the form from what was read off the requisition, loading the
   // position and reports-to lists the matched organogram entries need.
   const applyRequisition = async (result) => {
@@ -157,12 +208,7 @@ export default function CreateVacancyListing() {
     if (p.positionsRequired) next.positionsRequired = Number(p.positionsRequired);
     setCustomLocation(!!(p.location && !LOCATIONS.includes(p.location)));
     try {
-      if (p.departmentId) {
-        setDepartmentPositions((await staffClient.get(`/api/departments/${p.departmentId}/positions`)).data);
-      } else {
-        setDepartmentPositions([]);
-      }
-      setReportsToOptions(p.positionId ? (await staffClient.get(`/api/positions/${p.positionId}/senior-options`)).data : []);
+      await loadOrganogramLists(p.departmentId, p.positionId);
     } catch (err) {
       setError(err.response?.data?.error || 'Could not load the positions for the matched department');
     }
@@ -205,17 +251,30 @@ export default function CreateVacancyListing() {
     if (!requisition) { setError('Upload the EXCO-approved requisition first.'); return; }
     if (!requisitionConfirmed) { setError('Confirm that the requisition has been approved and signed by EXCO.'); return; }
     setError(''); setCreating(true);
+    // No auto-save may land after the vacancy (and so the draft) is done.
+    draft.cancelPending();
+    setCreatingPause(true);
     try {
       const res = await staffClient.post('/api/vacancies', {
-        ...form, requisitionDocument: requisition.document, requisitionConfirmed: true
+        ...form, requisitionDocument: requisition.document, requisitionConfirmed: true,
+        ...(draft.draftId ? { draftId: draft.draftId } : {})
       });
       navigate('/hr', { state: { vacancyCreatedMessage: `Vacancy created (Ref: ${res.data.jobRef}). It needs Manager or Director approval to open.` } });
     } catch (err) {
       const errs = err.response?.data?.errors;
       setError(errs ? errs.join('; ') : (err.response?.data?.error || 'Failed to create vacancy'));
       setCreating(false);
+      setCreatingPause(false);
     }
   };
+
+  const draftStatusText = {
+    unsaved: 'Unsaved changes',
+    saving: 'Saving draft...',
+    saved: draft.savedAt ? `Draft saved ${draft.savedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Draft saved',
+    error: 'Draft not saved - it will try again when you next make a change',
+    conflict: 'Not saved - this draft was saved from another window. Reload it (link at the top) to continue.'
+  }[draft.status];
 
   return (
     <div>
@@ -229,13 +288,22 @@ export default function CreateVacancyListing() {
       </p>
 
       <Alert type="error" message={error} />
+      <Alert type="success" message={draftMessage} />
+      {draft.status === 'conflict' && (
+        <Alert type="warning" message={<>
+          {draft.error}{' '}
+          <a href={`/hr/vacancies/new?draft=${draft.draftId}`}>Reload the draft</a>
+        </>} />
+      )}
 
       <form onSubmit={createVacancy} style={{ maxWidth: 820 }}>
         <Card style={{ padding: 'var(--spacing-lg)' }}>
           <SectionHeader icon={FileCheck2} title="Approved requisition"
             description="The job details come from the requisition EXCO approved and signed." />
-          <RequisitionPanel requisition={requisition} onRead={applyRequisition} onReplace={replaceRequisition}
-            confirmed={requisitionConfirmed} onConfirmChange={setRequisitionConfirmed} />
+          {loadingDraft
+            ? <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: 0 }}>Opening your draft...</p>
+            : <RequisitionPanel requisition={requisition} onRead={applyRequisition} onReplace={replaceRequisition}
+                confirmed={requisitionConfirmed} onConfirmChange={setRequisitionConfirmed} />}
         </Card>
 
         {requisition && (<>
@@ -343,12 +411,21 @@ export default function CreateVacancyListing() {
             happens next" moment rather than the buttons blending into
             whatever section happened to be last. */}
         <div style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap',
           background: 'var(--color-bg-subtle)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius)',
           padding: 'var(--spacing-md) var(--spacing-lg)', marginTop: 'var(--spacing-md)'
         }}>
-          <Button type="button" variant="ghost" onClick={() => navigate('/hr')}>Cancel</Button>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <Button type="button" variant="ghost" onClick={() => navigate('/hr')}>{draft.draftId ? 'Close' : 'Cancel'}</Button>
+            {draftStatusText && (
+              <span role="status" style={{ fontSize: 13, color: ['error', 'conflict'].includes(draft.status) ? 'var(--color-danger)' : 'var(--color-text-muted)' }}>
+                {draftStatusText}
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Button type="button" variant="ghost" onClick={saveDraftNow}
+              disabled={draft.status === 'saving' || draft.status === 'conflict'}>Save draft</Button>
             <Button type="button" variant="secondary" onClick={previewForm}>Preview advert</Button>
             <Button type="submit" disabled={creating || !requisitionConfirmed}
               title={requisitionConfirmed ? undefined : 'Confirm the EXCO approval above first'}>
