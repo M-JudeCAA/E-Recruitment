@@ -2,8 +2,8 @@ const prisma = require('../config/db');
 
 // A UCAA employee can be both a staff member and a candidate: the same
 // person has a StaffUser (staff portal) and an Internal Candidate (candidate
-// site), linked through their Microsoft identity (entraObjectId) or, failing
-// that, their UCAA email. Once a staff member has applied for a vacancy they
+// site), linked by their UCAA email (staff sign in with Microsoft,
+// candidates with that same address and a password). Once a staff member has applied for a vacancy they
 // take no part in running it - no shortlisting, interviews, merit list,
 // offers or screening decisions, and no view of the other applicants - while
 // their work on every other vacancy is unaffected. A staff member acting
@@ -23,19 +23,16 @@ class ApplicantConflictError extends Error {
   }
 }
 
-// The candidate accounts belonging to a staff member - by Microsoft
-// identity, and by email for accounts not linked yet.
+// The candidate accounts belonging to a staff member.
 function candidateMatchFor(staff) {
-  const or = [{ email: staff.email }];
-  if (staff.entraObjectId) or.push({ entraObjectId: staff.entraObjectId });
-  return { OR: or };
+  return { email: staff.email };
 }
 
 // Vacancy ids the given staff member has applied for.
 async function vacancyIdsAppliedForByStaff(staffId) {
   if (!staffId) return [];
   const staff = await prisma.staffUser.findUnique({
-    where: { id: staffId }, select: { email: true, entraObjectId: true }
+    where: { id: staffId }, select: { email: true }
   });
   if (!staff) return [];
   const applications = await prisma.application.findMany({
@@ -72,9 +69,7 @@ async function assertNotApplicant(req, vacancyId) {
 // The staff account (if any) behind a candidate - for flagging a staff
 // member's application to the other Principal HR Officers.
 async function staffForCandidate(candidate) {
-  const or = [{ email: candidate.email }];
-  if (candidate.entraObjectId) or.push({ entraObjectId: candidate.entraObjectId });
-  return prisma.staffUser.findFirst({ where: { OR: or }, select: { id: true, name: true, role: true } });
+  return prisma.staffUser.findFirst({ where: { email: candidate.email }, select: { id: true, name: true, role: true } });
 }
 
 // When a staff member submits an application: tell the other Principal HR

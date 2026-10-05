@@ -53,7 +53,7 @@ Every other field in `.env.example` needs a real value too:
 | `JWT_SECRET` | Any long random string for local dev — doesn't need to match production |
 | `JWT_EXPIRES_IN` | Leave as `8h` |
 | `INTERNAL_EMAIL_DOMAIN` | Leave as `caa.co.ug` (comma-separate several). Only accounts on it can sign in with Microsoft, and it can't be used to register a password account |
-| `ENTRA_TENANT_ID`, `ENTRA_STAFF_CLIENT_ID`, `ENTRA_CANDIDATE_CLIENT_ID` | Microsoft sign-in - see [Microsoft (Entra ID) sign-in](#microsoft-entra-id-sign-in). Without them the API says so at start-up and Microsoft sign-in answers 501 |
+| `ENTRA_TENANT_ID`, `ENTRA_STAFF_CLIENT_ID` | Staff Microsoft sign-in - see [Microsoft (Entra ID) sign-in](#microsoft-entra-id-sign-in). Without them the API says so at start-up and Microsoft sign-in answers 501 |
 | `DEV_PASSWORD_LOGIN` | Optional, local development only: `true` lets the seeded demo staff accounts sign in with their password at `/staff/login?password`. Ignored when `NODE_ENV=production` |
 | `BREAK_GLASS_LOGIN` | Optional, production emergencies only: `true` lets a system administrator with a break-glass password sign in at `/staff/login?password` while Microsoft sign-in is down. Leave unset otherwise |
 | `PORT` | Leave as `4000` |
@@ -111,32 +111,33 @@ once - keep it sealed), usable only while `BREAK_GLASS_LOGIN=true`.
 
 ## Microsoft (Entra ID) sign-in
 
-Staff and internal candidates sign in with their UCAA Microsoft account;
-external candidates keep email + password. Entra only proves who someone
+Staff sign in with their UCAA Microsoft account. Candidates - UCAA
+employees included - register and sign in with email + password; a
+`@caa.co.ug` registration becomes an internal candidate. Entra only proves who someone
 is — it has no notion of "HR staff" here, so **every UCAA employee can get
 past Microsoft, and that's fine**: the API lets someone into the staff
 portal only if a system administrator created an active staff account for
 their email, and gives them the role on that account. Any employee,
-HR staff included, can sign in on the candidate site to apply for a job (a
-separate candidate session); once a staff member applies for a vacancy they
+HR staff included, can register on the candidate site to apply for a job (a
+separate candidate account); once a staff member applies for a vacancy they
 are shut out of running it (`conflictOfInterestService.js`).
 
-Have the Entra administrator create **two app registrations** in Entra
+Have the Entra administrator create **one app registration** in Entra
 admin centre → App registrations → New registration (single tenant):
 
-| | Staff app | Candidate app |
-|---|---|---|
-| Name | UCAA e-Recruitment (staff) | UCAA e-Recruitment (candidates) |
-| Platform | Single-page application | Single-page application |
-| Redirect URI | `https://<staff host>/entra-redirect.html` (and `http://localhost:4174/entra-redirect.html` for dev) | `https://<candidate host>/entra-redirect.html` (and `http://localhost:5173/entra-redirect.html`) |
-| API permissions | Microsoft Graph `openid`, `profile`, `email` (delegated; the defaults) | same |
-| Token configuration (optional claims, ID token) | `email`, `acct` | `email`, `acct` |
-| Enterprise application → Properties → Assignment required | **Yes**, then assign a security group (e.g. "e-Recruitment Staff") — optional extra layer, the staff account list is still what decides | No — every employee may apply |
+| Setting | Value |
+|---|---|
+| Name | UCAA e-Recruitment (staff) |
+| Platform | Single-page application |
+| Redirect URI | `https://<staff host>/entra-redirect.html` (and `http://localhost:4174/entra-redirect.html` for dev) |
+| API permissions | Microsoft Graph `openid`, `profile`, `email` (delegated; the defaults) |
+| Token configuration (optional claims, ID token) | `email`, `acct` |
+| Enterprise application → Properties → Assignment required | Optional: **Yes**, then assign a security group (e.g. "e-Recruitment Staff") - an extra layer; the staff account list is still what decides |
 
 Then set the IDs:
 
-- `backend/.env`: `ENTRA_TENANT_ID`, `ENTRA_STAFF_CLIENT_ID`, `ENTRA_CANDIDATE_CLIENT_ID`
-- `frontend/.env` (read at build time): `VITE_ENTRA_TENANT_ID`, `VITE_ENTRA_STAFF_CLIENT_ID`, `VITE_ENTRA_CANDIDATE_CLIENT_ID`
+- `backend/.env`: `ENTRA_TENANT_ID`, `ENTRA_STAFF_CLIENT_ID`
+- `frontend/.env` (read at build time): `VITE_ENTRA_TENANT_ID`, `VITE_ENTRA_STAFF_CLIENT_ID`
 
 Create staff accounts with the person's **sign-in name** (UPN) — that is
 what Entra reports when the `email` claim is empty. The first sign-in links

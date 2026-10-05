@@ -9,8 +9,6 @@ const limit = authLimiters('candidate');
 router.post('/register', limit.register, controller.register);
 router.get('/confirm-email', controller.confirmEmail);
 router.post('/login', limit.login, controller.login);
-// Internal candidates: sign in with a UCAA Microsoft account.
-router.post('/entra', limit.entra, controller.entraLogin);
 router.post('/forgot-password', limit.forgotPassword, controller.forgotPassword);
 router.post('/reset-password', controller.resetPassword);
 

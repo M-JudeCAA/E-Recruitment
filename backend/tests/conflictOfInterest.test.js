@@ -42,7 +42,7 @@ describe('which vacancies a staff member is shut out of', () => {
     expect(prisma.application.findMany).toHaveBeenCalledWith({
       where: {
         status: { notIn: ['Draft'] },
-        candidate: { OR: [{ email: 'jane@caa.co.ug' }, { entraObjectId: 'oid-123' }] }
+        candidate: { email: 'jane@caa.co.ug' }
       },
       select: { vacancyId: true }
     });

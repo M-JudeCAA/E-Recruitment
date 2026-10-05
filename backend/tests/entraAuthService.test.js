@@ -39,7 +39,6 @@ async function refusal(promise) {
 beforeEach(() => {
   process.env.ENTRA_TENANT_ID = TENANT;
   process.env.ENTRA_STAFF_CLIENT_ID = STAFF_APP;
-  process.env.ENTRA_CANDIDATE_CLIENT_ID = CANDIDATE_APP;
   process.env.INTERNAL_EMAIL_DOMAIN = 'caa.co.ug';
   jest.spyOn(console, 'warn').mockImplementation(() => {});
 });
@@ -57,10 +56,9 @@ test('prefers the email claim over the sign-in name', async () => {
   expect(identity.email).toBe('j.okello@caa.co.ug');
 });
 
-test('a token issued to the candidate app is refused by the staff app, and the other way round', async () => {
+test('a token issued to another app is refused, and there is no candidate app', async () => {
   expect(await refusal(verifyIdToken(idToken({}, { audience: CANDIDATE_APP }), 'staff'))).toBeInstanceOf(EntraAuthError);
-  expect(await refusal(verifyIdToken(idToken(), 'candidate'))).toBeInstanceOf(EntraAuthError);
-  await expect(verifyIdToken(idToken({}, { audience: CANDIDATE_APP }), 'candidate')).resolves.toMatchObject({ oid: 'oid-123' });
+  expect(await refusal(verifyIdToken(idToken(), 'candidate'))).toMatchObject({ status: 501 });
 });
 
 test('a token from another tenant is refused', async () => {

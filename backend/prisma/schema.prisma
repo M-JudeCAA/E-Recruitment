@@ -590,10 +590,9 @@ model Candidate {
   // candidates who haven't set one yet never conflict with each other.
   nationalId         String?        @unique
   emailConfirmed     Boolean        @default(false)
-  // Internal candidates sign in with their UCAA Microsoft (Entra ID)
-  // account - the oid, as on StaffUser - and have no password. External
-  // candidates have a password and no oid.
-  entraObjectId      String?        @unique
+  // Every candidate signs in with email and password (Microsoft sign-in is
+  // for staff only). Null only for an account opened through Microsoft
+  // sign-in while candidates briefly had it - "Forgot password" sets one.
   passwordHash       String?
   createdAt          DateTime       @default(now())
 

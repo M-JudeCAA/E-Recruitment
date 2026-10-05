@@ -1,21 +1,18 @@
 const jwt = require('jsonwebtoken');
 const jwksClient = require('jwks-rsa');
 
-// Sign-in with a UCAA Microsoft (Entra ID) account. The browser signs in
+// Staff sign-in with a UCAA Microsoft (Entra ID) account. The browser signs in
 // through MSAL (Auth Code + PKCE) and posts us the ID token it got back;
 // this checks that token and returns who it names. It proves identity
-// only - what that person may do here is decided by our own StaffUser /
-// Candidate rows, never by anything in Entra.
+// only - what that person may do here is decided by our own StaffUser
+// row, never by anything in Entra.
 //
-// Two app registrations, so the staff one can be restricted to an Entra
-// group ("Assignment required") while every employee can use the
-// candidate one:
-//   staff     - ENTRA_STAFF_CLIENT_ID     (the staff port)
-//   candidate - ENTRA_CANDIDATE_CLIENT_ID (internal candidates)
+// One app registration, ENTRA_STAFF_CLIENT_ID (the staff port), which can
+// be restricted to an Entra group ("Assignment required"). Candidates,
+// internal ones included, sign in with email and password.
 
 const APPS = {
-  staff: () => process.env.ENTRA_STAFF_CLIENT_ID,
-  candidate: () => process.env.ENTRA_CANDIDATE_CLIENT_ID
+  staff: () => process.env.ENTRA_STAFF_CLIENT_ID
 };
 
 // An ID token is only ever exchanged right after the sign-in that minted

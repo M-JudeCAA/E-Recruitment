@@ -2,7 +2,6 @@ const prisma = require('../config/db');
 
 module.exports = {
   findByEmail: (email) => prisma.candidate.findUnique({ where: { email } }),
-  findByEntraObjectId: (entraObjectId) => prisma.candidate.findUnique({ where: { entraObjectId } }),
   // nationalId is @unique (schema.prisma) - used to give a clear,
   // immediate error at registration time rather than letting a duplicate
   // only surface later as a raw constraint violation.
