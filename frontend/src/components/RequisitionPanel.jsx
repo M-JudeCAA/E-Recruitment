@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileCheck2, Upload, RefreshCw } from 'lucide-react';
+import { FileCheck2, Upload, RefreshCw, PenLine } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { fileLink } from '../utils/fileLink';
 import Button from './Button';
@@ -11,8 +11,10 @@ import TextArea from './TextArea';
 // Step 1 of a new vacancy: the EXCO-approved, signed requisition. HR uploads
 // it (POST /api/vacancies/requisition); the server reads the job details out
 // of it and returns a pre-filled form. This shows what was read, how sure
-// the reader is of each value, what it couldn't find, and asks HR to
-// confirm the approval. CreateVacancyListing applies the pre-fill and shows
+// the reader is of each value, what it couldn't find, takes the scan of the
+// requisition as EXCO signed it (POST /api/vacancies/requisition/signed-copy
+// - the readable document has the text, the scan the signatures; both are
+// kept with the vacancy), and asks HR to confirm the approval. CreateVacancyListing applies the pre-fill and shows
 // the rest of the form only once a requisition has been read.
 
 const ACCEPT = '.pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -23,6 +25,59 @@ const CONFIDENCE_BADGE = {
 };
 const EMPLOYMENT_LABELS = { FullTime: 'Full-time', Contract: 'Contract', FixedTermContract: 'Fixed term contract' };
 const MAX_SHOWN = 140;
+const SIGNED_ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
+
+// The signed scan: upload, view, replace.
+function SignedCopy({ value, onChange }) {
+  const inputRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const upload = async (file) => {
+    if (!file) return;
+    setBusy(true); setError('');
+    const body = new FormData();
+    body.append('document', file);
+    try {
+      const res = await staffClient.post('/api/vacancies/requisition/signed-copy', body);
+      onChange(res.data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'The signed copy could not be uploaded');
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 16, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
+      <input ref={inputRef} type="file" accept={SIGNED_ACCEPT} style={{ display: 'none' }}
+        onChange={(e) => upload(e.target.files?.[0])} aria-label="Signed copy of the requisition" />
+      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+        Signed copy <span style={{ color: 'var(--color-danger)' }}>*</span>
+      </div>
+      <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '0 0 8px' }}>
+        The scan of this requisition as EXCO signed it - a PDF, JPG or PNG. It is kept with the vacancy as evidence of the approval; nothing is read from it.
+      </p>
+      {error && <div role="alert" style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
+      {value ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <PenLine size={16} color="var(--color-accent)" />
+            <a href={fileLink(value.url)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{value.originalName}</a>
+          </span>
+          <Button type="button" variant="ghost" onClick={() => inputRef.current?.click()} loading={busy} loadingText="Uploading..." style={{ padding: '4px 10px', fontSize: 13 }}>
+            <RefreshCw size={14} /> Replace scan
+          </Button>
+        </div>
+      ) : (
+        <Button type="button" variant="secondary" onClick={() => inputRef.current?.click()} loading={busy} loadingText="Uploading...">
+          <Upload size={15} /> Upload signed copy
+        </Button>
+      )}
+    </div>
+  );
+}
 
 // The order facts are listed in, after which the long sections follow.
 const ORDER = ['jobTitle', 'directorate', 'department', 'section', 'station', 'reportsTo', 'directReports', 'advertType',
@@ -60,7 +115,9 @@ function MatchLine({ label, wanted, match }) {
   );
 }
 
-export default function RequisitionPanel({ requisition, onRead, onReplace, confirmed, onConfirmChange, jdExceptionReason, onJdExceptionReasonChange }) {
+export default function RequisitionPanel({
+  requisition, onRead, onReplace, signedCopy, onSignedCopyChange, confirmed, onConfirmChange, jdExceptionReason, onJdExceptionReasonChange
+}) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null); // { message, existingVacancy? }
@@ -93,6 +150,7 @@ export default function RequisitionPanel({ requisition, onRead, onReplace, confi
         <p style={{ fontSize: 14, marginTop: 0 }}>
           A vacancy can only be created from a requisition that EXCO has approved and signed. Upload it as a
           Word (.docx) document or a PDF saved from Word - not a scan - and its job details are read into the form for you to check.
+          You then add the scan of the signed copy as well.
         </p>
         {error && (
           <div role="alert" style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 12 }}>
@@ -170,9 +228,11 @@ export default function RequisitionPanel({ requisition, onRead, onReplace, confi
         </div>
       )}
 
+      <SignedCopy value={signedCopy} onChange={onSignedCopyChange} />
+
       <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 14, marginTop: 16, cursor: 'pointer' }}>
         <input type="checkbox" checked={confirmed} onChange={(e) => onConfirmChange(e.target.checked)} style={{ marginTop: 3, flexShrink: 0 }} />
-        <span>I confirm this requisition has been <strong>approved and signed by EXCO</strong>, and that this vacancy is created from it.</span>
+        <span>I confirm this requisition has been <strong>approved and signed by EXCO</strong>, that the scan above is its signed copy, and that this vacancy is created from it.</span>
       </label>
     </div>
   );

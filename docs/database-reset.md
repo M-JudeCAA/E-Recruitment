@@ -212,7 +212,8 @@ Officer), one at a time or many at once with **Import from a spreadsheet**
 (download the template there; one row per position). Departments added by an
 import still need a Principal HR Officer's approval, all at once with
 **Approve all**. A new vacancy starts from an uploaded EXCO-approved
-requisition, and its job title and "reports to" are matched against these
+requisition (the Word document or a PDF saved from Word, plus a scan of the
+signed copy), and its job title and "reports to" are matched against these
 positions.
 
 ### Tell the testers

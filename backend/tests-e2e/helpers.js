@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const request = require('supertest');
 const prisma = require('../src/config/db');
 const app = require('../src/app');
-const { buildRequisitionDocx } = require('../scripts/lib/requisitionDocument');
+const { buildRequisitionDocx, buildScannedPdf } = require('../scripts/lib/requisitionDocument');
 
 const PASSWORD = 'ChangeMe123!';
 let passwordHash;
@@ -109,12 +109,23 @@ async function uploadRequisition(token, spec = {}) {
   return expectStatus(res, 200).body;
 }
 
+// Uploads the scan of the requisition as EXCO signed it (an image-only PDF)
+// and returns the stored upload to send as requisitionSignedCopy.
+async function uploadSignedCopy(token) {
+  const res = await request(app).post('/api/vacancies/requisition/signed-copy')
+    .set('Authorization', `Bearer ${token}`)
+    .attach('document', buildScannedPdf(1), { filename: 'Signed requisition.pdf', contentType: 'application/pdf' });
+  return expectStatus(res, 200).body;
+}
+
 // Creates a vacancy the only way the API allows - from an uploaded
-// requisition - with `body` as the reviewed form. Returns the raw response.
+// requisition and its signed scan - with `body` as the reviewed form.
+// Returns the raw response.
 async function createVacancyFromRequisition(token, body, spec = {}) {
   const requisition = await uploadRequisition(token, spec);
+  const signedCopy = await uploadSignedCopy(token);
   return request(app).post('/api/vacancies').set('Authorization', `Bearer ${token}`)
-    .send({ ...body, requisitionDocument: requisition.document, requisitionConfirmed: true });
+    .send({ ...body, requisitionDocument: requisition.document, requisitionSignedCopy: signedCopy, requisitionConfirmed: true });
 }
 
 // Records a panel's results the way the HR Officer does after the interview:
@@ -138,5 +149,5 @@ function expectStatus(res, status) {
 
 module.exports = {
   prisma, app, PASSWORD, resetDatabase, createStaff, createOrg, createCandidate, staffToken, candidateToken, api, REFEREES,
-  expectStatus, attachAcademicDocument, uploadRequisition, createVacancyFromRequisition, recordInterviewResults
+  expectStatus, attachAcademicDocument, uploadRequisition, uploadSignedCopy, createVacancyFromRequisition, recordInterviewResults
 };

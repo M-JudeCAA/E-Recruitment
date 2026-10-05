@@ -1,5 +1,6 @@
+const { Prisma } = require('@prisma/client');
 const vacancyDraftModel = require('../models/vacancyDraftModel');
-const { FILENAME_RE } = require('../services/requisitionService');
+const { FILENAME_RE, SIGNED_COPY_FILENAME_RE } = require('../services/requisitionService');
 
 // Drafts of a vacancy being written on the New Listing page, saved by hand
 // ("Save draft") or automatically as HR types. Private to whoever writes
@@ -17,18 +18,24 @@ function parseId(value) {
 
 // { data } for a valid body, or { error }.
 function draftData(body) {
-  const { form, requisition } = body || {};
+  const { form, requisition, signedCopy } = body || {};
   if (!form || typeof form !== 'object' || Array.isArray(form)) return { error: 'form must be an object' };
   if (requisition != null && (typeof requisition !== 'object' || Array.isArray(requisition))) return { error: 'requisition must be an object' };
   const filename = requisition?.document?.filename || null;
   if (filename && !FILENAME_RE.test(filename)) return { error: 'The draft refers to an upload that is not a requisition' };
-  if (Buffer.byteLength(JSON.stringify({ form, requisition })) > MAX_DRAFT_BYTES) return { error: 'This draft is too large to save' };
+  if (signedCopy != null && (typeof signedCopy !== 'object' || Array.isArray(signedCopy))) return { error: 'signedCopy must be an object' };
+  const signedFilename = signedCopy?.filename || null;
+  if (signedFilename && !SIGNED_COPY_FILENAME_RE.test(signedFilename)) return { error: 'The draft refers to an upload that is not a signed requisition' };
+  if (Buffer.byteLength(JSON.stringify({ form, requisition, signedCopy })) > MAX_DRAFT_BYTES) return { error: 'This draft is too large to save' };
   const jobTitle = requisition?.fields?.jobTitle?.value;
   return {
     data: {
       form,
       requisition: requisition || undefined,
       requisitionFilename: filename,
+      // null clears a signed copy the draft no longer has
+      signedCopy: signedCopy || Prisma.DbNull,
+      signedCopyFilename: signedFilename,
       title: typeof jobTitle === 'string' ? jobTitle.slice(0, MAX_TITLE_LENGTH) : null
     }
   };

@@ -44,6 +44,12 @@ function RequisitionCard({ vacancy }) {
           <span style={{ color: 'var(--color-text-muted)' }}> - uploaded {new Date(vacancy.requisitionUploadedAt).toLocaleDateString()}</span>
         )}
       </p>
+      <p style={{ margin: '0 0 8px', fontSize: 13 }}>
+        Signed copy:{' '}
+        {vacancy.requisitionSignedCopyUrl
+          ? <a href={fileLink(vacancy.requisitionSignedCopyUrl)} target="_blank" rel="noreferrer" style={{ overflowWrap: 'anywhere' }}>{vacancy.requisitionSignedCopyName || 'Signed requisition'}</a>
+          : <span style={{ color: 'var(--color-text-muted)' }}>none - created before the signed scan was required</span>}
+      </p>
       {facts.length > 0 && (
         <table style={{ borderCollapse: 'collapse', fontSize: 13 }}>
           <tbody>

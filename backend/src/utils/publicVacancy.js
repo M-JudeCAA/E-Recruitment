@@ -17,7 +17,8 @@ const STAFF_ONLY_VACANCY_FIELDS = [
   'rejectedAt', 'returnedAt', 'returnReason', 'approvalRequestedAt', 'closedAt', 'closeReason',
   // The EXCO requisition behind the vacancy, and what was read from it.
   'requisitionDocumentUrl', 'requisitionDocumentName', 'requisitionDocumentHash',
-  'requisitionUploadedAt', 'requisitionUploadedById', 'requisitionDetails'
+  'requisitionUploadedAt', 'requisitionUploadedById', 'requisitionDetails',
+  'requisitionSignedCopyUrl', 'requisitionSignedCopyName'
 ];
 
 function toPublicVacancy(vacancy) {

@@ -301,8 +301,9 @@ model Position {
 // a draft has no job reference, no status, and must never appear in a
 // vacancy list. `requisition` is what was read from the uploaded EXCO
 // requisition (so the review panel comes back as it was), `form` the
-// form as typed; requisitionFilename keeps that upload from being cleared
-// by scripts/cleanupRequisitionUploads.js. Creating the vacancy deletes
+// form as typed; requisitionFilename (and signedCopyFilename, for the
+// scanned signed copy in `signedCopy`) keep those uploads from being
+// cleared by scripts/cleanupRequisitionUploads.js. Creating the vacancy deletes
 // the draft. updatedAt guards against two tabs overwriting each other.
 model VacancyDraft {
   id                  Int       @id @default(autoincrement())
@@ -312,11 +313,14 @@ model VacancyDraft {
   form                Json
   requisition         Json?
   requisitionFilename String?   @db.VarChar(191)
+  signedCopy          Json?
+  signedCopyFilename  String?   @db.VarChar(191)
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
   @@index([createdById])
   @@index([requisitionFilename])
+  @@index([signedCopyFilename])
 }
 
 // Who looked at candidate data, and when (FR-ATS-081) - changes are in
@@ -573,12 +577,19 @@ model Vacancy {
   // - the form fields HR changed from it }). requisitionDocumentHash
   // (sha256 of the file, unique) stops one document opening two vacancies; a
   // readvertisement carries the rest over but not the hash. All staff-only.
-  requisitionDocumentUrl  String?
-  requisitionDocumentName String?
-  requisitionDocumentHash String?   @unique @db.VarChar(64)
-  requisitionUploadedAt   DateTime?
-  requisitionUploadedById Int?
-  requisitionDetails      Json?
+  requisitionDocumentUrl    String?
+  requisitionDocumentName   String?
+  requisitionDocumentHash   String?   @unique @db.VarChar(64)
+  requisitionUploadedAt     DateTime?
+  requisitionUploadedById   Int?
+  requisitionDetails        Json?
+  // The scan of the requisition as EXCO signed it (PDF, JPG or PNG),
+  // uploaded next to the readable document above - that one has the text
+  // the form is read from, this one the signatures. Required for every
+  // vacancy created since it was introduced; its SHA-256 is kept in
+  // requisitionDetails.signedCopy.
+  requisitionSignedCopyUrl  String?
+  requisitionSignedCopyName String?
 
   // Why `title` is kept as a denormalized snapshot rather than always
   // reading through `position.name`: if a Position is later renamed, past

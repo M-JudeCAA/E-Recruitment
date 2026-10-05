@@ -102,6 +102,9 @@ export default function CreateVacancyListing() {
   // below it is shown until one has been read (see RequisitionPanel).
   const [requisition, setRequisition] = useState(null);
   const [requisitionConfirmed, setRequisitionConfirmed] = useState(false);
+  // The scan of the requisition as EXCO signed it - uploaded alongside the
+  // readable document, and required to create the vacancy.
+  const [signedCopy, setSignedCopy] = useState(null);
 
   // Drafts: the form (and what was read from the requisition) is saved as
   // HR works - automatically, or with "Save draft" - and reopened from the
@@ -114,7 +117,7 @@ export default function CreateVacancyListing() {
   const [draftMessage, setDraftMessage] = useState('');
   const onDraftCreated = useCallback((id) => setSearchParams({ draft: String(id) }, { replace: true }), [setSearchParams]);
   const draft = useVacancyDraft({
-    values: { form, requisition },
+    values: { form, requisition, signedCopy },
     enabled: !!requisition && !loadingDraft && !creatingPause,
     onCreated: onDraftCreated
   });
@@ -179,8 +182,9 @@ export default function CreateVacancyListing() {
         await loadOrganogramLists(loadedForm.departmentId, loadedForm.positionId).catch(() => {});
         setCustomLocation(!!(loadedForm.location && !LOCATIONS.includes(loadedForm.location)));
         setRequisition(data.requisition || null);
+        setSignedCopy(data.signedCopy || null);
         setForm(loadedForm);
-        draft.markLoaded(data, { form: loadedForm, requisition: data.requisition || null });
+        draft.markLoaded(data, { form: loadedForm, requisition: data.requisition || null, signedCopy: data.signedCopy || null });
       } catch (err) {
         setError(err.response?.status === 404 ? 'That draft no longer exists - it may have been used to create a vacancy, or deleted.' : (err.response?.data?.error || 'Could not open the draft'));
         setSearchParams({}, { replace: true });
@@ -215,8 +219,10 @@ export default function CreateVacancyListing() {
     setForm(next);
   };
 
+  // A different requisition needs its own signed scan.
   const replaceRequisition = () => {
     setRequisition(null);
+    setSignedCopy(null);
     setRequisitionConfirmed(false);
   };
 
@@ -249,6 +255,7 @@ export default function CreateVacancyListing() {
     e.preventDefault();
     if (creating) return; // a double-click or slow-network retry must not create two vacancies
     if (!requisition) { setError('Upload the EXCO-approved requisition first.'); return; }
+    if (!signedCopy) { setError('Upload the scan of the requisition as EXCO signed it.'); return; }
     if (!requisitionConfirmed) { setError('Confirm that the requisition has been approved and signed by EXCO.'); return; }
     // Not on the requisition, so HR always sets it here.
     if (!form.deadline) { setError('Set the application deadline (under Listing details).'); return; }
@@ -258,7 +265,7 @@ export default function CreateVacancyListing() {
     setCreatingPause(true);
     try {
       const res = await staffClient.post('/api/vacancies', {
-        ...form, requisitionDocument: requisition.document, requisitionConfirmed: true,
+        ...form, requisitionDocument: requisition.document, requisitionSignedCopy: signedCopy, requisitionConfirmed: true,
         ...(draft.draftId ? { draftId: draft.draftId } : {})
       });
       navigate('/hr', { state: { vacancyCreatedMessage: `Vacancy created (Ref: ${res.data.jobRef}). It needs Manager or Director approval to open.` } });
@@ -305,6 +312,7 @@ export default function CreateVacancyListing() {
           {loadingDraft
             ? <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: 0 }}>Opening your draft...</p>
             : <RequisitionPanel requisition={requisition} onRead={applyRequisition} onReplace={replaceRequisition}
+                signedCopy={signedCopy} onSignedCopyChange={setSignedCopy}
                 confirmed={requisitionConfirmed} onConfirmChange={setRequisitionConfirmed}
                 jdExceptionReason={form.jdExceptionReason}
                 onJdExceptionReasonChange={(jdExceptionReason) => setForm((prev) => ({ ...prev, jdExceptionReason }))} />}
@@ -436,8 +444,9 @@ export default function CreateVacancyListing() {
             <Button type="button" variant="ghost" onClick={saveDraftNow}
               disabled={draft.status === 'saving' || draft.status === 'conflict'}>Save draft</Button>
             <Button type="button" variant="secondary" onClick={previewForm}>Preview advert</Button>
-            <Button type="submit" disabled={creating || !requisitionConfirmed}
-              title={requisitionConfirmed ? undefined : 'Confirm the EXCO approval above first'}>
+            <Button type="submit" disabled={creating || !requisitionConfirmed || !signedCopy}
+              title={!signedCopy ? 'Upload the signed copy of the requisition above first'
+                : requisitionConfirmed ? undefined : 'Confirm the EXCO approval above first'}>
               {creating ? 'Creating...' : 'Create listing'}
             </Button>
           </div>

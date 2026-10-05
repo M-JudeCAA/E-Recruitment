@@ -2,7 +2,7 @@ const express = require('express');
 const controller = require('../controllers/vacancyController');
 const exportController = require('../controllers/exportController');
 const requisitionController = require('../controllers/requisitionController');
-const { uploadRequisition } = require('../middleware/upload');
+const { uploadRequisition, uploadSignedRequisition } = require('../middleware/upload');
 const batchController = require('../controllers/vacancyReviewBatchController');
 const { authenticate, optionalAuthenticate, requireStaffRole } = require('../middleware/auth');
 const { guardVacancy, vacancyFrom } = require('../middleware/applicantConflict');
@@ -12,6 +12,8 @@ const router = express.Router();
 // Step 1 of creating a vacancy: upload the EXCO-approved, signed requisition
 // and get the form pre-filled from it. create() refuses without one.
 router.post('/requisition', authenticate, requireStaffRole('HR_Officer'), uploadRequisition.single('document'), requisitionController.read);
+// ... and the scan of it as EXCO signed it, kept alongside (also required).
+router.post('/requisition/signed-copy', authenticate, requireStaffRole('HR_Officer'), uploadSignedRequisition.single('document'), requisitionController.uploadSignedCopy);
 router.post('/', authenticate, requireStaffRole('HR_Officer'), controller.create);
 router.patch('/:id', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.update);
 router.patch('/:id/close', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.close);

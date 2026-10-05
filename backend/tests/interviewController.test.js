@@ -540,7 +540,11 @@ describe('recordResults', () => {
     await interviewController.recordResults({ params: { interviewId: '1' }, body, file, user: { id: 9, type: 'staff' } }, res);
     return { res, file };
   };
-  const settle = () => new Promise((r) => setTimeout(r, 20));
+  // discardUpload removes the file in the background - wait for it.
+  const gone = async (file) => {
+    for (let i = 0; i < 100 && fs.existsSync(file); i += 1) await new Promise((r) => setTimeout(r, 10));
+    return !fs.existsSync(file);
+  };
 
   test('records the panel\'s score, verdict and signed sheet, completes the round and moves the application to Interviewed', async () => {
     const { res, file } = await call({ score: '72.46', recommendation: 'Shortlist', notes: 'Strong on procedures' });
@@ -579,8 +583,7 @@ describe('recordResults', () => {
     expect(res.status).toHaveBeenCalledWith(status);
     expect(res.json.mock.calls[0][0].error).toMatch(message);
     expect(prisma.interviewRound.updateMany).not.toHaveBeenCalled();
-    await settle();
-    expect(fs.existsSync(file.path)).toBe(false);
+    expect(await gone(file.path)).toBe(true);
   });
 
   test('the signed score sheet is required the first time', async () => {

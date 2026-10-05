@@ -238,7 +238,7 @@ them, so they have to be started as part of every deployment:
 | `expireOffers.js` | Reminds a candidate two days before their offer's response deadline, and expires offers past it |
 | `cleanupPendingRegistrations.js` | Deletes abandoned candidate registrations whose confirmation link expired unused |
 | `cleanupVerificationTokens.js` | Deletes email-confirmation and password-reset links that were used or expired more than 7 days ago |
-| `cleanupRequisitionUploads.js` | Deletes uploaded requisitions that no vacancy or draft uses, after 24 hours |
+| `cleanupRequisitionUploads.js` | Deletes uploaded requisitions (and their signed scans) that no vacancy or draft uses, after 24 hours |
 | `purgeAccessLog.js` | Deletes the record of who viewed candidate data once it is older than `ACCESS_LOG_RETENTION_DAYS` |
 
 **If they stop running, staff are told.** Every run is recorded in the
