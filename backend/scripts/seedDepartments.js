@@ -22,9 +22,14 @@ const DEPARTMENTS = [
 ];
 
 async function main() {
-  const systemUser = await prisma.staffUser.findFirst({ where: { role: 'Director' } });
+  // Recorded as creator/approver of the seeded rows: a Director if there is
+  // one, else a system administrator (a fresh database after
+  // resetDemoData.js --remove-demo-staff may have only that), else anyone.
+  const systemUser = await prisma.staffUser.findFirst({ where: { role: 'Director', active: true } })
+    || await prisma.staffUser.findFirst({ where: { isSystemAdmin: true, active: true } })
+    || await prisma.staffUser.findFirst();
   if (!systemUser) {
-    throw new Error('Seed a Director staff account first - departments need a createdById.');
+    throw new Error('Create a staff account first (scripts/createSystemAdmin.js) - departments need a createdById.');
   }
 
   const directorateByName = {};
