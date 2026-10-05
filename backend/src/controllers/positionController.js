@@ -1,5 +1,6 @@
 const positionModel = require('../models/positionModel');
 const departmentModel = require('../models/departmentModel');
+const { levelFromInput, LEVEL_WORDS } = require('../utils/positionLevels');
 
 // Positions are operational, not structural, the way Directorates and
 // Departments are - new job titles get added far more often than new
@@ -15,14 +16,15 @@ async function create(req, res) {
   if (!department || department.status !== 'Approved') {
     return res.status(400).json({ error: 'Select a valid, approved department' });
   }
-  if (!Number.isInteger(Number(level))) {
-    return res.status(400).json({ error: 'Level must be a whole number' });
+  const levelValue = levelFromInput(level);
+  if (!levelValue) {
+    return res.status(400).json({ error: `Level must be one of: ${LEVEL_WORDS.join(', ')}` });
   }
 
   let position;
   try {
     position = await positionModel.create({
-      name: name.trim(), departmentId: department.id, level: Number(level), createdById: req.user.id
+      name: name.trim(), departmentId: department.id, level: levelValue, createdById: req.user.id
     });
   } catch (err) {
     return res.status(409).json({ error: 'This position already exists in that department' });
