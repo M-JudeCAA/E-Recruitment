@@ -292,6 +292,14 @@ Register-ScheduledTask -TaskName "UCAA-CheckVacancyDeadlines" -Action $action -T
 Each script reads `backend/.env` (database and SMTP settings), so it must
 run somewhere with that file present and network access to the database.
 
+## Resetting the database
+
+To empty a database for a fresh round of testing (recruitment data, uploaded
+files and, optionally, the demo staff accounts), follow
+[docs/database-reset.md](docs/database-reset.md). It covers the backup, the
+dry run, the reset itself (`backend/scripts/resetDemoData.js`) and what to set
+up before testers start.
+
 ## Common issues
 
 - **`EADDRINUSE` on port 4000** — a previous `npm run dev` is still running

@@ -171,6 +171,9 @@ account; see [SETUP.md](SETUP.md#microsoft-entra-id-sign-in). For local
 development without Entra, `npm run seed` creates demo staff accounts that
 sign in with a password while `DEV_PASSWORD_LOGIN=true` (listed in SETUP.md).
 
+To empty a server's database for a fresh round of user testing, see
+[docs/database-reset.md](docs/database-reset.md).
+
 ## Running tests
 
 ```bash
