@@ -1,5 +1,22 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { clearMicrosoftSession } from './entraAuth';
+import { SESSION_ENDED_EVENT } from './apiClient';
+
+const SESSION_ENDED_KEY = 'sessionEndedMessage';
+
+// The reason the last session ended (see SESSION_ENDED_EVENT), for the
+// sign-in page it lands on to show once.
+export function useSessionEndedMessage() {
+  const [message] = useState(() => {
+    try { return sessionStorage.getItem(SESSION_ENDED_KEY) || ''; } catch { return ''; }
+  });
+  // Cleared after rendering, not while reading: StrictMode runs state
+  // initializers twice in development.
+  useEffect(() => {
+    try { sessionStorage.removeItem(SESSION_ENDED_KEY); } catch { /* private mode */ }
+  }, []);
+  return message;
+}
 
 const AuthContext = createContext(null);
 
@@ -68,6 +85,27 @@ export function AuthProvider({ children }) {
     clearMicrosoftSession('staff');
     setStaff(null);
   }
+
+  // The API refused this session (apiClient.js): end it here too, so the
+  // route guards send the person to sign in instead of leaving every screen
+  // failing.
+  useEffect(() => {
+    const onEnded = (e) => {
+      const { kind, message } = e.detail || {};
+      const reason = /no longer active/i.test(message || '')
+        ? 'Your staff account has been deactivated. Contact the system administrator.'
+        : 'Your session has expired. Please sign in again.';
+      if (kind === 'staff' && localStorage.getItem('staffToken')) {
+        try { sessionStorage.setItem(SESSION_ENDED_KEY, reason); } catch { /* private mode */ }
+        logoutStaff();
+      } else if (kind === 'candidate' && localStorage.getItem('candidateToken')) {
+        try { sessionStorage.setItem(SESSION_ENDED_KEY, reason); } catch { /* private mode */ }
+        logoutCandidate();
+      }
+    };
+    window.addEventListener(SESSION_ENDED_EVENT, onEnded);
+    return () => window.removeEventListener(SESSION_ENDED_EVENT, onEnded);
+  });
 
   return (
     <AuthContext.Provider value={{ candidate, staff, loginCandidate, logoutCandidate, updateCandidatePhoto, loginStaff, logoutStaff }}>

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, Navigate, useSearchParams, Link } from "react-router-dom";
 import client from "../models/apiClient";
-import { useAuth } from "../models/AuthContext";
+import { useAuth, useSessionEndedMessage } from "../models/AuthContext";
 import { signInWithMicrosoft, isEntraConfigured } from "../models/entraAuth";
 import { staffHome } from "../components/ProtectedRoute";
 import PageHeader from "../components/PageHeader";
@@ -37,6 +37,7 @@ export default function StaffLogin() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { loginStaff, staff } = useAuth();
+  const sessionEnded = useSessionEndedMessage();
   const navigate = useNavigate();
 
   // Already signed in - see the same check in CandidateLogin.jsx.
@@ -110,6 +111,7 @@ export default function StaffLogin() {
         }}
       >
         <PageHeader title="Staff login" />
+        <Alert type="warning" message={sessionEnded} />
         {passwordMode ? (
           <>
             <p style={{ fontSize: 13, color: "var(--color-text-muted)", marginTop: 0 }}>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useSearchParams, Navigate, Link } from "react-router-dom";
 import client from "../models/apiClient";
-import { useAuth } from "../models/AuthContext";
+import { useAuth, useSessionEndedMessage } from "../models/AuthContext";
 import PageHeader from "../components/PageHeader";
 import TextField from "../components/TextField";
 import Button from "../components/Button";
@@ -57,6 +57,7 @@ export default function CandidateLogin() {
   // Set when the API says this is a UCAA account, which signs in with Microsoft.
   const [useMicrosoft, setUseMicrosoft] = useState(false);
   const { loginCandidate, candidate } = useAuth();
+  const sessionEnded = useSessionEndedMessage();
   const navigate = useNavigate();
 
   // Already signed in - the `replace: true` below on a successful submit
@@ -138,6 +139,7 @@ export default function CandidateLogin() {
         }}
       >
         <PageHeader title="Candidate login" />
+        <Alert type="warning" message={sessionEnded} />
         <UcaaAccountSignIn returnTo={validReturnTo} highlight={useMicrosoft} />
         <form onSubmit={handleSubmit} noValidate>
           <TextField
