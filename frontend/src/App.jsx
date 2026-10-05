@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { Routes, Route, Outlet, useLocation } from "react-router-dom";
+import React, { useEffect, useLayoutEffect } from "react";
+import { Routes, Route, Outlet, Navigate, useLocation } from "react-router-dom";
 import { rememberSourceFromUrl } from "./utils/applicationSources";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
@@ -22,11 +22,9 @@ import CandidateApplications from "./views/CandidateApplications";
 import ApplyForm from "./views/ApplyForm";
 import JobDetails from "./views/JobDetails";
 import StaffLogin from "./views/StaffLogin";
-import HRHome from "./views/HRHome";
-import ExecutiveDashboard from "./views/ExecutiveDashboard";
-import ApprovalsCenter from "./views/ApprovalsCenter";
-import Analytics from "./views/Analytics";
+import Inbox from "./views/Inbox";
 import RecruitmentDashboard from "./views/RecruitmentDashboard";
+import OffersAndHires from "./views/OffersAndHires";
 import CandidateSearch from "./views/CandidateSearch";
 import HRDashboard from "./views/HRDashboard";
 import ApplicationManagement from "./views/ApplicationManagement";
@@ -35,7 +33,7 @@ import StaffManagement from "./views/StaffManagement";
 import StaffAccounts from "./views/StaffAccounts";
 import DocumentTemplates from "./views/DocumentTemplates";
 import SettingsAndData from "./views/SettingsAndData";
-import VacancyDetail from "./views/VacancyDetail";
+import VacancyWorkspace from "./views/VacancyWorkspace";
 import CreateVacancyListing from "./views/CreateVacancyListing";
 import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
 import InterviewHub from "./views/InterviewHub";
@@ -75,6 +73,13 @@ export default function App() {
   // Phones only (theme.css hides it above 767px). The guest/candidate site
   // gets the bottom tab bar; staff screens keep their sidebar drawer.
   const showTabBar = !staff && !isStaffPort() && !NO_TABBAR_PATHS.some((re) => re.test(pathname));
+  // The quieter staff workspace look (theme.css .staff-ui): on <html> so
+  // modals and anything else outside the app shell pick it up as well.
+  const staffUi = Boolean(staff) || isStaffPort();
+  // Before paint, so a staff page never flashes the candidate look.
+  useLayoutEffect(() => {
+    document.documentElement.classList.toggle("staff-ui", staffUi);
+  }, [staffUi]);
 
   return (
     // app-shell / with-tabbar drive the phone-only layout in theme.css
@@ -96,11 +101,24 @@ export default function App() {
         <Route element={<PaddedLayout />}>
           {/* Public - candidates consent to it when applying (FR-ATS-038). */}
           <Route path="/privacy" element={<PrivacyNotice />} />
+          {/* The staff workspace: every role lands on the Inbox; the old
+              home, executive overview and approvals pages lead there. */}
           <Route
-            path="/hr/home"
+            path="/hr/inbox"
             element={
               <RequireStaff minRole="HR_Officer">
-                <HRHome />
+                <Inbox />
+              </RequireStaff>
+            }
+          />
+          <Route path="/hr/home" element={<Navigate to="/hr/inbox" replace />} />
+          <Route path="/hr/executive" element={<Navigate to="/hr/inbox" replace />} />
+          <Route path="/hr/approvals" element={<Navigate to="/hr/inbox" replace />} />
+          <Route
+            path="/hr/offers"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <OffersAndHires />
               </RequireStaff>
             }
           />
@@ -130,32 +148,9 @@ export default function App() {
               </RequireStaff>
             }
           />
-          {/* Manager/Director-only - the reimagined executive landing and
-              the unified Approvals Center, see HRSidebar.jsx. */}
-          <Route
-            path="/hr/executive"
-            element={
-              <RequireStaff minRole="Manager">
-                <ExecutiveDashboard />
-              </RequireStaff>
-            }
-          />
-          <Route
-            path="/hr/approvals"
-            element={
-              <RequireStaff minRole="Manager">
-                <ApprovalsCenter />
-              </RequireStaff>
-            }
-          />
-          <Route
-            path="/hr/analytics"
-            element={
-              <RequireStaff minRole="Manager">
-                <Analytics />
-              </RequireStaff>
-            }
-          />
+          {/* Analytics and the recruitment dashboard are one page now. */}
+          <Route path="/hr/analytics" element={<Navigate to="/hr/dashboard" replace />} />
+          <Route path="/hr/analytics/recruitment" element={<Navigate to="/hr/dashboard" replace />} />
           <Route
             path="/hr/candidates"
             element={
@@ -165,7 +160,7 @@ export default function App() {
             }
           />
           <Route
-            path="/hr/analytics/recruitment"
+            path="/hr/dashboard"
             element={
               <RequireStaff minRole="Manager">
                 <RecruitmentDashboard />
@@ -231,7 +226,7 @@ export default function App() {
             path="/hr/vacancy/:id"
             element={
               <RequireStaff minRole="HR_Officer">
-                <VacancyDetail />
+                <VacancyWorkspace />
               </RequireStaff>
             }
           />

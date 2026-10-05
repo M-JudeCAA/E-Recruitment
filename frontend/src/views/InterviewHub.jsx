@@ -267,7 +267,7 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
               The scorecard compares candidates; the <strong>merit list</strong> is where they are ranked on these results and
               who is offered the job is decided and approved.
             </span>
-            <Link to={`/hr/applications?vacancyId=${vacancyId}&stage=merit`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600 }}>
+            <Link to={`/hr/vacancy/${vacancyId}?tab=merit`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600 }}>
               <Trophy size={14} /> Open merit list
             </Link>
           </div>
@@ -391,7 +391,7 @@ export default function InterviewHub() {
       <HRSidebar active="interviews" />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-          <PageHeader title="Interview Hub" subtitle="Schedule interviews, send the invitations, and record the panels' results" />
+          <PageHeader title="Interviews" subtitle="Every vacancy's interviews: the agenda, what needs attention, and the panels' results" />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <LiveIndicator connected={connected} />
             {canEdit && <Button onClick={() => setScheduler({})}><CalendarPlus size={16} /> Schedule interviews</Button>}

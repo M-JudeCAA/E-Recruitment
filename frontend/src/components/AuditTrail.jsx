@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 
@@ -29,10 +29,16 @@ function describeActor(row) {
   return `${row.performedBy.name}${role}${row.actingAsId ? ', under delegation' : ''}`;
 }
 
-export default function AuditTrail({ entityType, entityId, label = 'History' }) {
+// defaultOpen shows the history straight away (the vacancy page's History tab).
+export default function AuditTrail({ entityType, entityId, label = 'History', defaultOpen = false }) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (defaultOpen && !open) toggle();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultOpen]);
 
   const toggle = async () => {
     const next = !open;

@@ -44,6 +44,7 @@ router.patch('/:id/transition-posting-type', authenticate, requireStaffRole('Man
 router.post('/:id/readvertise', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.readvertise);
 router.get('/', optionalAuthenticate, controller.listPublic);
 router.get('/admin', authenticate, requireStaffRole('HR_Officer'), controller.listForAdmin);
+router.get('/:id/progress', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.progress);
 // optionalAuthenticate (not plain, unauthenticated) so getOne can tell a
 // staff caller (staffApiClient always sends a Bearer token) from a
 // candidate/guest one and hide HR-only fields accordingly - see that

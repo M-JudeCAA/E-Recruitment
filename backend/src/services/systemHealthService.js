@@ -61,8 +61,10 @@ function buildStatus(rows, now = new Date()) {
   const failing = jobs.filter((j) => j.status === 'failing');
   if (notRunning.length) {
     warnings.push(
-      `Scheduled maintenance has not run in the last ${STALE_AFTER_HOURS} hours (${notRunning.map((j) => j.label).join(', ')}). `
-      + 'SLA escalations and deadline notices are not being sent. Start the scheduler worker (npm run jobs) - see SETUP.md.'
+      // Read by HR, not by whoever runs the server - which jobs and how to
+      // restart them are in GET /api/dashboard/system-health's `jobs` and SETUP.md.
+      `Scheduled maintenance has not run in the last ${STALE_AFTER_HOURS} hours, so reminders, SLA escalations `
+      + 'and deadline notices are not being sent. Please let your system administrator know.'
     );
   }
   if (failing.length) {

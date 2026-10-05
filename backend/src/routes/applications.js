@@ -59,6 +59,7 @@ router.post('/vacancies/:vacancyId/merit-list/approve', authenticate, requireSta
 // Officer+ drafts, revises and withdraws; Manager/Director approve or return
 // (Decision #10: PHRO can recommend but never approve); only the owning
 // candidate accepts or declines. Reading is open to every HR tier.
+router.get('/offers/export', authenticate, requireStaffRole('HR_Officer'), exportController.offers);
 router.get('/offers', authenticate, requireStaffRole('HR_Officer'), offerController.list);
 router.get('/offers/pending-approval', authenticate, requireStaffRole('Manager'), offerController.listPendingApproval);
 router.get('/:id/offer-draft', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.application('id')), offerController.draft);
@@ -73,6 +74,7 @@ router.patch('/offers/:offerId/withdraw', authenticate, requireStaffRole('Princi
 // Mark as Hired (FR-ATS-067): one onboarding case per accepted offer.
 const hireController = require('../controllers/hireController');
 const { uploadSignedAppointment } = require('../middleware/upload');
+router.get('/hires/export', authenticate, requireStaffRole('HR_Officer'), exportController.hires);
 router.get('/hires', authenticate, requireStaffRole('HR_Officer'), hireController.list);
 router.post('/offers/:offerId/hire', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), uploadSignedAppointment.single('signedInstrument'), hireController.markHired);
 router.get('/offers/:offerId/hire', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), hireController.get);

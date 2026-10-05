@@ -1,13 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Clock, Users } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
-import { useAuth } from '../models/AuthContext';
 import { useDashboardEvents } from '../models/dashboardSocket';
-import HRSidebar from '../components/HRSidebar';
 import Card from '../components/Card';
 import Alert from '../components/Alert';
-import LiveIndicator from '../components/LiveIndicator';
 import { STATUS_COLORS } from '../components/StatusBadge';
 import Skeleton from '../components/Skeleton';
 import MonthlyMetricChart from '../components/charts/MonthlyMetricChart';
@@ -15,26 +10,6 @@ import MonthlyStackedBarChart from '../components/charts/MonthlyStackedBarChart'
 import { CHART_SERIES } from '../theme/chartPalette';
 import { debounce } from '../utils/debounce';
 
-function KpiCard({ icon: Icon, label, value, accent, loading }) {
-  return (
-    <Card accent={accent} style={{ marginBottom: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-subtle)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
-        }}>
-          <Icon size={22} color={accent} />
-        </div>
-        <div>
-          <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--color-text)', lineHeight: 1.1 }}>
-            {loading ? '—' : value}
-          </div>
-          <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 2 }}>{label}</div>
-        </div>
-      </div>
-    </Card>
-  );
-}
 
 // SLA compliance reads green/amber/red against the same duration-based
 // urgency semantics as FollowUpsPanel/ApprovalsCenter's badges, just at
@@ -160,13 +135,11 @@ const HIRING_MIX_SERIES = [
   { key: 'External', label: 'External', color: CHART_SERIES[1] }
 ];
 
-// Historical/reporting counterpart to ExecutiveDashboard - that page stays
-// focused on live org-wide status; this one is where trend/comparative
-// metrics live so ExecutiveDashboard doesn't grow into an unfocused scroll
-// mixing "right now" with "over time". Manager+ only, same tier as the
-// endpoints it reads.
-export default function Analytics() {
-  const { staff } = useAuth();
+// The trend charts under the Dashboard's figures (RecruitmentDashboard.jsx):
+// SLA compliance, time to fill, offer outcomes, hiring mix, approval
+// turnaround, panel workload and delegation activity. Manager+ only, the
+// same tier as the endpoints it reads.
+export default function AnalyticsTrends() {
   const [slaCompliance, setSlaCompliance] = useState([]);
   const [approvalTurnaround, setApprovalTurnaround] = useState([]);
   const [offerOutcomes, setOfferOutcomes] = useState([]);
@@ -196,77 +169,42 @@ export default function Analytics() {
         setDelegationActivity(delegation.data);
         setPanelWorkload(panel.data);
       })
-      .catch((err) => setError(err.response?.data?.error || 'Could not load analytics'))
+      .catch((err) => setError(err.response?.data?.error || 'Could not load the trends'))
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
-
   const refetchAll = useCallback(debounce(loadAll, 500), [loadAll]);
-  const { connected } = useDashboardEvents(refetchAll);
+  useDashboardEvents(refetchAll);
 
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-md)' };
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 'var(--spacing-lg)', alignItems: 'flex-start' }}>
-        <HRSidebar active="analytics" />
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <Alert type="error" message={error} />
-
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12, marginBottom: 'var(--spacing-lg)' }}>
-            <div>
-              <h2 style={{ margin: 0 }}>Analytics</h2>
-              <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--color-text-muted)' }}>
-                Historical and trend reporting - {staff?.role?.replace(/_/g, ' ')}
-              </p>
-              <p style={{ margin: '6px 0 0', fontSize: 14 }}>
-                <Link to="/hr/analytics/recruitment">Recruitment dashboard</Link> - time to hire, source of hire, pipeline health, open positions and more, with filters and export.
-              </p>
-            </div>
-            <LiveIndicator connected={connected} />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-md)' }}>
-            <KpiCard icon={Clock} label="Avg. time to fill" accent="var(--color-primary)" loading={loading}
-              value={timeToFill?.overallAvgDays != null ? `${timeToFill.overallAvgDays}d` : '—'} />
-            <KpiCard icon={Users} label="Vacancies filled (ever)" accent="var(--color-accent)" loading={loading}
-              value={timeToFill?.filledCount ?? 0} />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-md)' }}>
-            <MonthlyMetricChart
-              title="SLA compliance rate" data={slaCompliance} dataKey="complianceRate" loading={loading}
-              formatValue={(v) => `${v}%`} thresholds={COMPLIANCE_THRESHOLDS}
-              emptyText="No resolved approvals in this window yet."
-            />
-            <MonthlyMetricChart
-              title="Time to fill" data={timeToFill?.trend || []} dataKey="avgDays" loading={loading}
-              formatValue={(v) => `${v} days`}
-              emptyText="No vacancies filled in this window yet."
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-md)' }}>
-            <MonthlyStackedBarChart
-              title="Offer outcomes" data={offerOutcomes} series={OFFER_OUTCOME_SERIES} loading={loading}
-              emptyText="No offers decided in this window yet."
-            />
-            <MonthlyStackedBarChart
-              title="Hiring mix" data={hiringMix} series={HIRING_MIX_SERIES} loading={loading}
-              emptyText="No vacancies filled in this window yet."
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-md)' }}>
-            <ApprovalTurnaroundTable rows={approvalTurnaround} loading={loading} />
-            <PanelWorkloadTable rows={panelWorkload} loading={loading} />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 'var(--spacing-md)' }}>
-            <DelegationActivityList rows={delegationActivity} loading={loading} />
-          </div>
-        </div>
+    <section className="ws-group">
+      <h3>Trends over the last six months</h3>
+      <Alert type="error" message={error} />
+      <div style={grid}>
+        <MonthlyMetricChart
+          title="SLA compliance rate" data={slaCompliance} dataKey="complianceRate" loading={loading}
+          formatValue={(v) => v + '%'} thresholds={COMPLIANCE_THRESHOLDS}
+          emptyText="No resolved approvals in this window yet."
+        />
+        <MonthlyMetricChart
+          title="Time to fill (approval to filled)" data={timeToFill?.trend || []} dataKey="avgDays" loading={loading}
+          formatValue={(v) => v + ' days'}
+          emptyText="No vacancies filled in this window yet."
+        />
       </div>
-    </div>
+      <div style={grid}>
+        <MonthlyStackedBarChart title="Offer outcomes" data={offerOutcomes} series={OFFER_OUTCOME_SERIES} loading={loading} emptyText="No offers decided in this window yet." />
+        <MonthlyStackedBarChart title="Hiring mix" data={hiringMix} series={HIRING_MIX_SERIES} loading={loading} emptyText="No vacancies filled in this window yet." />
+      </div>
+      <div style={grid}>
+        <ApprovalTurnaroundTable rows={approvalTurnaround} loading={loading} />
+        <PanelWorkloadTable rows={panelWorkload} loading={loading} />
+      </div>
+      <div style={{ ...grid, marginBottom: 0 }}>
+        <DelegationActivityList rows={delegationActivity} loading={loading} />
+      </div>
+    </section>
   );
 }

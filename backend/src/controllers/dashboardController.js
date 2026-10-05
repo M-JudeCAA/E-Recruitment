@@ -2,6 +2,7 @@ const conflictOfInterest = require('../services/conflictOfInterestService');
 const dashboardModel = require('../models/dashboardModel');
 const slaModel = require('../models/slaModel');
 const { getPendingTasksWithStatus } = require('../services/slaStatusService');
+const inboxService = require('../services/inboxService');
 const systemHealthService = require('../services/systemHealthService');
 
 // Executive summary KPIs for the Manager/Director landing dashboard - one
@@ -97,6 +98,11 @@ async function trends(req, res) {
 // status - see slaStatusService.js. Open to every HR tier, not just
 // Manager+, since the underlying queues are already org-wide visibility on
 // ApprovalsCenter; only the approve/reject actions themselves are tier-gated.
+// The Inbox - what is waiting for the person looking (inboxService).
+async function inbox(req, res) {
+  res.json(await inboxService.forStaff(req));
+}
+
 async function followUps(req, res) {
   const tasks = await getPendingTasksWithStatus();
   res.json(tasks);
@@ -262,7 +268,7 @@ async function systemHealth(req, res) {
   res.json(status);
 }
 
-module.exports = {
+module.exports = { inbox,
   summary, activity, headcountByDirectorate, trends, followUps, slaPolicies,
   upcomingInterviews, screeningBreakdown, systemHealth
 };

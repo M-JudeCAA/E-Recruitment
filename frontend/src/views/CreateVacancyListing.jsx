@@ -301,7 +301,7 @@ export default function CreateVacancyListing() {
         <HRSidebar active="vacancies" />
 
         <div style={{ flex: 1, minWidth: 0 }}>
-      <PageHeader title="New Listing" subtitle="Create a vacancy from an EXCO-approved requisition" />
+      <PageHeader title="New vacancy" subtitle="Create a vacancy from an EXCO-approved requisition" />
       <p style={{ marginTop: -12, marginBottom: 'var(--spacing-md)' }}>
         <Link to="/hr">&larr; Back to vacancies</Link>
       </p>
