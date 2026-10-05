@@ -39,7 +39,7 @@ const TABLES = [
   'CandidateNotification', 'VerificationToken', 'PendingCandidateRegistration',
   'InternalProfile', 'WorkExperience', 'Education', 'ExamGrade', 'Certificate', 'Candidate',
   'Notification', 'TaskEscalation', 'AuditLog', 'SystemHealth', 'DataAccessLog',
-  'VacancyDraft', 'Vacancy', 'JobRefSequence', 'Position', 'Department', 'Directorate'
+  'VacancyDraft', 'Vacancy', 'JobRefSequence', 'Position', 'Department', 'OrgImport', 'Directorate'
 ];
 
 const DELEGATE = {
@@ -55,7 +55,7 @@ const DELEGATE = {
   ExamGrade: 'examGrade', Certificate: 'certificate', Candidate: 'candidate',
   Notification: 'notification', TaskEscalation: 'taskEscalation', AuditLog: 'auditLog', SystemHealth: 'systemHealth',
   DataAccessLog: 'dataAccessLog', VacancyDraft: 'vacancyDraft', JobRefSequence: 'jobRefSequence',
-  Vacancy: 'vacancy', Position: 'position', Department: 'department', Directorate: 'directorate'
+  Vacancy: 'vacancy', Position: 'position', Department: 'department', OrgImport: 'orgImport', Directorate: 'directorate'
 };
 
 // Keyed by something other than an auto-increment id.
