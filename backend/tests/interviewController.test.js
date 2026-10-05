@@ -50,7 +50,7 @@ beforeEach(() => {
 });
 
 describe('schedule', () => {
-  const schedulable = { id: 1, status: 'Shortlisted', offer: null, candidateId: 5, vacancy: { title: 'Air Traffic Controller' } };
+  const schedulable = { id: 1, status: 'Shortlisted', offer: null, candidateId: 5, excoApprovalId: 4, vacancy: { title: 'Air Traffic Controller' } };
 
   test('rejects an invalid application id', async () => {
     const res = mockRes();
@@ -92,6 +92,25 @@ describe('schedule', () => {
     await interviewController.schedule({ params: { applicationId: '1' }, body: {} }, res);
     expect(res.status).toHaveBeenCalledWith(422);
     expect(prisma.interviewRound.create).not.toHaveBeenCalled();
+  });
+
+  test('a first interview waits for EXCO\'s approval of the shortlist', async () => {
+    prisma.application.findUnique.mockResolvedValue({ ...schedulable, excoApprovalId: null, candidate: { fullName: 'Jane Doe' } });
+    prisma.interviewRound.count.mockResolvedValue(0);
+    const res = mockRes();
+    await interviewController.schedule({ params: { applicationId: '1' }, body: { scheduledDate: '2030-10-01T07:00:00Z' }, user: { id: 9 } }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json.mock.calls[0][0]).toEqual(expect.objectContaining({ code: 'EXCO_APPROVAL_REQUIRED', error: expect.stringMatching(/Jane Doe/) }));
+    expect(prisma.interviewRound.create).not.toHaveBeenCalled();
+  });
+
+  test('a later round (or one booked before the EXCO step existed) does not need it again', async () => {
+    prisma.application.findUnique.mockResolvedValue({ ...schedulable, status: 'Interviewed', excoApprovalId: null });
+    prisma.interviewRound.count.mockResolvedValue(1);
+    prisma.interviewRound.findMany.mockResolvedValue([]);
+    const res = mockRes();
+    await interviewController.schedule({ params: { applicationId: '1' }, body: { mode: 'Virtual', meetingLink: 'nope' }, user: { id: 9 } }, res);
+    expect(res.json.mock.calls[0][0].code).not.toBe('EXCO_APPROVAL_REQUIRED');
   });
 
   test('books the round with its time and venue, moves the application to InterviewScheduled and notifies the candidate', async () => {
@@ -241,9 +260,9 @@ describe('schedule', () => {
 
 describe('interview sessions (bulk scheduling)', () => {
   const apps = [
-    { id: 11, status: 'Shortlisted', candidateId: 101, candidate: { id: 101, fullName: 'Amy' }, offer: null },
-    { id: 12, status: 'Shortlisted', candidateId: 102, candidate: { id: 102, fullName: 'Ben' }, offer: null },
-    { id: 13, status: 'Shortlisted', candidateId: 103, candidate: { id: 103, fullName: 'Cat' }, offer: null }
+    { id: 11, status: 'Shortlisted', candidateId: 101, candidate: { id: 101, fullName: 'Amy' }, offer: null, excoApprovalId: 4 },
+    { id: 12, status: 'Shortlisted', candidateId: 102, candidate: { id: 102, fullName: 'Ben' }, offer: null, excoApprovalId: 4 },
+    { id: 13, status: 'Shortlisted', candidateId: 103, candidate: { id: 103, fullName: 'Cat' }, offer: null, excoApprovalId: 4 }
   ];
   const body = {
     applicationIds: [12, 11, 13], startsAt: '2030-10-01T06:00:00Z', durationMinutes: 30, gapMinutes: 10,
@@ -297,6 +316,14 @@ describe('interview sessions (bulk scheduling)', () => {
     const res = mockRes();
     await interviewController.planSession({ params: { vacancyId: '3' }, body: { ...body, applicationIds: [11, 11] }, user: { id: 9 } }, res);
     expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  test('a session can\'t include anyone still waiting for EXCO, naming them', async () => {
+    prisma.application.findMany.mockResolvedValue([apps[0], { ...apps[1], excoApprovalId: null, _count: { interviewRounds: 0 } }, apps[2]]);
+    const res = mockRes();
+    await interviewController.planSession({ params: { vacancyId: '3' }, body, user: { id: 9 } }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json.mock.calls[0][0]).toEqual(expect.objectContaining({ code: 'EXCO_APPROVAL_REQUIRED', error: expect.stringMatching(/Ben/) }));
   });
 
   test('booking a session refuses clashes unless allowConflicts is set', async () => {

@@ -1,7 +1,7 @@
 const {
   prisma, resetDatabase, createStaff, createOrg, createCandidate,
   staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition,
-  recordInterviewResults
+  recordInterviewResults, attachExcoApproval
 } = require('./helpers');
 
 // The Interview Hub against a real database: a bulk-scheduled session with
@@ -35,7 +35,7 @@ const inDays = (d) => new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString
 // A fixed weekday morning well in the future, so slot times are predictable.
 const SESSION_START = '2031-03-04T06:00:00.000Z'; // Tuesday 09:00 Kampala
 
-async function shortlistedVacancy(names) {
+async function shortlistedVacancy(names, { exco = true } = {}) {
   const vacancy = expectStatus(await createVacancyFromRequisition(tokens.hro, {
     positionId: org.position.id, postingType: 'External', deadline: inDays(30), positionsRequired: 1
   }), 201).body;
@@ -55,6 +55,7 @@ async function shortlistedVacancy(names) {
   const versions = Object.fromEntries((await prisma.application.findMany({ where: { id: { in: ids } } })).map((a) => [a.id, a.rankVersion]));
   expectStatus(await api(tokens.shro).post(`/api/vacancies/${vacancy.id}/rank`, { applicationIds: ids, applicationRankVersions: versions }), 200);
   expectStatus(await api(tokens.phro).post(`/api/applications/vacancies/${vacancy.id}/approve-shortlist`), 200);
+  if (exco) expectStatus(await attachExcoApproval(tokens.shro, vacancy.id), 201);
   return { vacancy, applicants };
 }
 
@@ -198,4 +199,46 @@ test('a "Reject" verdict rejects the application, and is final; a no-show has no
 
   // A vacancy with nothing interviewed still has a (short) scorecard.
   expectStatus(await api(tokens.hro).get(`/api/interviews/vacancies/${vacancy.id}/scorecard`), 200);
+});
+
+test('EXCO approves the shortlist outside the system: nobody is told or interviewed before the signed copy is attached', async () => {
+  const { vacancy, applicants } = await shortlistedVacancy(['Fay Fiona', 'Gil Gaba', 'Hal Hamza'], { exco: false });
+  const [fay, gil, hal] = applicants;
+  expect(await prisma.candidateNotification.count({ where: { type: 'ApplicationShortlisted' } })).toBe(0);
+
+  const booking = { scheduledDate: inDays(5), mode: 'In person', panelMembers: [{ name: 'P One', email: 'p1@caa.co.ug' }] };
+  const early = await api(tokens.shro).post(`/api/interviews/applications/${fay.applicationId}/interviews`, booking);
+  expect(early.status).toBe(409);
+  expect(early.body.code).toBe('EXCO_APPROVAL_REQUIRED');
+
+  // The sheet to print lists everyone waiting.
+  const sheet = expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}/exco-shortlist`), 200).body;
+  expect(sheet.awaiting.map((a) => a.candidateName).sort()).toEqual(['Fay Fiona', 'Gil Gaba', 'Hal Hamza']);
+
+  // HR Officers can print it; attaching is for whoever schedules.
+  expect((await attachExcoApproval(tokens.hro, vacancy.id)).status).toBe(403);
+  expect((await attachExcoApproval(tokens.shro, vacancy.id, { struckOff: [fay.applicationId, gil.applicationId, hal.applicationId] })).status).toBe(422);
+  const attached = expectStatus(await attachExcoApproval(tokens.shro, vacancy.id, { struckOff: [hal.applicationId], excoReference: 'EXCO MIN 31/2026' }), 201).body;
+  expect(attached).toEqual(expect.objectContaining({ approved: 2, struckOff: 1 }));
+
+  // Hal was struck off: rejected and told. Fay and Gil are told they're shortlisted.
+  const halApp = await prisma.application.findUnique({ where: { id: hal.applicationId } });
+  expect(halApp).toEqual(expect.objectContaining({ status: 'Rejected', rejectionReason: 'Not approved for interview by EXCO.', excoApprovalId: null }));
+  const notices = await prisma.candidateNotification.findMany({ where: { channel: 'InApp' }, select: { candidateId: true, type: true } });
+  expect(notices).toEqual(expect.arrayContaining([
+    { candidateId: fay.candidateId, type: 'ApplicationShortlisted' },
+    { candidateId: gil.candidateId, type: 'ApplicationShortlisted' },
+    { candidateId: hal.candidateId, type: 'ApplicationRejected' }
+  ]));
+
+  expectStatus(await api(tokens.shro).post(`/api/interviews/applications/${fay.applicationId}/interviews`, booking), 201);
+  const after = expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}/exco-shortlist`), 200).body;
+  expect(after.awaiting).toEqual([]);
+  expect(after.approvals[0]).toEqual(expect.objectContaining({
+    excoReference: 'EXCO MIN 31/2026', struckOff: [{ applicationId: hal.applicationId, candidateName: 'Hal Hamza' }]
+  }));
+  expect(after.approvals[0].approved.map((a) => a.candidateName).sort()).toEqual(['Fay Fiona', 'Gil Gaba']);
+  expectStatus(await api(tokens.hro).get(after.approvals[0].documentUrl), 200);
+  expect((await attachExcoApproval(tokens.shro, vacancy.id)).status).toBe(422); // nobody left waiting
+  expect(await prisma.auditLog.count({ where: { entityType: 'Vacancy', entityId: vacancy.id, action: 'EXCO shortlist approval attached' } })).toBe(1);
 });

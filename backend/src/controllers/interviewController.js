@@ -50,6 +50,8 @@ const wrap = (fn) => async (req, res) => {
   try {
     await fn(req, res);
   } catch (err) {
+    // An AppError's code (EXCO_APPROVAL_REQUIRED, ...) is what the frontend acts on.
+    if (err?.isAppError && err.code) return res.status(err.status).json({ error: err.message, code: err.code });
     sendError(res, err);
   }
 };
@@ -198,6 +200,18 @@ function notSchedulableResponse(res, err) {
 // Scheduling
 // ---------------------------------------------------------------------------
 
+// EXCO approves the interview shortlist outside the system; a candidate's
+// first interview waits for HR to attach the signed approval
+// (excoShortlistController). Rounds booked before that step existed, and
+// later rounds, don't need it again.
+const needsExcoApproval = (application, roundCount) => !application.excoApprovalId && roundCount === 0;
+
+function excoApprovalError(names) {
+  const err = new AppError(`Waiting for EXCO's approval of the shortlist: ${names.join(', ')}. Print the approved shortlist for EXCO and attach the signed copy first.`, 409);
+  err.code = 'EXCO_APPROVAL_REQUIRED';
+  return err;
+}
+
 // One interview for one application (the review card's "Schedule interview").
 // Round number is computed server-side from existing rounds for this
 // application, not taken from the client.
@@ -205,7 +219,7 @@ async function schedule(req, res) {
   const applicationId = parseId(req.params.applicationId);
   if (!applicationId) return res.status(400).json({ error: 'Invalid application id' });
 
-  const application = await applicationModel.findById(applicationId, { offer: true, vacancy: true });
+  const application = await applicationModel.findById(applicationId, { offer: true, vacancy: true, candidate: { select: { fullName: true } } });
   if (!application) return res.status(404).json({ error: 'Application not found' });
   if (!SCHEDULABLE_STATUSES.includes(application.status) || application.offer) {
     return res.status(422).json({ error: `An application at status "${application.status}" cannot have an interview scheduled` });
@@ -215,6 +229,10 @@ async function schedule(req, res) {
   // takes them off the list (re-propose without them) first.
   if (application.meritStatus) {
     return res.status(422).json({ error: 'This candidate is already on the merit list - take them off it before scheduling another round' });
+  }
+  if (needsExcoApproval(application, await interviewModel.countByApplication(applicationId))) {
+    const err = excoApprovalError([application.candidate?.fullName || 'this candidate']);
+    return res.status(409).json({ error: err.message, code: err.code });
   }
 
   const logistics = parseLogistics(req.body);
@@ -275,6 +293,8 @@ async function buildSession(req) {
   if (blocked.length) {
     throw new AppError(`Not schedulable: ${blocked.map((a) => `${a.candidate.fullName} (${a.meritStatus ? 'on the merit list' : a.status})`).join(', ')}`, 422);
   }
+  const unapproved = apps.filter((a) => needsExcoApproval(a, a._count?.interviewRounds ?? 0));
+  if (unapproved.length) throw excoApprovalError(unapproved.map((a) => a.candidate.fullName));
 
   const logistics = parseLogistics({ ...req.body, scheduledDate: undefined });
   delete logistics.scheduledDate;

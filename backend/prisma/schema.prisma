@@ -179,30 +179,31 @@ model StaffUser {
   delegates     StaffUser[] @relation("Delegation")
   createdAt     DateTime    @default(now())
 
-  vacanciesCreated              Vacancy[]           @relation("VacancyCreatedBy")
-  vacanciesApproved             Vacancy[]           @relation("VacancyApprovedBy")
-  vacanciesPostingTypeChanged   Vacancy[]           @relation("VacancyPostingTypeChangedBy")
-  interviewResultsRecorded      InterviewRound[]    @relation("InterviewConductedBy")
-  interviewsScheduled           InterviewRound[]    @relation("InterviewScheduledBy")
-  interviewsCancelled           InterviewRound[]    @relation("InterviewCancelledBy")
-  panelLinks                    PanelMember[]       @relation("PanelStaffLink")
-  offersRecommended             Offer[]             @relation("OfferRecommendedBy")
-  offersApproved                Offer[]             @relation("OfferApprovedBy")
-  verifications                 InternalProfile[]   @relation("VerifiedBy")
-  auditLogs                     AuditLog[]
-  verificationTokens            VerificationToken[]
-  directoratesCreated           Directorate[]       @relation("DirectorateCreatedBy")
-  departmentsCreated            Department[]        @relation("DepartmentCreatedBy")
-  departmentsApproved           Department[]        @relation("DepartmentApprovedBy")
-  positionsCreated              Position[]          @relation("PositionCreatedBy")
-  orgImports                    OrgImport[]         @relation("OrgImportCreatedBy")
-  applicationsRejected          Application[]       @relation("ApplicationRejectedBy")
-  applicationsShortlistProposed Application[]       @relation("ApplicationShortlistProposedBy")
-  applicationsShortlistApproved Application[]       @relation("ApplicationShortlistApprovedBy")
-  applicationsMeritProposed     Application[]       @relation("ApplicationMeritProposedBy")
-  applicationsMeritApproved     Application[]       @relation("ApplicationMeritApprovedBy")
-  offersReturned                Offer[]             @relation("OfferReturnedBy")
-  offersWithdrawn               Offer[]             @relation("OfferWithdrawnBy")
+  vacanciesCreated               Vacancy[]               @relation("VacancyCreatedBy")
+  vacanciesApproved              Vacancy[]               @relation("VacancyApprovedBy")
+  vacanciesPostingTypeChanged    Vacancy[]               @relation("VacancyPostingTypeChangedBy")
+  interviewResultsRecorded       InterviewRound[]        @relation("InterviewConductedBy")
+  interviewsScheduled            InterviewRound[]        @relation("InterviewScheduledBy")
+  interviewsCancelled            InterviewRound[]        @relation("InterviewCancelledBy")
+  panelLinks                     PanelMember[]           @relation("PanelStaffLink")
+  offersRecommended              Offer[]                 @relation("OfferRecommendedBy")
+  offersApproved                 Offer[]                 @relation("OfferApprovedBy")
+  verifications                  InternalProfile[]       @relation("VerifiedBy")
+  auditLogs                      AuditLog[]
+  verificationTokens             VerificationToken[]
+  directoratesCreated            Directorate[]           @relation("DirectorateCreatedBy")
+  departmentsCreated             Department[]            @relation("DepartmentCreatedBy")
+  departmentsApproved            Department[]            @relation("DepartmentApprovedBy")
+  positionsCreated               Position[]              @relation("PositionCreatedBy")
+  orgImports                     OrgImport[]             @relation("OrgImportCreatedBy")
+  applicationsRejected           Application[]           @relation("ApplicationRejectedBy")
+  applicationsShortlistProposed  Application[]           @relation("ApplicationShortlistProposedBy")
+  applicationsShortlistApproved  Application[]           @relation("ApplicationShortlistApprovedBy")
+  excoShortlistApprovalsUploaded ExcoShortlistApproval[] @relation("ExcoShortlistApprovalUploadedBy")
+  applicationsMeritProposed      Application[]           @relation("ApplicationMeritProposedBy")
+  applicationsMeritApproved      Application[]           @relation("ApplicationMeritApprovedBy")
+  offersReturned                 Offer[]                 @relation("OfferReturnedBy")
+  offersWithdrawn                Offer[]                 @relation("OfferWithdrawnBy")
 
   // Real, time-bounded, audited delegation - distinct from the older
   // static `actingAsId` field above, which predates this and is left
@@ -359,38 +360,39 @@ model JobRefSequence {
 }
 
 model Vacancy {
-  id                  Int                @id @default(autoincrement())
-  jobRef              String             @unique
-  title               String // snapshot of Position.name at creation time - see note below
-  positionId          Int
-  position            Position           @relation("VacancyPosition", fields: [positionId], references: [id])
-  departmentId        Int // derived from position.departmentId at creation - never independently settable
-  department          Department         @relation(fields: [departmentId], references: [id])
-  reportsToPositionId Int?
-  reportsToPosition   Position?          @relation("VacancyReportsToPosition", fields: [reportsToPositionId], references: [id])
-  salaryScale         String?
-  positionsRequired   Int                @default(1)
-  status              VacancyStatus      @default(PendingApproval)
+  id                     Int                     @id @default(autoincrement())
+  jobRef                 String                  @unique
+  title                  String // snapshot of Position.name at creation time - see note below
+  positionId             Int
+  position               Position                @relation("VacancyPosition", fields: [positionId], references: [id])
+  departmentId           Int // derived from position.departmentId at creation - never independently settable
+  department             Department              @relation(fields: [departmentId], references: [id])
+  reportsToPositionId    Int?
+  reportsToPosition      Position?               @relation("VacancyReportsToPosition", fields: [reportsToPositionId], references: [id])
+  salaryScale            String?
+  positionsRequired      Int                     @default(1)
+  status                 VacancyStatus           @default(PendingApproval)
   // No default - PostingType.Open is gone, so there is no longer a safe
   // "both" fallback. HR must choose Internal or External explicitly at
   // creation (enforced in vacancyController.create).
-  postingType         PostingType
-  deadline            DateTime?
+  postingType            PostingType
+  deadline               DateTime?
   // Set once, the first time scripts/checkVacancyDeadlines.js notifies the
   // vacancy's creator that its deadline has passed - never cleared
   // afterward, same one-time-fire-guard idiom as
   // Candidate.profileCompletedAt. Deadline itself is intentionally NOT a
   // stored status transition (see VacancyStatus's own comment) - this only
   // guards the notification from firing more than once per vacancy.
-  deadlineNotifiedAt  DateTime?
-  regulatoryDriver    String?
-  category            String?
-  priority            String?
-  createdById         Int
-  createdBy           StaffUser          @relation("VacancyCreatedBy", fields: [createdById], references: [id])
-  createdAt           DateTime           @default(now())
-  applications        Application[]
-  shortlistExercise   ShortlistExercise?
+  deadlineNotifiedAt     DateTime?
+  regulatoryDriver       String?
+  category               String?
+  priority               String?
+  createdById            Int
+  createdBy              StaffUser               @relation("VacancyCreatedBy", fields: [createdById], references: [id])
+  createdAt              DateTime                @default(now())
+  applications           Application[]
+  shortlistExercise      ShortlistExercise?
+  excoShortlistApprovals ExcoShortlistApproval[]
 
   // Declaring pre-existing drift, not adding new columns: approvedAt,
   // approvedById (with its FK already live), and rejectionReason already
@@ -837,10 +839,15 @@ model Application {
   // shortlist can still be rejected outright without ever being approved.
   shortlistProposedAt   DateTime?
   shortlistProposedById Int?
-  shortlistProposedBy   StaffUser? @relation("ApplicationShortlistProposedBy", fields: [shortlistProposedById], references: [id])
+  shortlistProposedBy   StaffUser?             @relation("ApplicationShortlistProposedBy", fields: [shortlistProposedById], references: [id])
   shortlistApprovedAt   DateTime?
   shortlistApprovedById Int?
-  shortlistApprovedBy   StaffUser? @relation("ApplicationShortlistApprovedBy", fields: [shortlistApprovedById], references: [id])
+  shortlistApprovedBy   StaffUser?             @relation("ApplicationShortlistApprovedBy", fields: [shortlistApprovedById], references: [id])
+  // EXCO's approval of the interview shortlist, given outside the system:
+  // the shortlist is printed, EXCO signs it, and HR attaches the signed
+  // copy (ExcoShortlistApproval). No first interview is booked without it.
+  excoApprovalId        Int?
+  excoApproval          ExcoShortlistApproval? @relation(fields: [excoApprovalId], references: [id])
 
   // The post-interview merit list - the ranking that decides who is offered
   // the job (Primary, top positionsRequired) and who waits in Reserve for a
@@ -1020,19 +1027,19 @@ model ShortlistExercise {
 // token. The chair is chosen per exercise by HR and can be changed until
 // the exercise closes. submittedAt locks the member's ratings.
 model ShortlistMember {
-  id          Int                   @id @default(autoincrement())
-  exerciseId  Int
-  exercise    ShortlistExercise     @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
-  name        String
-  email       String
-  isChair     Boolean               @default(false)
+  id             Int                   @id @default(autoincrement())
+  exerciseId     Int
+  exercise       ShortlistExercise     @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  name           String
+  email          String
+  isChair        Boolean               @default(false)
   // A member from outside UCAA (an email not on INTERNAL_EMAIL_DOMAIN) is a
   // rare special case and needs the reason HR gave when adding them.
-  externalReason String?          @db.Text
-  token       String                @unique
-  submittedAt DateTime?
-  createdAt   DateTime              @default(now())
-  assignments ShortlistAssignment[]
+  externalReason String?               @db.Text
+  token          String                @unique
+  submittedAt    DateTime?
+  createdAt      DateTime              @default(now())
+  assignments    ShortlistAssignment[]
 
   @@unique([exerciseId, email])
 }
@@ -1489,4 +1496,28 @@ model SystemHealth {
   // raises one alert a day rather than one per failure.
   alertedAt           DateTime?
   updatedAt           DateTime  @updatedAt
+}
+
+// EXCO's approval of an interview shortlist, recorded when HR attaches the
+// signed shortlist (excoShortlistController.js). Covers the applications it
+// approved (Application.excoApprovalId); anyone EXCO struck off is rejected
+// at the same time and listed in struckOff ([{ applicationId, candidateName }]).
+// A vacancy can have more than one - a later, additional shortlist needs
+// its own.
+model ExcoShortlistApproval {
+  id            Int           @id @default(autoincrement())
+  vacancyId     Int
+  vacancy       Vacancy       @relation(fields: [vacancyId], references: [id])
+  documentUrl   String
+  documentName  String
+  documentHash  String        @db.VarChar(64)
+  excoReference String?       @db.VarChar(191)
+  approvedOn    DateTime?
+  struckOff     Json?
+  uploadedById  Int
+  uploadedBy    StaffUser     @relation("ExcoShortlistApprovalUploadedBy", fields: [uploadedById], references: [id])
+  uploadedAt    DateTime      @default(now())
+  applications  Application[]
+
+  @@index([vacancyId])
 }

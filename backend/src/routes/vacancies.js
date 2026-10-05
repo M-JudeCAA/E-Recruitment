@@ -2,7 +2,8 @@ const express = require('express');
 const controller = require('../controllers/vacancyController');
 const exportController = require('../controllers/exportController');
 const requisitionController = require('../controllers/requisitionController');
-const { uploadRequisition, uploadSignedRequisition } = require('../middleware/upload');
+const { uploadRequisition, uploadSignedRequisition, uploadSupportingDocument } = require('../middleware/upload');
+const excoShortlistController = require('../controllers/excoShortlistController');
 const batchController = require('../controllers/vacancyReviewBatchController');
 const { authenticate, optionalAuthenticate, requireStaffRole } = require('../middleware/auth');
 const { guardVacancy, vacancyFrom } = require('../middleware/applicantConflict');
@@ -48,6 +49,11 @@ router.get('/admin', authenticate, requireStaffRole('HR_Officer'), controller.li
 // candidate/guest one and hide HR-only fields accordingly - see that
 // function's own comment.
 router.get('/:id', optionalAuthenticate, controller.getOne);
+// EXCO's approval of the interview shortlist: the sheet to print, and the
+// signed copy attached afterwards (required before a first interview).
+router.get('/:id/exco-shortlist', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), excoShortlistController.get);
+router.post('/:id/exco-shortlist', authenticate, requireStaffRole('Senior_HR_Officer'), guardVacancy(vacancyFrom.param('id')),
+  uploadSupportingDocument.single('document'), excoShortlistController.attach);
 router.get('/:id/applications', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.listApplications);
 // Spreadsheet of every applicant - the shortlisting report (FR-ATS-053).
 router.get('/:id/export/shortlisting-report', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), exportController.shortlistReport);

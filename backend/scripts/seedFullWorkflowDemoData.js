@@ -323,7 +323,18 @@ async function createVacancy(body, approver = 'manager') {
 
 const beginReview = (vacancyId) => api('PATCH', `/api/vacancies/${vacancyId}/begin-review`, { token: T.shro });
 const reject = (applicationId, reason) => api('PATCH', `/api/applications/${applicationId}/reject`, { token: T.shro, json: { reason } });
-const approveShortlist = (vacancyId) => api('POST', `/api/applications/vacancies/${vacancyId}/approve-shortlist`, { token: T.phro });
+// Approved here, then printed and signed by EXCO outside the system - the
+// signed copy is attached before anyone can be interviewed.
+async function approveShortlist(vacancyId, { struckOff = [] } = {}) {
+  await api('POST', `/api/applications/vacancies/${vacancyId}/approve-shortlist`, { token: T.phro });
+  const form = new FormData();
+  form.append('excoReference', `EXCO MIN ${40 + vacancyId}/2026`);
+  form.append('struckOff', JSON.stringify(struckOff));
+  form.append('document', new Blob([pdfDocument('Interview shortlist - approved by EXCO', [
+    `Vacancy ${vacancyId}`, 'Approved for interview as listed.', 'Signed: ____________________  Chairperson, EXCO'
+  ])], { type: 'application/pdf' }), 'Interview shortlist - signed by EXCO.pdf');
+  return api('POST', `/api/vacancies/${vacancyId}/exco-shortlist`, { token: T.shro, form });
+}
 
 async function verifyInternal(candidateId, decision, comments) {
   const form = new FormData();
@@ -366,7 +377,12 @@ function ratingsFor(criteria, { profile = 'good', notMet = null, dispute = null 
   });
 }
 
-const committeeMember = (name, role, isChair) => ({ name, role, email: `${slug(name)}@example.com`, isChair: !!isChair });
+// UCAA staff (HR included may sit on a committee); someone from outside
+// only as a special case, with the reason.
+const committeeMember = (name, role, isChair, externalReason) => ({
+  name, role, isChair: !!isChair, externalReason,
+  email: externalReason ? `${slug(name)}@example.com` : `${slug(name)}@caa.co.ug`
+});
 
 // Runs the committee for a vacancy up to `stopAt` (Setup | Rating | Moderation
 // | Closed | Proposed). profiles: { applicationId: { profile, notMet, dispute } }.
@@ -379,7 +395,7 @@ async function runCommittee(vacancy, members, {
   const base = `/api/shortlist-committee/vacancies/${vacancy.id}`;
   await api('POST', base, { token: T.shro });
   if (ratersPerApplicant) await api('PATCH', base, { token: T.shro, json: { ratersPerApplicant } });
-  for (const m of members) await api('POST', `${base}/members`, { token: T.shro, json: { name: m.name, email: m.email, isChair: m.isChair } });
+  for (const m of members) await api('POST', `${base}/members`, { token: T.shro, json: { name: m.name, email: m.email, isChair: m.isChair, externalReason: m.externalReason } });
   if (stopAt === 'Setup') return null;
 
   await closeApplications(vacancy.id);
@@ -666,7 +682,8 @@ const LIVE = [];
 
 const COMMITTEES = {
   finance: [committeeMember('Christine Namutebi', 'Manager Finance', true), committeeMember('Joel Byamugisha', 'Principal Accountant'), committeeMember('Sarah Achola', 'Manager Internal Audit')],
-  fire: [committeeMember('Samuel Wandera', 'Chief Fire Officer', true), committeeMember('Isaac Ochieng', 'Station Officer, ARFFS'), committeeMember('Peter Kalule', 'Aerodrome Safety Manager')],
+  fire: [committeeMember('Samuel Wandera', 'Chief Fire Officer', true), committeeMember('Isaac Ochieng', 'Station Officer, ARFFS'), committeeMember('Peter Kalule', 'Fire Safety Consultant (external)', false,
+    'An independent fire-safety expert - UCAA has no other officer at this grade outside the station being recruited for.')],
   atc: [committeeMember('Stephen Tumwine', 'Director Air Navigation Services', true), committeeMember('Josephine Nabwire', 'Manager Air Traffic Management'), committeeMember('Richard Opio', 'Senior Air Traffic Control Officer')],
   it: [committeeMember('Patrick Mugisha', 'Manager Information Technology', true), committeeMember('Brian Tumwesigye', 'Senior Systems Administrator'), committeeMember('Irene Kobusingye', 'Principal Systems Analyst')],
   avsec: [committeeMember('Ronald Ssemwogerere', 'Manager Aviation Security', true), committeeMember('Moses Okiror', 'Principal AVSEC Officer'), committeeMember('Harriet Namaganda', 'Airport Manager, Entebbe')]
@@ -1156,7 +1173,7 @@ async function scenarioInternalShortlist() {
   await retime(v.id, { created: 22, deadline: 11, review: 10.5, slProposed: 2 });
   await retimeCommittee(v.id, { created: 10.4, opened: 10, moderation: 3, closed: 2.5 });
   log(`  ${v.jobRef}: committee (Josephine stood down for Esther) ranked David, Esther, Quinn; Rachel not qualified; David + Esther proposed; Quinn Pending verification, Rachel Discrepancy_Flagged\n`);
-  LIVE.push(`${v.jobRef} Senior ATC Officer (Internal) - approve the committee's proposed shortlist [Principal HR Officer]; verify Quinn Ateenyi [Senior HR Officer]`);
+  LIVE.push(`${v.jobRef} Senior ATC Officer (Internal) - approve the committee's proposed shortlist [Principal HR Officer], then print it for EXCO and attach the signed copy on the Interviews step; verify Quinn Ateenyi [Senior HR Officer]`);
 }
 
 // Senior Aviation Security Officer - committee at moderation: the chair has

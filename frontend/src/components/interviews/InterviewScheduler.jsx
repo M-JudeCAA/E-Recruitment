@@ -16,6 +16,10 @@ import {
 import { inputStyle, sectionLabel, hintText, chipStyle } from './formStyles';
 
 const STEPS = ['Candidates', 'When & where', 'Panel', 'Review'];
+
+// A first interview waits for EXCO's signed approval of the shortlist
+// (backend excoShortlistController) - shown, but can't be ticked.
+const awaitingExco = (a) => !a.excoApprovalId && a.interviewRounds.length === 0;
 const DURATIONS = [15, 20, 30, 45, 60, 75, 90, 120, 180];
 
 // A sensible default start: the next weekday at 09:00.
@@ -98,10 +102,12 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
         setContext(ctx);
         // Preselect: what the caller asked for, otherwise every Shortlisted
         // candidate with nothing booked yet.
+        // Nobody still waiting for EXCO's approval of the shortlist.
         const preset = presetApplicationIds?.length ? presetApplicationIds : null;
+        const ready = ctx.applications.filter((a) => !awaitingExco(a));
         setSelected(preset
-          ? ctx.applications.filter((a) => preset.includes(a.id)).map((a) => a.id)
-          : ctx.applications.filter((a) => a.status === 'Shortlisted' && !a.interviewRounds.some((r) => r.status === 'Scheduled')).map((a) => a.id));
+          ? ready.filter((a) => preset.includes(a.id)).map((a) => a.id)
+          : ready.filter((a) => a.status === 'Shortlisted' && !a.interviewRounds.some((r) => r.status === 'Scheduled')).map((a) => a.id));
         if (ctx.lastLogistics) {
           if (ctx.lastLogistics.durationMinutes) setDurationMinutes(ctx.lastLogistics.durationMinutes);
           if (ctx.lastLogistics.mode) setMode(ctx.lastLogistics.mode);
@@ -273,9 +279,10 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
                     {context.applications.map((a) => {
                       const booked = a.interviewRounds.filter((r) => r.status === 'Scheduled');
                       const last = a.interviewRounds[a.interviewRounds.length - 1];
+                      const waiting = awaitingExco(a);
                       return (
-                        <label key={a.id} style={{ display: 'flex', gap: 10, padding: '8px 10px', borderBottom: '1px solid var(--color-border)', cursor: 'pointer', alignItems: 'flex-start' }}>
-                          <input type="checkbox" checked={selected.includes(a.id)} onChange={() => toggle(a.id)} style={{ marginTop: 3 }} />
+                        <label key={a.id} style={{ display: 'flex', gap: 10, padding: '8px 10px', borderBottom: '1px solid var(--color-border)', cursor: waiting ? 'not-allowed' : 'pointer', alignItems: 'flex-start', opacity: waiting ? 0.6 : 1 }}>
+                          <input type="checkbox" checked={selected.includes(a.id)} disabled={waiting} onChange={() => toggle(a.id)} style={{ marginTop: 3 }} />
                           <span style={{ flex: 1, minWidth: 0 }}>
                             <span style={{ fontWeight: 600 }}>{a.candidate.fullName}</span>
                             {a.rank && <span style={{ ...hintText, marginLeft: 6 }}>#{a.rank} on the interview shortlist</span>}
@@ -283,6 +290,7 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
                               {a.status.replace(/([A-Z])/g, ' $1').trim()}
                               {booked.length > 0 && ` · already booked ${formatDateTime(booked[0].scheduledDate)}`}
                               {!booked.length && last && ` · round ${last.roundNumber} ${last.recommendation || last.status}`}
+                              {waiting && ' · waiting for EXCO to approve the shortlist'}
                             </span>
                           </span>
                         </label>

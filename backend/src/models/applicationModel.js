@@ -152,7 +152,7 @@ module.exports = {
   findSchedulable: (vacancyId, statuses) => prisma.application.findMany({
     where: { vacancyId, status: { in: statuses }, offer: null, meritStatus: null },
     select: {
-      id: true, status: true, rank: true, listStatus: true, shortlistScore: true,
+      id: true, status: true, rank: true, listStatus: true, shortlistScore: true, excoApprovalId: true,
       candidate: { select: { id: true, fullName: true, email: true, candidateType: true } },
       interviewRounds: {
         select: { id: true, roundNumber: true, status: true, scheduledDate: true, recommendation: true },
@@ -166,9 +166,10 @@ module.exports = {
   findForSession: (vacancyId, ids) => prisma.application.findMany({
     where: { vacancyId, id: { in: ids } },
     select: {
-      id: true, status: true, candidateId: true, meritStatus: true,
+      id: true, status: true, candidateId: true, meritStatus: true, excoApprovalId: true,
       candidate: { select: { id: true, fullName: true } },
-      offer: { select: { id: true } }
+      offer: { select: { id: true } },
+      _count: { select: { interviewRounds: true } }
     }
   }),
   // Shortlisted with nothing scheduled yet - the Hub's "waiting to be

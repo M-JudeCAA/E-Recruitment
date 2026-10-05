@@ -140,6 +140,15 @@ async function recordInterviewResults(token, roundId, { score = 82, recommendati
   return req;
 }
 
+// Attaches EXCO's signed approval of the interview shortlist (approved in
+// the system, then printed and signed outside it). struckOff: application
+// ids EXCO did not approve. Returns the raw response.
+async function attachExcoApproval(token, vacancyId, { struckOff = [], excoReference = 'EXCO MIN 12/2026' } = {}) {
+  return request(app).post(`/api/vacancies/${vacancyId}/exco-shortlist`).set('Authorization', `Bearer ${token}`)
+    .field('excoReference', excoReference).field('struckOff', JSON.stringify(struckOff))
+    .attach('document', buildScannedPdf(1), { filename: 'Signed shortlist.pdf', contentType: 'application/pdf' });
+}
+
 function expectStatus(res, status) {
   if (res.status !== status) {
     throw new Error(`Expected ${status} from ${res.req?.method} ${res.req?.path}, got ${res.status}: ${JSON.stringify(res.body)}`);
@@ -149,5 +158,5 @@ function expectStatus(res, status) {
 
 module.exports = {
   prisma, app, PASSWORD, resetDatabase, createStaff, createOrg, createCandidate, staffToken, candidateToken, api, REFEREES,
-  expectStatus, attachAcademicDocument, uploadRequisition, uploadSignedCopy, createVacancyFromRequisition, recordInterviewResults
+  expectStatus, attachAcademicDocument, uploadRequisition, uploadSignedCopy, createVacancyFromRequisition, recordInterviewResults, attachExcoApproval
 };

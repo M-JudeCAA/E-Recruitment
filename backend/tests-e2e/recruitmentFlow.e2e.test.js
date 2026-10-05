@@ -1,6 +1,7 @@
 const {
   prisma, resetDatabase, createStaff, createOrg, createCandidate,
-  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition, recordInterviewResults
+  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition, recordInterviewResults,
+  attachExcoApproval
 } = require('./helpers');
 
 // The whole recruitment lifecycle through the real API and a real database:
@@ -65,6 +66,7 @@ async function shortlistAndInterview(vacancyId, applicationIds, interviewIds = a
     .map((a) => [a.id, a.rankVersion]));
   expectStatus(await api(tokens.shro).post(`/api/vacancies/${vacancyId}/rank`, { applicationIds, applicationRankVersions: versions }), 200);
   expectStatus(await api(tokens.phro).post(`/api/applications/vacancies/${vacancyId}/approve-shortlist`), 200);
+  expectStatus(await attachExcoApproval(tokens.shro, vacancyId), 201);
 
   for (const applicationId of interviewIds) {
     const round = expectStatus(await api(tokens.shro).post(`/api/interviews/applications/${applicationId}/interviews`, {

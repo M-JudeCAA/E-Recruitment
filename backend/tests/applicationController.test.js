@@ -789,7 +789,7 @@ describe('approveShortlist', () => {
     expect(prisma.application.updateMany).not.toHaveBeenCalled();
   });
 
-  test('approves every ShortlistProposed application for the vacancy in one batch and notifies each candidate', async () => {
+  test('approves every ShortlistProposed application for the vacancy in one batch, telling no candidate before EXCO has approved', async () => {
     jest.spyOn(workflow, 'assertNotSelfApprovedShortlist').mockResolvedValue(undefined);
     prisma.application.findMany.mockResolvedValue([
       { id: 1, candidateId: 7, shortlistProposedById: 9 },
@@ -806,12 +806,8 @@ describe('approveShortlist', () => {
       where: { vacancyId: 5, status: 'ShortlistProposed' },
       data: { status: 'Shortlisted', shortlistApprovedAt: expect.any(Date), shortlistApprovedById: 3 }
     });
-    expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ candidateId: 7, type: 'ApplicationShortlisted' })
-    }));
-    expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ candidateId: 8, type: 'ApplicationShortlisted' })
-    }));
+    // Not yet - candidates hear once EXCO's signed approval is attached.
+    expect(prisma.candidateNotification.create).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ vacancyId: 5, approvedCount: 2 }));
   });
 });

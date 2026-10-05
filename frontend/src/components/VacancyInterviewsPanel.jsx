@@ -7,6 +7,7 @@ import Avatar from './Avatar';
 import StatusBadge from './StatusBadge';
 import InterviewScheduler from './interviews/InterviewScheduler';
 import InterviewRoundPanel from './interviews/InterviewRoundPanel';
+import ExcoShortlistPanel from './ExcoShortlistPanel';
 import { ROUND_LABELS, hintText } from './interviews/formStyles';
 import { formatDateTime, venueLabel, resultsDue } from '../utils/interviews';
 
@@ -71,6 +72,8 @@ export default function VacancyInterviewsPanel({ vacancy, applications, staffRol
           </div>
         </div>
       </Card>
+
+      <ExcoShortlistPanel vacancyId={vacancy.id} staffRole={staffRole} onChanged={onUpdated} />
 
       {decided > 0 && (
         <Card accent="var(--color-accent)">
