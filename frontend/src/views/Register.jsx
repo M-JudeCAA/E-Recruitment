@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import client from "../models/apiClient";
 import PageHeader from "../components/PageHeader";
+import UcaaAccountSignIn from "../components/UcaaAccountSignIn";
 import TextField from "../components/TextField";
 import Button from "../components/Button";
 import Alert from "../components/Alert";
@@ -74,6 +75,7 @@ export default function Register() {
   });
   const [touched, setTouched] = useState({});
   // Set when the API says this is a UCAA address, which signs in with Microsoft.
+  const [useMicrosoft, setUseMicrosoft] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -123,7 +125,10 @@ export default function Register() {
       setSubmitted(false);
     } catch (err) {
       if (err.response?.data?.code === "POSSIBLE_DUPLICATE_ACCOUNT") setDuplicatePrompt(true);
-      else setError(err.response?.data?.error || "Something went wrong");
+      else {
+        setUseMicrosoft(err.response?.data?.code === "USE_MICROSOFT");
+        setError(err.response?.data?.error || "Something went wrong");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -155,8 +160,9 @@ export default function Register() {
       >
         <PageHeader
           title="Create account"
-          subtitle="Registering with a @caa.co.ug email creates an internal-staff account automatically."
+          subtitle="UCAA staff don't need to register - sign in with your UCAA account instead."
         />
+        <UcaaAccountSignIn returnTo={validReturnTo} highlight={useMicrosoft} />
         <form onSubmit={handleSubmit} noValidate>
           <TextField
             label="Full name"

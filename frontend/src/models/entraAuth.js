@@ -1,19 +1,20 @@
 import { PublicClientApplication, BrowserAuthErrorCodes } from '@azure/msal-browser';
 
-// Staff sign-in with a UCAA Microsoft (Entra ID) account, in a popup (Auth Code +
+// Sign-in with a UCAA Microsoft (Entra ID) account, in a popup (Auth Code +
 // PKCE, handled by MSAL). We only want the ID token back: the API checks it
 // and issues our own session (backend/src/services/entraAuthService.js), and
 // decides there - not here, and not in Entra - whether the person may sign
 // in as staff.
 //
-// One app registration, VITE_ENTRA_STAFF_CLIENT_ID (staff port; can be
-// assignment-restricted in Entra). Candidates sign in with email and
-// password. Its redirect URI is /entra-redirect.html on the staff origin
-// (see public/).
+// Two app registrations, matching the backend:
+//   staff     - VITE_ENTRA_STAFF_CLIENT_ID (staff port; assignment-restricted in Entra)
+//   candidate - VITE_ENTRA_CANDIDATE_CLIENT_ID (internal candidates; whole tenant)
+// Their redirect URI is /entra-redirect.html on each origin (see public/).
 
 const TENANT_ID = import.meta.env.VITE_ENTRA_TENANT_ID;
 const CLIENT_IDS = {
   staff: import.meta.env.VITE_ENTRA_STAFF_CLIENT_ID,
+  candidate: import.meta.env.VITE_ENTRA_CANDIDATE_CLIENT_ID,
 };
 
 const apps = {};

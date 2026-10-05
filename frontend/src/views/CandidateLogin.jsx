@@ -6,6 +6,7 @@ import PageHeader from "../components/PageHeader";
 import TextField from "../components/TextField";
 import Button from "../components/Button";
 import Alert from "../components/Alert";
+import UcaaAccountSignIn from "../components/UcaaAccountSignIn";
 
 // CHANGED - was a separate, hardcoded palette disconnected from
 // theme.css. Now reads the same shared CSS variables as the rest of the
@@ -54,6 +55,7 @@ export default function CandidateLogin() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   // Set when the API says this is a UCAA account, which signs in with Microsoft.
+  const [useMicrosoft, setUseMicrosoft] = useState(false);
   const { loginCandidate, candidate } = useAuth();
   const navigate = useNavigate();
 
@@ -104,6 +106,7 @@ export default function CandidateLogin() {
       else if (res.data.firstLogin) navigate("/profile/complete", { replace: true });
       else navigate("/dashboard", { replace: true });
     } catch (err) {
+      setUseMicrosoft(err.response?.data?.code === "USE_MICROSOFT");
       setError(err.response?.data?.error || "Login failed");
     } finally {
       setSubmitting(false);
@@ -135,6 +138,7 @@ export default function CandidateLogin() {
         }}
       >
         <PageHeader title="Candidate login" />
+        <UcaaAccountSignIn returnTo={validReturnTo} highlight={useMicrosoft} />
         <form onSubmit={handleSubmit} noValidate>
           <TextField
             label="Email"

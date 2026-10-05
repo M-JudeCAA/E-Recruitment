@@ -9,12 +9,13 @@ const { createToken, consumeToken } = require('../services/tokenService');
 const { validateEmail, validatePassword, validateNationalId, normalizeNationalId } = require('../utils/validators');
 const { phoneKey } = require('../utils/phoneKey');
 const { frontendUrl } = require('../config/frontendUrl');
-const { internalDomains } = require('../services/entraAuthService');
+const { verifyIdToken, internalDomains, EntraAuthError } = require('../services/entraAuthService');
 
-// Candidates - internal and external alike - sign in with email and
-// password; Microsoft sign-in is for staff only. An address on the internal
-// domain makes the account Internal, and the confirmation email proves the
-// person owns that mailbox.
+const USE_MICROSOFT = {
+  code: 'USE_MICROSOFT',
+  error: 'UCAA staff sign in with their UCAA Microsoft account - use "Sign in with your UCAA account" instead.'
+};
+
 const isInternalEmail = (email) => internalDomains().includes(String(email).split('@')[1]?.toLowerCase());
 
 function candidateSession(candidate, firstLogin) {
@@ -52,6 +53,10 @@ async function register(req, res) {
   if (!validateEmail(email)) {
     return res.status(400).json({ error: 'Enter a valid email address' });
   }
+  // Internal candidates are exactly the people who can sign in with a UCAA
+  // Microsoft account (entraLogin below) - a UCAA address can't also open
+  // a password account, or anyone could claim to be internal by typing one.
+  if (isInternalEmail(email)) return res.status(400).json(USE_MICROSOFT);
   if (!validatePassword(password)) {
     return res.status(400).json({ error: 'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a digit, and a symbol' });
   }
@@ -101,7 +106,9 @@ async function register(req, res) {
     await pendingRegistrationModel.remove(existingPending.id);
   }
 
-  const candidateType = isInternalEmail(email) ? 'Internal' : 'External';
+  // Every password account is External - internal candidates come in
+  // through entraLogin.
+  const candidateType = 'External';
 
   const passwordHash = await bcrypt.hash(password, 10);
   const pending = await pendingRegistrationModel.create({
@@ -178,11 +185,8 @@ async function login(req, res) {
   const { email, password } = req.body;
   const candidate = await candidateModel.findByEmail(email);
   if (!candidate) return res.status(401).json({ error: 'Invalid credentials' });
-  // An account opened with Microsoft sign-in, before that was limited to
-  // staff, has no password yet - "Forgot password" sets one.
-  if (!candidate.passwordHash) {
-    return res.status(401).json({ error: 'This account has no password yet. Use "Forgot password" to set one.' });
-  }
+  // An internal candidate's account has no password.
+  if (!candidate.passwordHash) return res.status(401).json(USE_MICROSOFT);
   if (!candidate.emailConfirmed) {
     return res.status(403).json({ error: 'Please confirm your email before logging in' });
   }
@@ -199,11 +203,57 @@ async function login(req, res) {
   res.json(candidateSession(candidate, firstLogin));
 }
 
+// Internal candidates sign in with their UCAA Microsoft account - any UCAA
+// employee may, HR staff included (applying is separate from working as
+// staff: a staff session never sees itself as an applicant, and the
+// conflict-of-interest rules keep them out of any vacancy they apply for).
+// The first sign-in creates the Internal candidate account, already
+// confirmed - Entra has proven the address. After that the oid alone
+// matches. The internal profile (supervisor etc.) is still self-declared
+// and HR-verified, as Entra holds none of it.
+async function entraLogin(req, res) {
+  let identity;
+  try {
+    identity = await verifyIdToken(req.body.idToken, 'candidate');
+  } catch (err) {
+    if (err instanceof EntraAuthError) return res.status(err.status).json({ error: err.message });
+    throw err;
+  }
+
+  let candidate = await candidateModel.findByEntraObjectId(identity.oid);
+  if (!candidate) {
+    const byEmail = await candidateModel.findByEmail(identity.email);
+    if (byEmail) {
+      if (byEmail.entraObjectId) {
+        // The address now belongs to a different Microsoft identity - a
+        // reused mailbox, not the person who opened this account.
+        return res.status(409).json({ error: 'This email is linked to a different Microsoft account. Contact UCAA HR.' });
+      }
+      candidate = await candidateModel.update(byEmail.id, {
+        entraObjectId: identity.oid, candidateType: 'Internal', emailConfirmed: true, passwordHash: null
+      });
+      if (!(await internalProfileModel.findByCandidateId(candidate.id))) {
+        await internalProfileModel.create({ candidateId: candidate.id });
+      }
+    } else {
+      candidate = await candidateModel.create({
+        fullName: identity.name, email: identity.email, candidateType: 'Internal',
+        entraObjectId: identity.oid, emailConfirmed: true
+      });
+      await internalProfileModel.create({ candidateId: candidate.id });
+    }
+  }
+
+  const firstLogin = candidate.lastLoginAt === null || candidate.lastLoginAt === undefined;
+  await candidateModel.update(candidate.id, { lastLoginAt: new Date() });
+  res.json(candidateSession(candidate, firstLogin));
+}
+
 async function forgotPassword(req, res) {
   const { email } = req.body;
   const candidate = await candidateModel.findByEmail(email);
-  // Also how an account with no password yet (see login) gets one.
-  if (candidate) {
+  // An internal candidate has no password to reset - Microsoft handles it.
+  if (candidate && candidate.passwordHash) {
     const token = await createToken({ type: 'PasswordReset', candidateId: candidate.id });
     const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
     await sendMail({
@@ -230,4 +280,4 @@ async function resetPassword(req, res) {
   }
 }
 
-module.exports = { register, confirmEmail, login, forgotPassword, resetPassword };
+module.exports = { register, confirmEmail, login, entraLogin, forgotPassword, resetPassword };

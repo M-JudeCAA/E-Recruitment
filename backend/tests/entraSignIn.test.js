@@ -182,32 +182,64 @@ describe('staff password sign-in (break-glass / development only)', () => {
   });
 });
 
-describe('candidates sign in with email and password only', () => {
-  test('there is no candidate Microsoft sign-in', () => {
-    expect(candidateAuth.entraLogin).toBeUndefined();
+describe('internal candidate Microsoft sign-in', () => {
+  test('the first sign-in creates a confirmed Internal candidate with no password, and its internal profile', async () => {
+    prisma.candidate.findUnique.mockResolvedValue(null);
+    prisma.candidate.create.mockImplementation(({ data }) => Promise.resolve({ id: 40, lastLoginAt: null, ...data }));
+    const res = mockRes();
+
+    await candidateAuth.entraLogin({ body: { idToken: 'x' } }, res);
+
+    expect(prisma.candidate.create).toHaveBeenCalledWith({
+      data: {
+        fullName: 'Jane Okello', email: 'jane@caa.co.ug', candidateType: 'Internal',
+        entraObjectId: 'oid-123', emailConfirmed: true
+      }
+    });
+    expect(prisma.internalProfile.create).toHaveBeenCalledWith({ data: { candidateId: 40 } });
+    const body = res.json.mock.calls[0][0];
+    expect(body).toMatchObject({ candidateType: 'Internal', firstLogin: true });
+    expect(jwt.verify(body.token, 'test-secret')).toMatchObject({ type: 'candidate', id: 40 });
   });
 
-  test('registering with a UCAA address opens an Internal password account', async () => {
-    prisma.candidate.findUnique.mockResolvedValue(null);
-    prisma.pendingCandidateRegistration.findUnique.mockResolvedValue(null);
-    prisma.pendingCandidateRegistration.create.mockImplementation(({ data }) => Promise.resolve({ id: 5, ...data }));
+  test('HR staff can sign in as candidates too - it is a separate, candidate-only session', async () => {
+    prisma.candidate.findUnique.mockResolvedValueOnce({ id: 41, candidateType: 'Internal', fullName: 'Jane Okello', email: 'jane@caa.co.ug', entraObjectId: 'oid-123', lastLoginAt: new Date() });
+    const res = mockRes();
+
+    await candidateAuth.entraLogin({ body: { idToken: 'x' } }, res);
+
+    const token = jwt.verify(res.json.mock.calls[0][0].token, 'test-secret');
+    expect(token.type).toBe('candidate');
+    expect(token.role).toBeUndefined();
+  });
+
+  test('an email linked to another Microsoft identity is refused', async () => {
+    prisma.candidate.findUnique
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ id: 41, email: 'jane@caa.co.ug', entraObjectId: 'someone-else' });
+    const res = mockRes();
+
+    await candidateAuth.entraLogin({ body: { idToken: 'x' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+  });
+
+  test('a UCAA address cannot open a password account - internal status comes only from Microsoft sign-in', async () => {
     const res = mockRes();
 
     await candidateAuth.register({ body: { fullName: 'Jane', email: 'jane@caa.co.ug', password: 'Str0ng!Pass' } }, res);
 
-    expect(res.status).toHaveBeenCalledWith(201);
-    expect(prisma.pendingCandidateRegistration.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ email: 'jane@caa.co.ug', candidateType: 'Internal', passwordHash: expect.any(String) })
-    });
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'USE_MICROSOFT' }));
   });
 
-  test('an account with no password yet is told to set one with "Forgot password"', async () => {
+  test('password sign-in to a Microsoft-only account points at Microsoft sign-in', async () => {
     prisma.candidate.findUnique.mockResolvedValue({ id: 41, email: 'jane@caa.co.ug', passwordHash: null, emailConfirmed: true });
     const res = mockRes();
 
     await candidateAuth.login({ body: { email: 'jane@caa.co.ug', password: 'anything' } }, res);
 
     expect(res.status).toHaveBeenCalledWith(401);
-    expect(res.json).toHaveBeenCalledWith({ error: expect.stringContaining('Forgot password') });
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'USE_MICROSOFT' }));
   });
 });

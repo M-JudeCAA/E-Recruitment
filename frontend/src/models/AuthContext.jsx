@@ -36,6 +36,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('candidateName');
     localStorage.removeItem('candidatePhotoUrl');
     localStorage.removeItem('candidateEmail');
+    clearMicrosoftSession('candidate');
     setCandidate(null);
   }
   // Called right after a photo upload/removal (ProfileCompletionForm's
