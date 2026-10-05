@@ -592,6 +592,13 @@ model Vacancy {
   // requisitionDetails.signedCopy.
   requisitionSignedCopyUrl  String?
   requisitionSignedCopyName String?
+  // The UCAA employee the vacancy is being filled for, picked from the staff
+  // directory (Entra) or typed in. No system access - kept informed by email
+  // at each milestone (services/hiringManagerService.js). Staff-only.
+  hiringManagerName         String?
+  hiringManagerEmail        String?
+  hiringManagerEntraId      String?   @db.VarChar(36)
+  hiringManagerJobTitle     String?
 
   // Why `title` is kept as a denormalized snapshot rather than always
   // reading through `position.name`: if a Position is later renamed, past

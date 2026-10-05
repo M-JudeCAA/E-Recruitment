@@ -18,7 +18,8 @@ const STAFF_ONLY_VACANCY_FIELDS = [
   // The EXCO requisition behind the vacancy, and what was read from it.
   'requisitionDocumentUrl', 'requisitionDocumentName', 'requisitionDocumentHash',
   'requisitionUploadedAt', 'requisitionUploadedById', 'requisitionDetails',
-  'requisitionSignedCopyUrl', 'requisitionSignedCopyName'
+  'requisitionSignedCopyUrl', 'requisitionSignedCopyName',
+  'hiringManagerName', 'hiringManagerEmail', 'hiringManagerEntraId', 'hiringManagerJobTitle'
 ];
 
 function toPublicVacancy(vacancy) {

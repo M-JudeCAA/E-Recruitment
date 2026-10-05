@@ -139,6 +139,17 @@ Then set the IDs:
 - `backend/.env`: `ENTRA_TENANT_ID`, `ENTRA_STAFF_CLIENT_ID`, `ENTRA_CANDIDATE_CLIENT_ID`
 - `frontend/.env` (read at build time): `VITE_ENTRA_TENANT_ID`, `VITE_ENTRA_STAFF_CLIENT_ID`, `VITE_ENTRA_CANDIDATE_CLIENT_ID`
 
+**Staff directory (picking a vacancy's hiring manager).** The New Listing
+page searches UCAA staff in Entra with the signed-in HR user's own
+permission: give the **staff app** the Microsoft Graph delegated permission
+`User.Read.All` (or at least `User.ReadBasic.All`) with admin consent. Nothing
+else is needed - the browser asks Microsoft for the token, and HR may see a
+one-time Microsoft prompt. Optionally, the API can search with its own
+application permission instead (`User.Read.All`, application type, plus a
+client secret in `ENTRA_DIRECTORY_CLIENT_SECRET`, and
+`ENTRA_DIRECTORY_CLIENT_ID` if it isn't the staff app). If neither works, HR
+types the hiring manager's name and UCAA email.
+
 Create staff accounts with the person's **sign-in name** (UPN) — that is
 what Entra reports when the `email` claim is empty. The first sign-in links
 the account to the person's Microsoft object id; from then on only that id

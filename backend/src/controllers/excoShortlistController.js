@@ -5,6 +5,7 @@ const vacancyModel = require('../models/vacancyModel');
 const audit = require('../services/auditService');
 const meritList = require('../services/meritListService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
+const hiringManagers = require('../services/hiringManagerService');
 const { fileUrl } = require('../middleware/upload');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { computeExperienceYears, highestEducationLevel } = require('../services/screeningService');
@@ -205,6 +206,7 @@ async function attach(req, res) {
         `We're sorry to let you know your application for "${vacancy.title}" was not successful this time.`)
         .catch((err) => console.error(`Rejection notice to candidate ${a.candidateId} failed:`, err));
     }
+    await hiringManagers.notify(vacancy, 'shortlistApproved', { names: approved.map((a) => a.candidate.fullName) });
     broadcastDashboardEvent('ShortlistApproved', { vacancyId, excoApproved: true });
     res.status(201).json({ id: approval.id, approved: approved.length, struckOff: struck.length });
   } catch (err) {

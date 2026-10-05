@@ -9,6 +9,7 @@ const panelMemberModel = require('../models/panelMemberModel');
 const vacancyModel = require('../models/vacancyModel');
 const scheduling = require('../services/interviewSchedulingService');
 const invitations = require('../services/interviewInvitationService');
+const hiringManagers = require('../services/hiringManagerService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { AppError, sendError } = require('../utils/errorResponse');
@@ -212,6 +213,12 @@ function excoApprovalError(names) {
   return err;
 }
 
+// The vacancy's hiring manager hears that interviews are booked, and when.
+async function notifyHiringManager(vacancyId, rounds) {
+  const dates = rounds.map((r) => r.scheduledDate).filter(Boolean).map((d) => new Date(d)).sort((a, b) => a - b);
+  await hiringManagers.notify(vacancyId, 'interviewsScheduled', { count: rounds.length, from: dates[0], to: dates[dates.length - 1] });
+}
+
 // One interview for one application (the review card's "Schedule interview").
 // Round number is computed server-side from existing rounds for this
 // application, not taken from the client.
@@ -266,6 +273,7 @@ async function schedule(req, res) {
     { calendar: invitations.candidateInvitation(round, application.vacancy.title) });
   const panelEmailed = req.body.notifyPanel === false ? 0 : await syncPanelSafely([round], 'scheduled');
 
+  await notifyHiringManager(application.vacancyId, [round]);
   broadcast('scheduled', round);
   res.status(201).json({ ...decorate(round), panelEmailed });
 }
@@ -386,6 +394,7 @@ async function scheduleSession(req, res) {
       payload: { sessionKey, roundIds: rounds.map((r) => r.id), overrodeConflicts: session.conflicts.length > 0 }
     }
   });
+  await notifyHiringManager(session.vacancyId, rounds);
   broadcastDashboardEvent('InterviewUpdated', { action: 'session', sessionKey, vacancyId: session.vacancyId });
   res.status(201).json({ sessionKey, rounds: rounds.map((r) => decorate(r)), panelEmailed });
 }

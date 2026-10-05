@@ -232,3 +232,29 @@ test('the cleanup job removes requisition uploads nothing refers to', async () =
   await cleanup.run(new Date(Date.now() + cleanup.GRACE_MS + 60000));
   expect((await api(tokens.hro).get(unused.document.url)).status).toBe(404);
 });
+
+test('a vacancy names its hiring manager (a UCAA employee), never shown to candidates', async () => {
+  const outsider = await createVacancyFromRequisition(tokens.hro, {
+    positionId: org.position.id, postingType: 'External', deadline: new Date(Date.now() + 14 * 86400000).toISOString(),
+    hiringManager: { name: 'Pat Outside', email: 'pat@gmail.com' }
+  });
+  expect(outsider.status).toBe(400);
+
+  const created = expectStatus(await createVacancyFromRequisition(tokens.hro, {
+    positionId: org.position.id, postingType: 'External', deadline: new Date(Date.now() + 14 * 86400000).toISOString(),
+    hiringManager: { name: 'Stephen Tumwine', email: 'Stephen.Tumwine@caa.co.ug', jobTitle: 'Director ANS' }
+  }), 201).body;
+  expect(created).toEqual(expect.objectContaining({ hiringManagerName: 'Stephen Tumwine', hiringManagerEmail: 'stephen.tumwine@caa.co.ug' }));
+
+  // Changed later, and audited.
+  expectStatus(await api(tokens.hro).patch(`/api/vacancies/${created.id}`, { hiringManager: { name: 'Josephine Nabwire', email: 'josephine.nabwire@caa.co.ug' } }), 200);
+  expect((await prisma.vacancy.findUnique({ where: { id: created.id } })).hiringManagerName).toBe('Josephine Nabwire');
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${created.id}/approve`), 200);
+  const publicView = expectStatus(await api().get(`/api/vacancies/${created.id}`), 200).body;
+  expect(Object.keys(publicView).filter((k) => k.startsWith('hiringManager'))).toEqual([]);
+
+  // The directory isn't connected in the tests - the page falls back to typing.
+  const search = await api(tokens.hro).get('/api/directory/people?q=jo');
+  expect(search.status).toBe(501);
+  expect(search.body.code).toBe('DIRECTORY_NOT_CONFIGURED');
+});

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, CalendarClock, FileText, FileCheck2 } from 'lucide-react';
+import { Building2, CalendarClock, FileText, FileCheck2, UserCheck } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import HRSidebar from '../components/HRSidebar';
 import PageHeader from '../components/PageHeader';
@@ -14,10 +14,11 @@ import Modal from '../components/Modal';
 import VacancyAdvertFields from '../components/VacancyAdvertFields';
 import VacancyAdvert from '../components/VacancyAdvert';
 import RequisitionPanel from '../components/RequisitionPanel';
+import HiringManagerPicker from '../components/HiringManagerPicker';
 import useVacancyDraft from '../models/useVacancyDraft';
 
 const emptyForm = {
-  departmentId: '', positionId: '', reportsToPositionId: '',
+  departmentId: '', positionId: '', reportsToPositionId: '', hiringManager: null,
   positionsRequired: 1, postingType: '', deadline: '', // postingType is now required with no default, so this starts blank to force an explicit choice
   salaryScale: '',
   // Site/contract metadata, distinct from the org-structure fields above -
@@ -371,6 +372,12 @@ export default function CreateVacancyListing() {
               <option value="External">External only</option>
             </Select>
           </div>
+        </Card>
+
+        <Card style={{ padding: 'var(--spacing-lg)' }}>
+          <SectionHeader icon={UserCheck} title="Hiring manager"
+            description="Who this vacancy is being filled for - a UCAA employee. They get email updates as the recruitment moves on, and need no access to this system." />
+          <HiringManagerPicker value={form.hiringManager} onChange={(hiringManager) => setForm((prev) => ({ ...prev, hiringManager }))} />
         </Card>
 
         <Card style={{ padding: 'var(--spacing-lg)' }}>

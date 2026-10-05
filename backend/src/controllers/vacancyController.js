@@ -11,6 +11,7 @@ const audit = require('../services/auditService');
 const slaModel = require('../models/slaModel');
 const { notify } = require('../services/notificationService');
 const requisitionService = require('../services/requisitionService');
+const hiringManagers = require('../services/hiringManagerService');
 const duplicateApplicants = require('../services/duplicateApplicantService');
 const accessLog = require('../services/accessLogService');
 const { sendRequisitionError } = require('./requisitionController');
@@ -132,6 +133,13 @@ async function create(req, res) {
     validatedReportsToId = reportsTo.id;
   }
 
+  let hiringManager = {};
+  if (req.body.hiringManager !== undefined) {
+    const parsed = hiringManagers.parseHiringManager(req.body.hiringManager);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    hiringManager = parsed.data;
+  }
+
   // Only from an uploaded, EXCO-approved requisition - re-read from the
   // stored document here, never taken from the request.
   let requisition;
@@ -151,6 +159,7 @@ async function create(req, res) {
     // now also 'PendingApproval' as a second, independent line of
     // defense - this explicit value doesn't rely on that default alone.
     status: 'PendingApproval',
+    ...hiringManager,
     ...buildVacancyCreateData(position, validatedReportsToId, req.body, req.user.id)
     });
   } catch (err) {
@@ -211,6 +220,12 @@ async function readvertise(req, res) {
   );
   if (questionError) fieldErrors.push(questionError);
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
+  let readvertiseHiringManager = {};
+  if (req.body.hiringManager !== undefined) {
+    const parsed = hiringManagers.parseHiringManager(req.body.hiringManager);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    readvertiseHiringManager = parsed.data;
+  }
 
   // Re-fetched rather than trusting the closed row's own title/department -
   // if the underlying Position was renamed/moved since, the readvertised
@@ -226,6 +241,10 @@ async function readvertise(req, res) {
     readvertisedFromId: vacancy.id,
     // Re-running the same approved position - same requisition.
     ...requisitionService.carriedOver(vacancy),
+    // The same hiring manager, unless HR names another.
+    hiringManagerName: vacancy.hiringManagerName, hiringManagerEmail: vacancy.hiringManagerEmail,
+    hiringManagerEntraId: vacancy.hiringManagerEntraId, hiringManagerJobTitle: vacancy.hiringManagerJobTitle,
+    ...readvertiseHiringManager,
     ...buildVacancyCreateData(position, vacancy.reportsToPositionId, req.body, req.user.id)
   });
   await audit.record({
@@ -306,6 +325,11 @@ async function update(req, res) {
   if (employmentCategory !== undefined) data.employmentCategory = employmentCategory || null;
   if (internalSalaryRange !== undefined) data.internalSalaryRange = internalSalaryRange || null;
   if (recruiterNotes !== undefined) data.recruiterNotes = recruiterNotes || null;
+  if (req.body.hiringManager !== undefined) {
+    const parsed = hiringManagers.parseHiringManager(req.body.hiringManager);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    Object.assign(data, parsed.data);
+  }
 
   if (positionsRequired !== undefined) {
     const n = Number(positionsRequired);
@@ -419,6 +443,7 @@ async function reject(req, res) {
   });
   await notifySafely(vacancy.createdById, 'VacancyRejected', vacancy.id,
     `${describeVacancy(vacancy)} was rejected: ${escapeHtml(reason)}`);
+  await hiringManagers.notify(vacancy, 'closed', { reason: `it was not approved for advertising (${reason})` });
   broadcastDashboardEvent('VacancyRejected', { vacancyId: vacancy.id });
   res.json(await vacancyModel.findById(vacancy.id));
 }
@@ -470,6 +495,7 @@ async function close(req, res) {
     entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy closed', actor: audit.actorFrom(req),
     before: vacancy, after: { status: 'Closed' }, fields: ['status'], comment: reason
   });
+  await hiringManagers.notify(vacancy, 'closed', { reason });
   broadcastDashboardEvent('VacancyClosed', { vacancyId });
   res.json(await vacancyModel.findById(vacancyId));
 }
@@ -546,6 +572,7 @@ async function approve(req, res) {
     ...(needsJdAuthorisation ? { comment: `Authorised the exception for an unapproved job description: ${jdException.reason}` } : {})
   });
 
+  await hiringManagers.notify(updated, 'published');
   broadcastDashboardEvent('VacancyApproved', { vacancyId });
   res.json(updated);
 }

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
+import HiringManagerPicker from '../components/HiringManagerPicker';
 import Alert from '../components/Alert';
 import StatusBadge from '../components/StatusBadge';
 import Skeleton from '../components/Skeleton';
@@ -91,6 +92,18 @@ export default function VacancyDetail() {
   const navigate = useNavigate();
   const [vacancy, setVacancy] = useState(null);
   const [loadError, setLoadError] = useState('');
+  const [hmError, setHmError] = useState('');
+
+  const saveHiringManager = async (hiringManager) => {
+    setHmError('');
+    try {
+      await staffClient.patch(`/api/vacancies/${id}`, { hiringManager });
+      const res = await staffClient.get(`/api/vacancies/${id}`);
+      setVacancy(res.data);
+    } catch (err) {
+      setHmError(err.response?.data?.error || (err.response?.data?.errors || []).join('; ') || 'Could not save the hiring manager');
+    }
+  };
 
   useEffect(() => {
     setLoadError('');
@@ -168,6 +181,17 @@ export default function VacancyDetail() {
       ) : ['Returned', 'Rejected'].includes(vacancy.status) ? null : (
         <Button onClick={() => navigate(`/hr/applications?vacancyId=${vacancy.id}`)}>Manage applications &rarr;</Button>
       )}
+
+      <Card style={{ marginTop: 'var(--spacing-md)' }}>
+        <h3 style={{ margin: '0 0 6px', fontSize: 15 }}>Hiring manager</h3>
+        <p style={{ margin: '0 0 10px', fontSize: 13, color: 'var(--color-text-muted)' }}>
+          Kept up to date by email at each step - advertised, applications closed, shortlist, interviews, merit list and offers.
+        </p>
+        <HiringManagerPicker
+          value={vacancy.hiringManagerEmail ? { name: vacancy.hiringManagerName, email: vacancy.hiringManagerEmail, jobTitle: vacancy.hiringManagerJobTitle } : null}
+          onChange={saveHiringManager} />
+        <Alert type="error" message={hmError} />
+      </Card>
 
       <RequisitionCard vacancy={vacancy} />
 

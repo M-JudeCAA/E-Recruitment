@@ -18,6 +18,7 @@ require('dotenv').config();
 const prisma = require('../src/config/db');
 const workflow = require('../src/services/workflowService');
 const offerService = require('../src/services/offerService');
+const hiringManagers = require('../src/services/hiringManagerService');
 const { notifyCandidate } = require('../src/services/candidateNotificationService');
 const { formatWhen } = require('../src/utils/interviewFormat');
 
@@ -57,6 +58,12 @@ async function expireOverdue(now) {
     }
     await offerService.notifyPositionReleased('OfferExpired', offer.id, offer.application.vacancy, offer.applicationId,
       `expired without an answer from ${offer.application.candidate?.fullName || 'the candidate'}`, result.promoted);
+    const promotedName = result.promoted
+      ? (await prisma.candidate.findUnique({ where: { id: result.promoted.candidateId }, select: { fullName: true } }))?.fullName
+      : null;
+    await hiringManagers.notify(offer.application.vacancy, 'offerNotTaken', {
+      candidateName: offer.application.candidate?.fullName || 'the candidate', outcome: 'not answered in time, so it lapsed', promotedName
+    });
   }
   return expired;
 }
