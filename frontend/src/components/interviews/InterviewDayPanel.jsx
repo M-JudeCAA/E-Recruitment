@@ -151,9 +151,12 @@ export default function InterviewDayPanel({ vacancyId, day, canEdit, onClose, on
                       <button type="button" style={chipStyle(true)} disabled={busy === `call-${r.id}`} onClick={() => callIn(r)}>
                         <LogIn size={12} /> {busy === `call-${r.id}` ? 'Calling in...' : 'Call in'}
                       </button>
-                      <button type="button" style={chipStyle(false)} disabled={busy === `noshow-${r.id}`} onClick={() => noShow(r)}>
-                        <UserX size={12} /> No-show
-                      </button>
+                      {/* The API only takes a no-show once the slot has started. */}
+                      {new Date(r.scheduledDate) <= new Date() && (
+                        <button type="button" style={chipStyle(false)} disabled={busy === `noshow-${r.id}`} onClick={() => noShow(r)}>
+                          <UserX size={12} /> No-show
+                        </button>
+                      )}
                     </>
                   )}
                   <button type="button" style={chipStyle(false)} onClick={() => onOpenRound(r.id)} aria-label={`Open ${r.application.candidate.fullName}'s interview`}>

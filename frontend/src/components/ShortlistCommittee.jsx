@@ -316,6 +316,10 @@ export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onMa
       run(() => staffClient.post(`${base}/close`), 'Exercise closed - the ranking is final.');
     }
   };
+  // The server takes strictly the top N qualified, at least the number of posts.
+  const minCount = Math.min(vacancy.positionsRequired, qualified);
+  const countValid = Number.isInteger(Number(count)) && Number(count) >= Math.max(1, minCount) && Number(count) <= qualified;
+
   const propose = async () => {
     const n = Number(count);
     if (!(await confirm(`Propose the top ${n} for interview (plus anyone tied with the last)? A Principal HR Officer then approves it.`, { title: 'Propose interview shortlist', confirmLabel: 'Propose' }))) return;
@@ -427,9 +431,14 @@ export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onMa
                       <input type="number" min={Math.min(vacancy.positionsRequired, qualified)} max={qualified} value={count}
                         onChange={(e) => setCount(e.target.value)} placeholder={String(Math.min(qualified, vacancy.positionsRequired * 3))}
                         aria-label="How many to interview" style={{ ...inputStyle, width: 100 }} />
-                      <Button onClick={propose} loading={busy} disabled={!count}>
+                      <Button onClick={propose} loading={busy} disabled={!countValid}>
                         <ListChecks size={16} /> Propose for interview
                       </Button>
+                      {count && !countValid && (
+                        <span role="alert" style={{ fontSize: 12, color: 'var(--color-danger)', flexBasis: '100%' }}>
+                          Enter a whole number from {minCount} to {qualified}.
+                        </span>
+                      )}
                     </>
                   )}
                 </>

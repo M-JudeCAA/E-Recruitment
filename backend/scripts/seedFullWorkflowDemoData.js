@@ -1448,7 +1448,8 @@ async function finish() {
   }
 
   log('=== Maintenance jobs (SLA escalations, deadline notices, interview reminders, sessions, offer expiry) ===');
-  for (const name of ['checkSlaEscalations', 'checkVacancyDeadlines', 'sendInterviewReminders', 'expireOffers', 'cleanupPendingRegistrations', 'cleanupVerificationTokens', 'checkInterviewSessions']) {
+  // Every job the health banner watches, so a fresh demo DB shows none as never run.
+  for (const { name } of require('../src/services/systemHealthService').JOBS) {
     const mod = require(`./${name}`);
     await runJob(name, () => mod.run());
   }

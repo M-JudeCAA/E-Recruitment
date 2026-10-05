@@ -86,6 +86,14 @@ export default function ProfileCompletionForm({ onComplete }) {
 
   const isInternal = candidate?.candidateType === 'Internal';
 
+  // After adding, editing or deleting an education, work or certificate
+  // entry: refresh the lists only. load() would also refill the personal
+  // details from the server and wipe anything typed there but not yet saved.
+  const refreshEntries = () => client.get('/api/candidates/me').then((res) => {
+    setProfile(res.data);
+    return res.data;
+  });
+
   const load = () => client.get('/api/candidates/me').then((res) => {
     const data = res.data;
     setProfile(data);
@@ -147,7 +155,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       };
       if (id) await client.put(`/api/candidates/me/education/${id}`, payload);
       else await client.post('/api/candidates/me/education', payload);
-      await load();
+      await refreshEntries();
       return true;
     } catch (err) {
       setError(err.response?.data?.error || 'Could not save education entry');
@@ -163,7 +171,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       };
       if (id) await client.put(`/api/candidates/me/work-experience/${id}`, payload);
       else await client.post('/api/candidates/me/work-experience', payload);
-      await load();
+      await refreshEntries();
       return true;
     } catch (err) {
       setError(err.response?.data?.error || 'Could not save work experience entry');
@@ -179,7 +187,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       };
       if (id) await client.put(`/api/candidates/me/certificates/${id}`, payload);
       else await client.post('/api/candidates/me/certificates', payload);
-      await load();
+      await refreshEntries();
       return true;
     } catch (err) {
       setError(err.response?.data?.error || 'Could not save certificate entry');
@@ -315,7 +323,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     setError('');
     try {
       await client.delete(`/api/candidates/me/education/${id}`);
-      await load();
+      await refreshEntries();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not delete education entry');
     }
@@ -342,7 +350,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     setError('');
     try {
       await client.delete(`/api/candidates/me/work-experience/${id}`);
-      await load();
+      await refreshEntries();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not delete work experience entry');
     }
@@ -368,7 +376,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     setError('');
     try {
       await client.delete(`/api/candidates/me/certificates/${id}`);
-      await load();
+      await refreshEntries();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not delete certificate entry');
     }
@@ -742,7 +750,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       </div>
 
       <div style={{ marginBottom: 24 }}>
-        <ExamGradesEditor examGrades={profile?.examGrades} onChange={load} />
+        <ExamGradesEditor examGrades={profile?.examGrades} onChange={refreshEntries} />
       </div>
 
       {isInternal && (

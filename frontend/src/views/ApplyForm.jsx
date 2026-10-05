@@ -144,6 +144,12 @@ export default function ApplyForm() {
   // who actually already has a Draft/Submitted application here).
   const [applicationsChecked, setApplicationsChecked] = useState(false);
 
+  // After the Profile step adds, edits or deletes an education, work,
+  // certificate or exam-grade entry: refresh those lists only. loadProfile
+  // would also refill the personal details and internal-profile fields from
+  // the server, wiping anything typed there but not yet saved.
+  const refreshProfileEntries = () => client.get('/api/candidates/me').then((res) => setProfile(res.data));
+
   const loadProfile = () => client.get('/api/candidates/me').then((res) => {
     setProfile(res.data);
     setProfileDetailsForm({
@@ -491,7 +497,7 @@ export default function ApplyForm() {
     <div style={{ background: 'var(--color-primary-light)', minHeight: '100%', width: '100%' }}>
       {showProfileModal && (
         <Modal title="Complete your profile" onClose={() => setShowProfileModal(false)} maxWidth={720}>
-          <ProfileCompletionForm onComplete={() => setShowProfileModal(false)} />
+          <ProfileCompletionForm onComplete={() => { setShowProfileModal(false); loadProfile(); }} />
         </Modal>
       )}
       <div className="p-4 md:p-8">
@@ -520,7 +526,7 @@ export default function ApplyForm() {
               )}
               {steps[stepIndex].key === 'jobDetails' && <JobDetailsStep vacancy={vacancy} />}
               {steps[stepIndex].key === 'profile' && (
-                <ProfileStep profile={profile} onProfileChange={loadProfile}
+                <ProfileStep profile={profile} onProfileChange={refreshProfileEntries}
                   profileDetails={profileDetailsForm}
                   setProfileDetail={(key) => (e) => { setDirty(true); setProfileDetailsForm({ ...profileDetailsForm, [key]: e.target.value }); }} />
               )}

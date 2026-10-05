@@ -250,6 +250,8 @@ export default function CreateVacancyListing() {
     if (creating) return; // a double-click or slow-network retry must not create two vacancies
     if (!requisition) { setError('Upload the EXCO-approved requisition first.'); return; }
     if (!requisitionConfirmed) { setError('Confirm that the requisition has been approved and signed by EXCO.'); return; }
+    // Not on the requisition, so HR always sets it here.
+    if (!form.deadline) { setError('Set the application deadline (under Listing details).'); return; }
     setError(''); setCreating(true);
     // No auto-save may land after the vacancy (and so the draft) is done.
     draft.cancelPending();
@@ -368,7 +370,7 @@ export default function CreateVacancyListing() {
             description="Timeline and compensation. The internal salary range and recruiter notes are never shown to candidates." />
 
           <div style={fieldGrid}>
-            <TextField label="Deadline" type="date" value={form.deadline}
+            <TextField label="Deadline" type="date" required value={form.deadline}
               onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
             <div>
               <Select label="Location" value={customLocation ? '__custom__' : form.location}
@@ -425,6 +427,11 @@ export default function CreateVacancyListing() {
               </span>
             )}
           </div>
+          {/* The same error as the alert at the top, which is a long scroll
+              away from this button. */}
+          {error && (
+            <div role="alert" style={{ flexBasis: '100%', order: -1, fontSize: 13, color: 'var(--color-danger)' }}>{error}</div>
+          )}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <Button type="button" variant="ghost" onClick={saveDraftNow}
               disabled={draft.status === 'saving' || draft.status === 'conflict'}>Save draft</Button>
