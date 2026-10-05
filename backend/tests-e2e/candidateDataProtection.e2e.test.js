@@ -104,3 +104,18 @@ test('records who viewed an applicant - the applicant list and their documents -
   const otherViews = expectStatus(await api(tokens.manager).get(`/api/audit/access/applications/${otherApp.id}`), 200).body;
   expect(otherViews.map((v) => v.action)).toEqual(['Viewed the applicants']);
 });
+
+test('the retention job removes access records past the retention period and keeps the rest', async () => {
+  const day = 24 * 60 * 60 * 1000;
+  await prisma.dataAccessLog.createMany({ data: [
+    { actorType: 'staff', staffUserId: staff.hro.id, action: 'Viewed the applicants', candidateIds: [1], at: new Date(Date.now() - 731 * day) },
+    { actorType: 'staff', staffUserId: staff.hro.id, action: 'Opened a document', candidateIds: [1], at: new Date(Date.now() - 729 * day) },
+    { actorType: 'staff', staffUserId: staff.hro.id, action: 'Viewed the applicants', candidateIds: [1] }
+  ] });
+
+  const summary = await require('../scripts/purgeAccessLog').run();
+
+  expect(summary).toMatch(/1 record\(s\) older than 730 days removed/);
+  expect((await prisma.dataAccessLog.findMany({ orderBy: { at: 'asc' } })).map((r) => r.action))
+    .toEqual(['Opened a document', 'Viewed the applicants']);
+});

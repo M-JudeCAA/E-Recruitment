@@ -20,6 +20,7 @@ const JOBS = [
   { name: 'cleanupPendingRegistrations', label: 'cleanup of abandoned registrations' },
   { name: 'cleanupVerificationTokens', label: 'cleanup of old confirmation and reset links' },
   { name: 'cleanupRequisitionUploads', label: 'cleanup of unused requisition uploads' },
+  { name: 'purgeAccessLog', label: 'removal of access log records past their retention period' },
   { name: 'checkInterviewSessions', label: 'alerts for interview sessions not started' }
 ];
 const STALE_AFTER_HOURS = 3;

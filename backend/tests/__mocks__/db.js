@@ -35,7 +35,7 @@ const mockDb = {
   systemHealth: { findMany: jest.fn(), upsert: jest.fn(), updateMany: jest.fn() },
   verificationToken: { deleteMany: jest.fn(), create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   pendingCandidateRegistration: { create: jest.fn(), findUnique: jest.fn(), delete: jest.fn() },
-  dataAccessLog: { create: jest.fn(), findMany: jest.fn() }
+  dataAccessLog: { create: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn() }
 };
 
 // Self-referencing so `tx.offer.updateMany(...)` etc. inside a
