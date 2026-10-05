@@ -1,14 +1,25 @@
 const prisma = require('../config/db');
+const { typeCodeFor, refYear, formatJobRef } = require('../utils/jobRefGenerator');
 
 module.exports = {
   create: (data) => prisma.vacancy.create({ data }),
   findById: (id) => prisma.vacancy.findUnique({ where: { id } }),
   update: (id, data) => prisma.vacancy.update({ where: { id }, data }),
+  // Only if the vacancy is still at `status` - two approvers acting on the
+  // same vacancy at once can't both succeed. { count } like updateMany.
+  updateIfStatus: (id, status, data) => prisma.vacancy.updateMany({ where: { id, status }, data }),
 
-  // Used by the job reference generator to detect a same-type,
-  // same-month collision and append a distinguishing suffix.
-  countByJobRefPrefix: (prefix) => prisma.vacancy.count({
-    where: { jobRef: { startsWith: prefix } }
+  // Creates a vacancy with the next job reference for its posting type and
+  // year (see utils/jobRefGenerator.js). The upsert takes the counter row's
+  // lock and holds it until commit, so concurrent creates are numbered one
+  // after the other, and a failed create rolls its number back.
+  createWithJobRef: (postingType, data, now = new Date()) => prisma.$transaction(async (tx) => {
+    const typeCode = typeCodeFor(postingType);
+    const year = refYear(now);
+    await tx.$executeRaw`INSERT INTO JobRefSequence (typeCode, year, lastNumber) VALUES (${typeCode}, ${year}, 1)
+      ON DUPLICATE KEY UPDATE lastNumber = lastNumber + 1`;
+    const sequence = await tx.jobRefSequence.findUnique({ where: { typeCode_year: { typeCode, year } } });
+    return tx.vacancy.create({ data: { ...data, jobRef: formatJobRef(typeCode, sequence.lastNumber, year) } });
   }),
 
   // Candidate-facing listing - includes department/directorate and the

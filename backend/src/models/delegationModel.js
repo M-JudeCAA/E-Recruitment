@@ -28,7 +28,8 @@ module.exports = {
   // now must be passed in explicitly (not defaulted inside the query)
   // so this function stays trivially testable with a fixed clock.
   findActiveForDelegate: (delegateId, now) => prisma.delegation.findFirst({
-    where: { delegateId, startDate: { lte: now }, endDate: { gte: now } },
+    // A deactivated delegator's authority lapses with their account.
+    where: { delegateId, startDate: { lte: now }, endDate: { gte: now }, delegator: { active: true } },
     include: { delegator: true }
   }),
 

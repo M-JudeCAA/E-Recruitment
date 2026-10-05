@@ -13,6 +13,7 @@ import LoadingState from './LoadingState';
 import InterviewRoundPanel from './interviews/InterviewRoundPanel';
 import OfferComposer from './offers/OfferComposer';
 import OfferSummary from './offers/OfferSummary';
+import CsvDownloadButton from './CsvDownloadButton';
 import OfferActions from './offers/OfferActions';
 import { hintText } from './interviews/formStyles';
 import { errorMessage } from '../utils/interviews';
@@ -245,6 +246,9 @@ export default function MeritListBoard({ vacancy, staffRole, reloadKey, onChange
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {rows.length > 0 && !dirty && (
+              <CsvDownloadButton url={`/api/applications/vacancies/${vacancy.id}/merit-list/export`} label="Export CSV" fallbackName="merit-list.csv" />
+            )}
             {editable && (
               <>
                 <Button variant="ghost" onClick={resetToResults} disabled={!!busy} style={{ padding: '6px 12px', fontSize: 13 }}>

@@ -209,7 +209,7 @@ describe('meritListController', () => {
 
     await meritListController.propose({ params: { vacancyId: '3' }, body: { applicationIds: [1], applicationRankVersions: { 1: 0 } }, user: { id: 9 } }, res);
 
-    expect(prisma.staffUser.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { role: 'Principal_HR_Officer' } }));
+    expect(prisma.staffUser.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { role: 'Principal_HR_Officer', active: true } }));
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ primaryCount: 1, reserveCount: 0 }));
   });
 

@@ -13,6 +13,7 @@ import Button from '../components/Button';
 import Alert from '../components/Alert';
 import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
+import ReasonDialog from '../components/ReasonDialog';
 import VacancyAdvertFields from '../components/VacancyAdvertFields';
 import VacancyAdvert from '../components/VacancyAdvert';
 import LiveIndicator from '../components/LiveIndicator';
@@ -23,8 +24,11 @@ import DataTable from '../components/DataTable';
 import BoardView from '../components/BoardView';
 import LoadMoreControl from '../components/LoadMoreControl';
 import { STATUS_COLORS } from '../components/StatusBadge';
+import VacancyDraftsList from '../components/VacancyDraftsList';
 import { urgencyOf } from '../utils/slaUrgency';
 import { debounce } from '../utils/debounce';
+import { useConfirm } from '../components/ConfirmDialog';
+import { approveVacancy as approveVacancyRequest } from '../utils/approveVacancy';
 
 function UrgencyBadge({ followUp }) {
   const urgency = urgencyOf(followUp);
@@ -61,6 +65,8 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 const isOverdue = (v) => v.deadline && new Date(v.deadline) < new Date() && ['Open', 'PartiallyFilled'].includes(v.status);
 
 const MS_PER_DAY = 86400000;
+// Candidates can see (or have seen) the vacancy - moving its deadline then needs a reason.
+const PUBLISHED_STATUSES = ['Open', 'PartiallyFilled', 'Filled', 'Closed'];
 
 // "N days left" countdown alongside the deadline date itself - the deadline
 // line previously only spoke up once a vacancy was already overdue; this
@@ -76,6 +82,7 @@ function daysLeftLabel(deadline) {
 }
 
 export default function HRDashboard() {
+  const confirm = useConfirm();
   const { staff } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -259,15 +266,14 @@ export default function HRDashboard() {
       minimumAge: editForm.minimumAge, maximumAge: editForm.maximumAge,
       minimumFlyingHours: editForm.minimumFlyingHours, minimumCGPA: editForm.minimumCGPA, requiredExamGrades: editForm.requiredExamGrades,
       desirableRequirements: editForm.desirableRequirements,
-      generalKnowledge: editForm.generalKnowledge, specialSkills: editForm.specialSkills
+      generalKnowledge: editForm.generalKnowledge, specialSkills: editForm.specialSkills, desirableQualifications: editForm.desirableQualifications
     });
   };
 
   const approve = async (id) => {
     setError(''); setRowActionBusy('approve');
     try {
-      await staffClient.patch(`/api/vacancies/${id}/approve`);
-      load();
+      if (await approveVacancyRequest(id, confirm)) load();
     } catch (err) {
       setError(err.response?.data?.error || 'Approval failed');
     } finally {
@@ -313,13 +319,23 @@ export default function HRDashboard() {
     }
   };
 
-  const closeVacancy = async (id) => {
-    setError(''); setRowActionBusy('close');
+  // Closing takes a reason (FR-ATS-027), asked for in a ReasonDialog.
+  const [closingVacancy, setClosingVacancy] = useState(null);
+  const submitClose = async (reason) => {
+    setError('');
+    await staffClient.patch(`/api/vacancies/${closingVacancy.id}/close`, { reason });
+    setClosingVacancy(null);
+    load();
+  };
+
+  // A vacancy the approver returned goes back for approval once revised.
+  const resubmit = async (id) => {
+    setError(''); setRowActionBusy('resubmit');
     try {
-      await staffClient.patch(`/api/vacancies/${id}/close`);
+      await staffClient.patch(`/api/vacancies/${id}/resubmit`);
       load();
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not close vacancy');
+      setError(err.response?.data?.error || 'Could not resubmit the vacancy');
     } finally {
       setRowActionBusy(null);
     }
@@ -350,7 +366,8 @@ export default function HRDashboard() {
     desirableRequirements: v.desirableRequirements || [],
     disqualifyingRequirements: v.disqualifyingRequirements || [],
     generalKnowledge: v.generalKnowledge || [],
-    specialSkills: v.specialSkills || []
+    specialSkills: v.specialSkills || [],
+    desirableQualifications: v.desirableQualifications || []
   });
 
   // Only the fields that remain editable post-creation - positionId,
@@ -365,7 +382,8 @@ export default function HRDashboard() {
   const saveEdit = async () => {
     setSavingEdit(true);
     try {
-      await staffClient.patch(`/api/vacancies/${editModal.id}`, editForm);
+      const { deadlineReason, ...fields } = editForm;
+      await staffClient.patch(`/api/vacancies/${editModal.id}`, { ...fields, reason: deadlineReason || undefined });
       setEditModal(null);
       load();
     } catch (err) {
@@ -405,7 +423,7 @@ export default function HRDashboard() {
       minimumAge: readvertiseForm.minimumAge, maximumAge: readvertiseForm.maximumAge,
       minimumFlyingHours: readvertiseForm.minimumFlyingHours, minimumCGPA: readvertiseForm.minimumCGPA, requiredExamGrades: readvertiseForm.requiredExamGrades,
       desirableRequirements: readvertiseForm.desirableRequirements,
-      generalKnowledge: readvertiseForm.generalKnowledge, specialSkills: readvertiseForm.specialSkills
+      generalKnowledge: readvertiseForm.generalKnowledge, specialSkills: readvertiseForm.specialSkills, desirableQualifications: readvertiseForm.desirableQualifications
     });
   };
 
@@ -477,6 +495,11 @@ export default function HRDashboard() {
     { label: 'Pending approval', value: vacancies.filter((v) => v.status === 'PendingApproval').length, color: 'var(--color-warning)', statusValue: 'PendingApproval' },
     { label: 'Closed', value: vacancies.filter((v) => v.status === 'Closed').length, color: 'var(--color-text-muted)', statusValue: 'Closed' }
   ];
+  // Only shown when there is one - a returned vacancy is waiting on HR to revise and resubmit it.
+  const returnedCount = vacancies.filter((v) => v.status === 'Returned').length;
+  if (returnedCount > 0) {
+    vacancyStats.splice(1, 0, { label: 'Returned for revision', value: returnedCount, color: 'var(--color-warning)', statusValue: 'Returned' });
+  }
   const handleVacancyStatClick = (stat) => {
     setStatusFilter((current) => (current === stat.statusValue ? 'All' : stat.statusValue));
   };
@@ -508,6 +531,8 @@ export default function HRDashboard() {
       <Alert type="success" message={message} />
       <Alert type="error" message={error} />
 
+      <VacancyDraftsList />
+
       {/* Filter bar (#2) - text search plus status/department/posting-type/
           directorate filters and a sort order, all over the already-loaded
           admin vacancy list, and synced to the URL (see the effect above)
@@ -524,10 +549,12 @@ export default function HRDashboard() {
           <Select label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ flex: '1 1 160px' }}>
             <option value="All">All statuses</option>
             <option value="PendingApproval">Pending approval</option>
+            <option value="Returned">Returned for revision</option>
             <option value="Open">Open</option>
             <option value="PartiallyFilled">Partially filled</option>
             <option value="Filled">Filled</option>
             <option value="Closed">Closed</option>
+            <option value="Rejected">Rejected</option>
           </Select>
           <Select label="Department" value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)} style={{ flex: '1 1 200px' }}>
             <option value="All">All departments</option>
@@ -638,11 +665,13 @@ export default function HRDashboard() {
           items={visibleVacancies}
           groupBy={(v) => v.status}
           columns={[
+            { key: 'Returned', label: 'Returned', color: STATUS_COLORS.Returned },
             { key: 'PendingApproval', label: 'Pending approval', color: STATUS_COLORS.PendingApproval },
             { key: 'Open', label: 'Open', color: STATUS_COLORS.Open },
             { key: 'PartiallyFilled', label: 'Partially filled', color: STATUS_COLORS.PartiallyFilled },
             { key: 'Filled', label: 'Filled', color: STATUS_COLORS.Filled },
-            { key: 'Closed', label: 'Closed', color: STATUS_COLORS.Closed }
+            { key: 'Closed', label: 'Closed', color: STATUS_COLORS.Closed },
+            { key: 'Rejected', label: 'Rejected', color: STATUS_COLORS.Rejected }
           ]}
           renderCard={(v) => {
             const overdue = isOverdue(v);
@@ -792,6 +821,21 @@ export default function HRDashboard() {
                         </span>
                       )}
                     </div>
+                    {v.status === 'Returned' && v.returnReason && (
+                      <div style={{ fontSize: 13, color: 'var(--color-warning)', marginTop: 4, overflowWrap: 'anywhere' }}>
+                        Returned for revision: {v.returnReason}
+                      </div>
+                    )}
+                    {v.status === 'Rejected' && v.rejectionReason && (
+                      <div style={{ fontSize: 13, color: 'var(--color-danger)', marginTop: 4, overflowWrap: 'anywhere' }}>
+                        Rejected: {v.rejectionReason}
+                      </div>
+                    )}
+                    {v.status === 'Closed' && v.closeReason && (
+                      <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4, overflowWrap: 'anywhere' }}>
+                        Closed: {v.closeReason}
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                     <StatusBadge status={v.status} />
@@ -814,7 +858,7 @@ export default function HRDashboard() {
                       (see applicationEligibility.js's status gate, which candidates
                       are meant to be blocked by before ever reaching this vacancy).
                       Every other status has been published at least once. */}
-                  {v.status === 'PendingApproval' ? (
+                  {['PendingApproval', 'Returned', 'Rejected'].includes(v.status) ? (
                     <span
                       title="Applications become viewable once this vacancy is approved and published"
                       style={{ padding: '4px 10px', fontSize: 13, color: 'var(--color-text-muted)', cursor: 'not-allowed' }}
@@ -824,7 +868,13 @@ export default function HRDashboard() {
                   ) : (
                     <Link to={`/hr/applications?vacancyId=${v.id}`} style={{ padding: '4px 10px', fontSize: 13 }}>View applications</Link>
                   )}
-                  <Button variant="ghost" style={{ padding: '4px 10px' }} onClick={() => openEdit(v)}>Edit</Button>
+                  {v.status !== 'Rejected' && (
+                    <Button variant="ghost" style={{ padding: '4px 10px' }} onClick={() => openEdit(v)}>Edit</Button>
+                  )}
+                  {v.status === 'Returned' && (
+                    <Button variant="secondary" style={{ padding: '4px 10px' }} disabled={rowActionBusy != null}
+                      loading={rowActionBusy === 'resubmit'} loadingText="Resubmitting..." onClick={() => resubmit(v.id)}>Resubmit for approval</Button>
+                  )}
                   {/* SIMPLIFIED - the Senior HR Officer review stage and its
                       "awaiting review" status line are both removed entirely,
                       not just hidden. The 2-tier flow goes straight from
@@ -862,9 +912,9 @@ export default function HRDashboard() {
                       </Button>
                     )
                   )}
-                  {v.status !== 'Closed' && canApprove && (
+                  {!['Closed', 'Returned', 'Rejected'].includes(v.status) && canApprove && (
                     <Button variant="ghost" style={{ padding: '4px 10px', color: 'var(--color-danger)' }} disabled={rowActionBusy != null}
-                      loading={rowActionBusy === 'close'} loadingText="Closing..." onClick={() => closeVacancy(v.id)}>Close vacancy</Button>
+                      onClick={() => setClosingVacancy(v)}>Close vacancy</Button>
                   )}
                 </div>
               </Card>
@@ -872,6 +922,19 @@ export default function HRDashboard() {
           })()}
         </div>
       </div>
+      )}
+
+      {closingVacancy && (
+        <ReasonDialog
+          title={`Close vacancy — ${closingVacancy.jobRef}`}
+          intro="Closing takes the vacancy off the jobs board and stops new applications. It can be re-opened later. The reason is kept in the vacancy's history."
+          label="Reason for closing"
+          confirmLabel="Close vacancy"
+          busyLabel="Closing..."
+          danger
+          onSubmit={submitClose}
+          onClose={() => setClosingVacancy(null)}
+        />
       )}
 
       {editModal && (
@@ -903,6 +966,11 @@ export default function HRDashboard() {
           </Select>
           <TextField label="Deadline" type="date" value={editForm.deadline}
             onChange={(e) => setEditForm({ ...editForm, deadline: e.target.value })} />
+          {PUBLISHED_STATUSES.includes(editModal.status) && editForm.deadline !== (editModal.deadline ? editModal.deadline.slice(0, 10) : '') && (
+            <TextField label="Reason for changing the deadline" required value={editForm.deadlineReason || ''}
+              hint="Candidates can already see this vacancy, so the change and its reason are kept in the vacancy's history."
+              onChange={(e) => setEditForm({ ...editForm, deadlineReason: e.target.value })} />
+          )}
           <TextField label="Salary level / scale" value={editForm.salaryScale}
             onChange={(e) => setEditForm({ ...editForm, salaryScale: e.target.value })} />
           <Select label="Location" value={editCustomLocation ? '__custom__' : editForm.location}

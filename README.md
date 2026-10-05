@@ -166,10 +166,10 @@ Once running:
 - API: http://localhost:4000
 - Frontend: http://localhost:5173
 
-Seeded staff accounts (password for all: `ChangeMe123!`):
-- hro@caa.co.ug — HR Officer
-- phro@caa.co.ug — Principal HR Officer
-- dhra@caa.co.ug — DHRA / Manager HR
+Staff and internal candidates sign in with their UCAA Microsoft (Entra ID)
+account; see [SETUP.md](SETUP.md#microsoft-entra-id-sign-in). For local
+development without Entra, `npm run seed` creates demo staff accounts that
+sign in with a password while `DEV_PASSWORD_LOGIN=true` (listed in SETUP.md).
 
 ## Running tests
 

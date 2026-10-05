@@ -322,7 +322,7 @@ describe('acceptOffer / declineOffer ownership check', () => {
     await offerController.accept(req, res);
 
     expect(res.status).toHaveBeenCalledWith(409);
-    expect(prisma.staffUser.findMany).toHaveBeenCalledWith({ where: { role: 'Principal_HR_Officer' }, select: { id: true } });
+    expect(prisma.staffUser.findMany).toHaveBeenCalledWith({ where: { role: 'Principal_HR_Officer', active: true }, select: { id: true } });
     expect(prisma.notification.create).toHaveBeenCalledWith({ data: expect.objectContaining({
       recipientId: 30, channel: 'InApp', taskType: 'VacancyFilledWithOpenOffers', taskId: 20,
       message: expect.stringMatching(/UCAA\/ADV\/EXT\/09\/2026 \(Pilot\) \(application #44\).*every position is already filled/)
@@ -582,10 +582,13 @@ describe('withdrawOffer', () => {
     });
     // Like a decline, a withdrawal releases the position to the next reserve.
     expect(prisma.application.update).toHaveBeenCalledWith({ where: { id: 45 }, data: { meritListStatus: 'Primary' } });
-    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: {
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
       entityType: 'Offer', entityId: 20, action: 'Offer withdrawn', performedById: 30,
-      payload: { previousStatus: 'Approved', reason: 'Position <filled>', promotedApplicationId: 45 }
-    } });
+      payload: expect.objectContaining({
+        previousStatus: 'Approved', reason: 'Position <filled>', promotedApplicationId: 45,
+        comment: 'Position <filled>', changes: { status: { from: 'Approved', to: 'Withdrawn' } }
+      })
+    }) });
     expect(prisma.taskEscalation.updateMany).toHaveBeenCalledWith({
       where: { taskType: 'OfferApproval', taskId: 20, resolvedAt: null }, data: { resolvedAt: expect.any(Date) }
     });

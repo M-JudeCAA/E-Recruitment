@@ -23,9 +23,14 @@ export default function VacancyAdvert({
   jobPurpose, essentialRequirements,
   minimumEducationLevel, minimumExperienceYears, preferredFieldOfStudy,
   minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
-  desirableRequirements, generalKnowledge, specialSkills,
+  desirableRequirements, desirableQualifications, generalKnowledge, specialSkills,
   readvertised
 }) {
+  // The requisition's own desirable items, then HR's Qualifying questions.
+  const desirableItems = [
+    ...(desirableQualifications || []).map((text, i) => ({ key: `q${i}`, text })),
+    ...(desirableRequirements || []).map((r, i) => ({ key: r.id || `r${i}`, text: r.text }))
+  ];
   const facts = [
     ['Job Ref', jobRef || 'Assigned automatically when created'],
     ['Position', title],
@@ -78,7 +83,7 @@ export default function VacancyAdvert({
         </>
       )}
 
-      {(hasEssential || desirableRequirements?.length > 0 || generalKnowledge?.length > 0 || specialSkills?.length > 0) && (
+      {(hasEssential || desirableItems.length > 0 || generalKnowledge?.length > 0 || specialSkills?.length > 0) && (
         <h4 style={{ marginBottom: 6 }}>Person Specifications</h4>
       )}
 
@@ -100,11 +105,11 @@ export default function VacancyAdvert({
         </div>
       )}
 
-      {desirableRequirements?.length > 0 && (
+      {desirableItems.length > 0 && (
         <div style={{ marginBottom: 14 }}>
           <strong style={{ fontSize: 13, color: 'var(--color-primary-dark)' }}>Desirable Requirements</strong>
           <ul style={{ marginTop: 6, marginBottom: 0, paddingLeft: 20, fontSize: 13 }}>
-            {desirableRequirements.map((r) => <li key={r.id || r.text}>{r.text}</li>)}
+            {desirableItems.map((d) => <li key={d.key}>{d.text}</li>)}
           </ul>
         </div>
       )}

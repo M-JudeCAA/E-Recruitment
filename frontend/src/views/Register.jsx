@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import client from "../models/apiClient";
 import PageHeader from "../components/PageHeader";
+import UcaaAccountSignIn from "../components/UcaaAccountSignIn";
 import TextField from "../components/TextField";
 import Button from "../components/Button";
 import Alert from "../components/Alert";
-import { validateEmail, validatePassword, PASSWORD_HINT } from "../utils/validators";
+import Modal from "../components/Modal";
+import { validateEmail, validatePassword, validateNationalId, PASSWORD_HINT, NATIONAL_ID_ERROR } from "../utils/validators";
 
 // Uganda Civil Aviation Authority brand palette
 const ucaa = {
@@ -44,6 +46,12 @@ function validate(values) {
     errors.confirmPassword = "Passwords do not match.";
   }
 
+  // Optional here, but when given it must be a NIN - the only identity
+  // document accepted.
+  if (values.nationalId.trim() && !validateNationalId(values.nationalId)) {
+    errors.nationalId = NATIONAL_ID_ERROR;
+  }
+
   return errors;
 }
 
@@ -66,10 +74,14 @@ export default function Register() {
     nationalId: "",
   });
   const [touched, setTouched] = useState({});
+  // Set when the API says this is a UCAA address, which signs in with Microsoft.
+  const [useMicrosoft, setUseMicrosoft] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [duplicatePrompt, setDuplicatePrompt] = useState(false);
+  const navigate = useNavigate();
 
   const errors = validate(form);
   const showError = (field) => (touched[field] || submitted) ? errors[field] : undefined;
@@ -85,10 +97,19 @@ export default function Register() {
       setError("Please fix the highlighted fields.");
       return;
     }
+    await register(false);
+  };
 
+  // FR-ATS-037: the server asks first when the phone number is already on
+  // another account (POSSIBLE_DUPLICATE_ACCOUNT); notMe re-sends once the
+  // person says it isn't theirs.
+  const register = async (notMe) => {
+    setDuplicatePrompt(false);
     setSubmitting(true);
     try {
-      const res = await client.post("/api/candidates/auth/register", { ...form, returnTo: validReturnTo });
+      const res = await client.post("/api/candidates/auth/register", {
+        ...form, returnTo: validReturnTo, ...(notMe ? { confirmNotDuplicate: true } : {}),
+      });
       setMessage(
         `${res.data.message} (Account type: ${res.data.candidateType})`,
       );
@@ -103,7 +124,11 @@ export default function Register() {
       setTouched({});
       setSubmitted(false);
     } catch (err) {
-      setError(err.response?.data?.error || "Something went wrong");
+      if (err.response?.data?.code === "POSSIBLE_DUPLICATE_ACCOUNT") setDuplicatePrompt(true);
+      else {
+        setUseMicrosoft(err.response?.data?.code === "USE_MICROSOFT");
+        setError(err.response?.data?.error || "Something went wrong");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -135,8 +160,9 @@ export default function Register() {
       >
         <PageHeader
           title="Create account"
-          subtitle="Registering with a @caa.co.ug email creates an internal-staff account automatically."
+          subtitle="UCAA staff don't need to register - sign in with your UCAA account instead."
         />
+        <UcaaAccountSignIn returnTo={validReturnTo} highlight={useMicrosoft} />
         <form onSubmit={handleSubmit} noValidate>
           <TextField
             label="Full name"
@@ -163,10 +189,13 @@ export default function Register() {
             error={showError("phone")}
           />
           <TextField
-            label="National ID / Passport"
-            hint="You can also add or refine this on your profile later"
+            label="National Identification Number (NIN)"
+            hint="As it appears on your National ID card. You can also add it on your profile later."
+            maxLength={14}
             value={form.nationalId}
             onChange={(e) => setForm({ ...form, nationalId: e.target.value })}
+            onBlur={blur("nationalId")}
+            error={showError("nationalId")}
           />
           <TextField
             label="Password"
@@ -199,6 +228,25 @@ export default function Register() {
           </Link>
         </p>
       </div>
+      {duplicatePrompt && (
+        <Modal
+          title="Do you already have an account?"
+          onClose={() => setDuplicatePrompt(false)}
+          footer={<>
+            <Button variant="ghost" onClick={() => register(true)} disabled={submitting}>It's not me - create my account</Button>
+            <Button onClick={() => navigate("/login")}>Sign in instead</Button>
+          </>}
+        >
+          <p style={{ marginTop: 0 }}>
+            An account already uses the phone number <strong>{form.phone}</strong>. If it is yours, sign in to it - or{" "}
+            <Link to="/forgot-password">reset its password</Link> if you've forgotten it - rather than creating a second
+            account: applications from two accounts for the same person can't both be considered.
+          </p>
+          <p style={{ marginBottom: 0, fontSize: 13, color: "var(--color-text-muted)" }}>
+            If someone else (a family member, say) uses this number, you can carry on.
+          </p>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -194,7 +194,21 @@ function validateVacancyEditableFields(data, { partial = false } = {}) {
   return errors;
 }
 
+// FR-ATS-032: an advert asks at most this many screening questions -
+// Qualifying (desirableRequirements) and Disqualifying together. Mirrored
+// in frontend/src/components/ScreeningQuestionsEditor.jsx.
+const MAX_SCREENING_QUESTIONS = 5;
+
+// An error message, or null. `previousCount` lets a vacancy created before
+// the cap be edited as long as the edit doesn't add questions.
+function screeningQuestionCountError(desirable, disqualifying, previousCount = 0) {
+  const count = (Array.isArray(desirable) ? desirable.length : 0) + (Array.isArray(disqualifying) ? disqualifying.length : 0);
+  if (count <= MAX_SCREENING_QUESTIONS || count <= previousCount) return null;
+  return `An advert can ask at most ${MAX_SCREENING_QUESTIONS} screening questions (Qualifying and Disqualifying together) - this one has ${count}.`;
+}
+
 module.exports = {
+  MAX_SCREENING_QUESTIONS, screeningQuestionCountError,
   validateVacancyEditableFields, VALID_POSTING_TYPES, VALID_EMPLOYMENT_CATEGORIES, VALID_LOCATIONS,
   VALID_SECONDARY_LEVELS, O_LEVEL_GRADES, A_LEVEL_GRADES,
   normalizeStringList, normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades

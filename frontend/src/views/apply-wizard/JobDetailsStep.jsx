@@ -38,7 +38,7 @@ export default function JobDetailsStep({ vacancy }) {
     requiredExamGrades: vacancy.requiredExamGrades,
     desirableRequirements: vacancy.desirableRequirements,
     generalKnowledge: vacancy.generalKnowledge,
-    specialSkills: vacancy.specialSkills
+    specialSkills: vacancy.specialSkills, desirableQualifications: vacancy.desirableQualifications
   };
 
   // Matches VacancyAdvertPrintLayout's own adTypeLabel computation - kept
@@ -102,6 +102,7 @@ export default function JobDetailsStep({ vacancy }) {
         desirableRequirements={advertProps.desirableRequirements}
         generalKnowledge={advertProps.generalKnowledge}
         specialSkills={advertProps.specialSkills}
+        desirableQualifications={advertProps.desirableQualifications}
       />
 
       {/* Off-screen (not display:none - html2canvas needs it actually

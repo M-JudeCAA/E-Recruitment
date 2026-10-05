@@ -1,6 +1,6 @@
 const {
   prisma, resetDatabase, createStaff, createOrg, createCandidate,
-  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument
+  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition
 } = require('./helpers');
 
 // The whole recruitment lifecycle through the real API and a real database:
@@ -41,7 +41,7 @@ const OFFER_TERMS = {
 };
 
 async function createApprovedVacancy({ positionsRequired = 1 } = {}) {
-  const created = expectStatus(await api(tokens.hro).post('/api/vacancies', {
+  const created = expectStatus(await createVacancyFromRequisition(tokens.hro, {
     positionId: org.position.id, postingType: 'External', deadline: inDays(30), positionsRequired,
     internalSalaryRange: 'UGX 10-12M', recruiterNotes: 'HR only'
   }), 201).body;
@@ -52,7 +52,7 @@ async function applyAs(candidate, vacancyId) {
   const token = await candidateToken(candidate.email);
   const draft = expectStatus(await api(token).post('/api/applications', { vacancyId, referees: REFEREES }), 201).body;
   await attachAcademicDocument(token, draft.id);
-  expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`), 200);
+  expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`, { consent: true }), 200);
   return { token, applicationId: draft.id };
 }
 
@@ -238,9 +238,73 @@ test('hides vacancies from the wrong audience but keeps them open to their own a
   expect((await api(insiderToken).get(`/api/vacancies/${vacancy.id}`)).status).toBe(404);
 
   // ...and a Closed one from the public, but not from someone who applied.
-  expectStatus(await api(tokens.phro).patch(`/api/vacancies/${vacancy.id}/close`), 200);
+  expectStatus(await api(tokens.phro).patch(`/api/vacancies/${vacancy.id}/close`, { reason: 'Position frozen' }), 200);
   expect((await api().get(`/api/vacancies/${vacancy.id}`)).status).toBe(404);
   expectStatus(await api(a.token).get(`/api/vacancies/${vacancy.id}`), 200);
   // Staff always see it.
   expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}`), 200);
+});
+
+test('exports the shortlisting report and the merit list as CSV, and records each export (FR-ATS-053)', async () => {
+  const vacancy = await createApprovedVacancy();
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
+  const amina = await createCandidate({ fullName: 'Amina, Nakato', email: 'amina@example.com' });
+  const brian = await createCandidate({ fullName: '=Brian Okello', email: 'brian@example.com' });
+  const a = await applyAs(amina, vacancy.id);
+  const b = await applyAs(brian, vacancy.id);
+  await shortlistAndInterview(vacancy.id, [a.applicationId, b.applicationId]);
+
+  const report = expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}/export/shortlisting-report`), 200);
+  expect(report.headers['content-type']).toContain('text/csv');
+  expect(report.headers['content-disposition']).toContain(`shortlisting-report-${vacancy.jobRef.replace(/\//g, '-')}.csv`);
+  const lines = report.text.replace('﻿', '').trim().split('\r\n');
+  expect(lines).toHaveLength(3);
+  expect(lines[0]).toMatch(/^Committee rank,/);
+  expect(lines[1]).toContain('"Amina, Nakato"');
+  expect(lines[2]).toContain("'=Brian Okello");
+  expect(lines[1]).toContain('Wakiso');
+
+  const merit = expectStatus(await api(tokens.hro).get(`/api/applications/vacancies/${vacancy.id}/merit-list/export`), 200);
+  const meritLines = merit.text.replace('﻿', '').trim().split('\r\n');
+  expect(meritLines.slice(1).map((l) => l.split(',').slice(0, 3).join(','))).toEqual(['1,Primary,Approved', '2,Reserve,Approved']);
+
+  // Candidates can't export anything.
+  expect((await api(a.token).get(`/api/vacancies/${vacancy.id}/export/shortlisting-report`)).status).toBe(403);
+
+  const history = expectStatus(await api(tokens.hro).get(`/api/audit/Vacancy/${vacancy.id}`), 200).body;
+  expect(history.map((h) => h.action)).toEqual(expect.arrayContaining(['Shortlisting report exported', 'Merit list exported']));
+});
+
+test('a staff member who applies is shut out of that vacancy, and only that one', async () => {
+  const vacancy = await createApprovedVacancy();
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
+  const other = await createApprovedVacancy();
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${other.id}/approve`), 200);
+  // The Senior HR Officer's candidate account - same person, matched by
+  // email (in real use, also by their Microsoft identity). External here
+  // only because the vacancy is.
+  const sam = await createCandidate({ fullName: 'Sam Senior', email: 'shro@caa.co.ug' });
+  const alice = await createCandidate({ fullName: 'Alice Nakato', email: 'alice@example.com' });
+  await applyAs(sam, vacancy.id);
+  const a = await applyAs(alice, vacancy.id);
+
+  // Shut out of running the vacancy they applied for...
+  const refused = await api(tokens.shro).get(`/api/vacancies/${vacancy.id}/applications`);
+  expect(refused.status).toBe(409);
+  expect(refused.body.code).toBe('APPLICANT_CONFLICT');
+  expect((await api(tokens.shro).get(`/api/vacancies/${vacancy.id}`)).status).toBe(409);
+  expect((await api(tokens.shro).patch(`/api/applications/${a.applicationId}/reject`, { reason: 'x' })).status).toBe(409);
+  expect((await api(tokens.shro).get(`/api/applications/vacancies/${vacancy.id}/merit-list`)).status).toBe(409);
+  const queue = expectStatus(await api(tokens.shro).get('/api/applications'), 200).body;
+  expect(queue.data.some((row) => row.vacancyId === vacancy.id)).toBe(false);
+  const adminList = expectStatus(await api(tokens.shro).get('/api/vacancies/admin'), 200).body;
+  expect(adminList.map((v) => v.id)).not.toContain(vacancy.id);
+
+  // ...but not out of any other vacancy, and nobody else is affected.
+  expectStatus(await api(tokens.shro).get(`/api/vacancies/${other.id}/applications`), 200);
+  expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}/applications`), 200);
+
+  // The Principal HR Officers were told.
+  const notices = await prisma.notification.findMany({ where: { taskType: 'StaffApplicantConflict', channel: 'InApp' } });
+  expect(notices.map((n) => n.recipientId).sort()).toEqual([staff.phro.id, staff.phro2.id].sort());
 });

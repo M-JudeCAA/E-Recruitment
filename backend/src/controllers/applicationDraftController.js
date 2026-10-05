@@ -1,8 +1,10 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const { sendError } = require('../utils/errorResponse');
 const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
 const candidateModel = require('../models/candidateModel');
 const workflow = require('../services/workflowService');
+const audit = require('../services/auditService');
 const applicationDocumentModel = require('../models/applicationDocumentModel');
 const {
   screenApplication, scoreApplication, evaluateEssentialCriteria, assessEligibility
@@ -16,6 +18,7 @@ const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { countCompleteReferees } = require('../utils/referees');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { notify } = require('../services/notificationService');
+const { PRIVACY_NOTICE_VERSION } = require('../config/privacyNotice');
 
 // REPLACES the old single-step submit() entirely - having two parallel
 // "create an application" code paths (one direct-to-Submitted, one
@@ -215,6 +218,14 @@ async function submit(req, res) {
   if (countCompleteReferees(application.referees) < 3) {
     return res.status(400).json({ error: 'Three referees (with name, phone and email) are required before submitting' });
   }
+  // FR-ATS-038: the candidate agrees to UCAA processing and retaining their
+  // data, per the privacy notice, as part of submitting - never assumed.
+  if (req.body?.consent !== true) {
+    return res.status(400).json({
+      error: 'Please confirm that you consent to UCAA processing your personal data, as described in the privacy notice',
+      code: 'CONSENT_REQUIRED'
+    });
+  }
 
   const vacancy = await vacancyModel.findById(application.vacancyId);
   try {
@@ -272,6 +283,7 @@ async function submit(req, res) {
   const essentialCriteria = evaluateEssentialCriteria(candidate, vacancy);
   const data = {
     status: vacancy.reviewStartedAt ? 'UnderReview' : 'Submitted', submittedDate: new Date(),
+    consentGivenAt: new Date(), consentNoticeVersion: PRIVACY_NOTICE_VERSION,
     screeningPassed: screening.passed, screeningReasons: JSON.stringify(screening.reasons), screenedAt: new Date(),
     fieldOfStudyMatch: screening.fieldOfStudyMatch,
     shortlistScore: score.score, shortlistScoreReasons: JSON.stringify(score.reasons),
@@ -288,6 +300,10 @@ async function submit(req, res) {
     return res.status(409).json({ error: 'This application has already been submitted' });
   }
   const updated = await applicationModel.findById(applicationId);
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Application submitted', actor: audit.actorFrom(req),
+    before: application, after: updated, fields: ['status']
+  });
 
   await workflow.captureSnapshot({
     entityType: 'ApplicationSnapshot', entityId: applicationId, candidateId: req.user.id
@@ -310,6 +326,10 @@ async function submit(req, res) {
     vacancy.createdById, 'NewApplicationSubmitted', applicationId,
     `${candidate.fullName} applied for "${vacancy.title}" (${vacancy.jobRef}).`
   );
+
+  // A UCAA staff member applying - the conflict-of-interest rule shuts them
+  // out of the vacancy; this tells HR so someone else runs it.
+  await conflictOfInterest.flagStaffApplicant(candidate, vacancy, applicationId);
 
   broadcastDashboardEvent('ApplicationSubmitted', { applicationId, vacancyId: vacancy.id });
   res.json(updated);
@@ -350,6 +370,10 @@ async function withdraw(req, res) {
   const { reason } = req.body; // optional - candidate's prerogative, useful for HR reporting when given
   const updated = await applicationModel.update(applicationId, {
     status: 'Withdrawn', withdrawalReason: reason || null
+  });
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Application withdrawn by the candidate', actor: audit.actorFrom(req),
+    before: application, after: updated, fields: ['status'], comment: reason || null
   });
   res.json(updated);
 }

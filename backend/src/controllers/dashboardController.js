@@ -1,3 +1,4 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const dashboardModel = require('../models/dashboardModel');
 const slaModel = require('../models/slaModel');
 const { getPendingTasksWithStatus } = require('../services/slaStatusService');
@@ -186,7 +187,9 @@ async function upcomingInterviews(req, res) {
   const from = new Date();
   const to = new Date(from.getTime() + days * MS_PER_DAY);
 
-  const rounds = await dashboardModel.interviewRoundsScheduledBetween(from, to);
+  const conflicted = await conflictOfInterest.conflictedVacancyIds(req);
+  const rounds = (await dashboardModel.interviewRoundsScheduledBetween(from, to))
+    .filter((r) => !conflicted.includes(r.application?.vacancy?.id));
   res.json(rounds.map((r) => ({
     id: r.id, scheduledDate: r.scheduledDate, mode: r.mode, roundNumber: r.roundNumber,
     durationMinutes: r.durationMinutes, location: r.location, candidateResponse: r.candidateResponse,

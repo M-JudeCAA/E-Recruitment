@@ -52,11 +52,15 @@ Every other field in `.env.example` needs a real value too:
 | `DATABASE_URL` | MySQL connection string (see above) |
 | `JWT_SECRET` | Any long random string for local dev — doesn't need to match production |
 | `JWT_EXPIRES_IN` | Leave as `8h` |
-| `INTERNAL_EMAIL_DOMAIN` | Leave as `caa.co.ug` — determines Internal vs External candidate type |
+| `INTERNAL_EMAIL_DOMAIN` | Leave as `caa.co.ug` (comma-separate several). Only accounts on it can sign in with Microsoft, and it can't be used to register a password account |
+| `ENTRA_TENANT_ID`, `ENTRA_STAFF_CLIENT_ID`, `ENTRA_CANDIDATE_CLIENT_ID` | Microsoft sign-in - see [Microsoft (Entra ID) sign-in](#microsoft-entra-id-sign-in). Without them the API says so at start-up and Microsoft sign-in answers 501 |
+| `DEV_PASSWORD_LOGIN` | Optional, local development only: `true` lets the seeded demo staff accounts sign in with their password at `/staff/login?password`. Ignored when `NODE_ENV=production` |
+| `BREAK_GLASS_LOGIN` | Optional, production emergencies only: `true` lets a system administrator with a break-glass password sign in at `/staff/login?password` while Microsoft sign-in is down. Leave unset otherwise |
 | `PORT` | Leave as `4000` |
 | `FRONTEND_URL` | Comma-separated list of allowed CORS origins. Leave as `http://localhost:5173,http://localhost:4174` (guest dev server + staff preview, see [below](#staff-access-on-a-separate-port)) |
 | `SMTP_*` | See [Email](#email-gmail-smtp) below |
 | `UPLOAD_DIR` | Leave as `./uploads` |
+| `ACCESS_LOG_RETENTION_DAYS` | Optional. How long the record of who viewed candidate data is kept before the scheduled job deletes it (default `730`, minimum `90`) |
 | `TRUST_PROXY` | Optional. Which reverse proxy to believe about a client's address, used by the sign-in rate limits. Default `loopback` (a proxy on the same machine, e.g. nginx or IIS). Set to `false` if nothing sits in front of the API, or to a hop count or proxy address if the proxy is on another machine |
 | `APP_TIMEZONE` | Optional. Time zone used for interview times in emails and notifications. Default `Africa/Kampala` |
 | `SCHEDULER_INTERVAL_MINUTES` | Optional. How often the scheduler worker runs the maintenance jobs. Default `60` |
@@ -76,18 +80,69 @@ npx prisma migrate deploy
 date (it will be, if you're using the shared dev DB — no need to re-run
 migrations against it).
 
-**If you're using the shared dev DB, the staff accounts are already
-seeded** — log in with (password for all: `ChangeMe123!`):
-- `hro@caa.co.ug` — HR Officer
-- `phro@caa.co.ug` — Principal HR Officer
-- `dhra@caa.co.ug` — DHRA / Manager HR
-
-Only running your own local database (Option B above)? Seed it yourself
-(safe to re-run — it upserts):
+Staff sign in with their UCAA Microsoft account. For local development
+without an Entra tenant, seed the demo staff accounts (safe to re-run — it
+upserts; refused when `NODE_ENV=production`) and set
+`DEV_PASSWORD_LOGIN=true` in `backend/.env`:
 
 ```bash
 npm run seed
 ```
+
+Then sign in at http://localhost:4174/staff/login?password with
+(password for all: `ChangeMe123!`):
+- `hro@caa.co.ug` — HR Officer
+- `shro@caa.co.ug` — Senior HR Officer
+- `phro@caa.co.ug` — Principal HR Officer
+- `manager@caa.co.ug` — Manager
+- `dhra@caa.co.ug` — DHRA / Director
+- `admin@caa.co.ug` — system administrator (staff accounts only, no HR role)
+
+In production there are no staff passwords: create the first system
+administrator on the server, and they create everyone else from the Staff
+accounts screen:
+
+```bash
+node scripts/createSystemAdmin.js --email it.admin@caa.co.ug --name "IT Administrator" [--department ICT] [--break-glass]
+```
+
+`--break-glass` also gives that account an emergency password (printed
+once - keep it sealed), usable only while `BREAK_GLASS_LOGIN=true`.
+
+## Microsoft (Entra ID) sign-in
+
+Staff and internal candidates sign in with their UCAA Microsoft account;
+external candidates keep email + password. Entra only proves who someone
+is — it has no notion of "HR staff" here, so **every UCAA employee can get
+past Microsoft, and that's fine**: the API lets someone into the staff
+portal only if a system administrator created an active staff account for
+their email, and gives them the role on that account. Any employee,
+HR staff included, can sign in on the candidate site to apply for a job (a
+separate candidate session); once a staff member applies for a vacancy they
+are shut out of running it (`conflictOfInterestService.js`).
+
+Have the Entra administrator create **two app registrations** in Entra
+admin centre → App registrations → New registration (single tenant):
+
+| | Staff app | Candidate app |
+|---|---|---|
+| Name | UCAA e-Recruitment (staff) | UCAA e-Recruitment (candidates) |
+| Platform | Single-page application | Single-page application |
+| Redirect URI | `https://<staff host>/entra-redirect.html` (and `http://localhost:4174/entra-redirect.html` for dev) | `https://<candidate host>/entra-redirect.html` (and `http://localhost:5173/entra-redirect.html`) |
+| API permissions | Microsoft Graph `openid`, `profile`, `email` (delegated; the defaults) | same |
+| Token configuration (optional claims, ID token) | `email`, `acct` | `email`, `acct` |
+| Enterprise application → Properties → Assignment required | **Yes**, then assign a security group (e.g. "e-Recruitment Staff") — optional extra layer, the staff account list is still what decides | No — every employee may apply |
+
+Then set the IDs:
+
+- `backend/.env`: `ENTRA_TENANT_ID`, `ENTRA_STAFF_CLIENT_ID`, `ENTRA_CANDIDATE_CLIENT_ID`
+- `frontend/.env` (read at build time): `VITE_ENTRA_TENANT_ID`, `VITE_ENTRA_STAFF_CLIENT_ID`, `VITE_ENTRA_CANDIDATE_CLIENT_ID`
+
+Create staff accounts with the person's **sign-in name** (UPN) — that is
+what Entra reports when the `email` claim is empty. The first sign-in links
+the account to the person's Microsoft object id; from then on only that id
+counts. If someone's Microsoft account is deleted and recreated, a system
+administrator uses **Unlink** on the Staff accounts screen so it links again.
 
 ## 4. Email (Gmail SMTP)
 
@@ -148,8 +203,7 @@ in from a separate port — see below.
 
 ## Staff access on a separate port
 
-`/staff/login`, `/staff/forgot-password`, and `/staff/reset-password` only
-render when the app is served from the staff port (`4174` by default,
+`/staff/login` only renders when the app is served from the staff port (`4174` by default,
 `VITE_STAFF_PORT` to change it) — `RequireStaffPort` in
 `frontend/src/components/ProtectedRoute.jsx` bounces them back to `/` on
 any other port, including the guest dev server on `5173`. It's the same SPA
@@ -166,7 +220,7 @@ Staff sign in at http://localhost:4174/staff/login. `FRONTEND_URL` in
 (`http://localhost:5173,http://localhost:4174`) — order matters, since the
 backend also uses the second entry (`staffFrontendUrl` in
 `backend/src/config/frontendUrl.js`) to build the links it emails staff
-(new-account "set your password", "reset your password"). Getting the
+(the new-account email). Getting the
 order wrong doesn't break CORS, but it does send staff an email link to a
 port that immediately redirects them away.
 

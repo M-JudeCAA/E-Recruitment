@@ -11,3 +11,6 @@ process.env.INTERNAL_EMAIL_DOMAIN = 'caa.co.ug';
 // nodemailer's jsonTransport: emails are built and discarded, never sent.
 process.env.SMTP_HOST = 'json';
 process.env.SMTP_FROM = 'e-recruitment@caa.co.ug';
+// Staff sign in with Microsoft in real use; the e2e suite signs in with the
+// demo password through the development-only password sign-in instead.
+process.env.DEV_PASSWORD_LOGIN = 'true';

@@ -1,85 +1,161 @@
-const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 const prisma = require('../config/db');
 const staffModel = require('../models/staffModel');
+const audit = require('../services/auditService');
 const { sendMail } = require('../utils/mailer');
-const { createToken } = require('../services/tokenService');
 const { staffFrontendUrl } = require('../config/frontendUrl');
+const { internalDomains } = require('../services/entraAuthService');
+const { ROLE_RANK } = require('../middleware/auth');
 
-// Only these two - a PHRO+ can never create another PHRO+, Manager, or
-// Director account through this endpoint (Decision: PHRO+ creates
-// HRO/SHRO only).
-const CREATABLE_ROLES = ['HR_Officer', 'Senior_HR_Officer'];
+// Staff accounts are managed by a system administrator only (requireSystemAdmin
+// on every write route). Staff sign in with their UCAA Microsoft account, so
+// an account is just a name, a UCAA email, a role and a department: there is
+// no password to set or send. The account links itself to the person's
+// Microsoft identity the first time they sign in.
 
-// A PHRO+ creates the account, but never sets or sees its password -
-// the same principle already used for candidate registration (email
-// confirmation) and password reset, extended here rather than inventing
-// a new pattern. The account is created with an unusable placeholder
-// hash and immediately sent a "set your password" link reusing the
-// existing PasswordReset token machinery.
+const ROLES = Object.keys(ROLE_RANK);
+const AUDIT_FIELDS = ['name', 'email', 'role', 'department', 'isSystemAdmin', 'active'];
+
+function normaliseEmail(email) {
+  return typeof email === 'string' ? email.trim().toLowerCase() : '';
+}
+
+// role: one of the five HR roles, or null/'' for none (an accounts-only
+// system administrator). Returns undefined when it is neither.
+function parseRole(role) {
+  if (role === null || role === '') return null;
+  return ROLES.includes(role) ? role : undefined;
+}
+
+async function departmentIdFor(name) {
+  const department = await prisma.department.findFirst({ where: { name, status: 'Approved' } });
+  return department ? department.id : null;
+}
+
+function signInEmail(staff) {
+  const what = [
+    staff.role ? staff.role.replace(/_/g, ' ') : null,
+    staff.isSystemAdmin ? 'system administrator' : null
+  ].filter(Boolean).join(' and ');
+  return {
+    to: staff.email,
+    subject: 'Your UCAA e-Recruitment staff account',
+    html: `<p>Hi ${staff.name},</p><p>A staff account has been created for you on the UCAA e-Recruitment system, as ${what}.</p>`
+      + `<p>Sign in with your UCAA Microsoft account (${staff.email}) at <a href="${staffFrontendUrl}/staff/login">${staffFrontendUrl}/staff/login</a>. There is no separate password.</p>`
+  };
+}
+
 async function create(req, res) {
-  const { name, email, role } = req.body;
-  if (!name || !name.trim()) return res.status(400).json({ error: 'Name is required' });
-  if (!email || !email.trim()) return res.status(400).json({ error: 'Email is required' });
-  if (!CREATABLE_ROLES.includes(role)) {
-    return res.status(400).json({ error: `Role must be one of: ${CREATABLE_ROLES.join(', ')}` });
+  const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+  const email = normaliseEmail(req.body.email);
+  const role = parseRole(req.body.role ?? null);
+  const isSystemAdmin = req.body.isSystemAdmin === true;
+  const department = typeof req.body.department === 'string' && req.body.department.trim()
+    ? req.body.department.trim() : 'HR';
+
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+  if (!internalDomains().includes(email.split('@')[1])) {
+    return res.status(400).json({ error: 'Staff accounts must use a UCAA email address - it is the Microsoft account they sign in with' });
+  }
+  if (role === undefined) return res.status(400).json({ error: `Role must be one of: ${ROLES.join(', ')}, or none` });
+  if (!role && !isSystemAdmin) {
+    return res.status(400).json({ error: 'Give the account an HR role, make it a system administrator, or both' });
   }
 
   const existing = await staffModel.findByEmail(email);
   if (existing) return res.status(409).json({ error: 'A staff account with this email already exists' });
 
-  // Every account this endpoint creates is DHRA HR team, same as every
-  // other seeded staff account (see the seed data and its own
-  // department-consistency fix) - not a free-text department chosen per
-  // request, and not left null against a schema column that requires a
-  // value. departmentId is best-effort: if the real HR department row
-  // hasn't been seeded yet, the account still gets created with the
-  // legacy department string set correctly.
-  const hrDepartment = await prisma.department.findFirst({ where: { name: 'HR', status: 'Approved' } });
-
-  const unusablePasswordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
   const staff = await staffModel.create({
-    name: name.trim(), email: email.trim(), role, department: 'HR',
-    departmentId: hrDepartment ? hrDepartment.id : null,
-    passwordHash: unusablePasswordHash
+    name, email, role, isSystemAdmin, department, departmentId: await departmentIdFor(department)
   });
-
-  const token = await createToken({ type: 'PasswordReset', staffId: staff.id });
-  const setPasswordUrl = `${staffFrontendUrl}/staff/reset-password?token=${token}`;
-  await sendMail({
-    to: staff.email,
-    subject: 'Your UCAA e-Recruitment staff account',
-    html: `<p>Hi ${staff.name},</p><p>An account has been created for you as ${role.replace(/_/g, ' ')}. Set your password to get started:</p><p><a href="${setPasswordUrl}">${setPasswordUrl}</a></p>`
+  await audit.record({
+    entityType: 'StaffUser', entityId: staff.id, action: 'Created', actor: audit.actorFrom(req),
+    before: {}, after: staff, fields: AUDIT_FIELDS
   });
+  await sendMail(signInEmail(staff));
 
-  res.status(201).json({ id: staff.id, name: staff.name, email: staff.email, role: staff.role });
+  res.status(201).json({
+    id: staff.id, name: staff.name, email: staff.email, role: staff.role,
+    department: staff.department, isSystemAdmin: staff.isSystemAdmin, active: staff.active
+  });
 }
 
-// A PHRO+ can move an existing HRO/SHRO between those two levels only -
-// this endpoint can never promote someone to PHRO+ or above. Promoting
-// to a senior tier is treated as a separate, more deliberate action
-// outside this feature's scope (consistent with "PHRO+ creates HRO/SHRO
-// only" - a role change is a kind of re-creation).
-async function updateRole(req, res) {
+// Change an account's role, department, administrator flag or active state.
+// Nobody changes their own account - otherwise an administrator could give
+// themselves any HR role - and the last active administrator can't be
+// removed or deactivated.
+async function update(req, res) {
   const staffId = Number(req.params.id);
-  const { role } = req.body;
-  if (!CREATABLE_ROLES.includes(role)) {
-    return res.status(400).json({ error: `Role must be one of: ${CREATABLE_ROLES.join(', ')}` });
+  if (staffId === req.user.id) {
+    return res.status(403).json({ error: 'You cannot change your own account. Ask another system administrator.' });
   }
-
   const staff = await staffModel.findById(staffId);
   if (!staff) return res.status(404).json({ error: 'Staff account not found' });
-  if (!CREATABLE_ROLES.includes(staff.role)) {
-    return res.status(422).json({ error: 'This endpoint can only change the role of an existing HR Officer or Senior HR Officer' });
+
+  const data = {};
+  if ('role' in req.body) {
+    const role = parseRole(req.body.role);
+    if (role === undefined) return res.status(400).json({ error: `Role must be one of: ${ROLES.join(', ')}, or none` });
+    data.role = role;
+  }
+  if ('isSystemAdmin' in req.body) data.isSystemAdmin = req.body.isSystemAdmin === true;
+  if ('active' in req.body) data.active = req.body.active === true;
+  if ('department' in req.body) {
+    const department = typeof req.body.department === 'string' ? req.body.department.trim() : '';
+    if (!department) return res.status(400).json({ error: 'Department cannot be empty' });
+    data.department = department;
+    data.departmentId = await departmentIdFor(department);
+  }
+  if (!Object.keys(data).length) return res.status(400).json({ error: 'Nothing to change' });
+
+  const next = { ...staff, ...data };
+  if (!next.role && !next.isSystemAdmin) {
+    return res.status(400).json({ error: 'An account needs an HR role, system administrator rights, or both' });
+  }
+  const losesAdmin = staff.isSystemAdmin && staff.active && (!next.isSystemAdmin || !next.active);
+  if (losesAdmin && (await staffModel.countActiveAdmins()) <= 1) {
+    return res.status(409).json({ error: 'This is the last active system administrator - add another one first' });
   }
 
-  const updated = await staffModel.update(staffId, { role });
-  res.json({ id: updated.id, name: updated.name, email: updated.email, role: updated.role });
+  const updated = await staffModel.update(staffId, data);
+  await audit.record({
+    entityType: 'StaffUser', entityId: staffId, action: 'Updated', actor: audit.actorFrom(req),
+    before: staff, after: updated, fields: AUDIT_FIELDS, comment: req.body.comment
+  });
+  res.json({
+    id: updated.id, name: updated.name, email: updated.email, role: updated.role,
+    department: updated.department, isSystemAdmin: updated.isSystemAdmin, active: updated.active
+  });
 }
 
+// Forget the Microsoft identity an account was linked to, so it links again
+// on the next sign-in - for when someone's Microsoft account was deleted and
+// recreated (a new object id for the same person and address).
+async function unlink(req, res) {
+  const staffId = Number(req.params.id);
+  if (staffId === req.user.id) {
+    return res.status(403).json({ error: 'You cannot change your own account. Ask another system administrator.' });
+  }
+  const staff = await staffModel.findById(staffId);
+  if (!staff) return res.status(404).json({ error: 'Staff account not found' });
+  if (!staff.entraObjectId) return res.status(409).json({ error: 'This account is not linked to a Microsoft account yet' });
+
+  await staffModel.update(staffId, { entraObjectId: null });
+  await audit.record({
+    entityType: 'StaffUser', entityId: staffId, action: 'MicrosoftAccountUnlinked', actor: audit.actorFrom(req),
+    comment: req.body?.comment
+  });
+  res.json({ id: staffId, linked: false });
+}
+
+// The HR directory (name/email/role), e.g. for choosing a delegate.
 async function list(req, res) {
-  const staff = await staffModel.findAllHRAndBelow();
-  res.json(staff);
+  res.json(await staffModel.findAllHRAndBelow());
 }
 
-module.exports = { create, updateRole, list };
+// Every account, for the system administrator's screen.
+async function listAccounts(req, res) {
+  res.json(await staffModel.findAllForAdmin());
+}
+
+module.exports = { create, update, unlink, list, listAccounts };

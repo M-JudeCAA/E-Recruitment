@@ -57,14 +57,8 @@ enum VacancyStatus {
   PartiallyFilled
   Filled
   Closed
-  // Declared to match the live column (enum('PendingApproval','Open',
-  // 'PartiallyFilled','Filled','Closed','Rejected')) - see the note on
-  // Vacancy.rejectionReason below. Nothing in this codebase currently
-  // sets a Vacancy to Rejected; only Department and Application have a
-  // real reject workflow. Left unused rather than removed, since
-  // removing an enum value a live column can already hold would be the
-  // riskier change.
-  Rejected
+  Rejected  // the approver refused it outright, with a reason (vacancyController.reject) - final
+  Returned  // sent back by the approver with a comment; HR edits and resubmits (FR-ATS-009)
 }
 
 enum ApplicationStatus {
@@ -151,8 +145,26 @@ model StaffUser {
   id          Int       @id @default(autoincrement())
   name        String
   email       String    @unique
-  passwordHash String
-  role        StaffRole
+  // Staff sign in with their UCAA Microsoft (Entra ID) account. The object
+  // id (the `oid` claim) is linked on their first sign-in, matched by
+  // email, and from then on only the oid counts - a renamed or reused
+  // mailbox can't take an account over. Entra only proves who someone is;
+  // whether they may sign in here, and with what role, is decided by this
+  // row (staffAuthController.entraLogin).
+  entraObjectId String? @unique
+  // Null for everyone except a system administrator's break-glass account,
+  // usable only while BREAK_GLASS_LOGIN=true (staffAuthController.login).
+  passwordHash String?
+  // Null for an accounts-only system administrator (isSystemAdmin with no
+  // HR role) - with no role, no requireStaffRole gate passes.
+  role        StaffRole?
+  // Manages staff accounts (staffUserController) and nothing else unless
+  // also given an HR role - account control is kept apart from hiring.
+  isSystemAdmin Boolean @default(false)
+  // A deactivated account can't sign in, and requireStaffRole refuses the
+  // sessions it already has.
+  active      Boolean   @default(true)
+  lastLoginAt DateTime?
   department  String
   // Authoritative department scoping for admin vacancy visibility, replacing
   // the free-text `department` string above for that purpose - matching by
@@ -200,6 +212,7 @@ model StaffUser {
   delegationsReceived   Delegation[]      @relation("DelegationTo")
   delegationsAuthorized Delegation[]      @relation("DelegationAuthorizedBy")
   notifications         Notification[]
+  vacancyDrafts         VacancyDraft[]    @relation("VacancyDraftCreatedBy")
 }
 
 model Directorate {
@@ -259,6 +272,65 @@ model Position {
   @@unique([name, departmentId])
 }
 
+// A vacancy being written, before it is created - saved by hand or
+// automatically from the New Listing page (vacancyDraftController.js).
+// Private to the staff member writing it. Deliberately not a Vacancy row:
+// a draft has no job reference, no status, and must never appear in a
+// vacancy list. `requisition` is what was read from the uploaded EXCO
+// requisition (so the review panel comes back as it was), `form` the
+// form as typed; requisitionFilename keeps that upload from being cleared
+// by scripts/cleanupRequisitionUploads.js. Creating the vacancy deletes
+// the draft. updatedAt guards against two tabs overwriting each other.
+model VacancyDraft {
+  id                  Int       @id @default(autoincrement())
+  createdById         Int
+  createdBy           StaffUser @relation("VacancyDraftCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  title               String?
+  form                Json
+  requisition         Json?
+  requisitionFilename String?   @db.VarChar(191)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([createdById])
+  @@index([requisitionFilename])
+}
+
+// Who looked at candidate data, and when (FR-ATS-081) - changes are in
+// AuditLog; this is the read side: applicant lists, the application queue,
+// opened documents, exports, and what shortlisting committee members view
+// through their links. Written by services/accessLogService.js, which
+// records a repeated identical view once per 10 minutes. candidateIds lists
+// whose data the view showed, so "who saw this candidate" is one query.
+model DataAccessLog {
+  id            Int      @id @default(autoincrement())
+  at            DateTime @default(now())
+  actorType     String   @db.VarChar(20) // 'staff' | 'committee'
+  staffUserId   Int?
+  actorLabel    String?  // a committee member's name and email
+  action        String
+  vacancyId     Int?
+  applicationId Int?
+  candidateIds  Json?
+  detail        Json?
+  ip            String?  @db.VarChar(64)
+
+  @@index([at])
+  @@index([staffUserId])
+  @@index([applicationId])
+}
+
+// Running number behind Vacancy.jobRef (UCAA/ADV/{INT|EXT}/{NNN}/{YYYY}),
+// one row per posting type per year. Only ever incremented, so a number
+// is never reused - see utils/jobRefGenerator.js.
+model JobRefSequence {
+  typeCode   String @db.VarChar(3) // 'INT' | 'EXT'
+  year       Int
+  lastNumber Int
+
+  @@id([typeCode, year])
+}
+
 model Vacancy {
   id                   Int           @id @default(autoincrement())
   jobRef               String        @unique
@@ -312,6 +384,19 @@ model Vacancy {
   // ApplicationSnapshot.
   approvedByRole   StaffRole?
   rejectionReason  String?
+  rejectedAt       DateTime?
+
+  // Return for revision / resubmission (FR-ATS-009). returnReason is the
+  // latest return's comment; every return and resubmission is also in
+  // AuditLog. approvalRequestedAt is when the vacancy was last submitted
+  // for approval - the SLA clock starts there, falling back to createdAt.
+  returnedAt          DateTime?
+  returnReason        String?   @db.Text
+  approvalRequestedAt DateTime?
+
+  // Closing takes a reason (FR-ATS-027); re-opening keeps the last one.
+  closedAt         DateTime?
+  closeReason      String?   @db.Text
 
   // Set once, the first time recomputeVacancyStatus (workflowService.js)
   // computes status === 'Filled' - never cleared or re-stamped afterward,
@@ -454,6 +539,25 @@ model Vacancy {
   // machine-checked (too subjective to screen automatically).
   generalKnowledge       Json?
   specialSkills          Json?
+  // The person specification's "Desirable" items as written on the
+  // requisition - advert text only. Distinct from desirableRequirements,
+  // which are the Qualifying screening questions HR adds.
+  desirableQualifications Json?
+
+  // The EXCO-approved, signed requisition the vacancy was created from
+  // (services/requisitionService.js) - no vacancy is created without one.
+  // The document is a stored upload served through /api/files (staff only);
+  // requisitionDetails is the snapshot of what was read from it ({ format,
+  // fields: { key: { value, confidence } }, missing, warnings, editedFields
+  // - the form fields HR changed from it }). requisitionDocumentHash
+  // (sha256 of the file, unique) stops one document opening two vacancies; a
+  // readvertisement carries the rest over but not the hash. All staff-only.
+  requisitionDocumentUrl  String?
+  requisitionDocumentName String?
+  requisitionDocumentHash String?  @unique @db.VarChar(64)
+  requisitionUploadedAt   DateTime?
+  requisitionUploadedById Int?
+  requisitionDetails      Json?
 
   // Why `title` is kept as a denormalized snapshot rather than always
   // reading through `position.name`: if a Position is later renamed, past
@@ -471,28 +575,38 @@ model Candidate {
   fullName           String
   email              String         @unique
   phone              String?
+  // The phone number's last nine digits (utils/phoneKey.js), so +256 772
+  // 123456 and 0772123456 match. Not unique - a family can share a phone -
+  // but a match is how a second account for the same person is caught
+  // (FR-ATS-037): asked about at registration, flagged to HR on applicant
+  // lists. Email and NIN are unique outright.
+  phoneKey           String?        @db.VarChar(9)
   candidateType      CandidateType
-  // Unique (not just per-idType) - a National ID or Passport number is a
-  // real-world identity document either way, and nothing should let two
-  // accounts claim the same one. NULL is exempt from this in MySQL (only
-  // actual duplicate values collide), so candidates who haven't set one
-  // yet never conflict with each other.
+  // The candidate's Uganda National Identification Number (NIN) - the only
+  // identity document accepted (passports were dropped, and with them the
+  // old idType column). Stored upper-cased and validated against
+  // NATIONAL_ID_RE (utils/validators.js). Unique - nothing should let two
+  // accounts claim the same NIN. NULL is exempt from this in MySQL, so
+  // candidates who haven't set one yet never conflict with each other.
   nationalId         String?        @unique
-  idType             String?        // 'NationalID' | 'Passport' - which format nationalId is meant to follow;
-                                     // the Uganda NIN regex is only enforced when this is 'NationalID', since a
-                                     // foreign candidate's passport format varies too much to validate meaningfully.
   emailConfirmed     Boolean        @default(false)
-  passwordHash       String
+  // Internal candidates sign in with their UCAA Microsoft (Entra ID)
+  // account - the oid, as on StaffUser - and have no password. External
+  // candidates have a password and no oid.
+  entraObjectId      String?        @unique
+  passwordHash       String?
   createdAt          DateTime       @default(now())
 
   // Candidate-level profile fields (persist across every application this
   // candidate ever submits, same principle as education/workExperience) -
   // added to back the application wizard's Profile step with real
   // persistence instead of fields that silently discard on submit.
-  location           String?
+  location           String?        // place of residence (FR-ATS-034)
+  // Uganda district the candidate comes from (FR-ATS-034) - required for a
+  // complete profile; see utils/profileCompleteness.js.
+  districtOfOrigin   String?
   linkedinUrl        String?
   portfolioUrl       String?
-  workAuthorization  String?        // 'Yes' | 'No' | 'Sponsorship'
   // Optional avatar, same /api/files/:filename authenticated-serving
   // pattern as Application.cvUrl/coverLetterUrl - never a public URL.
   photoUrl           String?
@@ -527,6 +641,8 @@ model Candidate {
   internalProfile    InternalProfile?
   verificationTokens VerificationToken[]
   notifications      CandidateNotification[]
+
+  @@index([phoneKey])
 }
 
 model WorkExperience {
@@ -753,6 +869,12 @@ model Application {
   // application can leave Draft - the same enforced-at-submission role
   // cvUrl used to play.
   referees         Json?
+
+  // Consent to UCAA processing and retaining the candidate's data for this
+  // application, given at submission (FR-ATS-038), and the version of the
+  // privacy notice it was given against (config/privacyNotice.js).
+  consentGivenAt       DateTime?
+  consentNoticeVersion String?
 
   interviewRounds  InterviewRound[]
   offer            Offer?
@@ -1295,6 +1417,15 @@ enum SlaTaskType {
   // interview was due - to whoever scheduled those interviews
   // (scripts/checkInterviewSessions.js). taskId is the first round id.
   InterviewSessionNotStarted
+  // An approver returned a vacancy for revision, or rejected it, with a
+  // comment - to whoever created it (vacancyController.returnForRevision /
+  // reject). taskId is the vacancy id.
+  VacancyReturned
+  VacancyRejected
+  // A staff member applied for a vacancy - to every other
+  // Principal_HR_Officer, so someone else runs it; the applicant is shut
+  // out of it (conflictOfInterestService). taskId is the vacancy id.
+  StaffApplicantConflict
 }
 
 model SlaPolicy {

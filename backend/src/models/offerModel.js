@@ -6,6 +6,10 @@ const prisma = require('../config/db');
 // itself is unaffected and still readable as before.
 const include = { application: { include: { vacancy: true } } };
 
+function notOnVacancies(ids) {
+  return ids.length ? { application: { vacancyId: { notIn: ids } } } : {};
+}
+
 module.exports = {
   create: (data) => prisma.offer.create({ data }),
   findById: (id) => prisma.offer.findUnique({ where: { id }, include }),
@@ -26,8 +30,9 @@ module.exports = {
   // Oldest-recommended-first, so the longest-waiting offer surfaces at the
   // top of the queue rather than the most recent. Paginated - an unbounded
   // query here scaled linearly with the pending-approval backlog.
-  findManyPendingApproval: ({ skip, take } = {}) => prisma.offer.findMany({
-    where: { status: 'Recommended' },
+  // excludeVacancyIds: vacancies the viewer applied for (conflictOfInterestService).
+  findManyPendingApproval: ({ skip, take, excludeVacancyIds = [] } = {}) => prisma.offer.findMany({
+    where: { status: 'Recommended', ...notOnVacancies(excludeVacancyIds) },
     include: {
       recommendedBy: { select: { name: true } },
       application: {
@@ -40,7 +45,7 @@ module.exports = {
     orderBy: { recommendedDate: 'asc' },
     skip, take
   }),
-  countPendingApproval: () => prisma.offer.count({ where: { status: 'Recommended' } }),
+  countPendingApproval: (excludeVacancyIds = []) => prisma.offer.count({ where: { status: 'Recommended', ...notOnVacancies(excludeVacancyIds) } }),
   // Offers on a vacancy that are still in play (Recommended, Returned or Approved),
   // other than excludeOfferId - used to flag offers that can no longer be
   // accepted once the vacancy is Filled.

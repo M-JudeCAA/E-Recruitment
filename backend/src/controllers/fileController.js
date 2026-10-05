@@ -3,6 +3,8 @@ const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const applicationModel = require('../models/applicationModel');
 const candidateModel = require('../models/candidateModel');
+const staffModel = require('../models/staffModel');
+const accessLog = require('../services/accessLogService');
 
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || './uploads');
 
@@ -23,7 +25,21 @@ async function serve(req, res) {
   const relativeUrl = `/api/files/${filename}`;
 
   if (req.user.type === 'staff') {
-    // allowed
+    // Any file, for an active account holding an HR role - not for an
+    // accounts-only system administrator, nor for a deactivated account
+    // still holding an unexpired token.
+    const staff = await staffModel.findAuthState(req.user.id);
+    if (!staff || !staff.active || !staff.role) return res.status(403).json({ error: 'You do not have access to this file' });
+    // Allowed. Opening a candidate's document is recorded (FR-ATS-081);
+    // files that aren't an application's (a requisition, say) aren't
+    // candidate data.
+    const application = await applicationModel.findByFileUrl(relativeUrl);
+    if (application) {
+      await accessLog.record(req, {
+        action: 'Opened a document', vacancyId: application.vacancyId, applicationId: application.id,
+        candidateIds: [application.candidateId], detail: { document: filename }
+      });
+    }
   } else if (req.user.type === 'candidate') {
     // A file is either attached to one of the candidate's own
     // applications (cvUrl/coverLetterUrl/a supporting document) or is their own profile photo -

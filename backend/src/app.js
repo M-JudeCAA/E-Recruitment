@@ -32,6 +32,8 @@ const delegationRoutes = require('./routes/delegations');
 const notificationRoutes = require('./routes/notifications');
 const dashboardRoutes = require('./routes/dashboard');
 const analyticsRoutes = require('./routes/analytics');
+const auditRoutes = require('./routes/audit');
+const vacancyDraftRoutes = require('./routes/vacancyDrafts');
 const { errorHandler } = require('./utils/errorResponse');
 
 const app = express();
@@ -54,7 +56,9 @@ function parseTrustProxy(value) {
 app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 
 const { allowedOrigins } = require('./config/frontendUrl');
-app.use(cors({ origin: allowedOrigins }));
+// Content-Disposition is exposed so the SPA (another origin) can save a CSV
+// export under the filename the server gave it (CsvDownloadButton.jsx).
+app.use(cors({ origin: allowedOrigins, exposedHeaders: ['Content-Disposition'] }));
 app.use(express.json());
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
@@ -84,6 +88,8 @@ app.use('/api/delegations', delegationRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/vacancy-drafts', vacancyDraftRoutes);
 
 // Catch-all error handler - logs the full error server-side but only ever
 // sends the client a sanitized message (never Prisma query text, database

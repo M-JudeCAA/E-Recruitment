@@ -15,13 +15,15 @@ import ViewSwitcher from '../components/ViewSwitcher';
 import DataTable from '../components/DataTable';
 import BoardView from '../components/BoardView';
 import PageControls from '../components/PageControls';
-import { useConfirm } from '../components/ConfirmDialog';
 import { urgencyOf } from '../utils/slaUrgency';
 import { debounce } from '../utils/debounce';
 import { useAuth } from '../models/AuthContext';
 import OfferSummary from '../components/offers/OfferSummary';
+import ReasonDialog from '../components/ReasonDialog';
 import OfferActions from '../components/offers/OfferActions';
 import { formatSalary } from '../components/offers/offerFormat';
+import { useConfirm } from '../components/ConfirmDialog';
+import { approveVacancy as approveVacancyRequest } from '../utils/approveVacancy';
 
 const MS_PER_DAY = 86400000;
 
@@ -193,7 +195,7 @@ export default function ApprovalsCenter() {
   const approveVacancy = (id) => runBusy(`vacancy-approve-${id}`, async () => {
     setError(''); setMessage('');
     try {
-      await staffClient.patch(`/api/vacancies/${id}/approve`);
+      if (!(await approveVacancyRequest(id, confirm))) return;
       setMessage('Vacancy approved.');
       loadVacancies();
     } catch (err) {
@@ -201,22 +203,18 @@ export default function ApprovalsCenter() {
     }
   });
 
-  // Declining a still-pending vacancy reuses the existing close() action -
-  // the same mechanism HRDashboard already offers ("Close vacancy" is
-  // available at every non-Closed status, PendingApproval included), not
-  // a separate reject endpoint.
-  const declineVacancy = async (id) => {
-    if (!(await confirm('Decline this vacancy? It will be closed without ever opening.', { title: 'Decline vacancy', confirmLabel: 'Decline', danger: true }))) return;
-    await runBusy(`vacancy-decline-${id}`, async () => {
-      setError(''); setMessage('');
-      try {
-        await staffClient.patch(`/api/vacancies/${id}/close`);
-        setMessage('Vacancy declined and closed.');
-        loadVacancies();
-      } catch (err) {
-        setError(err.response?.data?.error || 'Could not decline vacancy');
-      }
-    });
+  // Return (HR revises and resubmits) or reject (final) - both need a
+  // comment, which the vacancy's creator is sent (FR-ATS-009).
+  const [vacancyDecision, setVacancyDecision] = useState(null); // { vacancy, kind: 'return' | 'reject' }
+  const submitVacancyDecision = async (reason) => {
+    const { vacancy, kind } = vacancyDecision;
+    setError(''); setMessage('');
+    await staffClient.patch(`/api/vacancies/${vacancy.id}/${kind}`, { reason });
+    setVacancyDecision(null);
+    setMessage(kind === 'return'
+      ? 'Vacancy returned for revision. Its creator has been told what to change.'
+      : 'Vacancy rejected. Its creator has been told why.');
+    loadVacancies();
   };
 
   const approveOffer = (id) => runBusy(`offer-approve-${id}`, async () => {
@@ -303,6 +301,21 @@ export default function ApprovalsCenter() {
           <Alert type="success" message={message} />
           <Alert type="error" message={error} />
 
+          {vacancyDecision && (
+            <ReasonDialog
+              title={`${vacancyDecision.kind === 'return' ? 'Return' : 'Reject'} vacancy — ${vacancyDecision.vacancy.jobRef}`}
+              intro={vacancyDecision.kind === 'return'
+                ? 'The vacancy goes back to HR to revise and resubmit. Your comment is sent to whoever created it and kept in its history.'
+                : 'Rejecting is final - the vacancy cannot be resubmitted. Your reason is sent to whoever created it and kept in its history.'}
+              label={vacancyDecision.kind === 'return' ? 'What needs to change' : 'Reason for rejecting'}
+              confirmLabel={vacancyDecision.kind === 'return' ? 'Return for revision' : 'Reject vacancy'}
+              busyLabel={vacancyDecision.kind === 'return' ? 'Returning...' : 'Rejecting...'}
+              danger={vacancyDecision.kind === 'reject'}
+              onSubmit={submitVacancyDecision}
+              onClose={() => setVacancyDecision(null)}
+            />
+          )}
+
           <SectionHeader icon={Briefcase} title="Vacancies" count={vacancies?.length ?? '—'} />
           {vacancies === null && <QueueRowSkeleton />}
           {sortedVacancies?.length === 0 && (
@@ -323,8 +336,10 @@ export default function ApprovalsCenter() {
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         <Link to={`/hr/vacancy/${v.id}`} style={{ fontSize: 12 }}>View</Link>
                         <Button variant="ghost" style={{ padding: '2px 8px', fontSize: 12, color: 'var(--color-danger)' }} disabled={!!busy[`vacancy-approve-${v.id}`]}
-                          loading={!!busy[`vacancy-decline-${v.id}`]} loadingText="…" onClick={() => declineVacancy(v.id)}>Decline</Button>
-                        <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 12 }} disabled={!!busy[`vacancy-decline-${v.id}`]}
+                          onClick={() => setVacancyDecision({ vacancy: v, kind: 'reject' })}>Reject</Button>
+                        <Button variant="ghost" style={{ padding: '2px 8px', fontSize: 12 }} disabled={!!busy[`vacancy-approve-${v.id}`]}
+                          onClick={() => setVacancyDecision({ vacancy: v, kind: 'return' })}>Return</Button>
+                        <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 12 }}
                           loading={!!busy[`vacancy-approve-${v.id}`]} loadingText="…" onClick={() => approveVacancy(v.id)}>Approve</Button>
                       </div>
                     )
@@ -345,7 +360,7 @@ export default function ApprovalsCenter() {
                     <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{v.title}</div>
                     <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{v.jobRef} &middot; {v.postingType}</div>
                     <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                      <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 11 }} disabled={!!busy[`vacancy-decline-${v.id}`]}
+                      <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 11 }}
                         loading={!!busy[`vacancy-approve-${v.id}`]} loadingText="…" onClick={() => approveVacancy(v.id)}>Approve</Button>
                       <Link to={`/hr/vacancy/${v.id}`} style={{ fontSize: 11, alignSelf: 'center' }}>View</Link>
                     </div>
@@ -364,14 +379,16 @@ export default function ApprovalsCenter() {
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
                     {v.jobRef} &middot; {v.department?.directorate?.name} &mdash; {v.department?.name}
-                    {' '}&middot; {v.postingType} &middot; waiting {waitingSince(v.createdAt)}
+                    {' '}&middot; {v.postingType} &middot; waiting {waitingSince(v.approvalRequestedAt || v.createdAt)}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                   <Link to={`/hr/vacancy/${v.id}`} style={{ padding: '4px 10px', fontSize: 13 }}>View</Link>
                   <Button variant="ghost" style={{ padding: '4px 10px', color: 'var(--color-danger)' }} disabled={!!busy[`vacancy-approve-${v.id}`]}
-                    loading={!!busy[`vacancy-decline-${v.id}`]} loadingText="Declining..." onClick={() => declineVacancy(v.id)}>Decline</Button>
-                  <Button variant="secondary" style={{ padding: '4px 10px' }} disabled={!!busy[`vacancy-decline-${v.id}`]}
+                    onClick={() => setVacancyDecision({ vacancy: v, kind: 'reject' })}>Reject</Button>
+                  <Button variant="ghost" style={{ padding: '4px 10px' }} disabled={!!busy[`vacancy-approve-${v.id}`]}
+                    onClick={() => setVacancyDecision({ vacancy: v, kind: 'return' })}>Return for revision</Button>
+                  <Button variant="secondary" style={{ padding: '4px 10px' }}
                     loading={!!busy[`vacancy-approve-${v.id}`]} loadingText="Approving..." onClick={() => approveVacancy(v.id)}>Approve</Button>
                 </div>
               </div>

@@ -21,8 +21,6 @@ import CandidateApplications from "./views/CandidateApplications";
 import ApplyForm from "./views/ApplyForm";
 import JobDetails from "./views/JobDetails";
 import StaffLogin from "./views/StaffLogin";
-import StaffForgotPassword from "./views/StaffForgotPassword";
-import StaffResetPassword from "./views/StaffResetPassword";
 import HRHome from "./views/HRHome";
 import ExecutiveDashboard from "./views/ExecutiveDashboard";
 import ApprovalsCenter from "./views/ApprovalsCenter";
@@ -31,13 +29,15 @@ import HRDashboard from "./views/HRDashboard";
 import ApplicationManagement from "./views/ApplicationManagement";
 import DepartmentAdmin from "./views/DepartmentAdmin";
 import StaffManagement from "./views/StaffManagement";
+import StaffAccounts from "./views/StaffAccounts";
 import VacancyDetail from "./views/VacancyDetail";
 import CreateVacancyListing from "./views/CreateVacancyListing";
 import PanelScoreAccess from "./views/PanelScoreAccess";
 import PanelDayAccess from "./views/PanelDayAccess";
 import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
 import InterviewHub from "./views/InterviewHub";
-import { RequireCandidate, RequireStaff, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
+import PrivacyNotice from "./views/PrivacyNotice";
+import { RequireCandidate, RequireStaff, RequireSystemAdmin, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
 
 // Padding lives here, not on the app shell - Navbar/Footer render outside
 // this entirely, full width with no inset. Only routes nested under this
@@ -89,22 +89,8 @@ export default function App() {
             The unauthenticated staff entry points below are gated the
             opposite way instead (RequireStaffPort: staff port only). */}
         <Route element={<PaddedLayout />}>
-          <Route
-            path="/staff/forgot-password"
-            element={
-              <RequireStaffPort>
-                <StaffForgotPassword />
-              </RequireStaffPort>
-            }
-          />
-          <Route
-            path="/staff/reset-password"
-            element={
-              <RequireStaffPort>
-                <StaffResetPassword />
-              </RequireStaffPort>
-            }
-          />
+          {/* Public - candidates consent to it when applying (FR-ATS-038). */}
+          <Route path="/privacy" element={<PrivacyNotice />} />
           <Route
             path="/hr/home"
             element={
@@ -176,6 +162,16 @@ export default function App() {
               <RequireStaff minRole="Senior_HR_Officer">
                 <StaffManagement />
               </RequireStaff>
+            }
+          />
+          {/* Staff account administration - system administrators only,
+              whatever HR role anyone holds (see StaffAccounts.jsx). */}
+          <Route
+            path="/hr/staff-accounts"
+            element={
+              <RequireSystemAdmin>
+                <StaffAccounts />
+              </RequireSystemAdmin>
             }
           />
           <Route

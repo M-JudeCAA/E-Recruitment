@@ -81,7 +81,8 @@ module.exports = {
     where: {
       memberId,
       application: { OR: [{ coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] }
-    }
+    },
+    include: { application: { select: { vacancyId: true, candidateId: true } } }
   }),
 
   // --- chair decisions ---
@@ -112,7 +113,7 @@ module.exports = {
   findApplicantForPanel: (applicationId) => prisma.application.findUnique({
     where: { id: applicationId },
     select: {
-      id: true, whyThisRole: true, desirableResponses: true, disqualifyingResponses: true,
+      id: true, vacancyId: true, candidateId: true, whyThisRole: true, desirableResponses: true, disqualifyingResponses: true,
       essentialCriteriaResults: true, coverLetterUrl: true,
       documents: { select: { id: true, category: true, label: true, fileUrl: true, originalName: true }, orderBy: { uploadedAt: 'asc' } },
       candidate: {

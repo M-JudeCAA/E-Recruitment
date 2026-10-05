@@ -1,8 +1,12 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const { sendError } = require('../utils/errorResponse');
 const applicationModel = require('../models/applicationModel');
 const vacancyModel = require('../models/vacancyModel');
 const shortlistCommitteeModel = require('../models/shortlistCommitteeModel');
 const workflow = require('../services/workflowService');
+const duplicateApplicants = require('../services/duplicateApplicantService');
+const accessLog = require('../services/accessLogService');
+const audit = require('../services/auditService');
 const meritList = require('../services/meritListService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { ROLE_RANK } = require('../middleware/auth');
@@ -14,7 +18,7 @@ const { ROLE_RANK } = require('../middleware/auth');
 // Cross-vacancy total for HRHome's KPI card - one count query instead of
 // fetching every vacancy's application list and summing client-side.
 async function count(req, res) {
-  const total = await applicationModel.countAll();
+  const total = await applicationModel.countAll(await conflictOfInterest.conflictedVacancyIds(req));
   res.json({ count: total });
 }
 
@@ -48,6 +52,12 @@ async function list(req, res) {
   }
   if (sort && !VALID_SORTS.includes(sort)) {
     return res.status(400).json({ error: 'Invalid sort' });
+  }
+  // Never the applicants of a vacancy the viewer applied for.
+  const excludeVacancyIds = await conflictOfInterest.conflictedVacancyIds(req);
+  if (vacancyId !== undefined && excludeVacancyIds.includes(Number(vacancyId))) {
+    const err = new conflictOfInterest.ApplicantConflictError();
+    return res.status(err.status).json({ error: err.message, code: err.code });
   }
 
   // "Needs my action" - a role-aware shortcut through the queue, not a new
@@ -86,7 +96,8 @@ async function list(req, res) {
     candidateType: candidateType || undefined,
     screeningPassed: screeningPassed === 'true' ? true : screeningPassed === 'false' ? false : undefined,
     search: search?.trim() || undefined,
-    needsActionOr
+    needsActionOr,
+    excludeVacancyIds
   };
   const take = Math.min(Number(limit) || DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
   const pageNum = Math.max(Number(page) || 1, 1);
@@ -96,7 +107,10 @@ async function list(req, res) {
     applicationModel.findManyForHr({ ...filters, skip, take, sort }),
     applicationModel.countForHr(filters)
   ]);
-  res.json({ data, total, page: pageNum, limit: take });
+  await accessLog.record(req, {
+    action: 'Viewed the application queue', vacancyId: filters.vacancyId ?? null, candidateIds: data.map((a) => a.candidateId)
+  });
+  res.json({ data: await duplicateApplicants.annotate(data), total, page: pageNum, limit: take });
 }
 
 // Same terminal/out-of-reach statuses reject() already refuses, plus the
@@ -149,6 +163,10 @@ async function shortlist(req, res) {
     return res.status(409).json({ error: 'This application was already updated - please refresh and try again' });
   }
 
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Proposed for the interview shortlist', actor: audit.actorFrom(req),
+    before: application, after: { status: 'ShortlistProposed', rank: rank ?? null }, fields: ['status', 'rank']
+  });
   const updated = await applicationModel.findById(applicationId, { vacancy: true });
   res.json(updated);
 }
@@ -190,6 +208,11 @@ async function reject(req, res) {
   if (result.count === 0) {
     return res.status(409).json({ error: 'This application was already updated - please refresh and try again' });
   }
+
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Application rejected', actor: audit.actorFrom(req),
+    before: application, after: { status: 'Rejected' }, fields: ['status'], comment: reason
+  });
 
   // The rejection itself already committed above - a notification/mail
   // failure here must not turn an otherwise-successful reject into a 500
@@ -235,6 +258,10 @@ async function approveShortlist(req, res) {
   }
 
   await applicationModel.approveShortlistForVacancy(vacancyId, req.user.id);
+  await audit.recordMany(proposed.map((application) => ({
+    entityType: 'Application', entityId: application.id, action: 'Interview shortlist approved', actor: audit.actorFrom(req),
+    before: application, after: { status: 'Shortlisted' }, fields: ['status']
+  })));
 
   const vacancy = await vacancyModel.findById(vacancyId);
   // The approval itself already committed above - a notification failure

@@ -20,6 +20,7 @@ import InternalProfileStep from './apply-wizard/InternalProfileStep';
 import ReviewStep from './apply-wizard/ReviewStep';
 import SubmitStep from './apply-wizard/SubmitStep';
 import { failedDisqualifyingRequirements } from '../utils/screeningQuestions';
+import { validateNationalId } from '../utils/validators';
 
 // A requirement's answerType (see ScreeningQuestionsEditor.jsx) decides how
 // its raw form-control value should be read: a 'number' row's TextField
@@ -70,10 +71,10 @@ export default function ApplyForm() {
   const [profile, setProfile] = useState(null);
   const [application, setApplication] = useState(null);
   // Candidate-level fields (persist across every application) - National ID,
-  // location, work authorization, LinkedIn/portfolio links. Separate from
+  // location, district of origin, LinkedIn/portfolio links. Separate from
   // internalProfileForm below, which is Internal-candidate-only.
   const [profileDetailsForm, setProfileDetailsForm] = useState({
-    nationalId: '', location: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '',
+    nationalId: '', location: '', districtOfOrigin: '', linkedinUrl: '', portfolioUrl: '',
     dateOfBirth: '', flyingHours: ''
   });
   const [internalProfileForm, setInternalProfileForm] = useState({});
@@ -148,7 +149,7 @@ export default function ApplyForm() {
     setProfileDetailsForm({
       nationalId: res.data.nationalId || '',
       location: res.data.location || '',
-      workAuthorization: res.data.workAuthorization || '',
+      districtOfOrigin: res.data.districtOfOrigin || '',
       linkedinUrl: res.data.linkedinUrl || '',
       portfolioUrl: res.data.portfolioUrl || '',
       dateOfBirth: res.data.dateOfBirth ? res.data.dateOfBirth.slice(0, 10) : '',
@@ -249,9 +250,10 @@ export default function ApplyForm() {
     switch (key) {
       case 'profile': {
         const missing = [];
-        if (!profileDetailsForm.location) missing.push('Current location');
-        if (!profileDetailsForm.nationalId) missing.push('National ID number');
-        if (!profileDetailsForm.workAuthorization) missing.push('Work authorization');
+        if (!profileDetailsForm.location) missing.push('Place of residence');
+        if (!profileDetailsForm.districtOfOrigin) missing.push('District of origin');
+        if (!profileDetailsForm.nationalId) missing.push('National Identification Number (NIN)');
+        else if (!validateNationalId(profileDetailsForm.nationalId)) missing.push('A valid National Identification Number (NIN)');
         if (!(profile?.education?.length)) missing.push('At least one education entry');
         if (!(profile?.workExperience?.length)) missing.push('At least one work experience entry');
         return missing;
@@ -358,7 +360,7 @@ export default function ApplyForm() {
     }
   };
 
-  // Candidate-level - National ID, location, work authorization, LinkedIn
+  // Candidate-level - NIN, location, district of origin, LinkedIn
   // and portfolio links. Saved separately from saveDraft since these live
   // on Candidate, not Application, and persist across every application.
   const saveProfileDetails = async () => {

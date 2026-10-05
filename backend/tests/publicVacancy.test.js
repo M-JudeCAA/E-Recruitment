@@ -53,3 +53,16 @@ describe('candidateController.myApplications', () => {
     expect(body[1].vacancy).toEqual({ id: 2, title: 'B' });
   });
 });
+
+describe('toPublicVacancy - approval decisions and the requisition', () => {
+  test('never hands a candidate the EXCO requisition, what was read from it, or HR\'s decision comments', () => {
+    const vacancy = {
+      id: 1, title: 'HR Analyst', desirableQualifications: ['Membership of HRMAU'],
+      requisitionDocumentUrl: '/api/files/requisition-x.docx', requisitionDocumentName: 'Job Opening Request.docx',
+      requisitionDocumentHash: 'a'.repeat(64), requisitionUploadedAt: new Date(), requisitionUploadedById: 3,
+      requisitionDetails: { fields: {} }, closeReason: 'Position frozen', closedAt: new Date(), returnReason: 'Fix the scale',
+      returnedAt: new Date(), rejectedAt: null, approvalRequestedAt: new Date()
+    };
+    expect(toPublicVacancy(vacancy)).toEqual({ id: 1, title: 'HR Analyst', desirableQualifications: ['Membership of HRMAU'] });
+  });
+});

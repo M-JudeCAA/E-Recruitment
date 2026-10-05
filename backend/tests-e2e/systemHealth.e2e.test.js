@@ -1,6 +1,7 @@
 const request = require('supertest');
 const { prisma, app, resetDatabase, createStaff, staffToken, api, expectStatus } = require('./helpers');
 const { runJob } = require('../src/utils/jobRunner');
+const systemHealthService = require('../src/services/systemHealthService');
 
 // The maintenance jobs, the staff warning banner, Director alerts, and the
 // sign-in rate limits, all against the real database. Running every job's
@@ -24,10 +25,20 @@ const JOBS = {
   checkSlaEscalations: () => require('../scripts/checkSlaEscalations').run(),
   checkVacancyDeadlines: () => require('../scripts/checkVacancyDeadlines').run(),
   sendInterviewReminders: () => require('../scripts/sendInterviewReminders').run(),
+  expireOffers: () => require('../scripts/expireOffers').run(),
   cleanupPendingRegistrations: () => require('../scripts/cleanupPendingRegistrations').run(),
-  cleanupVerificationTokens: () => require('../scripts/cleanupVerificationTokens').run()
+  cleanupVerificationTokens: () => require('../scripts/cleanupVerificationTokens').run(),
+  cleanupRequisitionUploads: () => require('../scripts/cleanupRequisitionUploads').run(),
+  purgeAccessLog: () => require('../scripts/purgeAccessLog').run(),
+  checkInterviewSessions: () => require('../scripts/checkInterviewSessions').run()
 };
 const daysAgo = (d) => new Date(Date.now() - d * 24 * 60 * 60 * 1000);
+
+// Every job the health banner watches is run here - a job added to the
+// scheduler and systemHealthService.JOBS must be added above too.
+test('covers every monitored job', () => {
+  expect(Object.keys(JOBS).sort()).toEqual(systemHealthService.JOBS.map((j) => j.name).sort());
+});
 
 test('warns staff and alerts Directors once when the scheduled jobs have never run', async () => {
   const first = expectStatus(await api(hroToken).get('/api/dashboard/system-health'), 200).body;
@@ -60,7 +71,7 @@ test('every job runs against the real schema, is recorded, and clears the warnin
   expect(remaining).toEqual(['live', 'recent-expired']);
 
   const rows = await prisma.systemHealth.findMany({ where: { key: { startsWith: 'job:' } } });
-  expect(rows).toHaveLength(4);
+  expect(rows).toHaveLength(Object.keys(JOBS).length);
   expect(rows.every((r) => r.lastSuccessAt && r.consecutiveFailures === 0)).toBe(true);
 
   const status = expectStatus(await api(hroToken).get('/api/dashboard/system-health'), 200).body;

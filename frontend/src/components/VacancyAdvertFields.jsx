@@ -67,6 +67,14 @@ export default function VacancyAdvertFields({ values, onChange }) {
       </p>
       <EssentialRequirementsBuilder values={values} onChange={onChange} />
 
+      <span style={subtitle}>Desirable requirements</span>
+      <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 8 }}>
+        As stated on the requisition - shown on the advert only, never checked. To ask candidates about one, add it as
+        a Qualifying screening question below.
+      </p>
+      <BulletListEditor placeholder="e.g. Membership of a relevant professional body"
+        items={values.desirableQualifications} onChange={setList('desirableQualifications')} />
+
       <span style={sectionHeading}>Additional Screening Criteria</span>
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2, marginBottom: 8 }}>
         Custom questions for anything Requirements above can't verify automatically - a licence, citizenship, and the

@@ -2,6 +2,7 @@ const model = require('../models/shortlistCommitteeModel');
 const committee = require('../services/shortlistCommitteeService');
 const { computeRanking } = require('./shortlistCommitteeController');
 const { sendUploadedFile } = require('./fileController');
+const accessLog = require('../services/accessLogService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
 // Public - a shortlisting committee member's private link (no account, no
@@ -115,6 +116,10 @@ async function applicant(req, res) {
   const checks = Object.fromEntries(parseJsonList(app.essentialCriteriaResults).map((c) => [c.key, c]));
   const answers = Object.fromEntries((app.desirableResponses || []).map((r) => [r.id, r]));
   const fileUrl = (url) => (url ? `/api/shortlist-panel/${req.params.token}/files/${url.split('/').pop()}` : null);
+  await accessLog.record(req, {
+    action: 'Viewed an applicant (shortlisting committee)', vacancyId: app.vacancyId, applicationId: app.id,
+    candidateIds: [app.candidateId], committeeMember: member
+  });
 
   res.json({
     applicationId: app.id,
@@ -239,6 +244,10 @@ async function file(req, res) {
   const { filename } = req.params;
   const owned = await model.findAssignmentOwningFile(member.id, `/api/files/${filename}`);
   if (!owned) return res.status(403).json({ error: 'You do not have access to this file' });
+  await accessLog.record(req, {
+    action: 'Opened a document (shortlisting committee)', vacancyId: owned.application.vacancyId, applicationId: owned.applicationId,
+    candidateIds: [owned.application.candidateId], detail: { document: filename }, committeeMember: member
+  });
   sendUploadedFile(res, filename);
 }
 

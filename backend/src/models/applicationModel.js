@@ -8,9 +8,9 @@ const prisma = require('../config/db');
 // reads to build the on-demand CV HR generates for an applicant - see
 // GeneratedCvPrintLayout.jsx.
 const CANDIDATE_SELECT = {
-  id: true, fullName: true, email: true, phone: true, candidateType: true,
-  location: true, linkedinUrl: true, portfolioUrl: true, workAuthorization: true,
-  nationalId: true, idType: true, dateOfBirth: true, flyingHours: true,
+  id: true, fullName: true, email: true, phone: true, phoneKey: true, candidateType: true,
+  location: true, districtOfOrigin: true, linkedinUrl: true, portfolioUrl: true,
+  nationalId: true, dateOfBirth: true, flyingHours: true,
   education: true, workExperience: true, examGrades: true, certificates: true,
   internalProfile: true
 };
@@ -46,10 +46,12 @@ const HR_LIST_INCLUDE = {
 // stays in place underneath it as defense-in-depth (every needsActionOr
 // branch is already non-Draft by construction, so this never excludes
 // anything real).
-function buildHrWhere({ vacancyId, status, departmentId, candidateType, screeningPassed, search, needsActionOr }) {
+function buildHrWhere({ vacancyId, status, departmentId, candidateType, screeningPassed, search, needsActionOr, excludeVacancyIds }) {
   const where = { status: status || { not: 'Draft' } };
   if (needsActionOr) where.OR = needsActionOr;
   if (vacancyId) where.vacancyId = vacancyId;
+  // Vacancies the viewer applied for (conflictOfInterestService).
+  else if (excludeVacancyIds?.length) where.vacancyId = { notIn: excludeVacancyIds };
   if (departmentId) where.vacancy = { departmentId };
   const candidateWhere = {};
   if (candidateType) candidateWhere.candidateType = candidateType;
@@ -115,6 +117,12 @@ module.exports = {
   // built from one filename) - named singular here (it previously read
   // "urls", misleadingly suggesting array support the OR clause below
   // doesn't actually provide).
+  // The application a stored file belongs to, whoever owns it - for the
+  // data access log when staff open a document.
+  findByFileUrl: (url) => prisma.application.findFirst({
+    where: { OR: [{ cvUrl: url }, { coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] },
+    select: { id: true, vacancyId: true, candidateId: true }
+  }),
   findOwnedByCandidate: (candidateId, url) => prisma.application.findFirst({
     where: { candidateId, OR: [{ cvUrl: url }, { coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] }
   }),
@@ -164,7 +172,9 @@ module.exports = {
     where: { status: 'Shortlisted', offer: null },
     select: { id: true, vacancy: { select: { id: true, jobRef: true, title: true } } }
   }),
-  countAll: () => prisma.application.count({ where: { status: { not: 'Draft' } } }),
+  countAll: (excludeVacancyIds = []) => prisma.application.count({
+    where: { status: { not: 'Draft' }, ...(excludeVacancyIds.length ? { vacancyId: { notIn: excludeVacancyIds } } : {}) }
+  }),
   // Same Draft exclusion, scoped to one vacancy.
   countByVacancy: (vacancyId) => prisma.application.count({ where: { vacancyId, status: { not: 'Draft' } } }),
   // include is optional (undefined -> Prisma returns scalars only, same

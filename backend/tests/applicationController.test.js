@@ -1,4 +1,5 @@
 jest.mock('../src/config/db', () => require('./__mocks__/db'));
+const { PRIVACY_NOTICE_VERSION } = require('../src/config/privacyNotice');
 jest.mock('../src/utils/mailer', () => ({ sendMail: jest.fn() }));
 
 const prisma = require('../src/config/db');
@@ -80,7 +81,7 @@ describe('submit', () => {
     prisma.application.findUnique.mockResolvedValue({
       id: 1, candidateId: 99, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
-    const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
+    const req = { params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
 
     await applicationDraftController.submit(req, res);
@@ -93,7 +94,7 @@ describe('submit', () => {
     prisma.application.findUnique.mockResolvedValue({
       id: 1, candidateId: 5, vacancyId: 10, status: 'Submitted', referees: completeReferees
     });
-    const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
+    const req = { params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
 
     await applicationDraftController.submit(req, res);
@@ -107,7 +108,7 @@ describe('submit', () => {
       id: 1, candidateId: 5, vacancyId: 10, status: 'Draft',
       referees: [completeReferees[0], completeReferees[1]]
     });
-    const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
+    const req = { params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
 
     await applicationDraftController.submit(req, res);
@@ -121,7 +122,7 @@ describe('submit', () => {
       id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Closed', postingType: 'External', deadline: null });
-    const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
+    const req = { params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
 
     await applicationDraftController.submit(req, res);
@@ -135,7 +136,7 @@ describe('submit', () => {
       id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Filled', postingType: 'External', deadline: null });
-    const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
+    const req = { params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
 
     await applicationDraftController.submit(req, res);
@@ -151,7 +152,7 @@ describe('submit', () => {
     prisma.vacancy.findUnique.mockResolvedValue({
       id: 10, status: 'Open', postingType: 'External', deadline: new Date('2000-01-01')
     });
-    const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
+    const req = { params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
 
     await applicationDraftController.submit(req, res);
@@ -169,10 +170,10 @@ describe('submit', () => {
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Open', postingType: 'External', deadline: null });
     prisma.candidate.findUnique.mockResolvedValue({
-      id: 5, candidateType: 'External', location: null, workAuthorization: null, nationalId: null,
+      id: 5, candidateType: 'External', location: null, nationalId: null,
       education: [], workExperience: []
     });
-    const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
+    const req = { params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
 
     await applicationDraftController.submit(req, res);
@@ -192,11 +193,11 @@ describe('submit', () => {
     });
     prisma.vacancy.findUnique.mockResolvedValue({ id: 10, status: 'Open', postingType: 'External', deadline: null });
     prisma.candidate.findUnique.mockResolvedValue({
-      id: 5, candidateType: 'External', location: 'Kampala', workAuthorization: 'Yes', nationalId: 'A1234567',
+      id: 5, candidateType: 'External', location: 'Kampala', nationalId: 'CM90012345ABCD', districtOfOrigin: 'Wakiso',
       education: [{ id: 1 }], workExperience: [{ id: 1 }]
     });
     prisma.application.updateMany.mockResolvedValue({ count: 0 });
-    const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
+    const req = { params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
 
     await applicationDraftController.submit(req, res);
@@ -224,13 +225,13 @@ describe('submit', () => {
     });
     prisma.candidate.findUnique.mockResolvedValue({
       id: 5, email: 'jane@example.com', fullName: 'Jane Doe', candidateType: 'External',
-      location: 'Kampala', workAuthorization: 'Yes', nationalId: 'A1234567',
+      location: 'Kampala', nationalId: 'CM90012345ABCD', districtOfOrigin: 'Wakiso',
       education: [{ id: 1 }], workExperience: [{ id: 1 }]
     });
     prisma.application.updateMany.mockResolvedValue({ count: 1 });
     prisma.workExperience.findMany.mockResolvedValue([]);
     prisma.education.findMany.mockResolvedValue([]);
-    const req = { params: { id: '1' }, user: { id: 5, candidateType: 'External' } };
+    const req = { params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } };
     const res = mockRes();
 
     await applicationDraftController.submit(req, res);
@@ -249,7 +250,7 @@ describe('submit', () => {
   describe('screening at submission', () => {
     const completeCandidate = {
       id: 5, email: 'jane@example.com', fullName: 'Jane Doe', candidateType: 'External',
-      location: 'Kampala', workAuthorization: 'Yes', nationalId: 'A1234567',
+      location: 'Kampala', nationalId: 'CM90012345ABCD', districtOfOrigin: 'Wakiso',
       education: [{ id: 1, qualificationLevel: 'Diploma' }], workExperience: [{ id: 1, startDate: '2015-01-01', endDate: '2020-01-01' }]
     };
     const licenceQuestion = { id: 'q1', text: 'Do you hold a valid ATC licence?', requiredAnswer: 'Yes' };
@@ -274,7 +275,7 @@ describe('submit', () => {
       arrange({ academicDocuments: 0 });
       const res = mockRes();
 
-      await applicationDraftController.submit({ params: { id: '1' }, user: { id: 5, candidateType: 'External' } }, res);
+      await applicationDraftController.submit({ params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } }, res);
 
       expect(prisma.applicationDocument.count).toHaveBeenCalledWith({ where: { applicationId: 1, category: 'Academic' } });
       expect(res.status).toHaveBeenCalledWith(400);
@@ -288,7 +289,7 @@ describe('submit', () => {
       });
       const res = mockRes();
 
-      await applicationDraftController.submit({ params: { id: '1' }, user: { id: 5, candidateType: 'External' } }, res);
+      await applicationDraftController.submit({ params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } }, res);
 
       expect(res.status).toHaveBeenCalledWith(422);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
@@ -301,7 +302,7 @@ describe('submit', () => {
       arrange({ vacancy: { minimumEducationLevel: 'Bachelors' } });
       const res = mockRes();
 
-      await applicationDraftController.submit({ params: { id: '1' }, user: { id: 5, candidateType: 'External' } }, res);
+      await applicationDraftController.submit({ params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } }, res);
 
       expect(res.status).toHaveBeenCalledWith(422);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'NOT_ELIGIBLE' }));
@@ -312,7 +313,7 @@ describe('submit', () => {
       arrange({ vacancy: { disqualifyingRequirements: [licenceQuestion] }, application: { disqualifyingResponses: [] } });
       const res = mockRes();
 
-      await applicationDraftController.submit({ params: { id: '1' }, user: { id: 5, candidateType: 'External' } }, res);
+      await applicationDraftController.submit({ params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } }, res);
 
       expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ unanswered: [licenceQuestion.text] }));
@@ -326,12 +327,31 @@ describe('submit', () => {
       });
       const res = mockRes();
 
-      await applicationDraftController.submit({ params: { id: '1' }, user: { id: 5, candidateType: 'External' } }, res);
+      await applicationDraftController.submit({ params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } }, res);
 
       expect(prisma.application.updateMany).toHaveBeenCalledWith({
         where: { id: 1, status: 'Draft' },
         data: expect.objectContaining({ status: 'Submitted', screeningPassed: true, screenedAt: expect.any(Date) })
       });
+    });
+
+    // FR-ATS-038
+    test('records when consent was given and against which privacy notice', async () => {
+      arrange({ vacancy: {}, application: {} });
+      await applicationDraftController.submit({ params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } }, mockRes());
+      expect(prisma.application.updateMany).toHaveBeenCalledWith({
+        where: { id: 1, status: 'Draft' },
+        data: expect.objectContaining({ consentGivenAt: expect.any(Date), consentNoticeVersion: PRIVACY_NOTICE_VERSION })
+      });
+    });
+
+    test.each([undefined, false, 'yes'])('refuses a submission without explicit consent (consent: %p)', async (consent) => {
+      arrange({ vacancy: {}, application: {} });
+      const res = mockRes();
+      await applicationDraftController.submit({ params: { id: '1' }, body: { consent }, user: { id: 5, candidateType: 'External' } }, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'CONSENT_REQUIRED' }));
+      expect(prisma.application.updateMany).not.toHaveBeenCalled();
     });
   });
 });

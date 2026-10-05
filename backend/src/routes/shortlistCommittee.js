@@ -1,6 +1,7 @@
 const express = require('express');
 const controller = require('../controllers/shortlistCommitteeController');
 const { authenticate, requireStaffRole } = require('../middleware/auth');
+const { guardVacancy, vacancyFrom } = require('../middleware/applicantConflict');
 
 const router = express.Router();
 
@@ -11,18 +12,18 @@ const router = express.Router();
 const read = [authenticate, requireStaffRole('HR_Officer')];
 const write = [authenticate, requireStaffRole('Senior_HR_Officer')];
 
-router.get('/vacancies/:vacancyId', ...read, controller.get);
-router.post('/vacancies/:vacancyId', ...write, controller.create);
-router.patch('/vacancies/:vacancyId', ...write, controller.update);
-router.post('/vacancies/:vacancyId/members', ...write, controller.addMember);
-router.patch('/vacancies/:vacancyId/members/:memberId', ...write, controller.updateMember);
-router.delete('/vacancies/:vacancyId/members/:memberId', ...write, controller.removeMember);
-router.post('/vacancies/:vacancyId/members/:memberId/link', ...write, controller.reissueLink);
-router.post('/vacancies/:vacancyId/open', ...write, controller.openRating);
-router.post('/vacancies/:vacancyId/assignments', ...write, controller.addAssignment);
-router.put('/vacancies/:vacancyId/acting-chairs', ...write, controller.setActingChair);
-router.post('/vacancies/:vacancyId/moderation', ...write, controller.startModeration);
-router.post('/vacancies/:vacancyId/close', ...write, controller.close);
-router.post('/vacancies/:vacancyId/propose', ...write, controller.propose);
+router.get('/vacancies/:vacancyId', ...read, guardVacancy(vacancyFrom.param('vacancyId')), controller.get);
+router.post('/vacancies/:vacancyId', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.create);
+router.patch('/vacancies/:vacancyId', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.update);
+router.post('/vacancies/:vacancyId/members', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.addMember);
+router.patch('/vacancies/:vacancyId/members/:memberId', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.updateMember);
+router.delete('/vacancies/:vacancyId/members/:memberId', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.removeMember);
+router.post('/vacancies/:vacancyId/members/:memberId/link', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.reissueLink);
+router.post('/vacancies/:vacancyId/open', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.openRating);
+router.post('/vacancies/:vacancyId/assignments', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.addAssignment);
+router.put('/vacancies/:vacancyId/acting-chairs', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.setActingChair);
+router.post('/vacancies/:vacancyId/moderation', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.startModeration);
+router.post('/vacancies/:vacancyId/close', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.close);
+router.post('/vacancies/:vacancyId/propose', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.propose);
 
 module.exports = router;

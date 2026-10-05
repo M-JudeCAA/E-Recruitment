@@ -1,4 +1,5 @@
 const vacancyModel = require('../models/vacancyModel');
+const audit = require('../services/auditService');
 const applicationModel = require('../models/applicationModel');
 const candidateModel = require('../models/candidateModel');
 const { screenApplication, scoreApplication, evaluateEssentialCriteria } = require('../services/screeningService');
@@ -49,6 +50,10 @@ async function beginReview(req, res) {
     outcomes.filter((o) => o.status === 'rejected').forEach((o) => console.error('Begin Review: failed to screen an application:', o.reason));
   }
 
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancyId, action: 'Applications screened (Begin Review)', actor: audit.actorFrom(req),
+    details: { screened, failed }
+  });
   res.json({ vacancyId, screened, failed });
 }
 

@@ -6,6 +6,72 @@ import Button from '../components/Button';
 import Alert from '../components/Alert';
 import StatusBadge from '../components/StatusBadge';
 import Skeleton from '../components/Skeleton';
+import AuditTrail from '../components/AuditTrail';
+import Card from '../components/Card';
+import { fileLink } from '../utils/fileLink';
+
+// Requisition details with no column of their own on the vacancy - kept in
+// the snapshot of what was read (Vacancy.requisitionDetails) and shown here.
+const REQUISITION_FACTS = [
+  ['excoReference', 'EXCO approval'], ['approvalDate', 'Date of approval'], ['positionStatus', 'Position status'],
+  ['jdStatus', 'JD status'], ['contractDuration', 'Contract duration'], ['expectedReportingDate', 'Expected reporting date'],
+  ['section', 'Section'], ['directReports', 'No. of direct reports'], ['equipment', 'Required items/equipment']
+];
+// Form fields as HR knows them, for "changed from the requisition".
+const EDITED_LABELS = {
+  positionId: 'job title', reportsToPositionId: 'reports to', positionsRequired: 'number of vacancies', postingType: 'posting type',
+  salaryScale: 'salary scale', location: 'location', employmentCategory: 'employment category', minimumAge: 'minimum age',
+  maximumAge: 'maximum age', jobPurpose: 'job purpose', essentialRequirements: 'essential requirements',
+  desirableQualifications: 'desirable requirements', generalKnowledge: 'knowledge', specialSkills: 'special skills'
+};
+
+function RequisitionCard({ vacancy }) {
+  if (!vacancy.requisitionDocumentUrl) {
+    return <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Created before vacancies required an uploaded requisition.</p>;
+  }
+  const details = vacancy.requisitionDetails || {};
+  const fields = details.fields || {};
+  const facts = REQUISITION_FACTS.filter(([key]) => fields[key]?.value);
+  const edited = (details.editedFields || []).map((k) => EDITED_LABELS[k] || k);
+  return (
+    <Card style={{ marginTop: 'var(--spacing-md)' }}>
+      <h3 style={{ margin: '0 0 6px', fontSize: 15 }}>Approved requisition</h3>
+      <p style={{ margin: '0 0 8px', fontSize: 13 }}>
+        <a href={fileLink(vacancy.requisitionDocumentUrl)} target="_blank" rel="noreferrer" style={{ overflowWrap: 'anywhere' }}>
+          {vacancy.requisitionDocumentName || 'Requisition document'}
+        </a>
+        {vacancy.requisitionUploadedAt && (
+          <span style={{ color: 'var(--color-text-muted)' }}> - uploaded {new Date(vacancy.requisitionUploadedAt).toLocaleDateString()}</span>
+        )}
+      </p>
+      {facts.length > 0 && (
+        <table style={{ borderCollapse: 'collapse', fontSize: 13 }}>
+          <tbody>
+            {facts.map(([key, label]) => (
+              <tr key={key}>
+                <td style={{ padding: '2px 12px 2px 0', fontWeight: 600, color: 'var(--color-text-muted)', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{label}</td>
+                <td style={{ padding: '2px 0', overflowWrap: 'anywhere' }}>{String(fields[key].value)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {details.jdException && (
+        <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--color-warning)', overflowWrap: 'anywhere' }}>
+          Created on a job description that is not approved. Reason given: {details.jdException.reason}
+          {details.jdException.authorisedAt
+            ? ` - exception authorised ${new Date(details.jdException.authorisedAt).toLocaleDateString()}${details.jdException.authorisedByRole ? ` (${details.jdException.authorisedByRole})` : ''}.`
+            : ' - awaiting the approver\'s authorisation.'}
+        </p>
+      )}
+      {edited.length > 0 && (
+        <p style={{ margin: '8px 0 0', fontSize: 13, color: 'var(--color-warning)' }}>
+          Changed from the requisition when the vacancy was created: {edited.join(', ')}.
+        </p>
+      )}
+    </Card>
+  );
+}
 
 // Vacancy-info only - the applicant review workflow (screening, shortlist
 // ranking, verification, reject, interview scheduling/scoring, offer
@@ -18,10 +84,17 @@ export default function VacancyDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [vacancy, setVacancy] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    staffClient.get(`/api/vacancies/${id}`).then((res) => setVacancy(res.data));
+    setLoadError('');
+    staffClient.get(`/api/vacancies/${id}`)
+      .then((res) => setVacancy(res.data))
+      // e.g. 409 APPLICANT_CONFLICT: the viewer applied for this vacancy.
+      .catch((err) => setLoadError(err.response?.data?.error || 'Could not load this vacancy'));
   }, [id]);
+
+  if (loadError) return <Alert type="error" message={loadError} />;
 
   if (!vacancy) {
     return (
@@ -75,11 +148,24 @@ export default function VacancyDetail() {
         )}
       </p>
 
+      {vacancy.status === 'Returned' && (
+        <Alert type="warning" message={`Returned for revision: ${vacancy.returnReason || 'no comment recorded'}. Edit it and resubmit it for approval from the HR dashboard.`} />
+      )}
+      {vacancy.status === 'Rejected' && (
+        <Alert type="error" message={`Rejected: ${vacancy.rejectionReason || 'no reason recorded'}.`} />
+      )}
+      {vacancy.status === 'Closed' && vacancy.closeReason && (
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Closed: {vacancy.closeReason}</p>
+      )}
       {vacancy.status === 'PendingApproval' ? (
         <Alert type="info" message="This vacancy hasn't been approved and published yet, so there are no applications to review. Approve it from the HR dashboard first." />
-      ) : (
+      ) : ['Returned', 'Rejected'].includes(vacancy.status) ? null : (
         <Button onClick={() => navigate(`/hr/applications?vacancyId=${vacancy.id}`)}>Manage applications &rarr;</Button>
       )}
+
+      <RequisitionCard vacancy={vacancy} />
+
+      <AuditTrail entityType="Vacancy" entityId={vacancy.id} label="Vacancy history" />
     </div>
   );
 }

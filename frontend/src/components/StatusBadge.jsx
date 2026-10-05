@@ -7,6 +7,9 @@ import React from 'react';
 export const STATUS_COLORS = {
   // Panel/interview recommendation
   Shortlist: 'var(--color-accent)', Hold: 'var(--color-warning)', Reject: 'var(--color-danger)',
+  // How sure the requisition reader is of a value it read (RequisitionPanel)
+  HighConfidence: 'var(--color-accent)', MediumConfidence: 'var(--color-warning)',
+  LowConfidence: 'var(--color-danger)', NotFound: 'var(--color-text-muted)',
   // Merit list place (Application.meritListStatus)
   Primary: 'var(--color-accent)', Reserve: 'var(--color-primary)',
   // Vacancy
@@ -29,6 +32,8 @@ export const STATUS_COLORS = {
   Scheduled: 'var(--color-primary)', Completed: 'var(--color-accent)', Held: 'var(--color-accent)',
   Cancelled: 'var(--color-text-muted)', NoShow: 'var(--color-danger)',
   Confirmed: 'var(--color-accent)', RescheduleRequested: 'var(--color-warning)',
+  // Staff account state (StaffAccounts.jsx)
+  Active: 'var(--color-accent)', Deactivated: 'var(--color-text-muted)',
   // Verification
   Pending: 'var(--color-warning)', HR_Verified: 'var(--color-accent)',
   Discrepancy_Flagged: 'var(--color-danger)',

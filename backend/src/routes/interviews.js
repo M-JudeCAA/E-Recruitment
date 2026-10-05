@@ -2,6 +2,7 @@ const express = require('express');
 const controller = require('../controllers/interviewController');
 const panelAccessController = require('../controllers/panelAccessController');
 const { authenticate, requireStaffRole } = require('../middleware/auth');
+const { guardVacancy, vacancyFrom } = require('../middleware/applicantConflict');
 
 const router = express.Router();
 
@@ -17,34 +18,34 @@ const write = [authenticate, requireStaffRole('Senior_HR_Officer')];
 // Fixed paths first - they would otherwise be captured by /:interviewId.
 router.get('/', ...read, controller.list);
 router.get('/attention', ...read, controller.attention);
-router.get('/vacancies/:vacancyId/scheduling-context', ...read, controller.schedulingContext);
-router.get('/vacancies/:vacancyId/scorecard', ...read, controller.scorecard);
-router.post('/vacancies/:vacancyId/plan', ...write, controller.planSession);
-router.post('/vacancies/:vacancyId/sessions', ...write, controller.scheduleSession);
-router.post('/applications/:applicationId/interviews', ...write, controller.schedule);
+router.get('/vacancies/:vacancyId/scheduling-context', ...read, guardVacancy(vacancyFrom.param('vacancyId')), controller.schedulingContext);
+router.get('/vacancies/:vacancyId/scorecard', ...read, guardVacancy(vacancyFrom.param('vacancyId')), controller.scorecard);
+router.post('/vacancies/:vacancyId/plan', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.planSession);
+router.post('/vacancies/:vacancyId/sessions', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.scheduleSession);
+router.post('/applications/:applicationId/interviews', ...write, guardVacancy(vacancyFrom.application('applicationId')), controller.schedule);
 // One vacancy's interview day, run as a session: HR starts it, calls each
 // candidate in (which opens them for scoring on the panel's day links), and
 // ends it (15-minute grace, then the links close).
-router.get('/vacancies/:vacancyId/days/:day', ...read, controller.getDay);
-router.post('/vacancies/:vacancyId/days/:day/start', ...write, controller.startDay);
-router.post('/vacancies/:vacancyId/days/:day/end', ...write, controller.endDay);
+router.get('/vacancies/:vacancyId/days/:day', ...read, guardVacancy(vacancyFrom.param('vacancyId')), controller.getDay);
+router.post('/vacancies/:vacancyId/days/:day/start', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.startDay);
+router.post('/vacancies/:vacancyId/days/:day/end', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.endDay);
 
-router.patch('/panel-members/:panelMemberId', ...write, controller.updatePanelMember);
-router.delete('/panel-members/:panelMemberId', ...write, controller.removePanelMember);
-router.patch('/panel-members/:panelMemberId/recuse', ...write, controller.recusePanelMember);
-router.patch('/panel-members/:panelMemberId/score', ...write, controller.recordPanelScore);
-router.post('/panel-members/:panelMemberId/access-link', ...write, panelAccessController.generateLink);
-router.patch('/panel-members/:panelMemberId/revoke-access', ...write, panelAccessController.revokeAccess);
+router.patch('/panel-members/:panelMemberId', ...write, guardVacancy(vacancyFrom.panelMember('panelMemberId')), controller.updatePanelMember);
+router.delete('/panel-members/:panelMemberId', ...write, guardVacancy(vacancyFrom.panelMember('panelMemberId')), controller.removePanelMember);
+router.patch('/panel-members/:panelMemberId/recuse', ...write, guardVacancy(vacancyFrom.panelMember('panelMemberId')), controller.recusePanelMember);
+router.patch('/panel-members/:panelMemberId/score', ...write, guardVacancy(vacancyFrom.panelMember('panelMemberId')), controller.recordPanelScore);
+router.post('/panel-members/:panelMemberId/access-link', ...write, guardVacancy(vacancyFrom.panelMember('panelMemberId')), panelAccessController.generateLink);
+router.patch('/panel-members/:panelMemberId/revoke-access', ...write, guardVacancy(vacancyFrom.panelMember('panelMemberId')), panelAccessController.revokeAccess);
 
-router.get('/:interviewId', ...read, controller.getById);
-router.get('/:interviewId/calendar.ics', ...read, controller.calendarFile);
-router.patch('/:interviewId', ...write, controller.update);
-router.patch('/:interviewId/reschedule', ...write, controller.reschedule);
-router.patch('/:interviewId/cancel', ...write, controller.cancel);
-router.patch('/:interviewId/no-show', ...write, controller.markNoShow);
-router.patch('/:interviewId/call-in', ...write, controller.callIn);
-router.post('/:interviewId/panel-members', ...write, controller.addPanelMember);
-router.post('/:interviewId/access-links', ...write, controller.sendAllLinks);
-router.patch('/:interviewId/finalize', ...write, controller.finalizeRecommendation);
+router.get('/:interviewId', ...read, guardVacancy(vacancyFrom.interview('interviewId')), controller.getById);
+router.get('/:interviewId/calendar.ics', ...read, guardVacancy(vacancyFrom.interview('interviewId')), controller.calendarFile);
+router.patch('/:interviewId', ...write, guardVacancy(vacancyFrom.interview('interviewId')), controller.update);
+router.patch('/:interviewId/reschedule', ...write, guardVacancy(vacancyFrom.interview('interviewId')), controller.reschedule);
+router.patch('/:interviewId/cancel', ...write, guardVacancy(vacancyFrom.interview('interviewId')), controller.cancel);
+router.patch('/:interviewId/no-show', ...write, guardVacancy(vacancyFrom.interview('interviewId')), controller.markNoShow);
+router.patch('/:interviewId/call-in', ...write, guardVacancy(vacancyFrom.interview('interviewId')), controller.callIn);
+router.post('/:interviewId/panel-members', ...write, guardVacancy(vacancyFrom.interview('interviewId')), controller.addPanelMember);
+router.post('/:interviewId/access-links', ...write, guardVacancy(vacancyFrom.interview('interviewId')), controller.sendAllLinks);
+router.patch('/:interviewId/finalize', ...write, guardVacancy(vacancyFrom.interview('interviewId')), controller.finalizeRecommendation);
 
 module.exports = router;

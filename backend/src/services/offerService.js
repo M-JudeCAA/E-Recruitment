@@ -95,6 +95,14 @@ function parseTerms(body = {}, now = new Date()) {
   };
 }
 
+// The columns parseTerms sets - what an offer's terms are, for the audit trail.
+const TERM_FIELDS = ['salaryAmount', 'salaryCurrency', 'salaryPeriod', 'allowances', 'employmentCategory',
+  'contractMonths', 'startDate', 'dutyStation', 'conditions', 'responseDays'];
+
+function termsOf(offer) {
+  return Object.fromEntries(TERM_FIELDS.map((f) => [f, offer[f] ?? null]));
+}
+
 // An offer drafted before terms existed can't be issued as it stands.
 function hasTerms(offer) {
   return offer.salaryAmount != null && offer.startDate != null && offer.employmentCategory != null;
@@ -208,7 +216,7 @@ async function revise(offerId, body, revisedById) {
     data: { ...terms, status: 'Recommended', recommendedById: revisedById, recommendedDate: new Date() }
   });
   if (result.count === 0) throw new AppError('This offer was already updated - please refresh and try again', 409);
-  return { previousStatus: existing.status, offer: await prisma.offer.findUnique({ where: { id: offerId } }) };
+  return { previousStatus: existing.status, before: existing, offer: await prisma.offer.findUnique({ where: { id: offerId } }) };
 }
 
 /**
@@ -280,10 +288,14 @@ const EXPIRING_WITHIN_MS = 3 * DAY_MS;
  * The cross-vacancy offer tracker: a page of offers (filtered by status,
  * vacancy or "expiring soon"), plus a count per status for the whole set.
  */
-async function list({ status, vacancyId, expiringSoon, skip, take }, now = new Date()) {
+// excludeVacancyIds: vacancies the viewer applied for (conflictOfInterestService).
+async function list({ status, vacancyId, expiringSoon, skip, take, excludeVacancyIds = [] }, now = new Date()) {
   const where = {};
   if (status) where.status = status;
-  if (vacancyId) where.application = { vacancyId };
+  const onVacancy = vacancyId
+    ? { application: { vacancyId } }
+    : excludeVacancyIds.length ? { application: { vacancyId: { notIn: excludeVacancyIds } } } : {};
+  Object.assign(where, onVacancy);
   if (expiringSoon) {
     where.status = 'Approved';
     where.responseDeadline = { gt: now, lte: new Date(now.getTime() + EXPIRING_WITHIN_MS) };
@@ -291,11 +303,11 @@ async function list({ status, vacancyId, expiringSoon, skip, take }, now = new D
   const [data, total, grouped, expiring] = await Promise.all([
     prisma.offer.findMany({ where, include: LIST_INCLUDE, orderBy: [{ id: 'desc' }], skip, take }),
     prisma.offer.count({ where }),
-    prisma.offer.groupBy({ by: ['status'], _count: { _all: true }, ...(vacancyId ? { where: { application: { vacancyId } } } : {}) }),
+    prisma.offer.groupBy({ by: ['status'], _count: { _all: true }, ...(Object.keys(onVacancy).length ? { where: onVacancy } : {}) }),
     prisma.offer.count({
       where: {
         status: 'Approved', responseDeadline: { gt: now, lte: new Date(now.getTime() + EXPIRING_WITHIN_MS) },
-        ...(vacancyId ? { application: { vacancyId } } : {})
+        ...onVacancy
       }
     })
   ]);
@@ -357,6 +369,6 @@ async function notifyPositionReleased(taskType, offerId, vacancy, applicationId,
 
 module.exports = {
   EMPLOYMENT_CATEGORIES, SALARY_PERIODS, MIN_RESPONSE_DAYS, MAX_RESPONSE_DAYS, DEFAULT_RESPONSE_DAYS, OPEN_STATUSES, DEFAULT_CONDITIONS,
-  parseTerms, hasTerms, recommendBlocker, draftContext, recommend, revise, approve, returnForRevision,
+  TERM_FIELDS, termsOf, parseTerms, hasTerms, recommendBlocker, draftContext, recommend, revise, approve, returnForRevision,
   findDueForReminder, findOverdue, list, toCandidateOffer, describeSalary, notifyPositionReleased
 };

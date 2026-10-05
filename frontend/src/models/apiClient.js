@@ -46,7 +46,9 @@ client.interceptors.response.use(
     if (status === 502 || status === 503 || status === 504) {
       return overrideError(error, status, OFFLINE_MESSAGE);
     }
-    if (status >= 500) {
+    // 501 is deliberate too: a feature not set up on this server yet (e.g.
+    // Microsoft sign-in with no Entra settings) - its message says which.
+    if (status >= 500 && status !== 501) {
       return overrideError(error, status, SERVER_ERROR_MESSAGE);
     }
     return Promise.reject(error);

@@ -315,7 +315,9 @@ async function logVacancyPostingTypeTransition(vacancyId, fromType, toType, perf
       entityId: vacancyId,
       action: 'PostingTypeTransition',
       performedById,
-      payload: { from: fromType, to: toType }
+      // from/to kept for rows read by older code; changes is the shape
+      // auditService.history reads.
+      payload: { from: fromType, to: toType, changes: { postingType: { from: fromType, to: toType } } }
     }
   });
 }

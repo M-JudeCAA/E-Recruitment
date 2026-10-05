@@ -46,7 +46,7 @@ describe('notifyAllWithRole', () => {
 
     await notifyAllWithRole('Manager', 'OfferApproval', 3, 'msg');
 
-    expect(prisma.staffUser.findMany).toHaveBeenCalledWith({ where: { role: 'Manager' }, select: { id: true } });
+    expect(prisma.staffUser.findMany).toHaveBeenCalledWith({ where: { role: 'Manager', active: true }, select: { id: true } });
     expect(prisma.notification.create).toHaveBeenCalledTimes(2); // one InApp row per recipient
   });
 });
