@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Clock, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
 import { useDashboardEvents } from '../models/dashboardSocket';
@@ -217,6 +218,9 @@ export default function Analytics() {
               <h2 style={{ margin: 0 }}>Analytics</h2>
               <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--color-text-muted)' }}>
                 Historical and trend reporting - {staff?.role?.replace(/_/g, ' ')}
+              </p>
+              <p style={{ margin: '6px 0 0', fontSize: 14 }}>
+                <Link to="/hr/analytics/recruitment">Recruitment dashboard</Link> - time to hire, source of hire, pipeline health, open positions and more, with filters and export.
               </p>
             </div>
             <LiveIndicator connected={connected} />

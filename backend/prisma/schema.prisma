@@ -937,6 +937,11 @@ model Application {
   // Consent to UCAA processing and retaining the candidate's data for this
   // application, given at submission (FR-ATS-038), and the version of the
   // privacy notice it was given against (config/privacyNotice.js).
+  // Where the candidate saw the advert (FR-ATS-070 Source of Hire) - one of
+  // utils/applicationSources.js SOURCES, asked when they submit; a link
+  // carrying ?source= picks it for them. sourceDetail for "Other"/"Referral".
+  source               String?   @db.VarChar(40)
+  sourceDetail         String?   @db.VarChar(200)
   consentGivenAt       DateTime?
   consentNoticeVersion String?
 

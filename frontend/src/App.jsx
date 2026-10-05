@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Routes, Route, Outlet, useLocation } from "react-router-dom";
+import { rememberSourceFromUrl } from "./utils/applicationSources";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import BreadcrumbNav from "./components/BreadcrumbNav";
@@ -25,6 +26,7 @@ import HRHome from "./views/HRHome";
 import ExecutiveDashboard from "./views/ExecutiveDashboard";
 import ApprovalsCenter from "./views/ApprovalsCenter";
 import Analytics from "./views/Analytics";
+import RecruitmentDashboard from "./views/RecruitmentDashboard";
 import HRDashboard from "./views/HRDashboard";
 import ApplicationManagement from "./views/ApplicationManagement";
 import DepartmentAdmin from "./views/DepartmentAdmin";
@@ -66,7 +68,9 @@ const NO_TABBAR_PATHS = [/^\/apply\//, /^\/profile\/complete/, /^\/shortlist-pan
 
 export default function App() {
   const { candidate, staff } = useAuth();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  // A link that says where the advert was seen (?source=LinkedIn) - kept for the Submit step.
+  useEffect(() => { rememberSourceFromUrl(search); }, [search]);
   // Phones only (theme.css hides it above 767px). The guest/candidate site
   // gets the bottom tab bar; staff screens keep their sidebar drawer.
   const showTabBar = !staff && !isStaffPort() && !NO_TABBAR_PATHS.some((re) => re.test(pathname));
@@ -148,6 +152,14 @@ export default function App() {
             element={
               <RequireStaff minRole="Manager">
                 <Analytics />
+              </RequireStaff>
+            }
+          />
+          <Route
+            path="/hr/analytics/recruitment"
+            element={
+              <RequireStaff minRole="Manager">
+                <RecruitmentDashboard />
               </RequireStaff>
             }
           />

@@ -50,6 +50,10 @@ let BASE;
 // Plumbing
 // ---------------------------------------------------------------------------
 
+// Where demo applicants say they saw the advert (Source of Hire).
+const DEMO_SOURCES = ['UcaaWebsite', 'LinkedIn', 'Newspaper', 'HrPulse', 'LinkedIn', 'Referral', 'UcaaWebsite', 'SocialMedia'];
+let demoSourceIndex = 0;
+
 async function api(method, path, { token, json, form, ip } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -307,7 +311,7 @@ async function apply(c, vacancy, { submit = true, strong = true, desirable = {},
   await attachEvidence(c, draft.id, vacancy.id);
   if (!submit) return draft;
   try {
-    const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: c.token, json: { consent: true } });
+    const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: c.token, json: { consent: true, source: DEMO_SOURCES[demoSourceIndex++ % DEMO_SOURCES.length] } });
     if (submit === 'refused') throw new Error(`${c.name} was expected to be refused at submission for ${vacancy.title}, but was accepted`);
     return submitted;
   } catch (err) {

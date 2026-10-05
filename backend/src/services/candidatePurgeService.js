@@ -25,7 +25,7 @@ const KEEP_CANDIDATE = new Set(['id', 'createdAt', 'candidateType', 'purgedAt'])
 
 // Application fields written by the candidate, or about them in free text.
 const APPLICATION_TEXT = ['cvUrl', 'coverLetterUrl', 'desiredSalary', 'openToRelocate', 'earliestStartDate', 'whyThisRole',
-  'withdrawalReason', 'screeningReasons', 'shortlistScoreReasons', 'essentialCriteriaResults'];
+  'withdrawalReason', 'screeningReasons', 'shortlistScoreReasons', 'essentialCriteriaResults', 'sourceDetail'];
 const APPLICATION_JSON = ['desirableResponses', 'disqualifyingResponses', 'referees'];
 
 function anonymisedCandidate(candidateId, now) {

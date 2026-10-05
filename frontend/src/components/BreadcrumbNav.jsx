@@ -41,6 +41,7 @@ const ROUTE_TRAILS = [
   { path: '/hr/settings', trail: [{ label: 'Settings & data' }] },
   { path: '/hr/executive', trail: [{ label: 'Executive Overview' }] },
   { path: '/hr/approvals', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Approvals Center' }] },
+  { path: '/hr/analytics/recruitment', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Analytics', to: '/hr/analytics' }, { label: 'Recruitment dashboard' }] },
   { path: '/hr/analytics', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Analytics' }] }
 ];
 

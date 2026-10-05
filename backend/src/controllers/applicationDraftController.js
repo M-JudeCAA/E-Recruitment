@@ -1,4 +1,5 @@
 const conflictOfInterest = require('../services/conflictOfInterestService');
+const { parseSource } = require('../utils/applicationSources');
 const { sendError } = require('../utils/errorResponse');
 const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
@@ -295,6 +296,8 @@ async function submit(req, res) {
   const data = {
     status: vacancy.reviewStartedAt ? 'UnderReview' : 'Submitted', submittedDate: new Date(),
     consentGivenAt: new Date(), consentNoticeVersion: PRIVACY_NOTICE_VERSION,
+    // Where they saw the advert - optional, for the Source of Hire report.
+    ...parseSource(req.body),
     screeningPassed: screening.passed, screeningReasons: JSON.stringify(screening.reasons), screenedAt: new Date(),
     fieldOfStudyMatch: screening.fieldOfStudyMatch,
     shortlistScore: score.score, shortlistScoreReasons: JSON.stringify(score.reasons),
