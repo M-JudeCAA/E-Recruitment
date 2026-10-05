@@ -21,6 +21,7 @@ removes the demo staff accounts.
 | All candidates and their applications | SLA settings |
 | Shortlisting, interviews, merit lists, offers | The 6 directorates and 29 departments (recreated) |
 | Notifications, audit and access logs | Job references restart at `UCAA/ADV/…/001/<year>` |
+| Edited document templates (they go back to the default wording) | |
 | Uploaded files in the upload folder | |
 | The six demo staff accounts | |
 | Positions (none are recreated) | |

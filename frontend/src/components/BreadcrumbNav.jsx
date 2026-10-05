@@ -37,6 +37,7 @@ const ROUTE_TRAILS = [
   // Manager/Director's own root (see HRSidebar.jsx/Navbar.jsx) - these
   // don't nest under /hr/home the way the operational screens above do,
   // since Executive Overview is that tier's actual landing page.
+  { path: '/hr/templates', trail: [{ label: 'Document templates' }] },
   { path: '/hr/executive', trail: [{ label: 'Executive Overview' }] },
   { path: '/hr/approvals', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Approvals Center' }] },
   { path: '/hr/analytics', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Analytics' }] }

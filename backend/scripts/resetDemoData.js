@@ -38,7 +38,7 @@ const TABLES = [
   'CandidateNotification', 'VerificationToken', 'PendingCandidateRegistration',
   'InternalProfile', 'WorkExperience', 'Education', 'ExamGrade', 'Certificate', 'Candidate',
   'Notification', 'TaskEscalation', 'AuditLog', 'SystemHealth', 'DataAccessLog',
-  'VacancyDraft', 'Vacancy', 'JobRefSequence', 'Position', 'Department', 'OrgImport', 'Directorate'
+  'VacancyDraft', 'DocumentTemplate', 'Vacancy', 'JobRefSequence', 'Position', 'Department', 'OrgImport', 'Directorate'
 ];
 
 const DELEGATE = {
@@ -53,7 +53,7 @@ const DELEGATE = {
   InternalProfile: 'internalProfile', WorkExperience: 'workExperience', Education: 'education',
   ExamGrade: 'examGrade', Certificate: 'certificate', Candidate: 'candidate',
   Notification: 'notification', TaskEscalation: 'taskEscalation', AuditLog: 'auditLog', SystemHealth: 'systemHealth',
-  DataAccessLog: 'dataAccessLog', VacancyDraft: 'vacancyDraft', JobRefSequence: 'jobRefSequence',
+  DataAccessLog: 'dataAccessLog', VacancyDraft: 'vacancyDraft', DocumentTemplate: 'documentTemplate', JobRefSequence: 'jobRefSequence',
   Vacancy: 'vacancy', Position: 'position', Department: 'department', OrgImport: 'orgImport', Directorate: 'directorate'
 };
 

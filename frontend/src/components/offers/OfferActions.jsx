@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Undo2, Pencil, XCircle } from 'lucide-react';
+import { CheckCircle2, Undo2, Pencil, XCircle, Printer } from 'lucide-react';
 import staffClient from '../../models/staffApiClient';
 import Button from '../Button';
 import Modal from '../Modal';
@@ -7,6 +7,7 @@ import TextArea from '../TextArea';
 import OfferComposer from './OfferComposer';
 import { errorMessage } from '../../utils/interviews';
 import { OPEN_OFFER_STATUSES } from './offerFormat';
+import { printFromApi } from '../../utils/printDocument';
 
 // Whatever the viewer's rank lets them do to an offer next, in one place for
 // every screen that shows one (merit list, review card, Approvals Center,
@@ -48,9 +49,26 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
   };
   const open = (which) => { setReason(''); setError(''); setModal(which); };
 
+  // The letters, from the document templates (backend documentService).
+  const print = async (kind) => {
+    setError('');
+    const problem = await printFromApi(staffClient, `/api/documents/offers/${offer.id}/${kind}`);
+    if (problem) setError(problem);
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {offer.salaryAmount != null && offer.status !== 'Withdrawn' && (
+          <Button variant="ghost" style={small} onClick={() => print('offer-letter')} title="Print or save the offer letter as PDF">
+            <Printer size={13} /> Offer letter
+          </Button>
+        )}
+        {offer.status === 'Accepted' && (
+          <Button variant="ghost" style={small} onClick={() => print('appointment')} title="Print or save the appointing instrument as PDF">
+            <Printer size={13} /> Appointing instrument
+          </Button>
+        )}
         {canDecide && (
           <>
             <Button style={small} loading={busy === 'approve'} loadingText="Issuing..." disabled={!!busy}

@@ -17,12 +17,28 @@ export function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// The page a document is shown or printed in (also the preview's srcDoc).
+export function documentPage(title, bodyHtml, { printButton = true } = {}) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${PRINT_STYLES}</style></head>`
+    + `<body>${printButton ? '<p class="no-print"><button onclick="window.print()">Print or save as PDF</button></p>' : ''}${bodyHtml}</body></html>`;
+}
+
+// Fetches a document from the API ({ title, html }) and opens it to print.
+// Returns an error message, or null.
+export async function printFromApi(client, url) {
+  try {
+    const { data } = await client.get(url);
+    return printDocument(data.title, data.html) ? null : 'Your browser blocked the print window - allow pop-ups for this site.';
+  } catch (err) {
+    return err.response?.data?.error || 'Could not make the document';
+  }
+}
+
 export function printDocument(title, bodyHtml) {
   const win = window.open('', '_blank');
   if (!win) return false;
   win.document.open();
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${PRINT_STYLES}</style></head>`
-    + `<body><p class="no-print"><button onclick="window.print()">Print or save as PDF</button></p>${bodyHtml}</body></html>`);
+  win.document.write(documentPage(title, bodyHtml));
   win.document.close();
   win.focus();
   return true;

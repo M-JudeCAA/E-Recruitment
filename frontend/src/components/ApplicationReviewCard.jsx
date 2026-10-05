@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
+import { printFromApi } from '../utils/printDocument';
 import Card from './Card';
 import Button from './Button';
 import StatusBadge from './StatusBadge';
@@ -197,6 +198,11 @@ export default function ApplicationReviewCard({
         <div style={{ fontSize: 13, color: 'var(--color-danger)', margin: '6px 0' }}>
           Rejected{app.rejectedBy?.name ? ` by ${app.rejectedBy.name}` : ''}{app.rejectedAt ? ` on ${new Date(app.rejectedAt).toLocaleDateString()}` : ''}
           {app.rejectionReason ? `: "${app.rejectionReason}"` : ''}
+          {' '}
+          <button type="button" onClick={async () => { const problem = await printFromApi(staffClient, `/api/documents/applications/${app.id}/regret-letter`); if (problem) setError(problem); }}
+            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
+            Regret letter
+          </button>
         </div>
       )}
 

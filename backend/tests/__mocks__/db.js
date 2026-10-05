@@ -20,6 +20,7 @@ const mockDb = {
   panelMember: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },
   interviewRound: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
   excoShortlistApproval: { create: jest.fn(), findMany: jest.fn() },
+  documentTemplate: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
   position: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
   department: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
   orgImport: { create: jest.fn() },

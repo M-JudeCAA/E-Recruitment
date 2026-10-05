@@ -30,6 +30,7 @@ import ApplicationManagement from "./views/ApplicationManagement";
 import DepartmentAdmin from "./views/DepartmentAdmin";
 import StaffManagement from "./views/StaffManagement";
 import StaffAccounts from "./views/StaffAccounts";
+import DocumentTemplates from "./views/DocumentTemplates";
 import VacancyDetail from "./views/VacancyDetail";
 import CreateVacancyListing from "./views/CreateVacancyListing";
 import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
@@ -170,6 +171,14 @@ export default function App() {
               <RequireSystemAdmin>
                 <StaffAccounts />
               </RequireSystemAdmin>
+            }
+          />
+          <Route
+            path="/hr/templates"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <DocumentTemplates />
+              </RequireStaff>
             }
           />
           <Route

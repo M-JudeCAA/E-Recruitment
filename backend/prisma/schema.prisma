@@ -200,6 +200,7 @@ model StaffUser {
   applicationsShortlistProposed  Application[]           @relation("ApplicationShortlistProposedBy")
   applicationsShortlistApproved  Application[]           @relation("ApplicationShortlistApprovedBy")
   excoShortlistApprovalsUploaded ExcoShortlistApproval[] @relation("ExcoShortlistApprovalUploadedBy")
+  documentTemplatesUpdated       DocumentTemplate[]      @relation("DocumentTemplateUpdatedBy")
   applicationsMeritProposed      Application[]           @relation("ApplicationMeritProposedBy")
   applicationsMeritApproved      Application[]           @relation("ApplicationMeritApprovedBy")
   offersReturned                 Offer[]                 @relation("OfferReturnedBy")
@@ -1220,6 +1221,9 @@ model Offer {
   // scripts/expireOffers.js.
   responseDays           Int                 @default(14)
   responseDeadline       DateTime?
+  // When the candidate first opened the issued offer (My Applications or
+  // the offer letter) - FR-ATS-065's "Viewed".
+  viewedAt               DateTime?
   responseReminderSentAt DateTime?
   // Snapshots of where the candidate stood when the offer was recommended -
   // same audit principle as the other *AtX snapshots in this schema.
@@ -1531,4 +1535,15 @@ model ExcoShortlistApproval {
   applications  Application[]
 
   @@index([vacancyId])
+}
+
+// HR's own wording for a printed document (offer letter, appointing
+// instrument, ...) - one row per edited template, keyed as in
+// config/documentTemplates.js. No row means the default applies.
+model DocumentTemplate {
+  key         String    @id @db.VarChar(40)
+  body        String    @db.Text
+  updatedById Int
+  updatedBy   StaffUser @relation("DocumentTemplateUpdatedBy", fields: [updatedById], references: [id])
+  updatedAt   DateTime  @updatedAt
 }

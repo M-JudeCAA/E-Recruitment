@@ -8,6 +8,7 @@ const { uploadMemory } = require('../middleware/uploadMemory');
 const { uploadPhoto } = require('../middleware/upload');
 const asyncHandler = require('../utils/asyncHandler');
 
+const documentController = require('../controllers/documentController');
 const router = express.Router();
 
 // asyncHandler wraps every action here so a rejected promise (e.g. a
@@ -37,6 +38,8 @@ router.get('/me/applications', authenticate, requireCandidate, asyncHandler(cont
 // A candidate's own interview invitations - confirm, ask for another time, or
 // add it to their calendar. See candidateInterviewController.
 router.patch('/me/interviews/:id/respond', authenticate, requireCandidate, asyncHandler(candidateInterviewController.respond));
+// The candidate's own offer letter, once issued (documentController).
+router.get('/me/offers/:offerId/letter', authenticate, requireCandidate, documentController.candidateOfferLetter);
 router.get('/me/interviews/:id/calendar.ics', authenticate, requireCandidate, asyncHandler(candidateInterviewController.calendarFile));
 router.get('/me/notifications', authenticate, requireCandidate, asyncHandler(notificationController.listMine));
 router.patch('/me/notifications/:id/read', authenticate, requireCandidate, asyncHandler(notificationController.markRead));

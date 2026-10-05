@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Crown, Mail, CalendarClock, MapPin, Video, Phone, Download, AlertTriangle, Trash2, PenLine, Users, FileText, ClipboardCheck
+  Crown, Mail, CalendarClock, MapPin, Video, Phone, Download, AlertTriangle, Trash2, PenLine, Users, FileText, ClipboardCheck, Printer
 } from 'lucide-react';
 import staffClient from '../../models/staffApiClient';
 import { useAuth } from '../../models/AuthContext';
@@ -18,6 +18,7 @@ import {
 } from '../../utils/interviews';
 import { fileLink } from '../../utils/fileLink';
 import { validateSupportingDocumentFile } from '../../utils/fileValidation';
+import { printFromApi } from '../../utils/printDocument';
 import { sectionLabel, hintText, chipStyle, ROUND_LABELS } from './formStyles';
 
 // Matches backend/src/middleware/auth.js's ROLE_RANK - changing an interview
@@ -451,6 +452,12 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', width: '100%' }}>
         {round.scheduledDate && round.status !== 'NoShow' && (
           <Button variant="ghost" onClick={downloadIcs} title="Download a calendar file"><Download size={14} /> .ics</Button>
+        )}
+        {round.scheduledDate && scheduled && (
+          <Button variant="ghost" title="Print a formal invitation letter for the candidate"
+            onClick={async () => { const problem = await printFromApi(staffClient, `/api/documents/interviews/${round.id}/invitation`); if (problem) setError(problem); }}>
+            <Printer size={14} /> Letter
+          </Button>
         )}
         {canEdit && scheduled && tab === 'details' && <Button onClick={saveDetails} loading={busy === 'details'}>Save details</Button>}
         {canEdit && scheduled && tab === 'panel' && (

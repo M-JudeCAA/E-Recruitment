@@ -138,7 +138,29 @@ test('carries a vacancy from creation to an accepted hire', async () => {
   expect(mine[0].offer.recommendedById).toBeUndefined();
   expect(mine[0].meritListStatus).toBeUndefined();
 
+  // Seeing it was viewing it; the offer letter comes from the template.
+  expect((await prisma.offer.findUnique({ where: { id: offer.id } })).viewedAt).not.toBeNull();
+  const letter = expectStatus(await api(a.token).get(`/api/candidates/me/offers/${offer.id}/letter`), 200).body;
+  expect(letter.html).toContain('OFFER OF EMPLOYMENT AS');
+  expect(letter.html).toContain('Alice Nakato');
+  expect(letter.html).toContain('5,200,000');
+  expect((await api(b.token).get(`/api/candidates/me/offers/${offer.id}/letter`)).status).toBe(404); // not hers
+  expect((await api(tokens.hro).get(`/api/documents/offers/${offer.id}/appointment`)).status).toBe(422); // not accepted yet
+
   expectStatus(await api(a.token).patch(`/api/applications/offers/${offer.id}/accept`), 200);
+
+  // HR prints the appointing instrument, in HR's own wording once a Manager edits it.
+  expect((await api(tokens.hro).put('/api/documents/templates/appointmentInstrument', { body: '<p>x</p>' })).status).toBe(403);
+  const bad = await api(tokens.manager).put('/api/documents/templates/appointmentInstrument', { body: '<p>{{candidateNme}}</p>' });
+  expect(bad.body.code).toBe('UNKNOWN_PLACEHOLDERS');
+  expectStatus(await api(tokens.manager).put('/api/documents/templates/appointmentInstrument', {
+    body: '<p>We appoint {{candidateName}} as {{jobTitle}} from {{startDate}}.</p>'
+  }), 200);
+  const appointment = expectStatus(await api(tokens.hro).get(`/api/documents/offers/${offer.id}/appointment`), 200).body;
+  expect(appointment.html).toMatch(/^<p>We appoint Alice Nakato as .+ from \d{1,2} \w+ \d{4}\.<\/p>$/);
+  expect(await prisma.dataAccessLog.count({ where: { action: 'Printed an appointing instrument' } })).toBe(1);
+  expectStatus(await api(tokens.manager).delete('/api/documents/templates/appointmentInstrument'), 200);
+  expect(expectStatus(await api(tokens.hro).get(`/api/documents/offers/${offer.id}/appointment`), 200).body.html).toContain('RE: APPOINTMENT AS');
 
   const filled = await prisma.vacancy.findUnique({ where: { id: vacancy.id } });
   expect(filled.status).toBe('Filled');

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Printer, Upload, FileText, Gavel } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { fileLink } from '../utils/fileLink';
-import { printDocument, escapeHtml } from '../utils/printDocument';
+import { printFromApi } from '../utils/printDocument';
 import Card from './Card';
 import Button from './Button';
 import Alert from './Alert';
@@ -16,22 +16,6 @@ import { hintText, sectionLabel } from './interviews/formStyles';
 // can be booked before (backend excoShortlistController).
 
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
-const EDUCATION = { PhD: 'PhD', Masters: "Master's", Postgraduate: 'Postgraduate', Bachelors: "Bachelor's", Diploma: 'Diploma', Certificate: 'Certificate', ALevel: 'A Level', OLevel: 'O Level' };
-
-function sheetHtml({ vacancy, awaiting }) {
-  const rows = awaiting.map((a, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(a.candidateName)}</td><td>${escapeHtml(a.candidateType)}</td>`
-    + `<td>${escapeHtml(EDUCATION[a.highestEducationLevel] || a.highestEducationLevel || '-')}</td><td>${a.experienceYears}</td>`
-    + `<td>${a.committeeRank ? `#${a.committeeRank}${a.committeeScore != null ? ` (${a.committeeScore})` : ''}` : '-'}</td><td>&nbsp;</td></tr>`).join('');
-  return `<h1>Uganda Civil Aviation Authority</h1>
-    <p class="muted">Interview shortlist submitted for EXCO approval</p>
-    <h2>${escapeHtml(vacancy.title)} &middot; ${escapeHtml(vacancy.jobRef)}</h2>
-    <p>Positions: ${vacancy.positionsRequired}${vacancy.location ? ` &middot; Duty station: ${escapeHtml(vacancy.location)}` : ''}${vacancy.salaryScale ? ` &middot; Salary scale: ${escapeHtml(vacancy.salaryScale)}` : ''}</p>
-    <table><thead><tr><th>#</th><th>Candidate</th><th>Type</th><th>Highest qualification</th><th>Experience (years)</th><th>Committee rank</th><th>EXCO remarks</th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    <p>EXCO minute: ______________________ &nbsp; Date: ______________</p>
-    <div class="sign"><div>Prepared by (HR)</div><div>Director Human Resource &amp; Administration</div><div>Chairperson, EXCO</div></div>`;
-}
-
 export default function ExcoShortlistPanel({ vacancyId, staffRole, onChanged }) {
   const canAttach = (ROLE_RANK[staffRole] || 0) >= ROLE_RANK.Senior_HR_Officer;
   const [data, setData] = useState(null);
@@ -55,8 +39,10 @@ export default function ExcoShortlistPanel({ vacancyId, staffRole, onChanged }) 
     return error ? <Alert type="error" message={error} /> : null;
   }
 
-  const print = () => {
-    if (!printDocument(`Interview shortlist - ${data.vacancy.jobRef}`, sheetHtml(data))) setError('Your browser blocked the print window - allow pop-ups for this site.');
+  // The sheet comes from the "Interview shortlist for EXCO" document template.
+  const print = async () => {
+    const problem = await printFromApi(staffClient, `/api/documents/vacancies/${vacancyId}/exco-shortlist`);
+    if (problem) setError(problem);
   };
 
   const attach = async () => {

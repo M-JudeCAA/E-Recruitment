@@ -1,3 +1,4 @@
+const prisma = require('../config/db');
 const candidateModel = require('../models/candidateModel');
 const internalProfileModel = require('../models/internalProfileModel');
 const applicationModel = require('../models/applicationModel');
@@ -330,6 +331,12 @@ async function updateInternalProfile(req, res) {
 // which carries HR-only columns - strip them before they reach the candidate.
 async function myApplications(req, res) {
   const applications = await applicationModel.findByCandidate(req.user.id);
+  // Seeing an issued offer here is the candidate viewing it (FR-ATS-065).
+  const unseen = applications.filter((a) => a.offer?.approvedDate && !a.offer.viewedAt).map((a) => a.offer.id);
+  if (unseen.length) {
+    await prisma.offer.updateMany({ where: { id: { in: unseen }, viewedAt: null }, data: { viewedAt: new Date() } })
+      .catch((err) => console.error('Recording that offers were viewed failed:', err));
+  }
   // Interview rounds go through the same kind of whitelist as the vacancy -
   // the panel's scores, recommendation and HR's internal notes stay staff-only.
   // The offer too: nothing until it is issued, and only its terms then
