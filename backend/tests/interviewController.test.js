@@ -20,7 +20,7 @@ function detailedRound(overrides = {}) {
     id: 1, applicationId: 1, roundNumber: 1, status: 'Scheduled',
     scheduledDate: new Date('2030-10-01T07:00:00Z'), durationMinutes: 60,
     mode: 'In-person', location: 'Board Room', meetingLink: null, instructions: null, internalNotes: null,
-    criteria: null, rescheduleCount: 0, candidateResponse: 'Pending', scheduledById: 9,
+    rescheduleCount: 0, candidateResponse: 'Pending', scheduledById: 9,
     recommendation: null, score: null,
     application: {
       id: 1, status: 'InterviewScheduled', candidateId: 5,
@@ -126,16 +126,18 @@ describe('schedule', () => {
     expect(res.status).toHaveBeenCalledWith(201);
   });
 
-  test('emails each panelist with an address a calendar invite', async () => {
+  test('sends each panelist with an address a calendar invitation, and the candidate one for their interview', async () => {
     prisma.application.findUnique.mockResolvedValue(schedulable);
+    const booked = detailedRound({
+      panelMembers: [
+        { id: 1, name: 'Ann Chair', email: 'ann@example.test', isChair: true },
+        { id: 2, name: 'Bob External', email: null }
+      ]
+    });
     prisma.interviewRound.findMany
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([detailedRound({
-        panelMembers: [
-          { id: 1, name: 'Ann Chair', email: 'ann@example.test', isChair: true },
-          { id: 2, name: 'Bob External', email: null }
-        ]
-      })]);
+      .mockResolvedValueOnce([]) // clash check
+      .mockResolvedValueOnce([booked]) // the booked round
+      .mockResolvedValueOnce([booked]); // that vacancy's interviews that day, for the panel's meeting
     prisma.application.updateMany.mockResolvedValue({ count: 1 });
     prisma.interviewRound.count.mockResolvedValue(0);
     prisma.interviewRound.create.mockResolvedValue({ id: 1, applicationId: 1 });
@@ -158,7 +160,12 @@ describe('schedule', () => {
     });
     const panelEmails = sendMail.mock.calls.map((c) => c[0]).filter((m) => m.to === 'ann@example.test');
     expect(panelEmails).toHaveLength(1);
-    expect(panelEmails[0].attachments[0].content).toContain('BEGIN:VEVENT');
+    expect(panelEmails[0].icalEvent.method).toBe('REQUEST');
+    expect(panelEmails[0].icalEvent.content).toMatch(/METHOD:REQUEST[\s\S]*BEGIN:VEVENT/);
+    expect(panelEmails[0].icalEvent.content).toContain('ATTENDEE;CN="Ann Chair"');
+    expect(panelEmails[0].html).not.toMatch(/link|score them/i);
+    const toCandidate = sendMail.mock.calls.map((c) => c[0]).find((m) => m.to === 'jane@example.test');
+    expect(toCandidate.icalEvent.content).toContain('UID:interview-1@ucaa-erecruitment');
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ panelEmailed: 1 }));
   });
 
@@ -301,7 +308,7 @@ describe('interview sessions (bulk scheduling)', () => {
     expect(prisma.interviewRound.create).not.toHaveBeenCalled();
   });
 
-  test('books every slot in one transaction under one session key, notifies each candidate, and sends each panelist ONE email', async () => {
+  test('books every slot in one transaction under one session key, invites each candidate, and gives each panelist ONE meeting for the day', async () => {
     prisma.application.findMany.mockResolvedValue(apps);
     const panel = [{ id: 1, name: 'Ann', email: 'ann@example.test', isChair: true }];
     const booked = [
@@ -311,7 +318,8 @@ describe('interview sessions (bulk scheduling)', () => {
     ];
     prisma.interviewRound.findMany
       .mockResolvedValueOnce([]) // clash check
-      .mockResolvedValueOnce(booked);
+      .mockResolvedValueOnce(booked)
+      .mockResolvedValueOnce(booked); // the day's interviews, for Ann's meeting
     prisma.application.updateMany.mockResolvedValue({ count: 1 });
     prisma.interviewRound.count.mockResolvedValue(0);
     prisma.interviewRound.create
@@ -333,7 +341,8 @@ describe('interview sessions (bulk scheduling)', () => {
 
     const toAnn = sendMail.mock.calls.map((c) => c[0]).filter((m) => m.to === 'ann@example.test');
     expect(toAnn).toHaveLength(1);
-    expect(toAnn[0].attachments[0].content.match(/BEGIN:VEVENT/g)).toHaveLength(3);
+    expect(toAnn[0].icalEvent.content.match(/BEGIN:VEVENT/g)).toHaveLength(1);
+    expect(toAnn[0].icalEvent.content).toContain('(3 candidates)');
     expect(prisma.auditLog.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ entityType: 'Vacancy', entityId: 3, action: 'Interview session scheduled' })
     });
@@ -374,7 +383,7 @@ describe('reschedule', () => {
       where: { id: 1, status: 'Scheduled' },
       data: expect.objectContaining({
         scheduledDate: new Date('2030-10-02T07:00:00Z'), rescheduleCount: { increment: 1 },
-        candidateResponse: 'Pending', reminderSentAt: null
+        candidateResponse: 'Pending', reminderSentAt: null, resultsReminderSentAt: null
       })
     });
     expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -394,7 +403,7 @@ describe('cancel', () => {
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
-  test('cancels, revokes scoring links, returns the application to Shortlisted and tells the candidate', async () => {
+  test('cancels, returns the application to Shortlisted and cancels the candidate\'s calendar entry', async () => {
     prisma.interviewRound.findUnique.mockResolvedValue(detailedRound());
     prisma.interviewRound.updateMany.mockResolvedValue({ count: 1 });
     prisma.interviewRound.findMany.mockResolvedValue([{ id: 1, status: 'Scheduled', recommendation: null }]);
@@ -406,15 +415,15 @@ describe('cancel', () => {
       where: { id: 1, status: 'Scheduled' },
       data: expect.objectContaining({ status: 'Cancelled', cancelledById: 9, cancellationReason: 'Vacancy on hold' })
     });
-    expect(prisma.panelAccessToken.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { usedAt: null, panelMember: { interviewRoundId: 1 } }
-    }));
     expect(prisma.application.updateMany).toHaveBeenCalledWith({
       where: { id: 1, status: 'InterviewScheduled' }, data: { status: 'Shortlisted' }
     });
     expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ type: 'InterviewCancelled' })
     }));
+    const toCandidate = sendMail.mock.calls.map((c) => c[0]).find((m) => m.to === 'jane@example.test');
+    expect(toCandidate.icalEvent.method).toBe('CANCEL');
+    expect(toCandidate.icalEvent.content).toMatch(/STATUS:CANCELLED[\s\S]*SEQUENCE:1|SEQUENCE:1[\s\S]*STATUS:CANCELLED/);
   });
 
   test('keeps the application at InterviewScheduled when another round is still coming up', async () => {
@@ -462,33 +471,34 @@ describe('markNoShow', () => {
 describe('panel management', () => {
   const scheduledRound = { id: 1, status: 'Scheduled', applicationId: 1 };
 
-  test('recusal requires a reason', async () => {
-    prisma.panelMember.findUnique.mockResolvedValue({ id: 4, name: 'Ann', interviewRoundId: 1, interviewRound: scheduledRound });
-    const res = mockRes();
-    await interviewController.recusePanelMember({ params: { panelMemberId: '4' }, body: {}, user: { id: 9 } }, res);
-    expect(res.status).toHaveBeenCalledWith(400);
-  });
-
-  test('a recused panelist stops counting towards the round average', async () => {
-    prisma.panelMember.findUnique.mockResolvedValue({ id: 4, name: 'Ann', score: 20, interviewRoundId: 1, interviewRound: scheduledRound });
-    prisma.panelMember.findMany.mockResolvedValue([
-      { id: 4, score: 20, recusedAt: new Date() },
-      { id: 5, score: 80, recusedAt: null }
-    ]);
-    const res = mockRes();
-    await interviewController.recusePanelMember({ params: { panelMemberId: '4' }, body: { reason: 'Related to the candidate' }, user: { id: 9 } }, res);
-    expect(prisma.panelMember.update).toHaveBeenCalledWith({
-      where: { id: 4 }, data: expect.objectContaining({ recusalReason: 'Related to the candidate', isChair: false })
+  test('removing a panelist cancels their calendar meeting when it was their only interview that day', async () => {
+    prisma.panelMember.findUnique.mockResolvedValue({
+      id: 4, name: 'Ann', email: 'ann@example.test', interviewRoundId: 1, interviewRound: scheduledRound
     });
-    expect(prisma.interviewRound.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { score: 80 } });
+    prisma.interviewRound.findUnique.mockResolvedValue(detailedRound({ panelMembers: [{ id: 4, name: 'Ann', email: 'ann@example.test' }] }));
+    prisma.interviewRound.findMany.mockResolvedValue([detailedRound({ panelMembers: [] })]); // the day, after removal
+    const res = mockRes();
+    await interviewController.removePanelMember({ params: { panelMemberId: '4' }, body: {}, query: {}, user: { id: 9 } }, res);
+    expect(prisma.panelMember.delete).toHaveBeenCalledWith({ where: { id: 4 } });
+    const toAnn = sendMail.mock.calls.map((c) => c[0]).filter((m) => m.to === 'ann@example.test');
+    expect(toAnn).toHaveLength(1);
+    expect(toAnn[0].icalEvent.method).toBe('CANCEL');
+    expect(toAnn[0].subject).toMatch(/cancelled/i);
   });
 
-  test('a panelist who has scored can be recused but not removed', async () => {
-    prisma.panelMember.findUnique.mockResolvedValue({ id: 4, name: 'Ann', score: 70, interviewRoundId: 1, interviewRound: scheduledRound });
+  test('adding a panelist invites only them', async () => {
+    const round = detailedRound({ panelMembers: [{ id: 1, name: 'Ann', email: 'ann@example.test' }] });
+    prisma.interviewRound.findUnique
+      .mockResolvedValueOnce(round)
+      .mockResolvedValueOnce({ ...round, panelMembers: [...round.panelMembers, { id: 2, name: 'Bea', email: 'bea@example.test' }] });
+    prisma.interviewRound.findMany
+      .mockResolvedValueOnce([]) // clash check
+      .mockResolvedValueOnce([{ ...round, panelMembers: [...round.panelMembers, { id: 2, name: 'Bea', email: 'bea@example.test' }] }]);
+    prisma.panelMember.create.mockResolvedValue({ id: 2, name: 'Bea', email: 'bea@example.test' });
     const res = mockRes();
-    await interviewController.removePanelMember({ params: { panelMemberId: '4' }, body: {}, user: { id: 9 } }, res);
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(prisma.panelMember.delete).not.toHaveBeenCalled();
+    await interviewController.addPanelMember({ params: { interviewId: '1' }, body: { name: 'Bea', email: 'bea@example.test' }, user: { id: 9 } }, res);
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(sendMail.mock.calls.map((c) => c[0].to)).toEqual(['bea@example.test']);
   });
 
   test('adding someone already on the panel is refused', async () => {
@@ -509,235 +519,130 @@ describe('panel management', () => {
   });
 });
 
-describe('finalizeRecommendation', () => {
-  test('rejects an invalid interview round id', async () => {
-    const res = mockRes();
-    await interviewController.finalizeRecommendation({ params: { interviewId: 'abc' }, body: { recommendation: 'Shortlist' } }, res);
-    expect(res.status).toHaveBeenCalledWith(400);
-  });
+describe('recordResults', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  const held = new Date(Date.now() - 2 * 3600000);
 
-  test('rejects a recommendation that is not Shortlist/Hold/Reject', async () => {
-    const res = mockRes();
-    await interviewController.finalizeRecommendation({ params: { interviewId: '1' }, body: { recommendation: 'Maybe' } }, res);
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(prisma.interviewRound.updateMany).not.toHaveBeenCalled();
-  });
-
-  test('returns 422 when no panel member has scored yet', async () => {
-    prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: null }]);
-    const res = mockRes();
-    await interviewController.finalizeRecommendation({ params: { interviewId: '1' }, body: { recommendation: 'Shortlist' } }, res);
-    expect(res.status).toHaveBeenCalledWith(422);
-    expect(prisma.interviewRound.updateMany).not.toHaveBeenCalled();
-  });
-
-  test('a score from a recused panelist does not count as panel input', async () => {
-    prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 88, recusedAt: new Date() }]);
-    const res = mockRes();
-    await interviewController.finalizeRecommendation({ params: { interviewId: '1' }, body: { recommendation: 'Shortlist' } }, res);
-    expect(res.status).toHaveBeenCalledWith(422);
-  });
-
-  test('returns 404 when the interview round does not exist', async () => {
-    prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 88 }]);
-    prisma.interviewRound.findUnique.mockResolvedValue(null);
-    const res = mockRes();
-    await interviewController.finalizeRecommendation({ params: { interviewId: '1' }, body: { recommendation: 'Shortlist' }, user: { id: 9 } }, res);
-    expect(res.status).toHaveBeenCalledWith(404);
-    expect(prisma.interviewRound.updateMany).not.toHaveBeenCalled();
-  });
-
-  test('refuses a cancelled round', async () => {
-    prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 88 }]);
-    prisma.interviewRound.findUnique.mockResolvedValue({ id: 1, applicationId: 1, status: 'Cancelled', recommendation: null });
-    const res = mockRes();
-    await interviewController.finalizeRecommendation({ params: { interviewId: '1' }, body: { recommendation: 'Shortlist' }, user: { id: 9 } }, res);
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(prisma.interviewRound.updateMany).not.toHaveBeenCalled();
-  });
-
-  // Guards against finalizing a stale round after its application already
-  // moved on elsewhere since it was scheduled.
-  test.each(['Rejected', 'Offered', 'Draft', 'Withdrawn'])(
-    'refuses to finalize when the application is already at status %s (stale round)',
-    async (status) => {
-      prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 88 }]);
-      prisma.interviewRound.findUnique.mockResolvedValue({ id: 1, applicationId: 1, recommendation: null, status: 'Scheduled' });
-      prisma.application.findUnique.mockResolvedValue({ id: 1, status });
-      const res = mockRes();
-      await interviewController.finalizeRecommendation({ params: { interviewId: '1' }, body: { recommendation: 'Shortlist' }, user: { id: 9 } }, res);
-      expect(res.status).toHaveBeenCalledWith(409);
-      expect(prisma.interviewRound.updateMany).not.toHaveBeenCalled();
-    }
-  );
-
-  test('returns 409 when this round already has a finalized recommendation (double-finalize/race)', async () => {
-    prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 88 }]);
-    prisma.interviewRound.findUnique.mockResolvedValue({ id: 1, applicationId: 1, recommendation: null, status: 'Scheduled' });
-    prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'InterviewScheduled' });
-    prisma.interviewRound.updateMany.mockResolvedValue({ count: 0 });
-    const res = mockRes();
-    await interviewController.finalizeRecommendation({ params: { interviewId: '1' }, body: { recommendation: 'Shortlist' }, user: { id: 9 } }, res);
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(prisma.application.update).not.toHaveBeenCalled();
-  });
-
-  test('a "Shortlist" recommendation completes the round, closes scoring links and moves the application to Interviewed', async () => {
-    prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 88 }]);
-    prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'InterviewScheduled' });
+  // An uploaded score sheet as multer hands it over (on disk).
+  function sheet() {
+    const file = path.join(os.tmpdir(), `sheet-${Date.now()}-${Math.random().toString(16).slice(2)}.pdf`);
+    fs.writeFileSync(file, '%PDF-1.4 signed sheet');
+    return { path: file, filename: path.basename(file), originalname: 'Panel score sheet - Jane Doe.pdf' };
+  }
+  const call = async (body, { round = detailedRound({ scheduledDate: held }), file = sheet(), application } = {}) => {
+    prisma.interviewRound.findUnique.mockResolvedValue(round);
+    prisma.application.findUnique.mockResolvedValue(application || { id: 1, status: 'InterviewScheduled', meritStatus: null, offer: null });
     prisma.interviewRound.updateMany.mockResolvedValue({ count: 1 });
-    prisma.interviewRound.findUnique.mockResolvedValue({ id: 1, applicationId: 1, recommendation: 'Shortlist', status: 'Scheduled' });
-    const res = mockRes();
-    await interviewController.finalizeRecommendation({ params: { interviewId: '1' }, body: { recommendation: 'Shortlist' }, user: { id: 9 } }, res);
-
-    expect(prisma.interviewRound.updateMany).toHaveBeenCalledWith({
-      where: { id: 1, recommendation: null },
-      data: expect.objectContaining({ recommendation: 'Shortlist', conductedById: 9, status: 'Completed', completedAt: expect.any(Date) })
-    });
-    expect(prisma.panelAccessToken.updateMany).toHaveBeenCalled();
-    expect(prisma.application.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { status: 'Interviewed' } });
-  });
-
-  test('a "Reject" recommendation rejects the application, clears its rank, and notifies the candidate', async () => {
-    prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 40 }]);
-    prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'Interviewed' });
-    prisma.interviewRound.updateMany.mockResolvedValue({ count: 1 });
-    prisma.interviewRound.findUnique.mockResolvedValue({ id: 1, applicationId: 1, recommendation: 'Reject', status: 'Scheduled' });
     prisma.application.update.mockResolvedValue({ id: 1, candidateId: 5, vacancy: { title: 'Air Traffic Controller' } });
     const res = mockRes();
-    await interviewController.finalizeRecommendation({ params: { interviewId: '1' }, body: { recommendation: 'Reject' }, user: { id: 9 } }, res);
+    await interviewController.recordResults({ params: { interviewId: '1' }, body, file, user: { id: 9, type: 'staff' } }, res);
+    return { res, file };
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 20));
 
+  test('records the panel\'s score, verdict and signed sheet, completes the round and moves the application to Interviewed', async () => {
+    const { res, file } = await call({ score: '72.46', recommendation: 'Shortlist', notes: 'Strong on procedures' });
+    expect(prisma.interviewRound.updateMany).toHaveBeenCalledWith({
+      where: { id: 1, status: 'Scheduled' },
+      data: expect.objectContaining({
+        score: 72.5, recommendation: 'Shortlist', resultNotes: 'Strong on procedures', conductedById: 9,
+        status: 'Completed', scoreSheetUrl: `/api/files/${file.filename}`, scoreSheetName: 'Panel score sheet - Jane Doe.pdf'
+      })
+    });
+    expect(prisma.application.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 1 }, data: { status: 'Interviewed' } }));
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ action: 'Interview results recorded' }) });
+    expect(res.status).not.toHaveBeenCalled();
+    expect(fs.existsSync(file.path)).toBe(true);
+    fs.rmSync(file.path, { force: true });
+  });
+
+  test('a "Reject" verdict rejects the application and tells the candidate', async () => {
+    const { file } = await call({ score: '41', recommendation: 'Reject' });
     expect(prisma.application.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 1 },
-      data: expect.objectContaining({ status: 'Rejected', rejectedById: 9, rank: null, listStatus: null })
+      data: expect.objectContaining({ status: 'Rejected', rejectedById: 9, rank: null, meritStatus: null })
     }));
     expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ candidateId: 5, type: 'ApplicationRejected' })
     }));
+    fs.rmSync(file.path, { force: true });
   });
-});
 
-describe('recordPanelScore', () => {
-  const round = { id: 5, status: 'Scheduled', criteria: null };
+  test.each([
+    [{ score: '', recommendation: 'Shortlist' }, 400, /overall score/],
+    [{ score: '101', recommendation: 'Shortlist' }, 400, /0 to 100/],
+    [{ score: 'abc', recommendation: 'Shortlist' }, 400, /0 to 100/],
+    [{ score: '70', recommendation: 'Maybe' }, 400, /verdict/]
+  ])('refuses %p, and does not keep the uploaded sheet', async (body, status, message) => {
+    const { res, file } = await call(body);
+    expect(res.status).toHaveBeenCalledWith(status);
+    expect(res.json.mock.calls[0][0].error).toMatch(message);
+    expect(prisma.interviewRound.updateMany).not.toHaveBeenCalled();
+    await settle();
+    expect(fs.existsSync(file.path)).toBe(false);
+  });
 
-  test('rejects an invalid panel member id', async () => {
-    const res = mockRes();
-    await interviewController.recordPanelScore({ params: { panelMemberId: 'abc' }, body: { score: 80 } }, res);
+  test('the signed score sheet is required the first time', async () => {
+    const { res } = await call({ score: '70', recommendation: 'Hold' }, { file: null });
     expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json.mock.calls[0][0].error).toMatch(/signed score sheet/);
   });
 
-  test.each([-1, 101, NaN, 'not-a-number', ''])('rejects an out-of-range/non-numeric score (%p)', async (score) => {
-    prisma.panelMember.findUnique.mockResolvedValue({ id: 1, interviewRoundId: 5, interviewRound: round });
+  test('not before the interview has taken place, nor for one that did not go ahead', async () => {
+    let { res } = await call({ score: '70', recommendation: 'Hold' }, { round: detailedRound({ scheduledDate: new Date(Date.now() + 3600000) }) });
+    expect(res.status).toHaveBeenCalledWith(422);
+    ({ res } = await call({ score: '70', recommendation: 'Hold' }, { round: detailedRound({ scheduledDate: held, status: 'NoShow' }) }));
+    expect(res.status).toHaveBeenCalledWith(409);
+  });
+
+  test.each(['Rejected', 'Offered', 'Withdrawn'])('refuses when the application has already moved on (%s)', async (status) => {
+    const { res } = await call({ score: '70', recommendation: 'Hold' }, { application: { id: 1, status, meritStatus: null, offer: null } });
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(prisma.interviewRound.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('two people recording at once: the second is refused', async () => {
+    prisma.interviewRound.updateMany.mockResolvedValue({ count: 0 });
+    prisma.interviewRound.findUnique.mockResolvedValue(detailedRound({ scheduledDate: held }));
+    prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'InterviewScheduled', meritStatus: null, offer: null });
     const res = mockRes();
-    await interviewController.recordPanelScore({ params: { panelMemberId: '1' }, body: { score }, user: { id: 9 } }, res);
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(prisma.panelMember.update).not.toHaveBeenCalled();
+    await interviewController.recordResults({ params: { interviewId: '1' }, body: { score: '70', recommendation: 'Hold' }, file: sheet(), user: { id: 9 } }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(prisma.application.update).not.toHaveBeenCalled();
   });
 
-  test('returns 404 when the panel member does not exist', async () => {
-    prisma.panelMember.findUnique.mockResolvedValue(null);
-    const res = mockRes();
-    await interviewController.recordPanelScore({ params: { panelMemberId: '99' }, body: { score: 80 } }, res);
-    expect(res.status).toHaveBeenCalledWith(404);
-  });
+  describe('correcting results', () => {
+    const completed = detailedRound({ scheduledDate: held, status: 'Completed', score: 64, recommendation: 'Hold', scoreSheetName: 'old.pdf' });
+    const interviewed = { id: 1, status: 'Interviewed', meritStatus: null, offer: null };
 
-  test('records a valid score and closes the panelist\'s outstanding link', async () => {
-    prisma.panelMember.findUnique.mockResolvedValue({ id: 1, interviewRoundId: 5, interviewRound: round });
-    prisma.panelMember.update.mockResolvedValue({ id: 1, score: 80, interviewRoundId: 5 });
-    prisma.panelMember.findMany.mockResolvedValue([{ id: 1, score: 80 }]);
-    const res = mockRes();
-    await interviewController.recordPanelScore({ params: { panelMemberId: '1' }, body: { score: 80, comments: 'Good' }, user: { id: 9 } }, res);
-
-    expect(prisma.panelMember.update).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: 1 }, data: expect.objectContaining({ score: 80, comments: 'Good', recordedById: 9 })
-    }));
-    expect(prisma.panelAccessToken.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { panelMemberId: 1, usedAt: null } }));
-    expect(res.json).toHaveBeenCalled();
-  });
-
-  test('with a rubric, computes the score from the per-criterion ratings', async () => {
-    const criteria = [{ id: 'c_aaaa1111', name: 'Technical', weight: 3 }, { id: 'c_bbbb2222', name: 'Communication', weight: 1 }];
-    prisma.panelMember.findUnique.mockResolvedValue({ id: 1, interviewRoundId: 5, interviewRound: { ...round, criteria } });
-    prisma.panelMember.update.mockResolvedValue({ id: 1, interviewRoundId: 5 });
-    prisma.panelMember.findMany.mockResolvedValue([]);
-    const res = mockRes();
-    await interviewController.recordPanelScore({
-      params: { panelMemberId: '1' }, body: { score: 1, criterionScores: { c_aaaa1111: 5, c_bbbb2222: 1 } }, user: { id: 9 }
-    }, res);
-    // (3 * 5/5 + 1 * 1/5) / 4 = 0.8
-    expect(prisma.panelMember.update).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ score: 80, criterionScores: { c_aaaa1111: 5, c_bbbb2222: 1 } })
-    }));
-  });
-
-  test('with a rubric, refuses a scoresheet with a criterion left unrated', async () => {
-    const criteria = [{ id: 'c_aaaa1111', name: 'Technical', weight: 3 }, { id: 'c_bbbb2222', name: 'Communication', weight: 1 }];
-    prisma.panelMember.findUnique.mockResolvedValue({ id: 1, interviewRoundId: 5, interviewRound: { ...round, criteria } });
-    const res = mockRes();
-    await interviewController.recordPanelScore({
-      params: { panelMemberId: '1' }, body: { criterionScores: { c_aaaa1111: 5 } }, user: { id: 9 }
-    }, res);
-    expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: expect.stringContaining('Communication') });
-  });
-
-  test('refuses to score a round that did not go ahead, or a recused panelist', async () => {
-    prisma.panelMember.findUnique.mockResolvedValueOnce({ id: 1, interviewRound: { ...round, status: 'NoShow' } });
-    const res1 = mockRes();
-    await interviewController.recordPanelScore({ params: { panelMemberId: '1' }, body: { score: 50 }, user: { id: 9 } }, res1);
-    expect(res1.status).toHaveBeenCalledWith(409);
-
-    prisma.panelMember.findUnique.mockResolvedValueOnce({ id: 1, name: 'Ann', recusedAt: new Date(), interviewRound: round });
-    const res2 = mockRes();
-    await interviewController.recordPanelScore({ params: { panelMemberId: '1' }, body: { score: 50 }, user: { id: 9 } }, res2);
-    expect(res2.status).toHaveBeenCalledWith(409);
-    expect(prisma.panelMember.update).not.toHaveBeenCalled();
-  });
-});
-
-describe('sendAllLinks', () => {
-  test('issues a day link to every panelist who has not scored, returning the url only for those without an email', async () => {
-    prisma.panelDayLink.findMany.mockResolvedValue([]);
-    let nextId = 1;
-    prisma.panelDayLink.create.mockImplementation(({ data }) => Promise.resolve({ id: nextId++, ...data }));
-    prisma.interviewRound.findUnique.mockResolvedValue(detailedRound({
-      panelMembers: [
-        { id: 1, name: 'Ann', email: 'ann@example.test', score: null },
-        { id: 2, name: 'Bob', email: null, score: null },
-        { id: 3, name: 'Cy', email: 'cy@example.test', score: 70 },
-        { id: 4, name: 'Di', email: 'di@example.test', score: null, recusedAt: new Date() }
-      ]
-    }));
-    sendMail.mockResolvedValue({ messageId: 'x' });
-    const res = mockRes();
-    await interviewController.sendAllLinks({ params: { interviewId: '1' }, body: {}, user: { id: 9 } }, res);
-
-    const { results } = res.json.mock.calls[0][0];
-    expect(results.map((r) => r.name)).toEqual(['Ann', 'Bob']);
-    expect(results[0]).toEqual(expect.objectContaining({ emailed: true, url: undefined }));
-    expect(results[1]).toEqual(expect.objectContaining({ emailed: false, url: expect.stringContaining('/panel-day/') }));
-    // One link per panelist for the vacancy's day, in Kampala time.
-    expect(prisma.panelDayLink.create).toHaveBeenCalledTimes(2);
-    expect(prisma.panelDayLink.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ vacancyId: 3, day: '2030-10-01', panelistName: 'Ann', panelistEmail: 'ann@example.test' })
+    test('changes the score and verdict (Hold to Shortlist) without a new sheet, and audits before and after', async () => {
+      const { res } = await call({ score: '68', recommendation: 'Shortlist' }, { round: completed, file: null, application: interviewed });
+      expect(prisma.interviewRound.updateMany).toHaveBeenCalledWith({
+        where: { id: 1, status: 'Completed' },
+        data: expect.objectContaining({ score: 68, recommendation: 'Shortlist' })
+      });
+      expect(prisma.interviewRound.updateMany.mock.calls[0][0].data).not.toHaveProperty('scoreSheetUrl');
+      expect(prisma.application.update).not.toHaveBeenCalled();
+      expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+        action: 'Interview results corrected',
+        payload: expect.objectContaining({ before: expect.objectContaining({ score: 64, recommendation: 'Hold' }), after: expect.objectContaining({ score: 68 }) })
+      }) });
+      expect(res.status).not.toHaveBeenCalled();
     });
-    expect(prisma.panelAccessToken.create).not.toHaveBeenCalled();
-  });
 
-  test('re-sends a panelist\'s existing day link rather than replacing it', async () => {
-    prisma.panelDayLink.findMany.mockResolvedValue([
-      { id: 7, token: 'abc', vacancyId: 3, day: '2030-10-01', panelistName: 'Ann', panelistEmail: 'ann@example.test', staffUserId: null }
-    ]);
-    prisma.interviewRound.findUnique.mockResolvedValue(detailedRound({
-      panelMembers: [{ id: 1, name: 'Ann', email: 'ann@example.test', score: null }]
-    }));
-    sendMail.mockResolvedValue({ messageId: 'x' });
-    const res = mockRes();
-    await interviewController.sendAllLinks({ params: { interviewId: '1' }, body: {}, user: { id: 9 } }, res);
+    test('not once the candidate is on the merit list', async () => {
+      const { res } = await call({ score: '68', recommendation: 'Hold' }, { round: completed, file: null, application: { ...interviewed, meritStatus: 'Proposed' } });
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json.mock.calls[0][0].error).toMatch(/merit list/);
+    });
 
-    expect(prisma.panelDayLink.create).not.toHaveBeenCalled();
-    expect(prisma.panelDayLink.updateMany).not.toHaveBeenCalled();
-    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ html: expect.stringContaining('/panel-day/abc') }));
+    test('a rejection is final, and a result can\'t be corrected into one', async () => {
+      let { res } = await call({ score: '50', recommendation: 'Hold' }, { round: { ...completed, recommendation: 'Reject' }, file: null, application: interviewed });
+      expect(res.status).toHaveBeenCalledWith(409);
+      ({ res } = await call({ score: '50', recommendation: 'Reject' }, { round: completed, file: null, application: interviewed }));
+      expect(res.status).toHaveBeenCalledWith(409);
+    });
   });
 });
 
@@ -746,11 +651,10 @@ describe('attention', () => {
     const past = new Date(Date.now() - 2 * 3600000);
     const soon = new Date(Date.now() + 24 * 3600000);
     prisma.interviewRound.findMany.mockResolvedValue([
-      detailedRound({ id: 1, scheduledDate: past, panelMembers: [{ id: 1, score: 70 }, { id: 2, score: null }] }),
-      detailedRound({ id: 2, scheduledDate: past, panelMembers: [{ id: 3, score: 70 }] }),
-      detailedRound({ id: 3, scheduledDate: soon, panelMembers: [{ id: 4, score: null }] }),
+      detailedRound({ id: 1, scheduledDate: past, panelMembers: [{ id: 1, name: 'Ann' }] }),
+      detailedRound({ id: 3, scheduledDate: soon, panelMembers: [{ id: 4, name: 'Bob' }] }),
       detailedRound({ id: 4, scheduledDate: soon, candidateResponse: 'RescheduleRequested', panelMembers: [] }),
-      detailedRound({ id: 5, scheduledDate: null, panelMembers: [{ id: 5, score: null }] })
+      detailedRound({ id: 5, scheduledDate: null, panelMembers: [{ id: 5, name: 'Cy' }] })
     ]);
     prisma.application.findMany.mockResolvedValue([
       { id: 8, vacancy: { id: 3, jobRef: 'A', title: 'ATC' } },
@@ -760,12 +664,13 @@ describe('attention', () => {
     await interviewController.attention({ query: {}, user: { id: 9 } }, res);
     const body = res.json.mock.calls[0][0];
     const ids = (k) => body[k].map((r) => r.id);
-    expect(ids('awaitingScores')).toEqual([1]);
-    expect(ids('readyToFinalize')).toEqual([2]);
+    expect(ids('awaitingResults')).toEqual([1]);
+    expect(body.awaitingResults[0].resultsDue).toBe(true);
     expect(ids('unconfirmed')).toEqual([3]);
     expect(ids('rescheduleRequests')).toEqual([4]);
     expect(ids('noDate')).toEqual([5]);
     expect(ids('noPanel')).toEqual([4]);
+    expect(body).not.toHaveProperty('awaitingScores');
     expect(body.awaitingScheduling).toEqual([expect.objectContaining({ id: 3, count: 2 })]);
   });
 });

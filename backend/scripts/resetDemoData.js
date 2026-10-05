@@ -33,8 +33,7 @@ const { DEMO_STAFF } = require('./lib/demoStaff');
 const TABLES = [
   'DelegationUsage', 'Delegation',
   'ShortlistDecision', 'ShortlistRating', 'ShortlistAssignment', 'ShortlistMember', 'ShortlistExercise',
-  'PanelDayLink', 'InterviewDay',
-  'PanelAccessToken', 'PanelMember', 'InterviewRound',
+  'PanelMember', 'InterviewRound',
   'Offer', 'ApplicationDocument', 'Application',
   'CandidateNotification', 'VerificationToken', 'PendingCandidateRegistration',
   'InternalProfile', 'WorkExperience', 'Education', 'ExamGrade', 'Certificate', 'Candidate',
@@ -45,9 +44,9 @@ const TABLES = [
 const DELEGATE = {
   DelegationUsage: 'delegationUsage', Delegation: 'delegation',
   ShortlistDecision: 'shortlistDecision', ShortlistRating: 'shortlistRating', ShortlistAssignment: 'shortlistAssignment',
-  ShortlistMember: 'shortlistMember', ShortlistExercise: 'shortlistExercise', PanelDayLink: 'panelDayLink', InterviewDay: 'interviewDay',
+  ShortlistMember: 'shortlistMember', ShortlistExercise: 'shortlistExercise',
   ApplicationDocument: 'applicationDocument',
-  PanelAccessToken: 'panelAccessToken', PanelMember: 'panelMember', InterviewRound: 'interviewRound',
+  PanelMember: 'panelMember', InterviewRound: 'interviewRound',
   Offer: 'offer', Application: 'application',
   CandidateNotification: 'candidateNotification', VerificationToken: 'verificationToken',
   PendingCandidateRegistration: 'pendingCandidateRegistration',

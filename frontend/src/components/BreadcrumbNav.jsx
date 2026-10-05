@@ -39,10 +39,7 @@ const ROUTE_TRAILS = [
   // since Executive Overview is that tier's actual landing page.
   { path: '/hr/executive', trail: [{ label: 'Executive Overview' }] },
   { path: '/hr/approvals', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Approvals Center' }] },
-  { path: '/hr/analytics', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Analytics' }] },
-
-
-  { path: '/panel-score/:token', trail: [{ label: 'Interview Scoring' }] }
+  { path: '/hr/analytics', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Analytics' }] }
 ];
 
 // Last-resort fallback for a path with no entry above (e.g. a new route

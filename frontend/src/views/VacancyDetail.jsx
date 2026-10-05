@@ -74,7 +74,7 @@ function RequisitionCard({ vacancy }) {
 }
 
 // Vacancy-info only - the applicant review workflow (screening, shortlist
-// ranking, verification, reject, interview scheduling/scoring, offer
+// ranking, verification, reject, interview scheduling/results, offer
 // actions) that used to live entirely on this page now lives on
 // ApplicationManagement.jsx, which this hands off to. See that file's own
 // comment for why: HR needs to work applications across vacancies, not

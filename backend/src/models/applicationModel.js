@@ -123,6 +123,11 @@ module.exports = {
     where: { OR: [{ cvUrl: url }, { coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] },
     select: { id: true, vacancyId: true, candidateId: true }
   }),
+  // The application whose interview score sheet this is (staff-only file).
+  findByScoreSheetUrl: (url) => prisma.application.findFirst({
+    where: { interviewRounds: { some: { scoreSheetUrl: url } } },
+    select: { id: true, vacancyId: true, candidateId: true }
+  }),
   findOwnedByCandidate: (candidateId, url) => prisma.application.findFirst({
     where: { candidateId, OR: [{ cvUrl: url }, { coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] }
   }),

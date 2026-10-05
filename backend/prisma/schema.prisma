@@ -182,11 +182,10 @@ model StaffUser {
   vacanciesCreated              Vacancy[]           @relation("VacancyCreatedBy")
   vacanciesApproved             Vacancy[]           @relation("VacancyApprovedBy")
   vacanciesPostingTypeChanged   Vacancy[]           @relation("VacancyPostingTypeChangedBy")
-  interviewsRun                 InterviewRound[]    @relation("InterviewConductedBy")
+  interviewResultsRecorded      InterviewRound[]    @relation("InterviewConductedBy")
   interviewsScheduled           InterviewRound[]    @relation("InterviewScheduledBy")
   interviewsCancelled           InterviewRound[]    @relation("InterviewCancelledBy")
   panelLinks                    PanelMember[]       @relation("PanelStaffLink")
-  panelScoresRecorded           PanelMember[]       @relation("PanelRecordedBy")
   offersRecommended             Offer[]             @relation("OfferRecommendedBy")
   offersApproved                Offer[]             @relation("OfferApprovedBy")
   verifications                 InternalProfile[]   @relation("VerifiedBy")
@@ -387,8 +386,6 @@ model Vacancy {
   createdBy           StaffUser          @relation("VacancyCreatedBy", fields: [createdById], references: [id])
   createdAt           DateTime           @default(now())
   applications        Application[]
-  panelDayLinks       PanelDayLink[]
-  interviewDays       InterviewDay[]
   shortlistExercise   ShortlistExercise?
 
   // Declaring pre-existing drift, not adding new columns: approvedAt,
@@ -945,70 +942,19 @@ model ApplicationDocument {
 }
 
 model PanelMember {
-  id               Int                @id @default(autoincrement())
+  id               Int            @id @default(autoincrement())
   interviewRoundId Int
-  interviewRound   InterviewRound     @relation(fields: [interviewRoundId], references: [id])
+  interviewRound   InterviewRound @relation(fields: [interviewRoundId], references: [id])
   name             String
   trade            String? // e.g. "AVSEC Officer", "ARFF Chief", "External Technical Assessor"
   email            String?
   staffUserId      Int? // optional - only set if this panelist happens to have a system account
-  staffUser        StaffUser?         @relation("PanelStaffLink", fields: [staffUserId], references: [id])
-  // The panel chair - a label only (who leads the session, whom HR
-  // contacts about the panel's view); it carries no extra weight in the
-  // average. At most one per round, enforced in interviewController.
-  isChair          Boolean            @default(false)
-  // Always 0-100, however it was entered. When the round has a rubric
-  // (InterviewRound.criteria) this is computed from criterionScores by
-  // interviewService.scoreFromCriteria, never typed in - so the round
-  // average, analytics and recommend-offer all keep reading one number.
-  score            Float?
-  // { [criterionId]: 1-5 } against InterviewRound.criteria - null for a
-  // round scored as a single overall number.
-  criterionScores  Json?
-  comments         String?            @db.Text
-  selfSubmitted    Boolean            @default(false) // true if entered via their own access link, not proxied by HR
-  recordedById     Int? // the HR Officer who transcribed this score, if proxied
-  recordedBy       StaffUser?         @relation("PanelRecordedBy", fields: [recordedById], references: [id])
-  submittedAt      DateTime?
-  // A panelist who stood down for this candidate (declared a conflict of
-  // interest, or did not sit). Excluded from the round average and from
-  // "all panel scores are in"; their access links are revoked.
-  recusedAt        DateTime?
-  recusalReason    String?            @db.Text
-  accessTokens     PanelAccessToken[]
-}
-
-// A panelist's scoring link for one interview day of one vacancy: it opens
-// every interview on that vacancy that day where this person sits on the
-// panel, so they score all their candidates from one page. Which rounds it
-// covers is worked out at request time from the rounds' own dates and panels
-// (panelDayLinkService), so a reschedule or a panel change is picked up
-// without re-issuing. It only works on that day - from an hour before the
-// first interview to local midnight (APP_TIMEZONE) - and each candidate can
-// be scored once. The panelist is identified the same way clash detection
-// does (interviewSchedulingService.samePerson): account, else email, else name.
-// One vacancy's interviews on one day (APP_TIMEZONE) run as a session that
-// HR starts and ends by hand. Nothing can be scored on a panelist's day link
-// until the session is started, and then only candidates HR has called in
-// (InterviewRound.calledInAt). Ending it gives panelists a 15-minute grace
-// period (closesAt) to finish scoring, then the day links close. The row is
-// created when the session starts, or earlier by scripts/
-// checkInterviewSessions.js to record that HR was told it hadn't started
-// 30 minutes after the first interview was due (notStartedAlertAt).
-model InterviewDay {
-  id                Int       @id @default(autoincrement())
-  vacancyId         Int
-  vacancy           Vacancy   @relation(fields: [vacancyId], references: [id])
-  day               String // YYYY-MM-DD in APP_TIMEZONE
-  startedAt         DateTime?
-  startedById       Int?
-  endedAt           DateTime?
-  endedById         Int?
-  closesAt          DateTime? // endedAt + the grace period
-  notStartedAlertAt DateTime?
-  createdAt         DateTime  @default(now())
-
-  @@unique([vacancyId, day])
+  staffUser        StaffUser?     @relation("PanelStaffLink", fields: [staffUserId], references: [id])
+  // The panel chair - a label only (who leads the interview, whom HR
+  // contacts about the panel's view). At most one per round, enforced in
+  // interviewController. Panelists score on paper, outside the system - see
+  // InterviewRound.score.
+  isChair          Boolean        @default(false)
 }
 
 enum ShortlistExerciseStatus {
@@ -1126,32 +1072,6 @@ model ShortlistDecision {
   @@unique([exerciseId, applicationId, criterionId])
 }
 
-model PanelDayLink {
-  id            Int       @id @default(autoincrement())
-  token         String    @unique
-  vacancyId     Int
-  vacancy       Vacancy   @relation(fields: [vacancyId], references: [id])
-  day           String // YYYY-MM-DD in APP_TIMEZONE
-  panelistName  String
-  panelistEmail String?
-  staffUserId   Int?
-  createdById   Int?
-  createdAt     DateTime  @default(now())
-  revokedAt     DateTime? // replaced by a fresh link, or withdrawn by HR
-
-  @@index([vacancyId, day])
-}
-
-model PanelAccessToken {
-  id            Int         @id @default(autoincrement())
-  token         String      @unique
-  panelMemberId Int
-  panelMember   PanelMember @relation(fields: [panelMemberId], references: [id])
-  expiresAt     DateTime
-  usedAt        DateTime?
-  createdAt     DateTime    @default(now())
-}
-
 enum InterviewRoundStatus {
   Scheduled
   // Set when the panel's recommendation is finalized
@@ -1186,10 +1106,6 @@ model InterviewRound {
   instructions          String?                    @db.Text
   // Staff-only - never sent to the candidate (see utils/candidateInterview.js).
   internalNotes         String?                    @db.Text
-  // Scoring rubric: [{ id, name, weight, description }]. Ids are generated
-  // server-side and stable for the life of the round, same principle as
-  // Vacancy.desirableRequirements. Frozen once any panelist has scored.
-  criteria              Json?
   // Rounds created together by one bulk-scheduling run share this key, so
   // the Interview Hub can show them as one session.
   sessionKey            String?
@@ -1206,16 +1122,20 @@ model InterviewRound {
   // One-time-fire guards for scripts/sendInterviewReminders.js (same idiom
   // as Vacancy.deadlineNotifiedAt); reminderSentAt is cleared on reschedule.
   reminderSentAt        DateTime?
-  scoreNudgeSentAt      DateTime?
-  // Set when HR calls the candidate in during a running interview session
-  // (InterviewDay) - the moment panelists can start scoring them on their
-  // day link. Cleared on reschedule. calledInById is the staff member who
-  // called them in (a snapshot id, like the audit log's performedById).
-  calledInAt            DateTime?
-  calledInById          Int?
-  score                 Float? // computed: average of this round's non-recused PanelMember scores
-  recommendation        String? // Shortlist / Hold / Reject - a deliberate HR judgment, not an average
-  conductedById         Int?
+  // The person who scheduled the round has been reminded that its results
+  // are still not recorded (scripts/sendInterviewReminders.js).
+  resultsReminderSentAt DateTime?
+  // The panel scores on paper, outside the system. Afterwards HR records
+  // what the panel decided (interviewController.recordResults): its overall
+  // score out of 100, its verdict and the signed score sheet as evidence.
+  // A reviewer checks them against the sheet at the merit list.
+  score                 Float? // 0-100, the panel's overall score from the signed sheet
+  recommendation        String? // Shortlist / Hold / Reject - the panel's verdict
+  resultNotes           String?                    @db.Text // staff-only
+  scoreSheetUrl         String? // served through /api/files, staff-only
+  scoreSheetName        String?
+  resultsRecordedAt     DateTime?
+  conductedById         Int? // who recorded the results
   conductedBy           StaffUser?                 @relation("InterviewConductedBy", fields: [conductedById], references: [id])
   scheduledById         Int?
   scheduledBy           StaffUser?                 @relation("InterviewScheduledBy", fields: [scheduledById], references: [id])
@@ -1421,12 +1341,13 @@ enum SlaTaskType {
   // A candidate asked for another time (interviewController.candidateRespond),
   // sent to whoever scheduled the round.
   InterviewRescheduleRequested
-  // The last outstanding panelist submitted through their own link - the
-  // round is ready for HR to finalize (panelAccessController.submitByToken).
+  // Legacy (in-app panel scoring, removed): kept so older notification rows
+  // still read. Nothing writes these any more.
   InterviewReadyToFinalize
-  // A day after the interview, panel scores are still missing
-  // (scripts/sendInterviewReminders.js).
   InterviewScoresOverdue
+  // A day after an interview, its results are still not recorded - to
+  // whoever scheduled it (scripts/sendInterviewReminders.js).
+  InterviewResultsOverdue
   // A merit list was proposed for a vacancy and awaits approval - to every
   // Principal_HR_Officer (meritListController.propose). taskId is the
   // vacancy id.
@@ -1437,9 +1358,7 @@ enum SlaTaskType {
   // An issued offer passed its response deadline unanswered - to every
   // Principal_HR_Officer (scripts/expireOffers.js). taskId is the offer id.
   OfferExpired
-  // An interview session was not started 30 minutes after its first
-  // interview was due - to whoever scheduled those interviews
-  // (scripts/checkInterviewSessions.js). taskId is the first round id.
+  // Legacy (interview sessions, removed) - see InterviewReadyToFinalize.
   InterviewSessionNotStarted
   // An approver returned a vacancy for revision, or rejected it, with a
   // comment - to whoever created it (vacancyController.returnForRevision /

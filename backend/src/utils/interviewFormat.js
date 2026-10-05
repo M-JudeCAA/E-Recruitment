@@ -49,7 +49,8 @@ function describeSlot(round) {
 
 // The calendar day (YYYY-MM-DD) an instant falls on in APP_TIMEZONE - an
 // interview at 01:00 Kampala time is on that Kampala day, not the previous
-// UTC one. Panelists' day links (panelDayLinkService) are scoped by this.
+// UTC one. A panelist's calendar meeting covers one such day
+// (interviewInvitationService).
 function localDay(date) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
     timeZone: timeZone(), year: 'numeric', month: '2-digit', day: '2-digit'

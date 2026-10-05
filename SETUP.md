@@ -62,7 +62,8 @@ Every other field in `.env.example` needs a real value too:
 | `UPLOAD_DIR` | Leave as `./uploads` |
 | `ACCESS_LOG_RETENTION_DAYS` | Optional. How long the record of who viewed candidate data is kept before the scheduled job deletes it (default `730`, minimum `90`) |
 | `TRUST_PROXY` | Optional. Which reverse proxy to believe about a client's address, used by the sign-in rate limits. Default `loopback` (a proxy on the same machine, e.g. nginx or IIS). Set to `false` if nothing sits in front of the API, or to a hop count or proxy address if the proxy is on another machine |
-| `APP_TIMEZONE` | Optional. Time zone used for interview times in emails and notifications. Default `Africa/Kampala` |
+| `APP_TIMEZONE` | Optional. Time zone used for interview times in emails, notifications and calendar invitations. Default `Africa/Kampala` |
+| `INTERVIEW_ORGANIZER_EMAIL` | Optional but recommended. The mailbox shown as the organizer of interview calendar invitations - when a panelist or candidate accepts or declines, the reply goes here (e.g. the HR recruitment mailbox). Default: the address in `SMTP_FROM` |
 | `SCHEDULER_INTERVAL_MINUTES` | Optional. How often the scheduler worker runs the maintenance jobs. Default `60` |
 | `DATABASE_URL_TEST` | Only for the end-to-end tests: a separate, empty MySQL database whose name contains `test`. See [Running tests](#running-tests) |
 
@@ -226,15 +227,19 @@ port that immediately redirects them away.
 
 ## Scheduled maintenance
 
-Four jobs in `backend/scripts/` must run every hour. Nothing else runs
+Eight jobs in `backend/scripts/` must run every hour. Nothing else runs
 them, so they have to be started as part of every deployment:
 
 | Script | What it does |
 |---|---|
 | `checkSlaEscalations.js` | Escalates an overdue VacancyApproval/DepartmentApproval/OfferApproval to the next role tier |
 | `checkVacancyDeadlines.js` | Notifies a vacancy's creator once its deadline passes while still Open/PartiallyFilled |
+| `sendInterviewReminders.js` | Reminds candidates and panelists about an interview a day ahead, and reminds HR when an interview's results haven't been recorded a day after it |
+| `expireOffers.js` | Reminds a candidate two days before their offer's response deadline, and expires offers past it |
 | `cleanupPendingRegistrations.js` | Deletes abandoned candidate registrations whose confirmation link expired unused |
 | `cleanupVerificationTokens.js` | Deletes email-confirmation and password-reset links that were used or expired more than 7 days ago |
+| `cleanupRequisitionUploads.js` | Deletes uploaded requisitions that no vacancy or draft uses, after 24 hours |
+| `purgeAccessLog.js` | Deletes the record of who viewed candidate data once it is older than `ACCESS_LOG_RETENTION_DAYS` |
 
 **If they stop running, staff are told.** Every run is recorded in the
 `SystemHealth` table. If any job hasn't succeeded in 3 hours, the HR home
@@ -244,7 +249,7 @@ the same way.
 
 ### Recommended: the scheduler worker
 
-One long-running process runs all four jobs every hour
+One long-running process runs all the jobs every hour
 (`SCHEDULER_INTERVAL_MINUTES` to change it), separately from the API:
 
 ```bash
@@ -277,9 +282,13 @@ both, or SLA escalations could be checked twice in the same hour.
 0 * * * * cd /path/to/backend && node scripts/checkVacancyDeadlines.js >> /var/log/erecruitment/deadlines.log 2>&1
 0 * * * * cd /path/to/backend && node scripts/cleanupPendingRegistrations.js >> /var/log/erecruitment/cleanup.log 2>&1
 0 * * * * cd /path/to/backend && node scripts/cleanupVerificationTokens.js >> /var/log/erecruitment/cleanup.log 2>&1
+0 * * * * cd /path/to/backend && node scripts/sendInterviewReminders.js >> /var/log/erecruitment/interviews.log 2>&1
+0 * * * * cd /path/to/backend && node scripts/expireOffers.js >> /var/log/erecruitment/offers.log 2>&1
+0 * * * * cd /path/to/backend && node scripts/cleanupRequisitionUploads.js >> /var/log/erecruitment/cleanup.log 2>&1
+0 * * * * cd /path/to/backend && node scripts/purgeAccessLog.js >> /var/log/erecruitment/cleanup.log 2>&1
 ```
 
-All four run hourly: the warning treats a job as stopped after 3 hours
+All of them run hourly: the warning treats a job as stopped after 3 hours
 without a successful run.
 
 **Windows (Task Scheduler)** — one example, repeat per script:

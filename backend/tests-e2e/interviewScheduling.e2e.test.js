@@ -1,13 +1,14 @@
 const {
   prisma, resetDatabase, createStaff, createOrg, createCandidate,
-  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition
+  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition,
+  recordInterviewResults
 } = require('./helpers');
-const { localDay } = require('../src/utils/interviewFormat');
 
 // The Interview Hub against a real database: a bulk-scheduled session with
-// a shared panel and rubric, clash detection, the candidate asking to move,
-// reschedule, cancel, panelist self-scoring through a link, finalizing, and
-// what the candidate can and can't see.
+// a shared panel, calendar invitations, clash detection, the candidate asking
+// to move, reschedule, cancel, the HR Officer recording the panel's results
+// (scored on paper, outside the system) with the signed sheet, correcting
+// them, and what the candidate can and can't see.
 
 let staff;
 let tokens;
@@ -68,11 +69,10 @@ const sessionBody = (applicationIds) => ({
   panelMembers: [
     { name: 'Ann Chair', email: 'ann@caa.co.ug', isChair: true },
     { name: 'External Assessor' }
-  ],
-  criteria: [{ name: 'Technical knowledge', weight: 3 }, { name: 'Communication', weight: 1 }]
+  ]
 });
 
-test('a bulk session is planned, booked, rescheduled, cancelled, scored and finalized', async () => {
+test('a bulk session is planned, booked, rescheduled, cancelled, and its results recorded', async () => {
   const { vacancy, applicants } = await shortlistedVacancy(['Amy Apio', 'Ben Byaru', 'Cate Chebet']);
   const [amy, ben, cate] = applicants;
   const ids = applicants.map((a) => a.applicationId);
@@ -92,7 +92,6 @@ test('a bulk session is planned, booked, rescheduled, cancelled, scored and fina
   const session = expectStatus(await api(tokens.shro).post(`/api/interviews/vacancies/${vacancy.id}/sessions`, sessionBody(ids)), 201).body;
   expect(session.rounds).toHaveLength(3);
   expect(new Set(session.rounds.map((r) => r.sessionKey)).size).toBe(1);
-  expect(session.rounds[0].criteria.map((c) => c.name)).toEqual(['Technical knowledge', 'Communication']);
   const apps = await prisma.application.findMany({ where: { id: { in: ids } } });
   expect(apps.every((a) => a.status === 'InterviewScheduled')).toBe(true);
   expect(await prisma.candidateNotification.count({ where: { type: 'InterviewScheduled', channel: 'InApp' } })).toBe(3);
@@ -125,74 +124,38 @@ test('a bulk session is planned, booked, rescheduled, cancelled, scored and fina
   expect(moved.candidateResponse).toBe('Pending');
   expectStatus(await api(amy.token).patch(`/api/candidates/me/interviews/${moved.id}/respond`, { response: 'Confirmed' }), 200);
 
-  // The external assessor (no email) gets one link for the whole day: it
-  // lists all three candidates. Cate's interview is then cancelled - she
-  // goes back to Shortlisted, and the link shows her as cancelled.
+  // Cate's interview is cancelled - she goes back to Shortlisted.
   const cateRound = roundOf(cate.applicationId);
-  const links = expectStatus(await api(tokens.shro).post(`/api/interviews/${cateRound.id}/access-links`), 201).body.results;
-  const externalLink = links.find((l) => l.name === 'External Assessor').url;
-  const dayToken = externalLink.split('/panel-day/')[1];
-  const dayView = expectStatus(await api().get(`/api/panel-day/${dayToken}`), 200).body;
-  expect(dayView.day).toBe('2031-03-04');
-  expect(dayView.sessionState).toBe('notStarted');
-  expect(dayView.candidates.map((c) => c.candidateName)).toEqual(['Ben Byaru', 'Cate Chebet', 'Amy Apio']);
   expectStatus(await api(tokens.shro).patch(`/api/interviews/${cateRound.id}/cancel`, { reason: 'Candidate withdrew verbally' }), 200);
   expect((await prisma.application.findUnique({ where: { id: cate.applicationId } })).status).toBe('Shortlisted');
-  const afterCancel = expectStatus(await api().get(`/api/panel-day/${dayToken}`), 200).body;
-  expect(afterCancel.candidates.find((c) => c.candidateName === 'Cate Chebet').state).toBe('cancelled');
 
-  // Ben's panel scores: the chair's proxied by HR against the rubric, the
-  // external assessor's through their own link.
-  const benRound = expectStatus(await api(tokens.hro).get(`/api/interviews/${roundOf(ben.applicationId).id}`), 200).body;
-  const [tech, comms] = benRound.criteria;
-  const chair = benRound.panelMembers.find((m) => m.isChair);
-  const assessor = benRound.panelMembers.find((m) => !m.isChair);
-  expectStatus(await api(tokens.shro).patch(`/api/interviews/panel-members/${chair.id}/score`, {
-    criterionScores: { [tech.id]: 5, [comms.id]: 3 }, comments: 'Excellent technical depth'
-  }), 200);
+  // Ben's panel scores him on paper. Results can't be entered before the
+  // interview time, nor without the signed sheet.
+  const benRound = roundOf(ben.applicationId);
+  expect((await recordInterviewResults(tokens.hro, benRound.id, { backdate: false })).status).toBe(422);
+  expect((await recordInterviewResults(tokens.hro, benRound.id, { sheet: false })).status).toBe(400);
+  expect((await recordInterviewResults(tokens.hro, benRound.id, { score: 120 })).status).toBe(400);
 
-  // Scoring follows the session HR runs on the day, so Ben's interview is
-  // moved to today first. Reissuing gives a fresh link and the old one stops
-  // working.
-  await prisma.interviewRound.update({ where: { id: benRound.id }, data: { scheduledDate: new Date(Date.now() - 1000) } });
-  const today = localDay(new Date());
-  const link = expectStatus(await api(tokens.shro).post(`/api/interviews/panel-members/${assessor.id}/access-link`), 201).body.url;
-  const panelToken = link.split('/panel-day/')[1];
-  expect(panelToken).not.toBe(dayToken);
-
-  // Nothing can be scored until HR starts the session and calls Ben in.
-  expect((await api().patch(`/api/panel-day/${panelToken}/score`, { panelMemberId: assessor.id, score: 80 })).status).toBe(423);
-  expect((await api(tokens.shro).patch(`/api/interviews/${benRound.id}/call-in`)).status).toBe(422);
-  expect((await api(tokens.hro).post(`/api/interviews/vacancies/${vacancy.id}/days/${today}/start`)).status).toBe(403);
-  const started = expectStatus(await api(tokens.shro).post(`/api/interviews/vacancies/${vacancy.id}/days/${today}/start`), 200).body;
-  expect(started.session.state).toBe('running');
-  const waiting = expectStatus(await api().get(`/api/panel-day/${panelToken}`), 200).body;
-  expect(waiting.candidates.find((c) => c.candidateName === 'Ben Byaru').state).toBe('waiting');
-  expectStatus(await api(tokens.shro).patch(`/api/interviews/${benRound.id}/call-in`), 200);
-
-  const view = expectStatus(await api().get(`/api/panel-day/${panelToken}`), 200).body;
-  expect(view.sessionState).toBe('running');
-  const benEntry = view.candidates.find((c) => c.candidateName === 'Ben Byaru');
-  expect(benEntry.state).toBe('open');
-  expect(benEntry.criteria.map((c) => c.name)).toEqual(['Technical knowledge', 'Communication']);
-  expect((await api().patch(`/api/panel-day/${panelToken}/score`, { panelMemberId: assessor.id, criterionScores: { [tech.id]: 9 } })).status).toBe(400);
-  expectStatus(await api().patch(`/api/panel-day/${panelToken}/score`, { panelMemberId: assessor.id, criterionScores: { [tech.id]: 4, [comms.id]: 4 } }), 200);
-  expect((await api().patch(`/api/panel-day/${panelToken}/score`, { panelMemberId: assessor.id, criterionScores: { [tech.id]: 4, [comms.id]: 4 } })).status).toBe(410);
-
-  // (3*1 + 1*0.6)/4 = 90 and (3*0.8 + 1*0.8)/4 = 80 -> average 85.
-  const scored = await prisma.interviewRound.findUnique({ where: { id: benRound.id } });
-  expect(scored.score).toBe(85);
-  expect(await prisma.notification.count({ where: { recipientId: staff.shro.id, taskType: 'InterviewReadyToFinalize', channel: 'InApp' } })).toBe(1);
-
-  expectStatus(await api(tokens.shro).patch(`/api/interviews/${benRound.id}/finalize`, { recommendation: 'Shortlist' }), 200);
-  const finalized = await prisma.interviewRound.findUnique({ where: { id: benRound.id } });
-  expect(finalized.status).toBe('Completed');
+  // The HR Officer records them: the round is held, Ben is Interviewed.
+  const recorded = expectStatus(await recordInterviewResults(tokens.hro, benRound.id, {
+    score: 78.25, recommendation: 'Hold', notes: 'Strong technically; panel split on leadership'
+  }), 200).body;
+  expect(recorded).toEqual(expect.objectContaining({ status: 'Completed', score: 78.3, recommendation: 'Hold', resultNotes: 'Strong technically; panel split on leadership' }));
+  expect(recorded.scoreSheetUrl).toMatch(/^\/api\/files\//);
+  expect(recorded.conductedById).toBe(staff.hro.id);
   expect((await prisma.application.findUnique({ where: { id: ben.applicationId } })).status).toBe('Interviewed');
+  // Recording again is a correction - no new sheet needed - and is audited.
+  const corrected = expectStatus(await api(tokens.hro).patch(`/api/interviews/${benRound.id}/results`, { score: 81, recommendation: 'Shortlist' }), 200).body;
+  expect(corrected).toEqual(expect.objectContaining({ score: 81, recommendation: 'Shortlist', scoreSheetUrl: recorded.scoreSheetUrl }));
+  expect(await prisma.auditLog.count({ where: { entityType: 'InterviewRound', entityId: benRound.id, action: 'Interview results corrected' } })).toBe(1);
+  // Staff can open the signed sheet.
+  expect((await api(tokens.hro).get(recorded.scoreSheetUrl)).status).toBe(200);
+  expect((await api(ben.token).get(recorded.scoreSheetUrl)).status).toBe(403);
 
-  // The scorecard ranks the interviewed candidates, with the rubric breakdown.
+  // The scorecard ranks the interviewed candidates, with the sheet.
   const scorecard = expectStatus(await api(tokens.hro).get(`/api/interviews/vacancies/${vacancy.id}/scorecard`), 200).body;
   expect(scorecard[0]).toEqual(expect.objectContaining({ applicationId: ben.applicationId }));
-  expect(scorecard[0].latestRound.criterionAverages.map((c) => c.average)).toEqual([4.5, 3.5]);
+  expect(scorecard[0].latestRound).toEqual(expect.objectContaining({ score: 81, recommendation: 'Shortlist', scoreSheetUrl: recorded.scoreSheetUrl }));
 
   // The candidate sees the time, venue and instructions - never the panel's
   // scores or verdict - and can download a calendar file.
@@ -212,24 +175,27 @@ test('a bulk session is planned, booked, rescheduled, cancelled, scored and fina
   expect(agenda.map((r) => r.id)).toEqual([moved.id]);
 });
 
-test('a recused panelist no longer counts, and a scored panelist cannot be removed', async () => {
-  const { vacancy, applicants } = await shortlistedVacancy(['Dan Dumba']);
-  const [dan] = applicants;
-  const round = expectStatus(await api(tokens.shro).post(`/api/interviews/applications/${dan.applicationId}/interviews`, {
+test('a "Reject" verdict rejects the application, and is final; a no-show has no results', async () => {
+  const { vacancy, applicants } = await shortlistedVacancy(['Dan Dumba', 'Eve Ekwang']);
+  const [dan, eve] = applicants;
+  const book = async (applicationId) => expectStatus(await api(tokens.shro).post(`/api/interviews/applications/${applicationId}/interviews`, {
     scheduledDate: inDays(4), mode: 'In person',
     panelMembers: [{ name: 'P One', email: 'p1@caa.co.ug' }, { name: 'P Two', email: 'p2@caa.co.ug' }]
   }), 201).body;
-  expect(round.mode).toBe('In-person');
-  const [p1, p2] = round.panelMembers;
+  const danRound = await book(dan.applicationId);
+  expect(danRound.mode).toBe('In-person');
 
-  expectStatus(await api(tokens.shro).patch(`/api/interviews/panel-members/${p1.id}/score`, { score: 40 }), 200);
-  expectStatus(await api(tokens.shro).patch(`/api/interviews/panel-members/${p2.id}/score`, { score: 90 }), 200);
-  expect((await api(tokens.shro).delete(`/api/interviews/panel-members/${p1.id}`)).status).toBe(409);
+  expectStatus(await recordInterviewResults(tokens.hro, danRound.id, { score: 38, recommendation: 'Reject' }), 200);
+  const rejected = await prisma.application.findUnique({ where: { id: dan.applicationId } });
+  expect(rejected).toEqual(expect.objectContaining({ status: 'Rejected', rejectedById: staff.hro.id }));
+  expect(await prisma.candidateNotification.count({ where: { candidateId: dan.candidateId, type: 'ApplicationRejected', channel: 'InApp' } })).toBe(1);
+  expect((await api(tokens.hro).patch(`/api/interviews/${danRound.id}/results`, { score: 60, recommendation: 'Hold' })).status).toBe(409);
 
-  expectStatus(await api(tokens.shro).patch(`/api/interviews/panel-members/${p1.id}/recuse`, { reason: 'Former supervisor of the candidate' }), 200);
-  expect((await prisma.interviewRound.findUnique({ where: { id: round.id } })).score).toBe(90);
-  expect(await prisma.auditLog.count({ where: { entityType: 'InterviewRound', entityId: round.id, action: 'Panelist recused' } })).toBe(1);
+  const eveRound = await book(eve.applicationId);
+  await prisma.interviewRound.update({ where: { id: eveRound.id }, data: { scheduledDate: new Date(Date.now() - 3600000) } });
+  expectStatus(await api(tokens.shro).patch(`/api/interviews/${eveRound.id}/no-show`, {}), 200);
+  expect((await recordInterviewResults(tokens.hro, eveRound.id, { backdate: false })).status).toBe(409);
 
-  // A vacancy with nothing interviewed yet still has a (short) scorecard.
+  // A vacancy with nothing interviewed still has a (short) scorecard.
   expectStatus(await api(tokens.hro).get(`/api/interviews/vacancies/${vacancy.id}/scorecard`), 200);
 });

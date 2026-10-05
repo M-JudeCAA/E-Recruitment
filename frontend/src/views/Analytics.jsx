@@ -130,7 +130,7 @@ function PanelWorkloadTable({ rows, loading }) {
       {loading ? (
         <PanelRowsSkeleton />
       ) : rows.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No scored interview rounds yet.</p>
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No interviews held yet.</p>
       ) : (
         <div className="panel-scroll">
           {rows.map((r, i) => (
@@ -140,7 +140,7 @@ function PanelWorkloadTable({ rows, loading }) {
             }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</div>
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                {r.roundsScored} scored &middot; avg {r.avgScore}
+                {r.interviews} interview{r.interviews === 1 ? '' : 's'}{r.chaired ? <> &middot; chaired {r.chaired}</> : null}
               </div>
             </div>
           ))}

@@ -195,7 +195,7 @@ Microsoft sign-in.
 
 | Role | Can do, for example |
 |---|---|
-| HR Officer | Upload requisitions and create vacancies |
+| HR Officer | Upload requisitions and create vacancies, record interview results from the signed score sheets |
 | Senior HR Officer | Run the shortlisting committee, schedule interviews, propose merit lists |
 | Principal HR Officer | Approve shortlists and merit lists, recommend offers |
 | Manager / Director | Approve vacancies and offers |

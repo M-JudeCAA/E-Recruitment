@@ -1,6 +1,6 @@
 const {
   prisma, resetDatabase, createStaff, createOrg, createCandidate,
-  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition
+  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition, recordInterviewResults
 } = require('./helpers');
 
 // The whole recruitment lifecycle through the real API and a real database:
@@ -70,9 +70,7 @@ async function shortlistAndInterview(vacancyId, applicationIds, interviewIds = a
     const round = expectStatus(await api(tokens.shro).post(`/api/interviews/applications/${applicationId}/interviews`, {
       scheduledDate: inDays(3), mode: 'In person', panelMembers: [{ name: 'Panelist One', trade: 'HR', email: 'panel@caa.co.ug' }]
     }), 201).body;
-    const [panelMember] = await prisma.panelMember.findMany({ where: { interviewRoundId: round.id } });
-    expectStatus(await api(tokens.shro).patch(`/api/interviews/panel-members/${panelMember.id}/score`, { score: 82 }), 200);
-    expectStatus(await api(tokens.shro).patch(`/api/interviews/${round.id}/finalize`, { recommendation: 'Shortlist' }), 200);
+    expectStatus(await recordInterviewResults(tokens.hro, round.id, { score: 82, recommendation: 'Shortlist' }), 200);
   }
   if (merit) await proposeAndApproveMeritList(vacancyId, interviewIds);
 }

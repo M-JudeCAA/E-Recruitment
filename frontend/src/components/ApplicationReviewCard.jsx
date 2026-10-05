@@ -32,7 +32,7 @@ const NOT_REJECTABLE = ['Draft', 'Offered', 'Rejected', 'Withdrawn'];
 
 // One application's full review card - screening detail, verification,
 // interviews (a summary of each round, opening the shared round workspace -
-// scheduling, panel, scores and finalizing live there and in the Interview
+// scheduling, panel and recording results live there and in the Interview
 // Hub), offer actions, and reject.
 // Extracted out of VacancyDetail.jsx so both the cross-vacancy "All
 // vacancies" queue and the single-vacancy view in ApplicationManagement.jsx
@@ -328,8 +328,7 @@ export default function ApplicationReviewCard({
           )}
 
           {app.interviewRounds.map((r) => {
-            const active = (r.panelMembers || []).filter((p) => !p.recusedAt);
-            const scored = active.filter((p) => p.score != null).length;
+            const due = r.status === 'Scheduled' && r.scheduledDate && new Date(r.scheduledDate) <= new Date();
             return (
               <Card key={r.id} accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 13, minWidth: 0 }}>
@@ -337,8 +336,9 @@ export default function ApplicationReviewCard({
                   {' · '}{formatDateTime(r.scheduledDate)}
                   {' · '}{venueLabel(r)}
                   <div style={{ color: 'var(--color-text-muted)', marginTop: 2 }}>
-                    Panel {scored}/{active.length} scored
-                    {r.score != null && <> &middot; average {r.score.toFixed(1)}</>}
+                    Panel of {(r.panelMembers || []).length}
+                    {r.score != null && <> &middot; score {r.score}/100</>}
+                    {due && <> &middot; <span style={{ color: 'var(--color-warning)' }}>results to record</span></>}
                     {r.status === 'Scheduled' && r.candidateResponse && <> &middot; candidate: {ROUND_LABELS[r.candidateResponse]}</>}
                   </div>
                 </div>

@@ -20,8 +20,6 @@ const vacancyRoutes = require('./routes/vacancies');
 const interviewRoutes = require('./routes/interviews');
 const candidateRoutes = require('./routes/candidates');
 const fileRoutes = require('./routes/files');
-const panelAccessRoutes = require('./routes/panelAccess');
-const panelDayRoutes = require('./routes/panelDay');
 const shortlistCommitteeRoutes = require('./routes/shortlistCommittee');
 const shortlistPanelRoutes = require('./routes/shortlistPanel');
 const departmentRoutes = require('./routes/departments');
@@ -74,10 +72,6 @@ app.use('/api/candidates', candidateRoutes);
 // Authenticated file access - replaces a plain express.static mount so
 // CVs, cover letters, and recommendation letters aren't publicly readable.
 app.use('/api/files', fileRoutes);
-// Public, unauthenticated - a panelist's scoped access link, not a JWT session.
-app.use('/api/panel-access', panelAccessRoutes);
-// Public - a panelist's day link covering every candidate they interview that day.
-app.use('/api/panel-day', panelDayRoutes);
 app.use('/api/shortlist-committee', shortlistCommitteeRoutes);
 // Public - a shortlisting committee member's private link.
 app.use('/api/shortlist-panel', shortlistPanelRoutes);

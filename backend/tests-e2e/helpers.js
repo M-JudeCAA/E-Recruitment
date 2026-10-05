@@ -117,6 +117,18 @@ async function createVacancyFromRequisition(token, body, spec = {}) {
     .send({ ...body, requisitionDocument: requisition.document, requisitionConfirmed: true });
 }
 
+// Records a panel's results the way the HR Officer does after the interview:
+// score, verdict and the signed score sheet (a small PDF). The round must
+// already be in the past - pass `backdate` to move it there first.
+async function recordInterviewResults(token, roundId, { score = 82, recommendation = 'Shortlist', notes, backdate = true, sheet = true } = {}) {
+  if (backdate) await prisma.interviewRound.update({ where: { id: roundId }, data: { scheduledDate: new Date(Date.now() - 3600000) } });
+  let req = request(app).patch(`/api/interviews/${roundId}/results`).set('Authorization', `Bearer ${token}`)
+    .field('score', String(score)).field('recommendation', recommendation);
+  if (notes) req = req.field('notes', notes);
+  if (sheet) req = req.attach('scoreSheet', Buffer.from('%PDF-1.4 signed score sheet'), { filename: 'Score sheet.pdf', contentType: 'application/pdf' });
+  return req;
+}
+
 function expectStatus(res, status) {
   if (res.status !== status) {
     throw new Error(`Expected ${status} from ${res.req?.method} ${res.req?.path}, got ${res.status}: ${JSON.stringify(res.body)}`);
@@ -126,5 +138,5 @@ function expectStatus(res, status) {
 
 module.exports = {
   prisma, app, PASSWORD, resetDatabase, createStaff, createOrg, createCandidate, staffToken, candidateToken, api, REFEREES,
-  expectStatus, attachAcademicDocument, uploadRequisition, createVacancyFromRequisition
+  expectStatus, attachAcademicDocument, uploadRequisition, createVacancyFromRequisition, recordInterviewResults
 };

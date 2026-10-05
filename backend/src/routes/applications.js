@@ -43,7 +43,7 @@ router.delete('/:id/documents/:documentId', authenticate, requireCandidate, draf
 // review/shortlist.
 router.patch('/:id/shortlist', authenticate, requireStaffRole('Senior_HR_Officer'), guardVacancy(vacancyFrom.application('id')), controller.shortlist);
 // Formal rejection - the only staff-driven way to reach ApplicationStatus
-// Rejected (the other is interviewController.finalizeRecommendation, when
+// Rejected (the other is interviewController.recordResults, when
 // the panel's own recommendation is "Reject"). Same tier as shortlist.
 router.patch('/:id/reject', authenticate, requireStaffRole('Senior_HR_Officer'), guardVacancy(vacancyFrom.application('id')), controller.reject);
 router.post('/vacancies/:vacancyId/approve-shortlist', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.param('vacancyId')), controller.approveShortlist);

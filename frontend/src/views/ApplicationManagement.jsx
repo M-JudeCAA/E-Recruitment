@@ -32,7 +32,7 @@ import { debounce } from '../utils/debounce';
 // interview, what the panel concluded, and who is offered the job.
 const STAGES = [
   { key: 'shortlist', label: 'Shortlist for interview', hint: 'Screen and choose who to interview' },
-  { key: 'interviews', label: 'Interviews', hint: 'Schedule, score and decide' },
+  { key: 'interviews', label: 'Interviews', hint: 'Schedule and record results' },
   { key: 'merit', label: 'Merit list & offers', hint: 'Rank results, approve, offer' }
 ];
 

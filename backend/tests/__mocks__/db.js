@@ -1,8 +1,6 @@
 const mockDb = {
   application: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), count: jest.fn() },
   applicationDocument: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn(), delete: jest.fn() },
-  panelDayLink: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
-  interviewDay: { findUnique: jest.fn(), upsert: jest.fn(), updateMany: jest.fn() },
   shortlistExercise: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   shortlistMember: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },
   shortlistAssignment: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), createMany: jest.fn(), update: jest.fn() },
@@ -21,7 +19,6 @@ const mockDb = {
   internalProfile: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
   panelMember: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },
   interviewRound: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
-  panelAccessToken: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), deleteMany: jest.fn() },
   position: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
   department: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
   orgImport: { create: jest.fn() },

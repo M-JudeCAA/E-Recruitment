@@ -53,9 +53,11 @@ async function recordOutcome(ok, error) {
 
 // Still returns null instead of throwing on failure - callers rely on an
 // email problem never rolling back the action that triggered it.
-// attachments is optional (nodemailer's own shape) - used for the .ics
-// calendar invites sent to interview panelists.
-async function sendMail({ to, subject, html, attachments }) {
+// attachments is optional (nodemailer's own shape). icalEvent ({ method,
+// content, filename }) sends a calendar invitation the way mail clients
+// expect one - as a text/calendar part of the message, which Outlook and
+// Google show with Accept/Decline - used for interview invitations.
+async function sendMail({ to, subject, html, attachments, icalEvent }) {
   if (!process.env.SMTP_HOST) {
     console.error(`Failed to send email to ${to}: SMTP_HOST is not set`);
     await recordOutcome(false, 'SMTP_HOST is not set');
@@ -63,7 +65,9 @@ async function sendMail({ to, subject, html, attachments }) {
   }
   try {
     const info = await transporter.sendMail({
-      from: process.env.SMTP_FROM, to, subject, html, ...(attachments ? { attachments } : {})
+      from: process.env.SMTP_FROM, to, subject, html,
+      ...(attachments ? { attachments } : {}),
+      ...(icalEvent ? { icalEvent } : {})
     });
     await recordOutcome(true);
     return info;

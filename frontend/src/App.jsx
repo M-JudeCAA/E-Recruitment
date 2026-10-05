@@ -32,8 +32,6 @@ import StaffManagement from "./views/StaffManagement";
 import StaffAccounts from "./views/StaffAccounts";
 import VacancyDetail from "./views/VacancyDetail";
 import CreateVacancyListing from "./views/CreateVacancyListing";
-import PanelScoreAccess from "./views/PanelScoreAccess";
-import PanelDayAccess from "./views/PanelDayAccess";
 import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
 import InterviewHub from "./views/InterviewHub";
 import PrivacyNotice from "./views/PrivacyNotice";
@@ -61,8 +59,8 @@ function PaddedLayout() {
 
 // Focused flows where a phone shows no tab bar, the way an app hides its
 // tabs inside a multi-step task: the apply wizard, first-time profile
-// completion, and a panelist's one-off scoring link.
-const NO_TABBAR_PATHS = [/^\/apply\//, /^\/profile\/complete/, /^\/panel-score\//, /^\/panel-day\//, /^\/shortlist-panel\//];
+// completion, and a shortlisting committee member's private link.
+const NO_TABBAR_PATHS = [/^\/apply\//, /^\/profile\/complete/, /^\/shortlist-panel\//];
 
 export default function App() {
   const { candidate, staff } = useAuth();
@@ -198,13 +196,9 @@ export default function App() {
               </RequireStaff>
             }
           />
-          {/* Public - reached via a panelist's emailed/shared link, no login,
-              and not gated by port since that link always points at the
-              guest origin (see backend/src/config/frontendUrl.js) anyway. */}
-          <Route path="/panel-score/:token" element={<PanelScoreAccess />} />
-          {/* A panelist's day link - every candidate they interview that day. */}
-          <Route path="/panel-day/:token" element={<PanelDayAccess />} />
-          {/* A shortlisting committee member's private link. */}
+          {/* Public - a shortlisting committee member's private link, no
+              login, and not gated by port since that link always points at
+              the guest origin (see backend/src/config/frontendUrl.js) anyway. */}
           <Route path="/shortlist-panel/:token" element={<ShortlistPanelAccess />} />
         </Route>
         <Route

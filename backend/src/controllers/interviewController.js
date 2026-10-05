@@ -1,25 +1,28 @@
 const conflictOfInterest = require('../services/conflictOfInterestService');
 const crypto = require('crypto');
+const fs = require('fs');
 const prisma = require('../config/db');
 const auditService = require('../services/auditService');
 const interviewModel = require('../models/interviewModel');
 const applicationModel = require('../models/applicationModel');
 const panelMemberModel = require('../models/panelMemberModel');
-const panelAccessTokenModel = require('../models/panelAccessTokenModel');
 const vacancyModel = require('../models/vacancyModel');
-const interviewService = require('../services/interviewService');
 const scheduling = require('../services/interviewSchedulingService');
 const invitations = require('../services/interviewInvitationService');
-const panelAccessService = require('../services/panelAccessService');
-const panelDayLinkService = require('../services/panelDayLinkService');
-const interviewDayModel = require('../models/interviewDayModel');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { AppError, sendError } = require('../utils/errorResponse');
 const { validateEmail } = require('../utils/validators');
 const { buildCalendar } = require('../utils/icsCalendar');
-const { endOf, localDay, dayBounds, formatDay } = require('../utils/interviewFormat');
+const { endOf } = require('../utils/interviewFormat');
+const { fileUrl } = require('../middleware/upload');
 const { CLEARED_MERIT } = require('../services/meritListService');
+
+// Interviews are scheduled here and held outside the system: the panel
+// scores each candidate on a paper score sheet, and HR records what it
+// decided afterwards (recordResults) - the overall score, the verdict and
+// the signed sheet. Calendar invitations (interviewInvitationService) put
+// the interviews in the panelists' and the candidate's calendars.
 
 // Applications an interview can legitimately be scheduled against - mirrors
 // the frontend's own gate (status in this list AND no offer yet) so a stale
@@ -27,11 +30,11 @@ const { CLEARED_MERIT } = require('../services/meritListService');
 // Withdrawn application.
 const SCHEDULABLE_STATUSES = ['Shortlisted', 'InterviewScheduled', 'Interviewed'];
 
-// Statuses an application may still validly be in when a round against it
-// is finalized. Guards finalizeRecommendation below against a stale round
-// (scheduled a while ago, never finalized) being resolved after the
-// application already moved on elsewhere - an explicit HR reject, or an
-// offer recommended off a different, later round.
+// Statuses an application may still validly be in when a round's results
+// are recorded. Guards recordResults against a stale round (scheduled a
+// while ago, never recorded) being resolved after the application already
+// moved on elsewhere - an explicit HR reject, or an offer recommended off a
+// different, later round.
 const FINALIZABLE_STATUSES = ['InterviewScheduled', 'Interviewed'];
 
 const MODES = ['In-person', 'Virtual', 'Phone'];
@@ -123,20 +126,12 @@ function parsePanel(list) {
   return panel;
 }
 
-// The shape every Hub endpoint returns for a round: the parsed rubric, where
-// the panel stands, and (when known) which panelists hold a working link.
-function decorate(round, activeLinks) {
-  const progress = interviewService.panelProgress(round.panelMembers || []);
+// The shape every Hub endpoint returns for a round: resultsDue marks an
+// interview whose time has come with no results recorded yet.
+function decorate(round) {
   return {
     ...round,
-    criteria: interviewService.criteriaOf(round),
-    progress,
-    highSpread: progress.spread != null && progress.spread >= interviewService.HIGH_SPREAD,
-    criterionAverages: interviewService.criterionAverages(round, round.panelMembers || []),
-    panelMembers: (round.panelMembers || []).map((m) => ({
-      ...m,
-      ...(activeLinks ? { activeLinkExpiresAt: activeLinks.get(m.id) || null } : {})
-    }))
+    resultsDue: round.status === 'Scheduled' && !!round.scheduledDate && new Date(round.scheduledDate) <= new Date()
   };
 }
 
@@ -145,40 +140,26 @@ async function audit(entityId, action, performedById, payload) {
 }
 
 // Notifications are a side effect of an action that already committed - a
-// failure here must never turn the response into a 500.
-async function notifyCandidateSafely(candidateId, type, message) {
+// failure here must never turn the response into a 500. options.calendar
+// attaches the candidate's calendar invitation to the email.
+async function notifyCandidateSafely(candidateId, type, message, options) {
   try {
-    await notifyCandidate(candidateId, type, message);
+    await notifyCandidate(candidateId, type, message, options);
   } catch (err) {
     console.error(`Failed to send ${type} candidate notification:`, err);
   }
 }
 
-async function emailPanelSafely(rounds, kind, options) {
+// Brings the panelists' calendar invitations up to date (see
+// interviewInvitationService.syncPanelInvitations). Returns how many were
+// sent; never throws.
+async function syncPanelSafely(affected, kind, options) {
   try {
-    return await invitations.emailPanel(rounds, kind, options);
+    return await invitations.syncPanelInvitations(affected, kind, options);
   } catch (err) {
-    console.error(`Failed to email interview panel (${kind}):`, err);
+    console.error(`Failed to update interview panel invitations (${kind}):`, err);
     return 0;
   }
-}
-
-// Each panelist's scoring link for every interview day these rounds fall
-// on (panelDayLinkService) - issued when the interviews are booked so the
-// invitation email carries it. A failure here must not undo the booking;
-// HR can send the links again from the Hub.
-async function dayLinksSafely(rounds, createdById) {
-  try {
-    return await panelDayLinkService.linksForRounds(rounds, { createdById });
-  } catch (err) {
-    console.error('Could not issue panel day links:', err);
-    return [];
-  }
-}
-
-// Links HR has to pass on by hand - panelists with no email on file.
-function unsentLinks(links) {
-  return links.filter((l) => !l.email).map(({ name, day, dayLabel, url }) => ({ name, day, dayLabel, url }));
 }
 
 function broadcast(action, round) {
@@ -238,7 +219,6 @@ async function schedule(req, res) {
 
   const logistics = parseLogistics(req.body);
   const panel = parsePanel(req.body.panelMembers);
-  const criteria = interviewService.normalizeCriteria(req.body.criteria);
 
   if (logistics.scheduledDate && !req.body.allowConflicts) {
     const conflicts = await scheduling.findConflicts({
@@ -251,7 +231,7 @@ async function schedule(req, res) {
   let created;
   try {
     [created] = await interviewModel.createSession([{
-      round: { applicationId, ...logistics, criteria, scheduledById: req.user.id },
+      round: { applicationId, ...logistics, scheduledById: req.user.id },
       panel
     }], SCHEDULABLE_STATUSES);
   } catch (err) {
@@ -261,14 +241,15 @@ async function schedule(req, res) {
 
   const [round] = await interviewModel.findManyDetailed([created.id]);
   // The candidate's only channel for learning an interview exists (and
-  // where/when it is) - scheduledDate can still be null ("to be confirmed").
+  // where/when it is) - scheduledDate can still be null ("to be confirmed"),
+  // in which case there is no calendar invitation yet.
   await notifyCandidateSafely(application.candidateId, 'InterviewScheduled',
-    invitations.candidateMessage('scheduled', round, application.vacancy.title));
-  const links = await dayLinksSafely([round], req.user.id);
-  const panelEmailed = req.body.notifyPanel === false ? 0 : await emailPanelSafely([round], 'scheduled', { links });
+    invitations.candidateMessage('scheduled', round, application.vacancy.title),
+    { calendar: invitations.candidateInvitation(round, application.vacancy.title) });
+  const panelEmailed = req.body.notifyPanel === false ? 0 : await syncPanelSafely([round], 'scheduled');
 
   broadcast('scheduled', round);
-  res.status(201).json({ ...decorate(round), panelEmailed, panelLinks: unsentLinks(links) });
+  res.status(201).json({ ...decorate(round), panelEmailed });
 }
 
 // Shared by the session preview and the session create: validates the
@@ -298,7 +279,6 @@ async function buildSession(req) {
   const logistics = parseLogistics({ ...req.body, scheduledDate: undefined });
   delete logistics.scheduledDate;
   const panel = parsePanel(req.body.panelMembers);
-  const criteria = interviewService.normalizeCriteria(req.body.criteria);
   const slots = scheduling.planSlots({
     startsAt: req.body.startsAt,
     durationMinutes: logistics.durationMinutes,
@@ -315,7 +295,7 @@ async function buildSession(req) {
     slots: ordered.map((o) => ({ key: o.application.id, candidateId: o.application.candidateId, start: o.start, end: o.end })),
     panel, location: logistics.location, mode: logistics.mode
   });
-  return { vacancyId, ordered, conflicts, logistics, panel, criteria };
+  return { vacancyId, ordered, conflicts, logistics, panel };
 }
 
 function describeSession({ ordered, conflicts }) {
@@ -341,9 +321,9 @@ async function planSession(req, res) {
 }
 
 // Books a whole interview session for one vacancy in one go: back-to-back
-// slots for every chosen candidate, one shared panel and rubric, one
-// transaction. Candidates are each notified of their own slot; each
-// panelist gets ONE email with a calendar invite covering all their slots.
+// slots for every chosen candidate, one shared panel, one transaction.
+// Candidates each get an invitation for their own slot; each panelist gets
+// one calendar meeting per day covering all their slots.
 async function scheduleSession(req, res) {
   const session = await buildSession(req);
   if (session.conflicts.length && !req.body.allowConflicts) {
@@ -362,7 +342,6 @@ async function scheduleSession(req, res) {
         applicationId: o.application.id,
         ...session.logistics,
         scheduledDate: o.start,
-        criteria: session.criteria,
         sessionKey,
         scheduledById: req.user.id
       },
@@ -376,10 +355,10 @@ async function scheduleSession(req, res) {
   const rounds = await interviewModel.findManyDetailed(created.map((r) => r.id));
   for (const round of rounds) {
     await notifyCandidateSafely(round.application.candidateId, 'InterviewScheduled',
-      invitations.candidateMessage('scheduled', round, round.application.vacancy.title));
+      invitations.candidateMessage('scheduled', round, round.application.vacancy.title),
+      { calendar: invitations.candidateInvitation(round, round.application.vacancy.title) });
   }
-  const links = await dayLinksSafely(rounds, req.user.id);
-  const panelEmailed = req.body.notifyPanel === false ? 0 : await emailPanelSafely(rounds, 'scheduled', { links });
+  const panelEmailed = req.body.notifyPanel === false ? 0 : await syncPanelSafely(rounds, 'scheduled');
 
   await prisma.auditLog.create({
     data: {
@@ -388,12 +367,12 @@ async function scheduleSession(req, res) {
     }
   });
   broadcastDashboardEvent('InterviewUpdated', { action: 'session', sessionKey, vacancyId: session.vacancyId });
-  res.status(201).json({ sessionKey, rounds: rounds.map((r) => decorate(r)), panelEmailed, panelLinks: unsentLinks(links) });
+  res.status(201).json({ sessionKey, rounds: rounds.map((r) => decorate(r)), panelEmailed });
 }
 
 // What the scheduler needs to open on a vacancy: who can be scheduled, the
-// panelists and rubric used on it before (one click to reuse), and the
-// logistics of the last round as sensible defaults.
+// panelists used on it before (one click to reuse), and the logistics of
+// the last round as sensible defaults.
 async function schedulingContext(req, res) {
   const vacancyId = parseId(req.params.vacancyId);
   if (!vacancyId) return res.status(400).json({ error: 'Invalid vacancy id' });
@@ -411,13 +390,11 @@ async function schedulingContext(req, res) {
     if (!previousPanelists.some((q) => scheduling.samePerson(p, q))) previousPanelists.push({ ...p, isChair: false });
   }
   const latest = rounds.find((r) => r.status !== 'Cancelled') || null;
-  const withRubric = rounds.find((r) => interviewService.criteriaOf(r));
 
   res.json({
     vacancy: { id: vacancy.id, jobRef: vacancy.jobRef, title: vacancy.title, positionsRequired: vacancy.positionsRequired },
     applications,
     previousPanelists,
-    lastCriteria: withRubric ? interviewService.criteriaOf(withRubric).map(({ name, weight, description }) => ({ name, weight, description })) : null,
     lastLogistics: latest
       ? { durationMinutes: latest.durationMinutes, mode: latest.mode, location: latest.location, meetingLink: latest.meetingLink, instructions: latest.instructions }
       : null
@@ -483,12 +460,12 @@ async function attention(req, res) {
 
   res.json({
     rescheduleRequests: rounds.filter((r) => r.candidateResponse === 'RescheduleRequested'),
-    readyToFinalize: rounds.filter((r) => r.progress.complete && !r.recommendation),
-    awaitingScores: rounds.filter((r) => past(r) && !r.progress.complete),
+    // Held, but the panel's results aren't recorded yet.
+    awaitingResults: rounds.filter((r) => past(r)),
     unconfirmed: rounds.filter((r) => r.scheduledDate && !past(r) && r.candidateResponse === 'Pending'
       && new Date(r.scheduledDate) - now <= UNCONFIRMED_WINDOW_MS),
     noDate: rounds.filter((r) => !r.scheduledDate),
-    noPanel: rounds.filter((r) => r.progress.total === 0),
+    noPanel: rounds.filter((r) => (r.panelMembers || []).length === 0),
     awaitingScheduling: [...waiting.values()].sort((a, b) => b.count - a.count),
     counts: {
       today: rounds.filter((r) => r.scheduledDate && new Date(r.scheduledDate) >= startOfDay && new Date(r.scheduledDate) < endOfDay).length,
@@ -502,14 +479,9 @@ async function attention(req, res) {
 async function getById(req, res) {
   const round = await loadRoundOr404(req, res);
   if (!round) return;
-  const [links, dayLinks, siblings] = await Promise.all([
-    panelAccessTokenModel.findActiveForRound(round.id),
-    panelDayLinkService.activeLinksForRound(round),
-    interviewModel.findByApplication(round.applicationId)
-  ]);
-  const activeLinks = new Map([...links.map((l) => [l.panelMemberId, l.expiresAt]), ...dayLinks]);
+  const siblings = await interviewModel.findByApplication(round.applicationId);
   res.json({
-    ...decorate(round, activeLinks),
+    ...decorate(round),
     otherRounds: siblings
       .filter((r) => r.id !== round.id)
       .sort((a, b) => a.roundNumber - b.roundNumber)
@@ -518,8 +490,8 @@ async function getById(req, res) {
 }
 
 // Side-by-side comparison of every candidate interviewed for a vacancy -
-// latest held round per candidate, with the per-criterion breakdown and a
-// flag where the panel disagreed. Sorted best score first.
+// latest held round per candidate, with the panel's score and verdict and
+// whether the signed score sheet is attached. Sorted best score first.
 async function scorecard(req, res) {
   const vacancyId = parseId(req.params.vacancyId);
   if (!vacancyId) return res.status(400).json({ error: 'Invalid vacancy id' });
@@ -550,8 +522,8 @@ async function scorecard(req, res) {
       noShows: appRounds.filter((r) => r.status === 'NoShow').length,
       latestRound: {
         id: d.id, roundNumber: d.roundNumber, status: d.status, scheduledDate: d.scheduledDate,
-        score: d.score, recommendation: d.recommendation, progress: d.progress, highSpread: d.highSpread,
-        criterionAverages: d.criterionAverages
+        score: d.score, recommendation: d.recommendation, resultsDue: d.resultsDue,
+        scoreSheetUrl: d.scoreSheetUrl, scoreSheetName: d.scoreSheetName
       }
     };
   });
@@ -577,10 +549,10 @@ async function calendarFile(req, res) {
 // Changing a round
 // ---------------------------------------------------------------------------
 
-// Edits details other than the time (use reschedule for that). The rubric
-// can only change until the first panelist scores against it. A change the
-// candidate/panel would care about (venue, link, length, mode) tells them,
-// unless notifyParticipants is false.
+// Edits details other than the time (use reschedule for that). A change
+// the candidate/panel would care about (venue, link, length, mode) tells
+// them and updates their calendar invitations, unless notifyParticipants is
+// false.
 async function update(req, res) {
   const round = await loadRoundOr404(req, res);
   if (!round) return;
@@ -588,12 +560,6 @@ async function update(req, res) {
 
   const changes = parseLogistics(req.body, { partial: true });
   delete changes.scheduledDate;
-  if (Object.prototype.hasOwnProperty.call(req.body, 'criteria')) {
-    if (round.panelMembers.some((m) => m.score != null)) {
-      return res.status(409).json({ error: 'The rubric is locked - a panelist has already scored against it' });
-    }
-    changes.criteria = interviewService.normalizeCriteria(req.body.criteria);
-  }
   if (Object.keys(changes).length === 0) return res.status(400).json({ error: 'Nothing to update' });
 
   const visible = ['durationMinutes', 'mode', 'location', 'meetingLink', 'instructions']
@@ -612,9 +578,10 @@ async function update(req, res) {
 
   if (tellParticipants) {
     await notifyCandidateSafely(updated.application.candidateId, 'InterviewRescheduled',
-      invitations.candidateMessage('updated', updated, updated.application.vacancy.title));
+      invitations.candidateMessage('updated', updated, updated.application.vacancy.title),
+      { calendar: invitations.candidateInvitation(updated, updated.application.vacancy.title) });
     if (['durationMinutes', 'mode', 'location', 'meetingLink'].some((k) => visible.includes(k))) {
-      await emailPanelSafely([updated], 'rescheduled');
+      await syncPanelSafely([updated], 'updated');
     }
   }
   await audit(round.id, 'Interview details updated', req.user.id, { fields: Object.keys(changes).filter((k) => k !== 'rescheduleCount'), notified: !!tellParticipants });
@@ -633,10 +600,9 @@ async function reschedule(req, res) {
   const merged = { ...round, ...changes };
 
   if (!req.body.allowConflicts) {
-    const panel = round.panelMembers.filter((m) => !m.recusedAt);
     const conflicts = await scheduling.findConflicts({
       slots: [{ key: round.applicationId, candidateId: round.application.candidateId, start: merged.scheduledDate, end: endOf(merged) }],
-      panel, location: merged.location, mode: merged.mode, excludeRoundIds: [round.id]
+      panel: round.panelMembers, location: merged.location, mode: merged.mode, excludeRoundIds: [round.id]
     });
     if (conflicts.length) return conflictResponse(res, conflicts);
   }
@@ -645,11 +611,9 @@ async function reschedule(req, res) {
     ...changes,
     rescheduleCount: { increment: 1 },
     // A confirmation of the old time says nothing about the new one, and
-    // the reminder/score-nudge clocks restart from the new time.
+    // the reminder clocks restart from the new time.
     candidateResponse: 'Pending', candidateResponseNote: null, candidateRespondedAt: null,
-    // Called in for the old time says nothing about the new one.
-    calledInAt: null, calledInById: null,
-    reminderSentAt: null, scoreNudgeSentAt: null
+    reminderSentAt: null, resultsReminderSentAt: null
   });
   if (result.count === 0) return res.status(409).json({ error: 'This interview was changed by someone else - refresh and try again' });
   const updated = await interviewModel.findDetailed(round.id);
@@ -659,143 +623,21 @@ async function reschedule(req, res) {
     candidateHadAsked: round.candidateResponse === 'RescheduleRequested'
   });
   await notifyCandidateSafely(updated.application.candidateId, 'InterviewRescheduled',
-    invitations.candidateMessage('rescheduled', updated, updated.application.vacancy.title, { reason }));
-  // Moved to another day, the round now sits on that day's link.
-  const links = await dayLinksSafely([updated], req.user.id);
-  const panelEmailed = req.body.notifyPanel === false ? 0 : await emailPanelSafely([updated], 'rescheduled', { reason, links });
+    invitations.candidateMessage('rescheduled', updated, updated.application.vacancy.title, { reason }),
+    { calendar: invitations.candidateInvitation(updated, updated.application.vacancy.title) });
+  // Both days' meetings - the one it left and the one it moved to.
+  const panelEmailed = req.body.notifyPanel === false ? 0 : await syncPanelSafely([round, updated], 'rescheduled', { reason });
   broadcast('rescheduled', updated);
-  res.json({ ...decorate(updated), panelEmailed, panelLinks: unsentLinks(links) });
+  res.json({ ...decorate(updated), panelEmailed });
 }
 
 // ---------------------------------------------------------------------------
-// Interview sessions - HR runs each vacancy's interview day by hand
+// Closing a round that didn't go ahead
 // ---------------------------------------------------------------------------
 
-const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-// Validates the vacancy/day in the URL and loads the day's rounds and its
-// session row (null until started or alerted). Answers the error itself.
-async function loadDayOr404(req, res) {
-  const vacancyId = parseId(req.params.vacancyId);
-  const { day } = req.params;
-  if (!vacancyId || !DAY_RE.test(day || '')) { res.status(400).json({ error: 'Invalid vacancy or day' }); return null; }
-  const vacancy = await vacancyModel.findById(vacancyId);
-  if (!vacancy) { res.status(404).json({ error: 'Vacancy not found' }); return null; }
-  const { start, end } = dayBounds(day);
-  const [rounds, session] = await Promise.all([
-    interviewModel.findForVacancyDay(vacancyId, start, end),
-    interviewDayModel.find(vacancyId, day)
-  ]);
-  return { vacancy, day, rounds, session };
-}
-
-async function describeDay({ vacancy, day, rounds, session }) {
-  const staffIds = [session?.startedById, session?.endedById].filter(Boolean);
-  const staffRows = staffIds.length
-    ? await prisma.staffUser.findMany({ where: { id: { in: staffIds } }, select: { id: true, name: true } })
-    : [];
-  const nameOf = (id) => staffRows.find((s) => s.id === id)?.name || null;
-  const held = rounds.filter((r) => r.status !== 'Cancelled');
-  return {
-    vacancy: { id: vacancy.id, jobRef: vacancy.jobRef, title: vacancy.title },
-    day,
-    dayLabel: formatDay(day),
-    isToday: day === localDay(new Date()),
-    firstStart: held[0]?.scheduledDate || null,
-    session: {
-      state: panelDayLinkService.sessionState(session, day),
-      startedAt: session?.startedAt || null,
-      startedBy: nameOf(session?.startedById),
-      endedAt: session?.endedAt || null,
-      endedBy: nameOf(session?.endedById),
-      closesAt: panelDayLinkService.closesAtOf(session, day),
-      notStartedAlertAt: session?.notStartedAlertAt || null
-    },
-    rounds: rounds.map((r) => decorate(r))
-  };
-}
-
-// The session view for one vacancy's interview day.
-async function getDay(req, res) {
-  const loaded = await loadDayOr404(req, res);
-  if (!loaded) return;
-  res.json(await describeDay(loaded));
-}
-
-// Starting the session is what opens the panelists' day links for scoring
-// (each candidate still has to be called in). Only on the day itself.
-async function startDay(req, res) {
-  const loaded = await loadDayOr404(req, res);
-  if (!loaded) return;
-  const { vacancy, day, rounds } = loaded;
-  if (day !== localDay(new Date())) return res.status(422).json({ error: 'A session can only be started on the day of the interviews' });
-  if (!rounds.some((r) => r.status === 'Scheduled')) {
-    return res.status(422).json({ error: 'There are no interviews still to hold for this vacancy today' });
-  }
-  const row = await interviewDayModel.ensure(vacancy.id, day);
-  const result = await interviewDayModel.start(row.id, req.user.id, new Date());
-  if (result.count === 0) return res.status(409).json({ error: 'This interview session has already been started' });
-
-  await prisma.auditLog.create({
-    data: { entityType: 'Vacancy', entityId: vacancy.id, action: 'Interview session started', performedById: req.user.id, payload: { day } }
-  });
-  broadcastDashboardEvent('InterviewUpdated', { action: 'sessionStarted', vacancyId: vacancy.id, day });
-  res.json(await describeDay({ ...loaded, session: await interviewDayModel.find(vacancy.id, day) }));
-}
-
-// Ending the session gives panelists a grace period to finish scoring, then
-// their day links close. Candidates never called in are listed back so HR
-// can reschedule them or mark them as no-shows.
-async function endDay(req, res) {
-  const loaded = await loadDayOr404(req, res);
-  if (!loaded) return;
-  const { vacancy, day, session, rounds } = loaded;
-  if (panelDayLinkService.sessionState(session, day) !== 'running') {
-    return res.status(422).json({ error: 'Only a running interview session can be ended' });
-  }
-  const now = new Date();
-  const closesAt = new Date(now.getTime() + panelDayLinkService.GRACE_MS);
-  const result = await interviewDayModel.end(session.id, req.user.id, now, closesAt);
-  if (result.count === 0) return res.status(409).json({ error: 'This interview session has already been ended' });
-
-  const notCalledIn = rounds.filter((r) => r.status === 'Scheduled' && !r.calledInAt);
-  await prisma.auditLog.create({
-    data: {
-      entityType: 'Vacancy', entityId: vacancy.id, action: 'Interview session ended', performedById: req.user.id,
-      payload: { day, notCalledInRoundIds: notCalledIn.map((r) => r.id) }
-    }
-  });
-  broadcastDashboardEvent('InterviewUpdated', { action: 'sessionEnded', vacancyId: vacancy.id, day });
-  res.json({
-    ...(await describeDay({ ...loaded, session: await interviewDayModel.find(vacancy.id, day) })),
-    notCalledIn: notCalledIn.map((r) => ({ id: r.id, candidateName: r.application.candidate.fullName }))
-  });
-}
-
-// HR calls the next candidate in: from now on the panel can score them on
-// their day links. Only while the session for that vacancy-day is running.
-async function callIn(req, res) {
-  const round = await loadRoundOr404(req, res);
-  if (!round) return;
-  if (!requireScheduled(round, res, 'called in')) return;
-  if (!round.scheduledDate) return res.status(422).json({ error: 'This interview has no date' });
-  const day = localDay(round.scheduledDate);
-  const session = await interviewDayModel.find(round.application.vacancy.id, day);
-  const state = panelDayLinkService.sessionState(session, day);
-  if (state === 'notStarted') return res.status(422).json({ error: 'Start the interview session before calling candidates in' });
-  if (state !== 'running') return res.status(422).json({ error: 'This interview session has ended' });
-
-  const result = await interviewModel.callIn(round.id, req.user.id, new Date());
-  if (result.count === 0) return res.status(409).json({ error: 'This candidate has already been called in' });
-  await audit(round.id, 'Candidate called in', req.user.id, { scheduledDate: round.scheduledDate });
-  const updated = await interviewModel.findDetailed(round.id);
-  broadcast('calledIn', updated);
-  res.json(decorate(updated));
-}
-
-// Called off before it happened. Every outstanding scoring link stops
-// working, and the application goes back to where it was before this round
-// (see interviewSchedulingService.statusAfterRoundClosed).
+// Called off before it happened. The candidate's and the panelists'
+// calendar entries are cancelled or updated, and the application goes back
+// to where it was before this round (interviewSchedulingService.statusAfterRoundClosed).
 async function cancel(req, res) {
   const round = await loadRoundOr404(req, res);
   if (!round) return;
@@ -808,16 +650,16 @@ async function cancel(req, res) {
   });
   if (result.count === 0) return res.status(409).json({ error: 'This interview was changed by someone else - refresh and try again' });
 
-  await panelAccessTokenModel.markAllUsedForRound(round.id);
   await restoreApplicationStatus(round);
   await audit(round.id, 'Interview cancelled', req.user.id, { reason, scheduledDate: round.scheduledDate });
 
   if (req.body.notifyCandidate !== false) {
     await notifyCandidateSafely(round.application.candidateId, 'InterviewCancelled',
-      invitations.candidateMessage('cancelled', round, round.application.vacancy.title, { reason }));
+      invitations.candidateMessage('cancelled', round, round.application.vacancy.title, { reason }),
+      { calendar: invitations.candidateInvitation(round, round.application.vacancy.title, { cancelled: true }) });
   }
-  const panelEmailed = req.body.notifyPanel === false ? 0 : await emailPanelSafely([round], 'cancelled', { reason });
   const updated = await interviewModel.findDetailed(round.id);
+  const panelEmailed = req.body.notifyPanel === false ? 0 : await syncPanelSafely([updated], 'cancelled', { reason });
   broadcast('cancelled', updated);
   res.json({ ...decorate(updated), panelEmailed });
 }
@@ -837,7 +679,6 @@ async function markNoShow(req, res) {
   const result = await interviewModel.updateIfScheduled(round.id, { status: 'NoShow' });
   if (result.count === 0) return res.status(409).json({ error: 'This interview was changed by someone else - refresh and try again' });
 
-  await panelAccessTokenModel.markAllUsedForRound(round.id);
   await restoreApplicationStatus(round);
   await audit(round.id, 'Candidate did not attend interview', req.user.id, { notes, scheduledDate: round.scheduledDate });
   const updated = await interviewModel.findDetailed(round.id);
@@ -857,17 +698,16 @@ async function restoreApplicationStatus(round) {
 // ---------------------------------------------------------------------------
 
 // Add a panelist to a round after the fact - panel composition sometimes
-// isn't finalized at scheduling time. They get the calendar invite straight
-// away when they have an email and the round has a time.
+// isn't finalized at scheduling time. They get the calendar invitation
+// straight away when they have an email and the round has a time.
 async function addPanelMember(req, res) {
   const round = await loadRoundOr404(req, res);
   if (!round) return;
   if (!requireScheduled(round, res, 'changed')) return;
 
   const panelist = parsePanelist(req.body);
-  const active = round.panelMembers.filter((m) => !m.recusedAt);
-  if (active.length >= MAX_PANEL_SIZE) return res.status(422).json({ error: `A panel can have at most ${MAX_PANEL_SIZE} members` });
-  if (active.some((m) => scheduling.samePerson(m, panelist))) {
+  if (round.panelMembers.length >= MAX_PANEL_SIZE) return res.status(422).json({ error: `A panel can have at most ${MAX_PANEL_SIZE} members` });
+  if (round.panelMembers.some((m) => scheduling.samePerson(m, panelist))) {
     return res.status(409).json({ error: `${panelist.name} is already on this panel` });
   }
 
@@ -881,7 +721,10 @@ async function addPanelMember(req, res) {
 
   if (panelist.isChair) await panelMemberModel.clearChair(round.id);
   const panelMember = await panelMemberModel.create({ interviewRoundId: round.id, ...panelist });
-  if (req.body.notify !== false) await emailPanelSafely([{ ...round, panelMembers: [panelMember] }], 'scheduled');
+  await audit(round.id, 'Panelist added', req.user.id, { name: panelMember.name, email: panelMember.email });
+  if (req.body.notify !== false && panelMember.email) {
+    await syncPanelSafely([await interviewModel.findDetailed(round.id)], 'scheduled', { only: [panelMember.email] });
+  }
   broadcast('panel', round);
   res.status(201).json(panelMember);
 }
@@ -894,6 +737,8 @@ async function loadPanelMemberOr404(req, res) {
   return panelMember;
 }
 
+// Name/role/email or chair. A changed email moves the calendar invitation:
+// the old address gets a cancellation, the new one the invitation.
 async function updatePanelMember(req, res) {
   const panelMember = await loadPanelMemberOr404(req, res);
   if (!panelMember) return;
@@ -903,195 +748,146 @@ async function updatePanelMember(req, res) {
   if ('isChair' in req.body) data.isChair = !!req.body.isChair;
   const identityFields = ['name', 'trade', 'email'].filter((k) => k in req.body);
   if (identityFields.length) {
-    if (panelMember.score != null) {
-      return res.status(409).json({ error: 'This panelist has already scored - their details can no longer change' });
-    }
     const cleaned = parsePanelist({ ...panelMember, ...req.body });
     for (const k of identityFields) data[k] = cleaned[k];
   }
   if (Object.keys(data).length === 0) return res.status(400).json({ error: 'Nothing to update' });
 
+  const before = await interviewModel.findDetailed(panelMember.interviewRoundId);
   if (data.isChair) await panelMemberModel.clearChair(panelMember.interviewRoundId);
-  // A changed email means any link already sent went to the wrong place.
-  if ('email' in data && data.email !== panelMember.email) await panelAccessService.revokeOutstandingTokens(panelMember.id);
   const updated = await panelMemberModel.update(panelMember.id, data);
+  if ('email' in data && (data.email || '') !== (panelMember.email || '')) {
+    const after = await interviewModel.findDetailed(panelMember.interviewRoundId);
+    await syncPanelSafely([before, after], 'scheduled', { only: [panelMember.email, data.email] });
+  }
   broadcast('panel', panelMember.interviewRound);
   res.json(updated);
 }
 
-// Removing is for a panelist added by mistake - only before they've scored.
-// Someone who was genuinely on the panel but stands down is recused instead,
-// so the record of who was on the panel stays intact.
+// Take a panelist off the panel. Their calendar meeting for the day is
+// updated, or cancelled if this was their only interview that day.
 async function removePanelMember(req, res) {
   const panelMember = await loadPanelMemberOr404(req, res);
   if (!panelMember) return;
   if (!requireScheduled(panelMember.interviewRound, res, 'changed')) return;
-  if (panelMember.score != null) {
-    return res.status(409).json({ error: 'This panelist has already scored - recuse them instead of removing them' });
-  }
+  const before = await interviewModel.findDetailed(panelMember.interviewRoundId);
   await panelMemberModel.remove(panelMember.id);
   await audit(panelMember.interviewRoundId, 'Panelist removed', req.user.id, { name: panelMember.name, email: panelMember.email });
+  if (panelMember.email && req.query.notify !== 'false') {
+    await syncPanelSafely([before], 'removed', { only: [panelMember.email] });
+  }
   broadcast('panel', panelMember.interviewRound);
   res.json({ message: `${panelMember.name} was removed from the panel` });
 }
 
-// A panelist stands down for this candidate - typically a declared conflict
-// of interest. Their score (if any) stops counting and their link stops
-// working; the record of them having been on the panel stays.
-async function recusePanelMember(req, res) {
-  const panelMember = await loadPanelMemberOr404(req, res);
-  if (!panelMember) return;
-  if (!requireScheduled(panelMember.interviewRound, res, 'changed')) return;
-  if (panelMember.recusedAt) return res.status(409).json({ error: `${panelMember.name} has already stood down` });
-  const reason = cleanText(req.body.reason, 1000);
-  if (!reason) return res.status(400).json({ error: 'Give a reason for the recusal - it is kept in the audit trail' });
+// ---------------------------------------------------------------------------
+// Results - recorded from the panel's signed score sheet
+// ---------------------------------------------------------------------------
 
-  await panelMemberModel.update(panelMember.id, { recusedAt: new Date(), recusalReason: reason, isChair: false });
-  await panelAccessService.revokeOutstandingTokens(panelMember.id);
-  await interviewService.recomputeRoundScore(panelMember.interviewRoundId);
-  await audit(panelMember.interviewRoundId, 'Panelist recused', req.user.id, { name: panelMember.name, reason, hadScored: panelMember.score != null });
-  broadcast('panel', panelMember.interviewRound);
-  res.json({ message: `${panelMember.name} has stood down from this interview` });
+// A file uploaded with a request that was then refused is not kept.
+function discardUpload(file) {
+  if (file?.path) fs.promises.rm(file.path, { force: true }).catch(() => {});
 }
 
-// Proxy score entry: the coordinating HR Officer records a panelist's
-// score/comments on their behalf. The panelist never needs a system
-// account for this - recordedById captures who actually entered it.
-// Re-scoring an already-scored panelist is deliberately still allowed (a
-// legitimate correction path). With a rubric, the per-criterion ratings are
-// sent and the 0-100 score is computed from them.
-async function recordPanelScore(req, res) {
-  const panelMemberId = parseId(req.params.panelMemberId);
-  if (!panelMemberId) return res.status(400).json({ error: 'Invalid panel member id' });
-
-  const existing = await panelMemberModel.findWithRound(panelMemberId);
-  if (!existing) return res.status(404).json({ error: 'Panel member not found' });
-  const round = existing.interviewRound;
-  if (['Cancelled', 'NoShow'].includes(round.status)) {
-    return res.status(409).json({ error: 'This interview did not go ahead, so it cannot be scored' });
+function parseScore(value) {
+  if (value === undefined || value === null || String(value).trim() === '') {
+    throw new AppError("Enter the panel's overall score out of 100", 400);
   }
-  if (existing.recusedAt) return res.status(409).json({ error: `${existing.name} has stood down from this interview` });
-
-  const { score, criterionScores } = interviewService.resolveSubmittedScore(round, req.body);
-  const panelMember = await interviewService.recordPanelScore(
-    panelMemberId, { score, criterionScores, comments: cleanText(req.body.comments, 4000) }, req.user.id
-  );
-  // HR entered it, so any link the panelist still holds is now pointless.
-  await panelAccessService.revokeOutstandingTokens(panelMemberId);
-  broadcast('score', round);
-  res.json(panelMember);
+  const n = Number(String(value).trim());
+  if (!Number.isFinite(n) || n < 0 || n > 100) throw new AppError('The score must be a number from 0 to 100', 400);
+  return Math.round(n * 10) / 10;
 }
 
-// Sends (or re-sends) a scoring link to every panelist on the round who
-// hasn't scored yet - one click after the interview instead of one per
-// panelist. Links for panelists without an email come back to HR to share.
-async function sendAllLinks(req, res) {
+/**
+ * PATCH /api/interviews/:id/results (multipart): the panel's overall score
+ * (0-100), its verdict (Shortlist / Hold / Reject), optional notes and the
+ * signed score sheet (scoreSheet - required the first time).
+ *
+ * First entry: only once the interview's time has passed. The round becomes
+ * Completed; "Reject" rejects the application and tells the candidate, the
+ * other verdicts move it to Interviewed, ready for the merit list.
+ *
+ * Correction (the round already has results): the score, notes and sheet,
+ * and the verdict between Shortlist and Hold, until the candidate is placed
+ * on the merit list. A rejection is final and can't be corrected here, nor
+ * can a result be changed into one. Every entry and correction is audited
+ * with the values before and after.
+ */
+async function recordResults(req, res) {
   const round = await loadRoundOr404(req, res);
-  if (!round) return;
-  if (!requireScheduled(round, res, 'scored')) return;
-
-  const pending = round.panelMembers.filter((m) => m.score == null && !m.recusedAt);
-  if (pending.length === 0) return res.status(422).json({ error: 'Every panelist has already scored' });
-
-  const results = [];
-  if (round.scheduledDate) {
-    // Each panelist's link for the day of this interview - it also covers
-    // every other candidate they interview for this vacancy that day. An
-    // existing link is re-sent rather than replaced.
-    const links = await panelDayLinkService.emailLinks(await panelDayLinkService.linksForRounds([round], {
-      createdById: req.user.id, onlyMemberIds: pending.map((m) => m.id)
-    }));
-    for (const m of pending) {
-      const link = links.find((l) => scheduling.samePerson({ name: l.name, email: l.email, staffUserId: l.staffUserId }, m));
-      if (link) results.push({ panelMemberId: m.id, name: m.name, emailed: link.emailed, url: link.emailed ? undefined : link.url });
+  if (!round) { discardUpload(req.file); return; }
+  try {
+    const correcting = round.status === 'Completed';
+    if (!correcting && round.status !== 'Scheduled') {
+      throw new AppError('This interview did not go ahead, so it has no results to record', 409);
     }
-  } else {
-    // No date yet, so no day to attach a link to - a single-interview link.
-    for (const m of pending) {
-      const { url, emailed } = await panelAccessService.issueLink(m, round);
-      results.push({ panelMemberId: m.id, name: m.name, emailed, url: emailed ? undefined : url });
+    if (!correcting && (!round.scheduledDate || new Date(round.scheduledDate) > new Date())) {
+      throw new AppError('Results can be recorded once the interview has taken place', 422);
     }
-  }
-  broadcast('links', round);
-  res.status(201).json({ results });
-}
+    const score = parseScore(req.body.score);
+    const { recommendation } = req.body;
+    if (!RECOMMENDATIONS.includes(recommendation)) {
+      throw new AppError(`Choose the panel's verdict: ${RECOMMENDATIONS.join(', ')}`, 400);
+    }
+    const notes = cleanText(req.body.notes, 2000);
+    if (!correcting && !req.file) throw new AppError('Attach the signed score sheet', 400);
 
-// A deliberate HR judgment call, not an average - requires at least one
-// panel score already on record so the recommendation is actually informed
-// by panel input rather than being a bare guess.
-async function finalizeRecommendation(req, res) {
-  const interviewId = parseId(req.params.interviewId);
-  if (!interviewId) return res.status(400).json({ error: 'Invalid interview round id' });
-  const { recommendation } = req.body;
-  if (!RECOMMENDATIONS.includes(recommendation)) {
-    return res.status(400).json({ error: `recommendation must be one of ${RECOMMENDATIONS.join(', ')}` });
-  }
-  const notes = cleanText(req.body.notes, 2000);
+    const application = await applicationModel.findById(round.applicationId, { offer: true });
+    if (correcting) {
+      if (round.recommendation === 'Reject' || recommendation === 'Reject') {
+        throw new AppError('A rejection is final and the candidate has been told - it can\'t be changed by correcting the results', 409);
+      }
+      if (application.meritStatus || application.offer) {
+        throw new AppError('This candidate is already on the merit list - take them off it (re-propose without them) before correcting their results', 409);
+      }
+    } else if (!FINALIZABLE_STATUSES.includes(application.status)) {
+      throw new AppError(`This application is at status "${application.status}" and can no longer have interview results recorded`, 409);
+    }
 
-  const panelMembers = await panelMemberModel.findByRound(interviewId);
-  const hasAnyScore = panelMembers.some((m) => m.score != null && !m.recusedAt);
-  if (!hasAnyScore) {
-    return res.status(422).json({ error: 'At least one panel member score is required before finalizing a recommendation' });
-  }
+    const now = new Date();
+    const data = { score, recommendation, resultNotes: notes, conductedById: req.user.id, resultsRecordedAt: now };
+    if (req.file) {
+      data.scoreSheetUrl = fileUrl(req.file);
+      data.scoreSheetName = String(req.file.originalname || 'score-sheet').slice(0, 190);
+    }
+    const result = correcting
+      ? await interviewModel.updateIfCompleted(round.id, data)
+      : await interviewModel.updateIfScheduled(round.id, { ...data, status: 'Completed', completedAt: now });
+    if (result.count === 0) throw new AppError('This interview was changed by someone else - refresh and try again', 409);
 
-  const existingRound = await interviewModel.findById(interviewId);
-  if (!existingRound) return res.status(404).json({ error: 'Interview round not found' });
-  if (existingRound.status && !['Scheduled', 'Completed'].includes(existingRound.status)) {
-    return res.status(409).json({ error: 'This interview did not go ahead, so it cannot be finalized' });
-  }
+    if (!correcting) {
+      if (recommendation === 'Reject') {
+        // Same path as applicationController's own reject() - rank/listStatus
+        // cleared and rankVersion bumped for the same reasons.
+        const updatedApplication = await applicationModel.update(round.applicationId, {
+          status: 'Rejected', rejectedAt: now, rejectedById: req.user.id,
+          rejectionReason: 'Not recommended following the interview panel\'s assessment.',
+          rank: null, listStatus: null, ...CLEARED_MERIT, rankVersion: { increment: 1 }
+        }, { vacancy: true });
+        await notifyCandidateSafely(updatedApplication.candidateId, 'ApplicationRejected',
+          `We're sorry to let you know your application for "${updatedApplication.vacancy.title}" was not successful this time.`);
+      } else {
+        await applicationModel.update(round.applicationId, { status: 'Interviewed' });
+      }
+    }
 
-  // Guards against finalizing a stale round after its application already
-  // moved on elsewhere since it was scheduled - an explicit HR reject, or
-  // an offer recommended off a different, later round. The writes below
-  // are otherwise unconditional and would silently regress a terminal/
-  // later status back to Interviewed or Rejected.
-  const application = await applicationModel.findById(existingRound.applicationId);
-  if (!FINALIZABLE_STATUSES.includes(application.status)) {
-    return res.status(409).json({
-      error: `This application is at status "${application.status}" and can no longer have an interview finalized against it`
+    const before = { score: round.score, recommendation: round.recommendation, resultNotes: round.resultNotes, scoreSheetName: round.scoreSheetName };
+    const after = { score, recommendation, resultNotes: notes, scoreSheetName: data.scoreSheetName ?? round.scoreSheetName };
+    await audit(round.id, correcting ? 'Interview results corrected' : 'Interview results recorded', req.user.id, { before, after });
+    await auditService.record({
+      entityType: 'Application', entityId: round.applicationId,
+      action: correcting ? `Interview results corrected (round ${round.roundNumber})`
+        : recommendation === 'Reject' ? 'Application rejected (interview panel)' : `Interview results recorded: ${recommendation}`,
+      actor: auditService.actorFrom(req),
+      before: correcting ? before : null, after, fields: ['score', 'recommendation', 'resultNotes', 'scoreSheetName'],
+      details: { interviewRoundId: round.id }, comment: notes || null
     });
+    broadcastDashboardEvent('InterviewRecommendation', { interviewId: round.id, applicationId: round.applicationId, recommendation });
+    res.json(decorate(await interviewModel.findDetailed(round.id)));
+  } catch (err) {
+    discardUpload(req.file);
+    throw err;
   }
-
-  // Atomic guard - scoped to recommendation: null, so a second finalize call
-  // on the same round (double-click, or two HR officers racing) can't
-  // silently overwrite an already-finalized recommendation.
-  const guardResult = await interviewModel.updateIfNoRecommendation(interviewId, {
-    recommendation, conductedById: req.user.id, status: 'Completed', completedAt: new Date()
-  });
-  if (guardResult.count === 0) {
-    return res.status(409).json({ error: 'This interview round already has a finalized recommendation' });
-  }
-  const round = await interviewModel.findById(interviewId);
-  // Nobody should be scoring a round whose verdict is in.
-  await panelAccessTokenModel.markAllUsedForRound(interviewId);
-  if (notes) await audit(interviewId, 'Interview recommendation finalized', req.user.id, { recommendation, notes });
-
-  // "Reject" routes through the same status/notification path as
-  // applicationController's own reject() - rank/listStatus cleared and
-  // rankVersion bumped for the same reasons.
-  if (recommendation === 'Reject') {
-    const updatedApplication = await applicationModel.update(round.applicationId, {
-      status: 'Rejected', rejectedAt: new Date(), rejectedById: req.user.id,
-      rejectionReason: 'Not recommended for offer following the interview panel\'s review.',
-      rank: null, listStatus: null, ...CLEARED_MERIT, rankVersion: { increment: 1 }
-    }, { vacancy: true });
-    await notifyCandidate(
-      updatedApplication.candidateId, 'ApplicationRejected',
-      `We're sorry to let you know your application for "${updatedApplication.vacancy.title}" was not successful this time.`
-    );
-  } else {
-    // Only now, once a recommendation has actually been finalized, does
-    // the application move to "Interviewed".
-    await applicationModel.update(round.applicationId, { status: 'Interviewed' });
-  }
-  await auditService.record({
-    entityType: 'Application', entityId: round.applicationId,
-    action: recommendation === 'Reject' ? 'Application rejected (interview panel)' : `Interview finalized: ${recommendation}`,
-    actor: auditService.actorFrom(req),
-    details: { interviewRoundId: interviewId, recommendation }, comment: notes || null
-  });
-  broadcastDashboardEvent('InterviewRecommendation', { interviewId, applicationId: round.applicationId, recommendation });
-  res.json(round);
 }
 
 module.exports = {
@@ -1112,12 +908,5 @@ module.exports = {
   addPanelMember: wrap(addPanelMember),
   updatePanelMember: wrap(updatePanelMember),
   removePanelMember: wrap(removePanelMember),
-  recusePanelMember: wrap(recusePanelMember),
-  recordPanelScore: wrap(recordPanelScore),
-  sendAllLinks: wrap(sendAllLinks),
-  finalizeRecommendation: wrap(finalizeRecommendation),
-  getDay: wrap(getDay),
-  startDay: wrap(startDay),
-  endDay: wrap(endDay),
-  callIn: wrap(callIn)
+  recordResults: wrap(recordResults)
 };
