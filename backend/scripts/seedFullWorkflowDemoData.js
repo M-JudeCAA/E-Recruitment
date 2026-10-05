@@ -412,7 +412,10 @@ async function runCommittee(vacancy, members, {
   await api('POST', base, { token: T.shro });
   if (ratersPerApplicant) await api('PATCH', base, { token: T.shro, json: { ratersPerApplicant } });
   for (const m of members) await api('POST', `${base}/members`, { token: T.shro, json: { name: m.name, email: m.email, isChair: m.isChair, externalReason: m.externalReason } });
+  // HR submits the nomination; the DHRA approves it (left waiting at Setup).
+  await api('POST', `${base}/nomination/submit`, { token: T.shro });
   if (stopAt === 'Setup') return null;
+  await api('POST', `${base}/nomination/approve`, { token: T.dhra });
 
   await closeApplications(vacancy.id);
   await api('POST', `${base}/open`, { token: T.shro });

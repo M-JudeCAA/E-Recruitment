@@ -9,12 +9,13 @@ const systemHealthService = require('../services/systemHealthService');
 // HRHome does today, plus the two figures (pending departments, offers
 // pending approval) nothing on the frontend currently fetches at all.
 async function summary(req, res) {
-  const [vacancyPairs, applicationPairs, offerPairs, pendingDepartments, offersPendingApproval] = await Promise.all([
+  const [vacancyPairs, applicationPairs, offerPairs, pendingDepartments, offersPendingApproval, committeesPendingApproval] = await Promise.all([
     dashboardModel.countVacanciesByStatus(),
     dashboardModel.countApplicationsByStatus(),
     dashboardModel.countOffersByStatus(),
     dashboardModel.countPendingDepartments(),
-    dashboardModel.countOffersPendingApproval()
+    dashboardModel.countOffersPendingApproval(),
+    dashboardModel.countCommitteesPendingApproval()
   ]);
 
   res.json({
@@ -24,7 +25,9 @@ async function summary(req, res) {
     // only: every field the old response shape had is still there unchanged.
     offersByStatus: Object.fromEntries(offerPairs),
     pendingDepartments,
-    offersPendingApproval
+    offersPendingApproval,
+    // Shortlisting committees waiting for the DHRA (shown to Directors).
+    committeesPendingApproval
   });
 }
 

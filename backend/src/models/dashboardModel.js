@@ -20,6 +20,7 @@ module.exports = {
     APPLICATION_STATUSES.map((status) => prisma.application.count({ where: { status } }).then((count) => [status, count]))
   ),
   countPendingDepartments: () => prisma.department.count({ where: { status: 'Pending' } }),
+  countCommitteesPendingApproval: () => prisma.shortlistExercise.count({ where: { nominationStatus: 'Submitted' } }),
   countOffersPendingApproval: () => prisma.offer.count({ where: { status: 'Recommended' } }),
   // Offer outcomes by status - the Trend/Funnel panels' "Accepted" figure
   // isn't reachable from applicationsByStatus (Application.status never

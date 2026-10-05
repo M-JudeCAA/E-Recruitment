@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Briefcase, Award, Building2, Trophy } from 'lucide-react';
+import { Briefcase, Award, Building2, Trophy, Users } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useDashboardEvents } from '../models/dashboardSocket';
 import HRSidebar from '../components/HRSidebar';
@@ -112,6 +112,10 @@ export default function ApprovalsCenter() {
   const [departments, setDepartments] = useState(null);
   // Post-interview merit lists awaiting approval, one row per vacancy.
   const [meritLists, setMeritLists] = useState(null);
+  // Shortlisting committees waiting for the DHRA (Directors only).
+  const isDirector = staff?.role === 'Director';
+  const [committees, setCommittees] = useState(null);
+  const [committeeReturn, setCommitteeReturn] = useState(null);
   const [followUps, setFollowUps] = useState([]);
   const [rejectReason, setRejectReason] = useState({});
   const [message, setMessage] = useState('');
@@ -143,6 +147,9 @@ export default function ApprovalsCenter() {
   const loadMeritLists = useCallback(() => staffClient.get('/api/applications/merit-lists/pending-approval')
     .then((res) => setMeritLists(res.data))
     .catch((err) => setError(err.response?.data?.error || 'Could not load merit lists')), []);
+  const loadCommittees = useCallback(() => (isDirector
+    ? staffClient.get('/api/shortlist-committee/nominations/pending').then((res) => setCommittees(res.data)).catch(() => setCommittees([]))
+    : Promise.resolve()), [isDirector]);
   const loadDepartments = useCallback(() => staffClient.get('/api/departments/pending')
     .then((res) => setDepartments(res.data))
     .catch((err) => setError(err.response?.data?.error || 'Could not load departments')), []);
@@ -154,15 +161,15 @@ export default function ApprovalsCenter() {
     .then((res) => setFollowUps(res.data))
     .catch(() => {}), []); // urgency badges are a nice-to-have, never worth an error banner
 
-  useEffect(() => { loadVacancies(); loadDepartments(); loadFollowUps(); loadMeritLists(); }, [loadVacancies, loadDepartments, loadFollowUps, loadMeritLists]);
+  useEffect(() => { loadVacancies(); loadDepartments(); loadFollowUps(); loadMeritLists(); loadCommittees(); }, [loadVacancies, loadDepartments, loadFollowUps, loadMeritLists, loadCommittees]);
   useEffect(() => { loadOffers(); }, [loadOffers]);
 
   // Refetches every queue plus the SLA lookup on any dashboard-relevant
   // broadcast - a newly-pending item appears, an approved/rejected one
   // disappears, without the Manager needing to manually refresh.
   const refetchAll = useCallback(debounce(() => {
-    loadVacancies(); loadOffers(); loadDepartments(); loadFollowUps(); loadMeritLists();
-  }, 500), [loadVacancies, loadOffers, loadDepartments, loadFollowUps, loadMeritLists]);
+    loadVacancies(); loadOffers(); loadDepartments(); loadFollowUps(); loadMeritLists(); loadCommittees();
+  }, 500), [loadVacancies, loadOffers, loadDepartments, loadFollowUps, loadMeritLists, loadCommittees]);
   const { connected } = useDashboardEvents(refetchAll);
 
   const followUpFor = (taskType, taskId) => followUps.find((f) => f.taskType === taskType && f.taskId === taskId);
@@ -191,6 +198,18 @@ export default function ApprovalsCenter() {
       setBusy((b) => ({ ...b, [key]: false }));
     }
   };
+
+  const approveCommittee = (c) => runBusy(`committee-approve-${c.exerciseId}`, async () => {
+    setError(''); setMessage('');
+    if (!(await confirm(`Approve the shortlisting committee for ${c.vacancy.jobRef}? HR can then open rating.`, { title: 'Approve committee', confirmLabel: 'Approve' }))) return;
+    try {
+      await staffClient.post(`/api/shortlist-committee/vacancies/${c.vacancy.id}/nomination/approve`);
+      setMessage('Committee approved.');
+      loadCommittees();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Approval failed');
+    }
+  });
 
   const approveVacancy = (id) => runBusy(`vacancy-approve-${id}`, async () => {
     setError(''); setMessage('');
@@ -394,6 +413,48 @@ export default function ApprovalsCenter() {
               </div>
             </Card>
           ))}
+
+          {isDirector && (
+            <>
+              <div style={{ marginTop: 'var(--spacing-lg)' }}>
+                <SectionHeader icon={Users} title="Shortlisting committees" count={committees?.length ?? '—'} />
+              </div>
+              {committees === null && <QueueRowSkeleton />}
+              {committees?.length === 0 && (
+                <Card><p style={{ margin: 0, color: 'var(--color-text-muted)' }}>No committees awaiting your approval.</p></Card>
+              )}
+              {committees?.map((c) => (
+                <Card key={c.exerciseId}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600 }}>{c.vacancy.jobRef} &middot; {c.vacancy.title}</div>
+                      <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                        {c.members.length} members &middot; submitted by {c.submittedBy?.name || 'HR'}
+                        {c.submittedAt && <> &middot; waiting {waitingSince(c.submittedAt)}</>}
+                      </div>
+                      <div style={{ fontSize: 13, marginTop: 4 }}>
+                        {c.members.map((m) => `${m.name}${m.isChair ? ' (chair)' : ''}${m.externalReason ? ' (from outside UCAA)' : ''}`).join(', ')}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+                      <Link to={`/hr/applications?vacancyId=${c.vacancy.id}&stage=shortlist`} style={{ padding: '4px 10px', fontSize: 13 }}>Review or change</Link>
+                      <Button variant="ghost" style={{ padding: '4px 10px' }} onClick={() => setCommitteeReturn(c)}>Return</Button>
+                      <Button variant="secondary" style={{ padding: '4px 10px' }}
+                        loading={!!busy[`committee-approve-${c.exerciseId}`]} loadingText="Approving..." onClick={() => approveCommittee(c)}>Approve</Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+              {committeeReturn && (
+                <ReasonDialog title={`Return the committee for ${committeeReturn.vacancy.jobRef}`} intro="HR will see your reason, change the members and submit again."
+                  confirmLabel="Return" onClose={() => setCommitteeReturn(null)}
+                  onSubmit={async (reason) => {
+                    await staffClient.post(`/api/shortlist-committee/vacancies/${committeeReturn.vacancy.id}/nomination/return`, { reason });
+                    setCommitteeReturn(null); setMessage('Committee returned to HR.'); loadCommittees();
+                  }} />
+              )}
+            </>
+          )}
 
           {/* Merit lists sit before offers - an offer can only be recommended
               for a Primary candidate on an approved merit list. */}

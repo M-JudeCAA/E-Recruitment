@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Users, Crown, Trash2, Plus, Send, Link2, ChevronDown, ChevronUp, Gavel, Lock, ListChecks } from 'lucide-react';
+import { Users, Crown, Trash2, Plus, Send, Link2, ChevronDown, ChevronUp, Gavel, Lock, ListChecks, ShieldCheck, Undo2 } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import Card from './Card';
 import Button from './Button';
@@ -7,13 +7,15 @@ import Alert from './Alert';
 import StatusBadge from './StatusBadge';
 import LoadingState from './LoadingState';
 import { useConfirm } from './ConfirmDialog';
+import ReasonDialog from './ReasonDialog';
 import { inputStyle, sectionLabel, hintText, chipStyle } from './interviews/formStyles';
 import { BAND_LABELS, STAGE_LABELS, ratingLabel } from '../utils/shortlistCommittee';
 
 // HR's side of a vacancy's shortlisting committee (backend
 // shortlistCommitteeController.js). Setup: the assessment sheet (generated
-// from the vacancy's requirements, editable) and the committee - never HR
-// staff, one chair. Rating: members rate through their private links, blind
+// from the vacancy's requirements, editable) and the committee - anyone at
+// UCAA, one chair - nominated by HR and approved by the DHRA (a Director),
+// who may change the members first. Rating: members rate through their private links, blind
 // to each other; HR sees progress only. Moderation: the ranking appears and
 // the chair settles disputed items. Closed: HR proposes the interview
 // shortlist strictly from the top of the committee's order - no reordering -
@@ -223,9 +225,54 @@ function ResultsTable({ exercise, canEdit, onActingChair, busy }) {
   );
 }
 
+const NOMINATION_TEXT = {
+  Draft: 'Not yet sent to the DHRA.',
+  Submitted: 'With the DHRA for approval.',
+  Approved: 'Approved by the DHRA.',
+  Returned: 'Returned by the DHRA.'
+};
+
+// The nomination (FR-ATS-046): HR submits the members; the DHRA approves,
+// returns them with a reason, or changes them first.
+function NominationPanel({ exercise, canEdit, isDhra, busy, onSubmit, onApprove, onReturn }) {
+  const s = exercise.nominationStatus;
+  const when = (d) => (d ? new Date(d).toLocaleString() : '');
+  const tone = s === 'Approved' ? 'var(--color-accent)' : s === 'Returned' ? 'var(--color-danger)' : s === 'Submitted' ? 'var(--color-warning)' : 'var(--color-border)';
+  return (
+    <div style={{ border: `1px solid ${tone}`, borderLeftWidth: 4, borderRadius: 'var(--radius-sm)', padding: '10px 12px', margin: '12px 0' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <ShieldCheck size={16} /> <strong>Committee approval</strong>
+        <span style={{ fontSize: 13 }}>{NOMINATION_TEXT[s]}</span>
+      </div>
+      <div style={{ ...hintText, marginTop: 4 }}>
+        {exercise.nominationSubmittedAt && `Submitted ${when(exercise.nominationSubmittedAt)}${exercise.nominationSubmittedBy ? ` by ${exercise.nominationSubmittedBy.name}` : ''}. `}
+        {exercise.nominationDecidedAt && `${s === 'Returned' ? 'Returned' : 'Approved'} ${when(exercise.nominationDecidedAt)}${exercise.nominationDecidedBy ? ` by ${exercise.nominationDecidedBy.name}` : ''}.`}
+        {s === 'Submitted' && (isDhra ? ' You can change the members below before approving - every change is recorded.' : ' Members can\'t be changed while it is with the DHRA.')}
+        {s === 'Approved' && ' Changing the members now sends the committee back for approval.'}
+      </div>
+      {s === 'Returned' && exercise.nominationReturnReason && (
+        <div style={{ fontSize: 13, marginTop: 4 }}><strong>DHRA's reason:</strong> {exercise.nominationReturnReason}</div>
+      )}
+      <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+        {canEdit && ['Draft', 'Returned'].includes(s) && (
+          <Button onClick={onSubmit} loading={busy}><Send size={14} /> Submit to the DHRA for approval</Button>
+        )}
+        {isDhra && s === 'Submitted' && (
+          <>
+            <Button onClick={onApprove} loading={busy}><ShieldCheck size={14} /> Approve committee</Button>
+            <Button variant="ghost" onClick={onReturn} disabled={busy}><Undo2 size={14} /> Return to HR</Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onManagedChange, reloadKey }) {
   const confirm = useConfirm();
   const canEdit = (ROLE_RANK[staffRole] || 0) >= ROLE_RANK.Senior_HR_Officer;
+  const isDhra = (ROLE_RANK[staffRole] || 0) >= ROLE_RANK.Director;
+  const [returning, setReturning] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -307,6 +354,20 @@ export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onMa
     const result = await run(() => staffClient.post(`${base}/open`), (d) => `Rating is open: ${d.applicants} applicants, ${d.assignments} assignments.`);
     if (result?.links) setLinks(result.links.filter((l) => !l.emailed));
   };
+  const submitNomination = async () => {
+    if (!(await confirm('Send the committee to the DHRA for approval? The members can\'t be changed by HR while it is with them.', { title: 'Submit for approval', confirmLabel: 'Submit' }))) return;
+    run(() => staffClient.post(`${base}/nomination/submit`), 'Sent to the DHRA for approval.');
+  };
+  const approveNomination = async () => {
+    if (!(await confirm('Approve this shortlisting committee? HR can then open rating and the members get their links.', { title: 'Approve committee', confirmLabel: 'Approve' }))) return;
+    run(() => staffClient.post(`${base}/nomination/approve`), 'Committee approved.');
+  };
+  const accessEnd = (
+    <label style={hintText}>Members' access ends (optional - it always ends when the exercise closes)
+      <input type="datetime-local" defaultValue={toLocalInput(exercise.accessExpiresAt)} style={{ ...inputStyle, display: 'block' }} disabled={!canEdit}
+        onBlur={(e) => run(() => staffClient.patch(base, { accessExpiresAt: e.target.value ? new Date(e.target.value).toISOString() : null }))} />
+    </label>
+  );
   const startModeration = async (force = false) => {
     setBusy(true); setError(''); setMessage('');
     try {
@@ -384,12 +445,28 @@ export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onMa
               </span>
             </div>
           )}
-          <MembersEditor members={exercise.members} editable={canEdit} busy={busy}
-            onAdd={addMember} onRemove={removeMember} onMakeChair={canEdit ? makeChair : null} />
-          {canEdit && (
+          {(() => {
+            const membersEditable = exercise.nominationStatus === 'Submitted' ? isDhra : canEdit;
+            return (
+              <MembersEditor members={exercise.members} editable={membersEditable} busy={busy}
+                onAdd={addMember} onRemove={removeMember} onMakeChair={membersEditable ? makeChair : null} />
+            );
+          })()}
+          <NominationPanel exercise={exercise} canEdit={canEdit} isDhra={isDhra} busy={busy}
+            onSubmit={submitNomination} onApprove={approveNomination} onReturn={() => setReturning(true)} />
+          {canEdit && <div style={{ marginBottom: 12 }}>{accessEnd}</div>}
+          {canEdit && exercise.nominationStatus === 'Approved' && (
             <Button onClick={openRating} loading={busy} loadingText="Opening...">
               <Send size={16} /> Open rating ({data.poolCount} applicants)
             </Button>
+          )}
+          {returning && (
+            <ReasonDialog title="Return the committee to HR" intro="HR will see your reason and can change the members and submit again."
+              confirmLabel="Return" onClose={() => setReturning(false)}
+              onSubmit={async (reason) => {
+                const res = await staffClient.post(`${base}/nomination/return`, { reason });
+                setData(res.data); setReturning(false); setMessage('Committee returned to HR.'); onChanged?.();
+              }} />
           )}
         </>
       )}
@@ -403,6 +480,7 @@ export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onMa
           <MembersEditor members={exercise.members} editable={false} busy={busy}
             onMakeChair={canEdit ? makeChair : null} onReissue={canEdit ? reissue : null} />
           {canEdit && <CoverageList coverage={exercise.coverage} onAdd={addRater} busy={busy} />}
+          {canEdit && <div style={{ margin: '12px 0' }}>{accessEnd}</div>}
           {canEdit && (
             <Button onClick={() => startModeration(false)} loading={busy}>
               <Lock size={16} /> Close rating and start moderation

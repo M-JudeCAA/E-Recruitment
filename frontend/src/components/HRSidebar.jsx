@@ -35,7 +35,8 @@ export default function HRSidebar({ active }) {
     staffClient.get('/api/dashboard/summary')
       .then((res) => {
         const s = res.data;
-        setPendingApprovals((s.vacanciesByStatus?.PendingApproval || 0) + s.offersPendingApproval + s.pendingDepartments);
+        setPendingApprovals((s.vacanciesByStatus?.PendingApproval || 0) + s.offersPendingApproval + s.pendingDepartments
+          + (staff?.role === 'Director' ? s.committeesPendingApproval || 0 : 0));
       })
       .catch(() => {}); // sidebar badge is a nice-to-have, never worth surfacing an error banner for
   }, [isExecutive]);

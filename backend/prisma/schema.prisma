@@ -1002,6 +1002,17 @@ enum ShortlistExerciseStatus {
   Closed // results snapshotted onto the applications
 }
 
+// The committee's nomination (FR-ATS-046): HR nominates the members, the
+// DHRA (a Director) approves them - or returns them with a reason, or edits
+// the list first. Rating opens only once approved; any HR change to the
+// members after approval sends it back to Draft.
+enum CommitteeNominationStatus {
+  Draft
+  Submitted
+  Approved
+  Returned
+}
+
 enum ShortlistBand {
   Unanimous // every essential criterion met in the view of every rater
   Majority // every essential criterion met by majority (or the chair's decision)
@@ -1018,28 +1029,37 @@ enum ShortlistBand {
 // by ratersPerApplicant members, after a calibration set of
 // calibrationCount applicants that every member rates.
 model ShortlistExercise {
-  id                    Int                     @id @default(autoincrement())
-  vacancyId             Int                     @unique
-  vacancy               Vacancy                 @relation(fields: [vacancyId], references: [id])
-  status                ShortlistExerciseStatus @default(Setup)
-  criteria              Json
-  ratersPerApplicant    Int                     @default(3)
-  calibrationCount      Int                     @default(10)
+  id                      Int                       @id @default(autoincrement())
+  vacancyId               Int                       @unique
+  vacancy                 Vacancy                   @relation(fields: [vacancyId], references: [id])
+  status                  ShortlistExerciseStatus   @default(Setup)
+  criteria                Json
+  ratersPerApplicant      Int                       @default(3)
+  calibrationCount        Int                       @default(10)
   // [{ applicationId, memberId }] - a member HR names to rule on one
   // applicant's disputed items in the chair's place, when the chair declared
   // a conflict of interest for that applicant.
-  actingChairs          Json?
-  ratingDeadline        DateTime?
-  createdById           Int
-  createdAt             DateTime                @default(now())
-  ratingOpenedAt        DateTime?
-  ratingOpenedById      Int?
-  moderationStartedAt   DateTime?
-  moderationStartedById Int?
-  closedAt              DateTime?
-  closedById            Int?
-  members               ShortlistMember[]
-  decisions             ShortlistDecision[]
+  actingChairs            Json?
+  ratingDeadline          DateTime?
+  nominationStatus        CommitteeNominationStatus @default(Draft)
+  nominationSubmittedAt   DateTime?
+  nominationSubmittedById Int?
+  nominationDecidedAt     DateTime?
+  nominationDecidedById   Int?
+  nominationReturnReason  String?                   @db.Text
+  // Members' links stop working at this time (FR-ATS-048) - as well as when
+  // the exercise closes.
+  accessExpiresAt         DateTime?
+  createdById             Int
+  createdAt               DateTime                  @default(now())
+  ratingOpenedAt          DateTime?
+  ratingOpenedById        Int?
+  moderationStartedAt     DateTime?
+  moderationStartedById   Int?
+  closedAt                DateTime?
+  closedById              Int?
+  members                 ShortlistMember[]
+  decisions               ShortlistDecision[]
 }
 
 // A committee member - never an HR account (checked against StaffUser by
@@ -1352,6 +1372,10 @@ enum SlaTaskType {
   VacancyApproval
   DepartmentApproval
   OfferApproval
+  // A shortlisting committee's nomination waiting for the DHRA (Directors),
+  // and the answer back to whoever submitted it. Not escalated.
+  CommitteeNominationSubmitted
+  CommitteeNominationDecided
   // Not part of the SLA-escalation machinery in checkSlaEscalations.js
   // (that script's taskType loop is an explicit, separate array, not
   // derived from this enum) - reusing Notification/notify() here just for
