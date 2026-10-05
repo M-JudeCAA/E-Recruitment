@@ -24,12 +24,7 @@ module.exports = {
   clearChair: (interviewRoundId) => prisma.panelMember.updateMany({
     where: { interviewRoundId, isChair: true }, data: { isChair: false }
   }),
-  // Removing a panelist deletes their (never-used or revoked) access tokens
-  // first - the token rows hold a foreign key to the panel member.
-  remove: (id) => prisma.$transaction([
-    prisma.panelAccessToken.deleteMany({ where: { panelMemberId: id } }),
-    prisma.panelMember.delete({ where: { id } })
-  ]),
+  remove: (id) => prisma.panelMember.delete({ where: { id } }),
   // Distinct panelists used on a vacancy before - the scheduler's "reuse
   // panel" suggestions.
   findUsedOnVacancy: (vacancyId) => prisma.panelMember.findMany({

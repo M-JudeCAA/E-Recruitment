@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useId } from 'react';
 
 export default function Modal({ title, onClose, children, footer, maxWidth = 420 }) {
+  const titleId = useId();
+
   return (
     <div
       onClick={onClose}
+      className="modal-overlay"
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
@@ -11,6 +14,10 @@ export default function Modal({ title, onClose, children, footer, maxWidth = 420
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        className="modal-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
         style={{
           background: 'var(--color-bg)', borderRadius: 'var(--radius)',
           padding: 'var(--spacing-lg)', width: '90%', maxWidth,
@@ -19,7 +26,7 @@ export default function Modal({ title, onClose, children, footer, maxWidth = 420
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--spacing-md)' }}>
-          <h3 style={{ margin: 0, color: 'var(--color-primary-dark)' }}>{title}</h3>
+          <h3 id={titleId} style={{ margin: 0, color: 'var(--color-primary-dark)' }}>{title}</h3>
           <button
             onClick={onClose}
             aria-label="Close"

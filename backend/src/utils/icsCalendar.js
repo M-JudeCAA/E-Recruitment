@@ -1,11 +1,13 @@
-// Minimal iCalendar (RFC 5545) builder for interview invites - a panelist
-// or candidate opens the .ics in Outlook/Google/Apple Calendar and gets the
-// slot in their own calendar. No dependency: the handful of fields used
-// here is small enough to write out directly.
+// Minimal iCalendar (RFC 5545) builder for interview invitations. No
+// dependency: the handful of fields used here is small enough to write out
+// directly.
 //
-// UIDs are stable per interview round (interviewUid), and SEQUENCE is the
-// round's rescheduleCount, so a reschedule or cancellation sent later
-// updates the same calendar entry instead of adding a second one.
+// An emailed invitation (METHOD:REQUEST) names its ORGANIZER and the
+// ATTENDEE it is addressed to, which is what makes Outlook and Google treat
+// it as a meeting with Accept/Decline rather than a loose appointment. Each
+// event keeps one UID for its whole life and a SEQUENCE that only ever goes
+// up, so a later update (REQUEST again) or cancellation (METHOD:CANCEL)
+// changes the same calendar entry instead of adding a second one.
 
 const PRODID = '-//UCAA//e-Recruitment Interviews//EN';
 
@@ -19,6 +21,12 @@ function escapeText(value) {
     .replace(/;/g, '\\;')
     .replace(/,/g, '\\,')
     .replace(/\r?\n/g, '\\n');
+}
+
+// A CN parameter value: quoted, without the characters a quoted parameter
+// can't hold.
+function cn(name) {
+  return `"${String(name || '').replace(/["\r\n]/g, '').slice(0, 120)}"`;
 }
 
 // Lines longer than 75 octets must be folded (CRLF + a single space).
@@ -35,13 +43,24 @@ function interviewUid(roundId) {
   return `interview-${roundId}@ucaa-erecruitment`;
 }
 
+// The mailbox invitations come from, and that Accept/Decline replies go to:
+// INTERVIEW_ORGANIZER_EMAIL, else the address in SMTP_FROM.
+function organizer() {
+  const explicit = (process.env.INTERVIEW_ORGANIZER_EMAIL || '').trim();
+  const fromHeader = process.env.SMTP_FROM || '';
+  const email = explicit || (fromHeader.match(/<([^>]+)>/) || [null, fromHeader.trim()])[1] || '';
+  const name = (fromHeader.match(/^\s*"?([^"<]+?)"?\s*</) || [null, 'UCAA Human Resources'])[1];
+  return email ? { name, email } : null;
+}
+
 /**
  * events: [{ uid, start, end, summary, description?, location?, url?,
- * sequence?, cancelled? }]. method is PUBLISH for a file the user
- * downloads, REQUEST/CANCEL for an emailed invite.
+ * sequence?, cancelled?, attendees?: [{ name, email }] }]. method is PUBLISH
+ * for a file the user downloads, REQUEST/CANCEL for an emailed invitation.
  */
 function buildCalendar({ method = 'PUBLISH', events }) {
   const now = formatUtc(new Date());
+  const org = method === 'PUBLISH' ? null : organizer();
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', `PRODID:${PRODID}`, 'CALSCALE:GREGORIAN', `METHOD:${method}`];
   for (const e of events) {
     lines.push('BEGIN:VEVENT');
@@ -55,10 +74,16 @@ function buildCalendar({ method = 'PUBLISH', events }) {
     if (e.description) lines.push(`DESCRIPTION:${escapeText(e.description)}`);
     if (e.location) lines.push(`LOCATION:${escapeText(e.location)}`);
     if (e.url) lines.push(`URL:${escapeText(e.url)}`);
+    if (org) lines.push(`ORGANIZER;CN=${cn(org.name)}:mailto:${org.email}`);
+    for (const a of (method === 'PUBLISH' ? [] : e.attendees || [])) {
+      if (!a.email) continue;
+      lines.push(`ATTENDEE;CN=${cn(a.name)};ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:${a.email}`);
+    }
+    if (!e.cancelled) lines.push('TRANSP:OPAQUE');
     lines.push('END:VEVENT');
   }
   lines.push('END:VCALENDAR');
   return `${lines.map(fold).join('\r\n')}\r\n`;
 }
 
-module.exports = { buildCalendar, interviewUid, escapeText, formatUtc };
+module.exports = { buildCalendar, interviewUid, escapeText, formatUtc, organizer };

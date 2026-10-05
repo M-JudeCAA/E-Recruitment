@@ -12,7 +12,14 @@ const STAFF_ONLY_VACANCY_FIELDS = [
   'internalSalaryRange', 'recruiterNotes',
   'createdById', 'approvedById', 'approvedByRole', 'rejectionReason',
   'postingTypeChangedById', 'postingTypeChangedByRole', 'postingTypePreviousValue',
-  'deadlineNotifiedAt', 'reviewStartedAt'
+  'deadlineNotifiedAt', 'reviewStartedAt',
+  // Approval decisions and their comments (returned, rejected, closed).
+  'rejectedAt', 'returnedAt', 'returnReason', 'approvalRequestedAt', 'closedAt', 'closeReason',
+  // The EXCO requisition behind the vacancy, and what was read from it.
+  'requisitionDocumentUrl', 'requisitionDocumentName', 'requisitionDocumentHash',
+  'requisitionUploadedAt', 'requisitionUploadedById', 'requisitionDetails',
+  'requisitionSignedCopyUrl', 'requisitionSignedCopyName',
+  'hiringManagerName', 'hiringManagerEmail', 'hiringManagerEntraId', 'hiringManagerJobTitle'
 ];
 
 function toPublicVacancy(vacancy) {

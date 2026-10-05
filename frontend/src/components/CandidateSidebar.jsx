@@ -21,5 +21,5 @@ const ITEMS = [
 ];
 
 export default function CandidateSidebar({ active }) {
-  return <Sidebar items={ITEMS} active={active} storageKey="candidateSidebarCollapsed" width={220} title="Candidate Portal" />;
+  return <Sidebar items={ITEMS} active={active} storageKey="candidateSidebarCollapsed" width={220} title="Candidate Portal" mobileTrigger={false} />;
 }

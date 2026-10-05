@@ -1,5 +1,6 @@
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
+const { standaloneBytes } = require('./documentText');
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -11,7 +12,9 @@ class UnsupportedCvFormatError extends Error {}
 
 async function extractText(buffer, mimetype) {
   if (mimetype === 'application/pdf') {
-    const data = await pdfParse(buffer);
+    // See documentText.standaloneBytes - a small upload can sit in Node's
+    // shared Buffer pool, which pdf.js misreads.
+    const data = await pdfParse(standaloneBytes(buffer));
     return data.text;
   }
   if (mimetype === DOCX_MIME) {

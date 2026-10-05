@@ -28,7 +28,8 @@ const ROUTE_TRAILS = [
   { path: '/hr/home', trail: [{ label: 'Home' }] },
   { path: '/hr', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Vacancies' }] },
   { path: '/hr/departments', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Departments' }] },
-  { path: '/hr/staff-management', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Staff & Delegations' }] },
+  { path: '/hr/staff-management', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Delegations' }] },
+  { path: '/hr/staff-accounts', trail: [{ label: 'Staff accounts' }] },
   {
     path: '/hr/vacancy/:id',
     trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Vacancies', to: '/hr' }, { label: 'Vacancy Details' }]
@@ -36,14 +37,13 @@ const ROUTE_TRAILS = [
   // Manager/Director's own root (see HRSidebar.jsx/Navbar.jsx) - these
   // don't nest under /hr/home the way the operational screens above do,
   // since Executive Overview is that tier's actual landing page.
+  { path: '/hr/templates', trail: [{ label: 'Document templates' }] },
+  { path: '/hr/settings', trail: [{ label: 'Settings & data' }] },
+  { path: '/hr/candidates', trail: [{ label: 'Candidates' }] },
   { path: '/hr/executive', trail: [{ label: 'Executive Overview' }] },
   { path: '/hr/approvals', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Approvals Center' }] },
-  { path: '/hr/analytics', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Analytics' }] },
-
-  { path: '/staff/forgot-password', trail: [{ label: 'Staff Login', to: '/staff/login' }, { label: 'Forgot Password' }] },
-  { path: '/staff/reset-password', trail: [{ label: 'Staff Login', to: '/staff/login' }, { label: 'Reset Password' }] },
-
-  { path: '/panel-score/:token', trail: [{ label: 'Interview Scoring' }] }
+  { path: '/hr/analytics/recruitment', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Analytics', to: '/hr/analytics' }, { label: 'Recruitment dashboard' }] },
+  { path: '/hr/analytics', trail: [{ label: 'Executive Overview', to: '/hr/executive' }, { label: 'Analytics' }] }
 ];
 
 // Last-resort fallback for a path with no entry above (e.g. a new route
@@ -78,6 +78,7 @@ export default function BreadcrumbNav() {
 
   return (
     <div
+      className="breadcrumb-bar"
       style={{
         // Fixed, not just sticky - pinned directly under the (also fixed)
         // Navbar so it never scrolls away with the page content, same

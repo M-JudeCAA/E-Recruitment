@@ -175,25 +175,31 @@ function evaluateExamGrades(examGradeRows, requiredExamGrades) {
   });
 }
 
-// Never auto-hides or rejects - always returns a result, never throws.
-// HR sees every application regardless of outcome; this only informs
-// what they see, never what they're allowed to see.
-function screenApplication(application, candidate, vacancy) {
+// True when one snapshotted Application.disqualifyingResponses row meets
+// its requirement. text/requiredAnswer/answerType/minValue are read off the
+// snapshot taken at answer time (see Application.disqualifyingResponses'
+// schema comment), not off the vacancy's current wording, so an
+// already-screened application's result never silently shifts under a
+// later edit to the question. A 'yesno' row (or any row from before
+// 'number' existed, which has no answerType) is compared against
+// requiredAnswer; a 'number' row fails whenever the answer is missing or
+// below minValue.
+function disqualifyingResponseMet(response) {
+  if (response.answerType === 'number') {
+    const value = Number(response.answer);
+    return Number.isFinite(value) && value >= Number(response.minValue);
+  }
+  return response.answer === (response.requiredAnswer !== 'No');
+}
+
+// The vacancy's structured minimums (#2) checked against the candidate's
+// own profile data - only checked when the vacancy actually specifies a
+// requirement; a vacancy with no minimum set imposes none.
+function criteriaReasons(candidate, vacancy) {
   const reasons = [];
   const educationRows = candidate.education || [];
   const workRows = candidate.workExperience || [];
 
-  // Completeness (#1) - the referees check is expected to always pass,
-  // since submit() already requires three complete referees before an
-  // application can leave Draft. Kept here anyway for defensive
-  // completeness in case this function is ever reused against data that
-  // didn't go through that gate.
-  if (countCompleteReferees(application.referees) < 3) reasons.push('Missing referees');
-  if (educationRows.length === 0) reasons.push('No education record on file');
-  if (workRows.length === 0) reasons.push('No work experience record on file');
-
-  // Structured criteria (#2) - only checked when the vacancy actually
-  // specifies a requirement; a vacancy with no minimum set imposes none.
   const education = evaluateEducation(educationRows, vacancy.minimumEducationLevel);
   if (education) {
     if (education.status === 'unmapped') {
@@ -233,36 +239,60 @@ function screenApplication(application, candidate, vacancy) {
     else if (cgpa.status === 'below') reasons.push(`Below minimum CGPA (requires ${vacancy.minimumCGPA}, has ${cgpa.cgpa})`);
   }
 
-  // Hard eligibility gate (#3) - unlike desirableResponses, a mismatch
-  // here DOES fail screening. text/requiredAnswer/answerType/minValue are
-  // read off the snapshot taken at answer time (see
-  // Application.disqualifyingResponses' schema comment), not off the
-  // vacancy's current wording, so an already-screened application's result
-  // never silently shifts under a later edit to the question. A 'yesno'
-  // row (or any row from before 'number' existed, which has no
-  // answerType) is compared against requiredAnswer as before; a 'number'
-  // row instead fails whenever the answer is missing or below minValue.
-  for (const response of application.disqualifyingResponses || []) {
-    if (response.answerType === 'number') {
-      const value = Number(response.answer);
-      if (!Number.isFinite(value) || value < Number(response.minValue)) {
-        reasons.push(`Disqualifying requirement not met: "${response.text}"`);
-      }
-    } else {
-      const requiredBool = response.requiredAnswer !== 'No';
-      if (response.answer !== requiredBool) {
-        reasons.push(`Disqualifying requirement not met: "${response.text}"`);
-      }
-    }
-  }
+  return reasons;
+}
+
+// Hard eligibility gate (#3) - unlike desirableResponses, a mismatch here
+// DOES fail screening (see disqualifyingResponseMet).
+function disqualifyingReasons(application) {
+  return (application.disqualifyingResponses || [])
+    .filter((response) => !disqualifyingResponseMet(response))
+    .map((response) => `Disqualifying requirement not met: "${response.text}"`);
+}
+
+// Never throws, always returns a result. Run at submission (where a failed
+// result blocks the submit - see assessEligibility below and
+// applicationDraftController.submit) and again by Begin Review, which
+// re-checks against the candidate's current profile.
+function screenApplication(application, candidate, vacancy) {
+  const reasons = [];
+
+  // Completeness (#1) - expected to always pass, since submit() already
+  // requires three complete referees and a complete profile (education and
+  // work experience included) before an application can leave Draft. Kept
+  // here anyway for defensive completeness in case this function is ever
+  // reused against data that didn't go through that gate.
+  if (countCompleteReferees(application.referees) < 3) reasons.push('Missing referees');
+  if ((candidate.education || []).length === 0) reasons.push('No education record on file');
+  if ((candidate.workExperience || []).length === 0) reasons.push('No work experience record on file');
+
+  reasons.push(...criteriaReasons(candidate, vacancy), ...disqualifyingReasons(application));
 
   // Soft signal (#4) - deliberately excluded from `reasons`/`passed` since
   // preferredFieldOfStudy is a preference, not a requirement (see the
   // fieldOfStudyMatch schema comment for why a miss shouldn't flip
   // screeningPassed).
-  const fieldOfStudyMatch = matchesFieldOfStudy(educationRows, vacancy.preferredFieldOfStudy);
+  const fieldOfStudyMatch = matchesFieldOfStudy(candidate.education || [], vacancy.preferredFieldOfStudy);
 
   return { passed: reasons.length === 0, reasons, fieldOfStudyMatch };
+}
+
+// Screening at the point of application: the reasons this candidate may not
+// submit to this vacancy - the vacancy's minimums against their profile
+// (any fail counts, including data missing from the profile) plus every
+// Disqualifying question answered the wrong way. Qualifying (desirable)
+// questions never block. Unanswered Disqualifying questions are listed
+// separately so the wizard can tell "not answered yet" from "not
+// eligible"; submit() refuses both. Referees and profile completeness are
+// checked by submit() itself.
+function assessEligibility(application, candidate, vacancy) {
+  const responses = (application && application.disqualifyingResponses) || [];
+  const reasons = [...criteriaReasons(candidate, vacancy), ...disqualifyingReasons({ disqualifyingResponses: responses })];
+  const answeredIds = new Set(responses.map((r) => r.id));
+  const unanswered = (vacancy.disqualifyingRequirements || [])
+    .filter((r) => !answeredIds.has(r.id))
+    .map((r) => r.text);
+  return { eligible: reasons.length === 0, reasons, unanswered };
 }
 
 // Itemized, one-row-per-minimum-requirement breakdown - the essential-
@@ -483,5 +513,6 @@ function scoreApplication(application, candidate, vacancy) {
 module.exports = {
   computeExperienceYears, highestEducationLevel, matchesFieldOfStudy,
   computeAge, evaluateAge, evaluateFlyingHours, evaluateExamGrades, evaluateCGPA,
-  screenApplication, scoreApplication, evaluateEssentialCriteria, EDUCATION_RANK
+  screenApplication, scoreApplication, evaluateEssentialCriteria, EDUCATION_RANK,
+  disqualifyingResponseMet, assessEligibility
 };

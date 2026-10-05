@@ -2,7 +2,9 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const { ALLOWED_MIME, MAX_FILE_SIZE, ALLOWED_IMAGE_MIME, MAX_PHOTO_SIZE } = require('./uploadConstants');
+const {
+  ALLOWED_MIME, MAX_FILE_SIZE, ALLOWED_IMAGE_MIME, MAX_PHOTO_SIZE, ALLOWED_SUPPORTING_DOC_MIME
+} = require('./uploadConstants');
 const { AppError } = require('../utils/errorResponse');
 
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
@@ -44,10 +46,80 @@ const uploadPhoto = multer({
   limits: { fileSize: MAX_PHOTO_SIZE }
 });
 
+// Academic/other supporting documents on an application - same storage and
+// size cap as `upload`, but scanned images are accepted too.
+const uploadSupportingDocument = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (!ALLOWED_SUPPORTING_DOC_MIME.includes(file.mimetype)) {
+      return cb(new AppError('Only PDF, Word, JPG or PNG files are allowed', 400));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
+// The EXCO-approved requisition a vacancy is created from - only formats
+// whose text can be read (services/requisitionService.js), stored under a
+// recognisable requisition-<uuid> name so it can't be confused with (or
+// passed off as) any other upload.
+const REQUISITION_EXT = {
+  'application/pdf': '.pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx'
+};
+const uploadRequisition = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => cb(null, `requisition-${uuidv4()}${REQUISITION_EXT[file.mimetype]}`)
+  }),
+  fileFilter: (req, file, cb) => {
+    if (!REQUISITION_EXT[file.mimetype]) {
+      return cb(new AppError('Upload the requisition as a PDF or a Word (.docx) document. Older .doc files and scanned images cannot be read.', 422));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
+// The scan of the requisition as EXCO signed it, uploaded alongside the
+// readable document above - kept as evidence of the signatures, never read.
+// Stored as requisition-signed-<uuid> for the same reason.
+const SIGNED_COPY_EXT = { 'application/pdf': '.pdf', 'image/jpeg': '.jpg', 'image/png': '.png' };
+const uploadSignedRequisition = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => cb(null, `requisition-signed-${uuidv4()}${SIGNED_COPY_EXT[file.mimetype]}`)
+  }),
+  fileFilter: (req, file, cb) => {
+    if (!SIGNED_COPY_EXT[file.mimetype]) {
+      return cb(new AppError('Upload the signed copy as a PDF, JPG or PNG scan.', 422));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
+// The signed appointing instrument attached when HR marks a candidate hired
+// (hireController) - kept as evidence of the signature and handed to the
+// HRIS. Stored as appointment-signed-<uuid>.
+const uploadSignedAppointment = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => cb(null, `appointment-signed-${uuidv4()}${SIGNED_COPY_EXT[file.mimetype]}`)
+  }),
+  fileFilter: (req, file, cb) => {
+    if (!SIGNED_COPY_EXT[file.mimetype]) {
+      return cb(new AppError('Upload the signed appointing instrument as a PDF, JPG or PNG scan.', 422));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
 // Returns a URL path the frontend can use to reference the uploaded file,
 // via the authenticated /api/files route rather than a plain static mount.
 function fileUrl(file) {
   return file ? `/api/files/${file.filename}` : null;
 }
 
-module.exports = { upload, uploadPhoto, fileUrl };
+module.exports = { upload, uploadPhoto, uploadSupportingDocument, uploadRequisition, uploadSignedRequisition, uploadSignedAppointment, fileUrl };

@@ -25,8 +25,13 @@ const JOBS = [
   { name: 'checkSlaEscalations', run: require('./checkSlaEscalations').run },
   { name: 'checkVacancyDeadlines', run: require('./checkVacancyDeadlines').run },
   { name: 'sendInterviewReminders', run: require('./sendInterviewReminders').run },
+  { name: 'expireOffers', run: require('./expireOffers').run },
   { name: 'cleanupPendingRegistrations', run: require('./cleanupPendingRegistrations').run },
-  { name: 'cleanupVerificationTokens', run: () => require('./cleanupVerificationTokens').run() }
+  { name: 'cleanupVerificationTokens', run: () => require('./cleanupVerificationTokens').run() },
+  { name: 'cleanupRequisitionUploads', run: () => require('./cleanupRequisitionUploads').run() },
+  { name: 'purgeAccessLog', run: () => require('./purgeAccessLog').run() },
+  { name: 'purgeCandidateData', run: () => require('./purgeCandidateData').run() },
+  { name: 'retryHrisHandoffs', run: () => require('./retryHrisHandoffs').run() }
 ];
 
 const intervalMinutes = Number(process.env.SCHEDULER_INTERVAL_MINUTES || 60);

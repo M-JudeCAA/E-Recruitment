@@ -1,8 +1,12 @@
-import React from "react";
-import { Routes, Route, Outlet } from "react-router-dom";
+import React, { useEffect } from "react";
+import { Routes, Route, Outlet, useLocation } from "react-router-dom";
+import { rememberSourceFromUrl } from "./utils/applicationSources";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import BreadcrumbNav from "./components/BreadcrumbNav";
+import MobileTabBar from "./components/MobileTabBar";
+import { useAuth } from "./models/AuthContext";
+import { isStaffPort } from "./staffPort";
 
 import Home from "./views/Home";
 import Register from "./views/Register";
@@ -18,21 +22,25 @@ import CandidateApplications from "./views/CandidateApplications";
 import ApplyForm from "./views/ApplyForm";
 import JobDetails from "./views/JobDetails";
 import StaffLogin from "./views/StaffLogin";
-import StaffForgotPassword from "./views/StaffForgotPassword";
-import StaffResetPassword from "./views/StaffResetPassword";
 import HRHome from "./views/HRHome";
 import ExecutiveDashboard from "./views/ExecutiveDashboard";
 import ApprovalsCenter from "./views/ApprovalsCenter";
 import Analytics from "./views/Analytics";
+import RecruitmentDashboard from "./views/RecruitmentDashboard";
+import CandidateSearch from "./views/CandidateSearch";
 import HRDashboard from "./views/HRDashboard";
 import ApplicationManagement from "./views/ApplicationManagement";
 import DepartmentAdmin from "./views/DepartmentAdmin";
 import StaffManagement from "./views/StaffManagement";
+import StaffAccounts from "./views/StaffAccounts";
+import DocumentTemplates from "./views/DocumentTemplates";
+import SettingsAndData from "./views/SettingsAndData";
 import VacancyDetail from "./views/VacancyDetail";
 import CreateVacancyListing from "./views/CreateVacancyListing";
-import PanelScoreAccess from "./views/PanelScoreAccess";
+import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
 import InterviewHub from "./views/InterviewHub";
-import { RequireCandidate, RequireStaff, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
+import PrivacyNotice from "./views/PrivacyNotice";
+import { RequireCandidate, RequireStaff, RequireSystemAdmin, RequireSystemAdminOrRole, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
 
 // Padding lives here, not on the app shell - Navbar/Footer render outside
 // this entirely, full width with no inset. Only routes nested under this
@@ -47,16 +55,31 @@ function PaddedLayout() {
     // height so routed content never renders underneath it. Only this
     // layout pads by --breadcrumb-height, not the outer wrapper below,
     // since the full-bleed sibling routes never render the bar at all.
-    <div style={{ padding: 20, paddingTop: 'calc(20px + var(--breadcrumb-height))' }}>
+    <div className="padded-layout" style={{ padding: 20, paddingTop: 'calc(20px + var(--breadcrumb-height))' }}>
       <BreadcrumbNav />
       <Outlet />
     </div>
   );
 }
 
+// Focused flows where a phone shows no tab bar, the way an app hides its
+// tabs inside a multi-step task: the apply wizard, first-time profile
+// completion, and a shortlisting committee member's private link.
+const NO_TABBAR_PATHS = [/^\/apply\//, /^\/profile\/complete/, /^\/shortlist-panel\//];
+
 export default function App() {
+  const { candidate, staff } = useAuth();
+  const { pathname, search } = useLocation();
+  // A link that says where the advert was seen (?source=LinkedIn) - kept for the Submit step.
+  useEffect(() => { rememberSourceFromUrl(search); }, [search]);
+  // Phones only (theme.css hides it above 767px). The guest/candidate site
+  // gets the bottom tab bar; staff screens keep their sidebar drawer.
+  const showTabBar = !staff && !isStaffPort() && !NO_TABBAR_PATHS.some((re) => re.test(pathname));
+
   return (
-    <div style={{ fontFamily: "sans-serif", width: "100%" }}>
+    // app-shell / with-tabbar drive the phone-only layout in theme.css
+    // (compact app bar, no footer, --footer-height = tab bar height).
+    <div className={`app-shell${showTabBar ? " with-tabbar" : ""}`} style={{ fontFamily: "sans-serif", width: "100%" }}>
       <Navbar />
 
       {/* Navbar and Footer are position:fixed (pinned to the viewport on
@@ -71,22 +94,8 @@ export default function App() {
             The unauthenticated staff entry points below are gated the
             opposite way instead (RequireStaffPort: staff port only). */}
         <Route element={<PaddedLayout />}>
-          <Route
-            path="/staff/forgot-password"
-            element={
-              <RequireStaffPort>
-                <StaffForgotPassword />
-              </RequireStaffPort>
-            }
-          />
-          <Route
-            path="/staff/reset-password"
-            element={
-              <RequireStaffPort>
-                <StaffResetPassword />
-              </RequireStaffPort>
-            }
-          />
+          {/* Public - candidates consent to it when applying (FR-ATS-038). */}
+          <Route path="/privacy" element={<PrivacyNotice />} />
           <Route
             path="/hr/home"
             element={
@@ -147,6 +156,22 @@ export default function App() {
               </RequireStaff>
             }
           />
+          <Route
+            path="/hr/candidates"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <CandidateSearch />
+              </RequireStaff>
+            }
+          />
+          <Route
+            path="/hr/analytics/recruitment"
+            element={
+              <RequireStaff minRole="Manager">
+                <RecruitmentDashboard />
+              </RequireStaff>
+            }
+          />
           {/* Combined Staff Accounts + Delegations page, replacing the two
               old standalone routes and their Navbar links - see
               StaffManagement.jsx and HRSidebar.jsx. Gated at the lower of
@@ -157,6 +182,32 @@ export default function App() {
             element={
               <RequireStaff minRole="Senior_HR_Officer">
                 <StaffManagement />
+              </RequireStaff>
+            }
+          />
+          {/* Staff account administration - system administrators only,
+              whatever HR role anyone holds (see StaffAccounts.jsx). */}
+          <Route
+            path="/hr/staff-accounts"
+            element={
+              <RequireSystemAdmin>
+                <StaffAccounts />
+              </RequireSystemAdmin>
+            }
+          />
+          <Route
+            path="/hr/settings"
+            element={
+              <RequireSystemAdminOrRole minRole="Manager">
+                <SettingsAndData />
+              </RequireSystemAdminOrRole>
+            }
+          />
+          <Route
+            path="/hr/templates"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <DocumentTemplates />
               </RequireStaff>
             }
           />
@@ -184,10 +235,10 @@ export default function App() {
               </RequireStaff>
             }
           />
-          {/* Public - reached via a panelist's emailed/shared link, no login,
-              and not gated by port since that link always points at the
-              guest origin (see backend/src/config/frontendUrl.js) anyway. */}
-          <Route path="/panel-score/:token" element={<PanelScoreAccess />} />
+          {/* Public - a shortlisting committee member's private link, no
+              login, and not gated by port since that link always points at
+              the guest origin (see backend/src/config/frontendUrl.js) anyway. */}
+          <Route path="/shortlist-panel/:token" element={<ShortlistPanelAccess />} />
         </Route>
         <Route
           path="/staff/login"
@@ -273,6 +324,7 @@ export default function App() {
       </div>
 
       <Footer />
+      {showTabBar && <MobileTabBar signedIn={Boolean(candidate)} />}
     </div>
   );
 }

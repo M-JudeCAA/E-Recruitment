@@ -1,17 +1,28 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const { sendError, classifyError } = require('../utils/errorResponse');
 const prisma = require('../config/db');
 const vacancyModel = require('../models/vacancyModel');
+const vacancyDraftModel = require('../models/vacancyDraftModel');
 const applicationModel = require('../models/applicationModel');
 const positionModel = require('../models/positionModel');
 const offerModel = require('../models/offerModel');
 const workflow = require('../services/workflowService');
+const audit = require('../services/auditService');
 const slaModel = require('../models/slaModel');
+const { notify } = require('../services/notificationService');
+const requisitionService = require('../services/requisitionService');
+const hiringManagers = require('../services/hiringManagerService');
+const duplicateApplicants = require('../services/duplicateApplicantService');
+const accessLog = require('../services/accessLogService');
+const { sendRequisitionError } = require('./requisitionController');
+const headcount = require('../services/headcountService');
+const { ROLE_RANK } = require('../middleware/auth');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
-const { generateJobRef } = require('../utils/jobRefGenerator');
 const { toPublicVacancy } = require('../utils/publicVacancy');
+const { escapeHtml } = require('../utils/interviewFormat');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
 const {
-  validateVacancyEditableFields,
+  validateVacancyEditableFields, screeningQuestionCountError,
   normalizeStringList, normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades
 } = require('../utils/vacancyValidation');
 
@@ -36,7 +47,7 @@ function buildVacancyCreateData(position, reportsToPositionId, body, createdById
     minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy,
     minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
     jobPurpose, essentialRequirements, desirableRequirements, disqualifyingRequirements,
-    generalKnowledge, specialSkills,
+    generalKnowledge, specialSkills, desirableQualifications,
     location, employmentCategory, internalSalaryRange, recruiterNotes,
     positionsRequired } = body;
 
@@ -70,6 +81,7 @@ function buildVacancyCreateData(position, reportsToPositionId, body, createdById
     disqualifyingRequirements: normalizeDisqualifyingRequirements(disqualifyingRequirements) ?? [],
     generalKnowledge: normalizeStringList(generalKnowledge) ?? [],
     specialSkills: normalizeStringList(specialSkills) ?? [],
+    desirableQualifications: normalizeStringList(desirableQualifications) ?? [],
     location: location || null,
     employmentCategory: employmentCategory || null,
     internalSalaryRange: internalSalaryRange || null,
@@ -102,6 +114,10 @@ async function create(req, res) {
   const fieldErrors = validateVacancyEditableFields({
     positionsRequired, postingType, deadline, employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA
   });
+  const questionError = screeningQuestionCountError(
+    normalizeDesirableRequirements(req.body.desirableRequirements), normalizeDisqualifyingRequirements(req.body.disqualifyingRequirements)
+  );
+  if (questionError) fieldErrors.push(questionError);
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
   // Reports-To must be a genuinely senior position in the exact same
@@ -119,21 +135,59 @@ async function create(req, res) {
     validatedReportsToId = reportsTo.id;
   }
 
-  const jobRef = await generateJobRef(
-    postingType, // no fallback needed - already validated as required above
-    new Date(),
-    (prefix) => vacancyModel.countByJobRefPrefix(prefix)
-  );
+  let hiringManager = {};
+  if (req.body.hiringManager !== undefined) {
+    const parsed = hiringManagers.parseHiringManager(req.body.hiringManager);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    hiringManager = parsed.data;
+  }
 
-  const vacancy = await vacancyModel.create({
-    jobRef,
+  // Only from an uploaded, EXCO-approved requisition - re-read from the
+  // stored document here, never taken from the request.
+  let requisition;
+  try {
+    requisition = await requisitionService.forCreate(req.body, req.user.id);
+    // Within the approved headcount, or an exception with a reason that a
+    // Director authorises at approval (FR-ATS-006).
+    const headcountException = await headcount.exceptionFor(position.id, Number(req.body.positionsRequired) || 1, req.body.headcountExceptionReason, req.user.id);
+    if (headcountException) requisition.requisitionDetails = { ...requisition.requisitionDetails, headcountException };
+  } catch (err) {
+    return sendRequisitionError(res, err);
+  }
+
+  let vacancy;
+  try {
+    vacancy = await vacancyModel.createWithJobRef(postingType, {
+    ...requisition,
     // FIXED - this was never set at all, so every vacancy defaulted to
     // the schema default (previously 'Open') and was immediately visible
     // to candidates, bypassing approval entirely. The schema default is
     // now also 'PendingApproval' as a second, independent line of
     // defense - this explicit value doesn't rely on that default alone.
     status: 'PendingApproval',
+    ...hiringManager,
     ...buildVacancyCreateData(position, validatedReportsToId, req.body, req.user.id)
+    });
+  } catch (err) {
+    // The same requisition submitted twice at once - the unique hash lets
+    // only one through.
+    if (err.code === 'P2002' && String(err.meta?.target || '').includes('requisitionDocumentHash')) {
+      return res.status(409).json({ error: 'This requisition has just been used for another vacancy.', code: 'DUPLICATE_REQUISITION' });
+    }
+    throw err;
+  }
+  // The draft it was written in has served its purpose.
+  const draftId = Number(req.body.draftId);
+  if (Number.isInteger(draftId) && draftId > 0) {
+    await vacancyDraftModel.removeMine(draftId, req.user.id).catch((err) => console.error(`Failed to remove vacancy draft ${draftId}:`, err));
+  }
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancy.id, action: 'Vacancy created', actor: audit.actorFrom(req),
+    details: {
+      jobRef: vacancy.jobRef,
+      requisition: requisition.requisitionDocumentName,
+      editedFromRequisition: requisition.requisitionDetails.editedFields
+    }
   });
   broadcastDashboardEvent('VacancyPendingApproval', { vacancyId: vacancy.id });
   res.status(201).json(vacancy);
@@ -167,7 +221,17 @@ async function readvertise(req, res) {
   const fieldErrors = validateVacancyEditableFields({
     positionsRequired, postingType, deadline, employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA
   });
+  const questionError = screeningQuestionCountError(
+    normalizeDesirableRequirements(req.body.desirableRequirements), normalizeDisqualifyingRequirements(req.body.disqualifyingRequirements)
+  );
+  if (questionError) fieldErrors.push(questionError);
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
+  let readvertiseHiringManager = {};
+  if (req.body.hiringManager !== undefined) {
+    const parsed = hiringManagers.parseHiringManager(req.body.hiringManager);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    readvertiseHiringManager = parsed.data;
+  }
 
   // Re-fetched rather than trusting the closed row's own title/department -
   // if the underlying Position was renamed/moved since, the readvertised
@@ -178,17 +242,34 @@ async function readvertise(req, res) {
     return res.status(400).json({ error: 'The position behind this vacancy no longer exists' });
   }
 
-  const jobRef = await generateJobRef(
-    postingType,
-    new Date(),
-    (prefix) => vacancyModel.countByJobRefPrefix(prefix)
-  );
+  const carried = requisitionService.carriedOver(vacancy);
+  let headcountException;
+  try {
+    headcountException = await headcount.exceptionFor(position.id, Number(positionsRequired) || 1, req.body.headcountExceptionReason, req.user.id);
+  } catch (err) {
+    return sendRequisitionError(res, err);
+  }
+  const { headcountException: _old, ...carriedDetails } = carried.requisitionDetails || {};
+  carried.requisitionDetails = { ...carriedDetails, ...(headcountException ? { headcountException } : {}) };
 
-  const created = await vacancyModel.create({
-    jobRef,
+  const created = await vacancyModel.createWithJobRef(postingType, {
     status: 'PendingApproval',
     readvertisedFromId: vacancy.id,
+    // Re-running the same approved position - same requisition.
+    ...carried,
+    // The same hiring manager, unless HR names another.
+    hiringManagerName: vacancy.hiringManagerName, hiringManagerEmail: vacancy.hiringManagerEmail,
+    hiringManagerEntraId: vacancy.hiringManagerEntraId, hiringManagerJobTitle: vacancy.hiringManagerJobTitle,
+    ...readvertiseHiringManager,
     ...buildVacancyCreateData(position, vacancy.reportsToPositionId, req.body, req.user.id)
+  });
+  await audit.record({
+    entityType: 'Vacancy', entityId: created.id, action: 'Vacancy created (readvertisement)', actor: audit.actorFrom(req),
+    details: { jobRef: created.jobRef, readvertisedFromId: vacancy.id }
+  });
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancy.id, action: 'Vacancy readvertised', actor: audit.actorFrom(req),
+    details: { readvertisedAsId: created.id, jobRef: created.jobRef }
   });
   broadcastDashboardEvent('VacancyPendingApproval', { vacancyId: created.id });
   res.status(201).json(created);
@@ -209,12 +290,20 @@ async function update(req, res) {
     minimumExperienceYears, minimumEducationLevel, preferredFieldOfStudy,
     minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
     jobPurpose, essentialRequirements, desirableRequirements, disqualifyingRequirements,
-    generalKnowledge, specialSkills,
+    generalKnowledge, specialSkills, desirableQualifications,
     location, employmentCategory, internalSalaryRange, recruiterNotes } = req.body;
   const fieldErrors = validateVacancyEditableFields({
     positionsRequired, postingType, deadline, employmentCategory, minimumAge, maximumAge, minimumFlyingHours, minimumCGPA
   }, { partial: true });
+  const countOf = (list) => (Array.isArray(list) ? list.length : 0);
+  const nextDesirable = normalizeDesirableRequirements(desirableRequirements) ?? vacancy.desirableRequirements;
+  const nextDisqualifying = normalizeDisqualifyingRequirements(disqualifyingRequirements) ?? vacancy.disqualifyingRequirements;
+  const questionError = screeningQuestionCountError(nextDesirable, nextDisqualifying,
+    countOf(vacancy.desirableRequirements) + countOf(vacancy.disqualifyingRequirements));
+  if (questionError) fieldErrors.push(questionError);
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
+
+  if (vacancy.status === 'Rejected') return res.status(422).json({ error: 'A rejected vacancy can no longer be edited' });
 
   const data = {};
   if (postingType !== undefined) data.postingType = postingType;
@@ -246,10 +335,17 @@ async function update(req, res) {
   if (normalizedGeneralKnowledge !== undefined) data.generalKnowledge = normalizedGeneralKnowledge;
   const normalizedSpecialSkills = normalizeStringList(specialSkills);
   if (normalizedSpecialSkills !== undefined) data.specialSkills = normalizedSpecialSkills;
+  const normalizedDesirableQualifications = normalizeStringList(desirableQualifications);
+  if (normalizedDesirableQualifications !== undefined) data.desirableQualifications = normalizedDesirableQualifications;
   if (location !== undefined) data.location = location || null;
   if (employmentCategory !== undefined) data.employmentCategory = employmentCategory || null;
   if (internalSalaryRange !== undefined) data.internalSalaryRange = internalSalaryRange || null;
   if (recruiterNotes !== undefined) data.recruiterNotes = recruiterNotes || null;
+  if (req.body.hiringManager !== undefined) {
+    const parsed = hiringManagers.parseHiringManager(req.body.hiringManager);
+    if (parsed.error) return res.status(400).json({ error: parsed.error });
+    Object.assign(data, parsed.data);
+  }
 
   if (positionsRequired !== undefined) {
     const n = Number(positionsRequired);
@@ -260,11 +356,162 @@ async function update(req, res) {
       });
     }
     data.positionsRequired = n;
+    if (n > vacancy.positionsRequired) {
+      // More posts than before: within headcount, or an exception. Before
+      // approval the approver authorises it; on a published vacancy only a
+      // Director may raise it, which authorises it there and then.
+      let exception;
+      try {
+        exception = await headcount.exceptionFor(vacancy.positionId, n, req.body.headcountExceptionReason, req.user.id, vacancyId);
+      } catch (err) {
+        return sendRequisitionError(res, err);
+      }
+      if (exception) {
+        const approved = !['PendingApproval', 'Returned'].includes(vacancy.status);
+        if (approved && (ROLE_RANK[req.user.role] || 0) < ROLE_RANK.Director) {
+          return res.status(403).json({ error: 'Raising a published vacancy above the approved headcount needs a Director', code: 'HEADCOUNT_EXCEPTION_NEEDS_DIRECTOR' });
+        }
+        data.requisitionDetails = {
+          ...(vacancy.requisitionDetails || {}),
+          headcountException: approved
+            ? { ...exception, authorisedById: req.user.id, authorisedByRole: req.user.role, authorisedAt: new Date().toISOString() }
+            : exception
+        };
+      }
+    }
+  }
+
+  // Moving the deadline of a vacancy candidates can already see - extending
+  // or shortening it - needs a reason (FR-ATS-027). Before approval it's
+  // just drafting.
+  // Compared by calendar day: the edit form sends a plain date, and
+  // re-saving an untouched form must not count as moving the deadline.
+  const dayOf = (d) => (d ? d.toISOString().slice(0, 10) : null);
+  const deadlineMoved = data.deadline !== undefined && dayOf(data.deadline) !== dayOf(vacancy.deadline);
+  const published = ['Open', 'PartiallyFilled', 'Filled', 'Closed'].includes(vacancy.status);
+  const reason = reasonFrom(req.body);
+  if (deadlineMoved && published && !reason) {
+    return res.status(400).json({ error: 'Give a reason for changing the deadline of a published vacancy' });
   }
 
   const updated = await vacancyModel.update(vacancyId, data);
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancyId,
+    action: deadlineMoved && published
+      ? (vacancy.deadline && data.deadline && data.deadline > vacancy.deadline ? 'Vacancy deadline extended' : 'Vacancy deadline changed')
+      : 'Vacancy edited',
+    actor: audit.actorFrom(req), before: vacancy, after: updated, fields: Object.keys(data), comment: reason
+  });
   res.json(updated);
 }
+
+// A comment is mandatory wherever an approver says no, and when a vacancy
+// is closed or its published deadline moved (BR-ATS-07, FR-ATS-027).
+const MIN_REASON_LENGTH = 3;
+const MAX_REASON_LENGTH = 2000;
+function reasonFrom(body) {
+  const text = typeof body?.reason === 'string' ? body.reason.trim().slice(0, MAX_REASON_LENGTH) : '';
+  return text.length >= MIN_REASON_LENGTH ? text : null;
+}
+
+// Loads the vacancy for an approver's decision; answers and returns null
+// if it isn't awaiting approval.
+async function loadPendingApproval(req, res, verb) {
+  const vacancyId = Number(req.params.id);
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) { res.status(404).json({ error: 'Vacancy not found' }); return null; }
+  if (vacancy.status !== 'PendingApproval') {
+    res.status(422).json({ error: `Only a vacancy awaiting approval can be ${verb}` });
+    return null;
+  }
+  return vacancy;
+}
+
+function describeVacancy(vacancy) {
+  return `${vacancy.jobRef} (${vacancy.title})`;
+}
+
+// Notices are a side effect of a decision that already committed.
+async function notifySafely(recipientId, taskType, taskId, message) {
+  try {
+    await notify(recipientId, taskType, taskId, message);
+  } catch (err) {
+    console.error(`Failed to send ${taskType} notice for vacancy ${taskId}:`, err);
+  }
+}
+
+// PATCH /api/vacancies/:id/return - Manager+ sends a vacancy awaiting
+// approval back to HR with what needs to change. HR edits it and
+// resubmits it (below); the edits and the comment are in its history.
+async function returnForRevision(req, res) {
+  const vacancy = await loadPendingApproval(req, res, 'returned');
+  if (!vacancy) return;
+  const reason = reasonFrom(req.body);
+  if (!reason) return res.status(400).json({ error: 'Say what needs to change before this vacancy can be approved' });
+
+  const now = new Date();
+  const result = await vacancyModel.updateIfStatus(vacancy.id, 'PendingApproval', { status: 'Returned', returnedAt: now, returnReason: reason });
+  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  await slaModel.resolveEscalations('VacancyApproval', vacancy.id);
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancy.id, action: 'Vacancy returned for revision', actor: audit.actorFrom(req),
+    before: vacancy, after: { status: 'Returned' }, fields: ['status'], comment: reason
+  });
+  await notifySafely(vacancy.createdById, 'VacancyReturned', vacancy.id,
+    `${describeVacancy(vacancy)} was returned for revision: ${escapeHtml(reason)}. Edit it and resubmit it for approval.`);
+  broadcastDashboardEvent('VacancyReturned', { vacancyId: vacancy.id });
+  res.json(await vacancyModel.findById(vacancy.id));
+}
+
+// PATCH /api/vacancies/:id/reject - Manager+ refuses a vacancy outright.
+// Final: a rejected vacancy can't be resubmitted or approved.
+async function reject(req, res) {
+  const vacancy = await loadPendingApproval(req, res, 'rejected');
+  if (!vacancy) return;
+  const reason = reasonFrom(req.body);
+  if (!reason) return res.status(400).json({ error: 'A reason is required to reject a vacancy' });
+
+  const result = await vacancyModel.updateIfStatus(vacancy.id, 'PendingApproval', {
+    status: 'Rejected', rejectedAt: new Date(), rejectionReason: reason
+  });
+  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  await slaModel.resolveEscalations('VacancyApproval', vacancy.id);
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancy.id, action: 'Vacancy rejected', actor: audit.actorFrom(req),
+    before: vacancy, after: { status: 'Rejected' }, fields: ['status'], comment: reason
+  });
+  await notifySafely(vacancy.createdById, 'VacancyRejected', vacancy.id,
+    `${describeVacancy(vacancy)} was rejected: ${escapeHtml(reason)}`);
+  await hiringManagers.notify(vacancy, 'closed', { reason: `it was not approved for advertising (${reason})` });
+  broadcastDashboardEvent('VacancyRejected', { vacancyId: vacancy.id });
+  res.json(await vacancyModel.findById(vacancy.id));
+}
+
+// PATCH /api/vacancies/:id/resubmit - HR puts a returned vacancy back for
+// approval once it has been revised. The approval clock restarts.
+async function resubmit(req, res) {
+  const vacancyId = Number(req.params.id);
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+  if (vacancy.status !== 'Returned') return res.status(422).json({ error: 'Only a returned vacancy can be resubmitted' });
+  if (vacancy.deadline && vacancy.deadline < new Date()) {
+    return res.status(422).json({ error: 'This vacancy\'s deadline has already passed - extend the deadline before resubmitting it' });
+  }
+
+  const result = await vacancyModel.updateIfStatus(vacancyId, 'Returned', { status: 'PendingApproval', approvalRequestedAt: new Date() });
+  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy resubmitted for approval', actor: audit.actorFrom(req),
+    before: vacancy, after: { status: 'PendingApproval' }, fields: ['status'], comment: reasonFrom(req.body)
+  });
+  broadcastDashboardEvent('VacancyPendingApproval', { vacancyId });
+  res.json(await vacancyModel.findById(vacancyId));
+}
+
+// PATCH /api/vacancies/:id/close - takes a vacancy off the jobs board (the
+// "unpublish" of FR-ATS-027). A closed vacancy can be re-opened through
+// approve(). The reason is required and kept on the row and in the history.
+const CLOSABLE_STATUSES = ['PendingApproval', 'Open', 'PartiallyFilled', 'Filled'];
 
 async function close(req, res) {
   const vacancyId = Number(req.params.id);
@@ -274,9 +521,22 @@ async function close(req, res) {
   if (vacancy.status === 'Closed') {
     return res.status(422).json({ error: 'This vacancy is already closed' });
   }
+  if (!CLOSABLE_STATUSES.includes(vacancy.status)) {
+    return res.status(422).json({ error: `A ${vacancy.status.toLowerCase()} vacancy cannot be closed` });
+  }
+  const reason = reasonFrom(req.body);
+  if (!reason) return res.status(400).json({ error: 'A reason is required to close a vacancy' });
 
-  const updated = await vacancyModel.update(vacancyId, { status: 'Closed' });
-  res.json(updated);
+  const result = await vacancyModel.updateIfStatus(vacancyId, vacancy.status, { status: 'Closed', closedAt: new Date(), closeReason: reason });
+  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  if (vacancy.status === 'PendingApproval') await slaModel.resolveEscalations('VacancyApproval', vacancyId);
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy closed', actor: audit.actorFrom(req),
+    before: vacancy, after: { status: 'Closed' }, fields: ['status'], comment: reason
+  });
+  await hiringManagers.notify(vacancy, 'closed', { reason });
+  broadcastDashboardEvent('VacancyClosed', { vacancyId });
+  res.json(await vacancyModel.findById(vacancyId));
 }
 
 // SIMPLIFIED from the 5-tier flow (create -> Senior HR Officer review ->
@@ -288,15 +548,31 @@ async function close(req, res) {
 // changes later (the same principle already used for Vacancy.title and
 // ApplicationSnapshot - a historical fact must reflect what was true at
 // the time, not what is true now).
+// A Director's authority through an active delegation (the route itself
+// is Manager+).
+async function actsAsDirector(req) {
+  const delegationModel = require('../models/delegationModel');
+  const delegation = await delegationModel.findActiveForDelegate(req.user.id, new Date());
+  if (delegation && (ROLE_RANK[delegation.delegator.role] || 0) >= ROLE_RANK.Director) {
+    await delegationModel.logUsage(delegation.id, `${req.method} ${req.originalUrl} (headcount exception)`);
+    req.actingAsDelegateFor = delegation.delegatorId;
+    return true;
+  }
+  return false;
+}
+
 async function approve(req, res) {
   const vacancyId = Number(req.params.id);
   const vacancy = await vacancyModel.findById(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
 
   // Re-opening a previously Closed vacancy is still allowed - the one
-  // legitimate reuse of this endpoint beyond first approval.
-  if (['Open', 'PartiallyFilled', 'Filled'].includes(vacancy.status)) {
-    return res.status(422).json({ error: 'This vacancy does not need approval right now' });
+  // legitimate reuse of this endpoint beyond first approval. A Returned
+  // vacancy must be resubmitted first; a Rejected one is final.
+  if (!['PendingApproval', 'Closed'].includes(vacancy.status)) {
+    const why = vacancy.status === 'Returned' ? 'It was returned for revision - HR needs to resubmit it first'
+      : vacancy.status === 'Rejected' ? 'It was rejected' : 'It does not need approval right now';
+    return res.status(422).json({ error: `This vacancy can't be approved. ${why}.` });
   }
   // Approving (or re-opening) a vacancy whose deadline has already passed
   // would publish it in a state that can never accept an application -
@@ -313,15 +589,69 @@ async function approve(req, res) {
     return sendError(res, err, 422);
   }
 
-  const updated = await vacancyModel.update(vacancyId, {
+  // FR-ATS-018: created on a job description that isn't approved - the
+  // approver authorises that exception explicitly, and it is recorded.
+  const jdException = vacancy.requisitionDetails?.jdException;
+  const needsJdAuthorisation = jdException && !jdException.authorisedAt;
+  if (needsJdAuthorisation && req.body?.authoriseJdException !== true) {
+    return res.status(422).json({
+      error: `This vacancy was created on a job description that is not approved (reason given: ${jdException.reason}). `
+        + 'Approving it authorises that exception - confirm to go ahead.',
+      code: 'JD_EXCEPTION_NOT_AUTHORISED'
+    });
+  }
+
+  // FR-ATS-006: more posts than the approved headcount leaves - only a
+  // Director authorises that, explicitly.
+  const headcountException = vacancy.requisitionDetails?.headcountException;
+  const needsHeadcountAuthorisation = headcountException && !headcountException.authorisedAt;
+  if (needsHeadcountAuthorisation) {
+    if ((ROLE_RANK[req.user.role] || 0) < ROLE_RANK.Director && !(await actsAsDirector(req))) {
+      return res.status(403).json({
+        error: `This vacancy is above the approved headcount (reason given: ${headcountException.reason}) - a Director must approve it.`,
+        code: 'HEADCOUNT_EXCEPTION_NEEDS_DIRECTOR'
+      });
+    }
+    if (req.body?.authoriseHeadcountException !== true) {
+      return res.status(422).json({
+        error: `This vacancy asks for ${headcountException.requested} post(s) where the approved headcount left ${headcountException.available} `
+          + `(reason given: ${headcountException.reason}). Approving it authorises that exception - confirm to go ahead.`,
+        code: 'HEADCOUNT_EXCEPTION_NOT_AUTHORISED'
+      });
+    }
+  }
+  const stamp = { authorisedById: req.user.id, authorisedByRole: req.user.role, authorisedAt: new Date().toISOString() };
+
+  const result = await vacancyModel.updateIfStatus(vacancyId, vacancy.status, {
     status: 'Open', approvedAt: new Date(), approvedById: req.user.id,
-    approvedByRole: req.user.role // the role snapshot itself
+    approvedByRole: req.user.role, // the role snapshot itself
+    ...(needsJdAuthorisation || needsHeadcountAuthorisation ? {
+      requisitionDetails: {
+        ...vacancy.requisitionDetails,
+        ...(needsJdAuthorisation ? { jdException: { ...jdException, ...stamp } } : {}),
+        ...(needsHeadcountAuthorisation ? { headcountException: { ...headcountException, ...stamp } } : {})
+      }
+    } : {})
   });
+  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  const updated = await vacancyModel.findById(vacancyId);
 
   // VacancyApproval can now be tracked and escalated by the SLA checker,
   // since approvedAt finally gives it a clean "resolved" signal.
   await slaModel.resolveEscalations('VacancyApproval', vacancyId);
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancyId,
+    action: vacancy.status === 'Closed' ? 'Vacancy re-opened' : 'Vacancy approved', actor: audit.actorFrom(req),
+    before: vacancy, after: updated, fields: ['status'],
+    ...(needsJdAuthorisation || needsHeadcountAuthorisation ? {
+      comment: [
+        needsJdAuthorisation && `Authorised the exception for an unapproved job description: ${jdException.reason}`,
+        needsHeadcountAuthorisation && `Authorised going above the approved headcount: ${headcountException.reason}`
+      ].filter(Boolean).join(' ')
+    } : {})
+  });
 
+  await hiringManagers.notify(updated, 'published');
   broadcastDashboardEvent('VacancyApproved', { vacancyId });
   res.json(updated);
 }
@@ -397,6 +727,12 @@ async function transitionPostingType(req, res) {
   });
 
   await workflow.logVacancyPostingTypeTransition(vacancyId, vacancy.postingType, postingType, req.user.id);
+  if (newDeadline !== undefined) {
+    await audit.record({
+      entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy edited', actor: audit.actorFrom(req),
+      before: vacancy, after: updated, fields: ['deadline', 'postingTypeLocked']
+    });
+  }
 
   res.json(updated);
 }
@@ -439,7 +775,9 @@ async function listPublic(req, res) {
 // directorates). Both are gone; every staff member sees every vacancy.
 async function listForAdmin(req, res) {
   const vacancies = await vacancyModel.findManyForAdmin({});
-  res.json(vacancies);
+  // A vacancy the viewer applied for isn't theirs to run (conflictOfInterestService).
+  const conflicted = await conflictOfInterest.conflictedVacancyIds(req);
+  res.json(conflicted.length ? vacancies.filter((v) => !conflicted.includes(v.id)) : vacancies);
 }
 
 // Shared by staff (VacancyDetail.jsx, ApplicationManagement.jsx - via
@@ -460,7 +798,14 @@ async function getOne(req, res) {
   if (!Number.isInteger(vacancyId)) return res.status(404).json({ error: 'Not found' });
   const vacancy = await vacancyModel.findByIdWithDetails(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Not found' });
-  if (req.user?.type === 'staff') return res.json(vacancy);
+  if (req.user?.type === 'staff') {
+    try {
+      await conflictOfInterest.assertNotApplicant(req, vacancyId);
+    } catch (err) {
+      return res.status(err.status).json({ error: err.message, code: err.code });
+    }
+    return res.json(vacancy);
+  }
 
   const listedForViewer = PUBLIC_STATUSES.includes(vacancy.status)
     && vacancy.postingType === viewerPostingType(req.user);
@@ -477,7 +822,8 @@ async function listApplications(req, res) {
   const vacancyId = Number(req.params.id);
   if (!Number.isInteger(vacancyId)) return res.status(400).json({ error: 'Invalid vacancy id' });
   const applications = await applicationModel.findByVacancy(vacancyId);
-  res.json(applications);
+  await accessLog.record(req, { action: 'Viewed the applicants', vacancyId, candidateIds: applications.map((a) => a.candidateId) });
+  res.json(await duplicateApplicants.annotate(applications));
 }
 
 async function saveRanking(req, res) {
@@ -502,6 +848,12 @@ async function saveRanking(req, res) {
 
   const vacancy = await vacancyModel.findById(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+  // A vacancy with a shortlisting committee takes its interview shortlist
+  // from the committee's ranking (shortlistCommitteeController.propose),
+  // which HR cannot reorder.
+  if (await prisma.shortlistExercise.findUnique({ where: { vacancyId } })) {
+    return res.status(409).json({ error: 'This vacancy is shortlisted by its committee - propose the shortlist from the committee ranking' });
+  }
 
   // Every id must actually belong to this vacancy - without this, a
   // crafted/stale request could rank an application that belongs to a
@@ -532,8 +884,7 @@ async function saveRanking(req, res) {
       if (status >= 500) return sendError(res, err, 422);
       return res.status(status).json({ error: `Application ${appId}: ${message}` });
     }
-    const listStatus = i < vacancy.positionsRequired ? 'Primary' : 'Reserve';
-    rankData.push({ id: appId, rank: i + 1, listStatus });
+    rankData.push({ id: appId, rank: i + 1 });
   }
 
   // Lands at ShortlistProposed, not Shortlisted - same propose/approve
@@ -550,17 +901,23 @@ async function saveRanking(req, res) {
   // the ranking half-committed if one write failed partway through (e.g. a
   // row deleted between the guard check above and the write itself).
   const results = await prisma.$transaction(
-    rankData.map(({ id, rank, listStatus }) =>
+    rankData.map(({ id, rank }) =>
       prisma.application.update({
         where: { id },
         data: {
-          rank, listStatus, status: 'ShortlistProposed', rankVersion: { increment: 1 },
+          // listStatus: null - Primary/Reserve is decided after the
+          // interviews, on the merit list (meritListService), not here.
+          rank, listStatus: null, status: 'ShortlistProposed', rankVersion: { increment: 1 },
           shortlistProposedAt: new Date(), shortlistProposedById: req.user.id
         }
       })
     )
   );
+  await audit.recordMany(rankData.map(({ id, rank }) => ({
+    entityType: 'Application', entityId: id, action: 'Proposed for the interview shortlist', actor: audit.actorFrom(req),
+    details: { rank }
+  })));
   res.json(results);
 }
 
-module.exports = { create, update, close, approve, transitionPostingType, readvertise, listPublic, listForAdmin, getOne, listApplications, saveRanking };
+module.exports = { create, update, close, approve, returnForRevision, reject, resubmit, transitionPostingType, readvertise, listPublic, listForAdmin, getOne, listApplications, saveRanking };

@@ -4,46 +4,13 @@
 
 export const MODES = ['In-person', 'Virtual', 'Phone'];
 export const DEFAULT_DURATION = 60;
-export const HIGH_SPREAD = 25; // matches backend interviewService.HIGH_SPREAD
+export const VERDICTS = ['Shortlist', 'Hold', 'Reject'];
 
-// Ready-made scoresheets HR can start from and then edit - weights are 1-10,
-// each criterion rated 1-5 by every panelist (see backend
-// interviewService.scoreFromCriteria).
-export const RUBRIC_TEMPLATES = [
-  {
-    key: 'general',
-    label: 'General competency',
-    criteria: [
-      { name: 'Technical knowledge', weight: 3, description: 'Depth of knowledge for the role' },
-      { name: 'Relevant experience', weight: 2, description: 'How well past work matches the role' },
-      { name: 'Communication', weight: 2, description: 'Clarity, listening, structure of answers' },
-      { name: 'Problem solving', weight: 2, description: 'Approach to the scenarios put to them' },
-      { name: 'Values and conduct', weight: 1, description: 'Integrity, teamwork, professionalism' }
-    ]
-  },
-  {
-    key: 'technical',
-    label: 'Technical / safety-critical',
-    criteria: [
-      { name: 'Regulatory knowledge', weight: 3, description: 'ICAO/UCAA regulations and standards' },
-      { name: 'Technical competence', weight: 3, description: 'Hands-on skill for the role' },
-      { name: 'Safety awareness', weight: 3, description: 'Judgement under safety-critical scenarios' },
-      { name: 'Communication', weight: 1, description: 'Clear, standard phraseology and reporting' }
-    ]
-  },
-  {
-    key: 'leadership',
-    label: 'Management / leadership',
-    criteria: [
-      { name: 'Strategic thinking', weight: 3, description: 'Planning and priorities' },
-      { name: 'People leadership', weight: 3, description: 'Building and leading teams' },
-      { name: 'Stakeholder management', weight: 2, description: 'Working across directorates and externally' },
-      { name: 'Decision making', weight: 2, description: 'Sound, timely, accountable decisions' }
-    ]
-  }
-];
-
-export const RATING_LABELS = { 1: 'Poor', 2: 'Below expectations', 3: 'Meets expectations', 4: 'Strong', 5: 'Outstanding' };
+// The interview time has passed and nothing has been recorded - the panel's
+// results (scored on paper) are waiting for HR to enter them.
+export function resultsDue(round) {
+  return round.status === 'Scheduled' && !!round.scheduledDate && new Date(round.scheduledDate).getTime() <= Date.now();
+}
 
 export function formatDateTime(value) {
   if (!value) return 'Date to be confirmed';

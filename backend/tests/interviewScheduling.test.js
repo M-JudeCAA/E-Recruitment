@@ -2,7 +2,6 @@ jest.mock('../src/config/db', () => require('./__mocks__/db'));
 
 const prisma = require('../src/config/db');
 const scheduling = require('../src/services/interviewSchedulingService');
-const interviewService = require('../src/services/interviewService');
 const { buildCalendar } = require('../src/utils/icsCalendar');
 const { toCandidateInterview } = require('../src/utils/candidateInterview');
 
@@ -93,52 +92,6 @@ describe('findConflicts', () => {
     const conflicts = await scheduling.findConflicts({ slots: [{ key: 1, start: null, end: null }], panel: [] });
     expect(conflicts).toEqual([]);
     expect(prisma.interviewRound.findMany).not.toHaveBeenCalled();
-  });
-});
-
-describe('rubric scoring', () => {
-  test('normalizeCriteria keeps well-formed ids, generates the rest, and defaults weight to 1', () => {
-    const criteria = interviewService.normalizeCriteria([
-      { id: 'c_abcd1234', name: ' Technical ', weight: 3 },
-      { name: 'Communication' },
-      { name: '   ' }
-    ]);
-    expect(criteria).toEqual([
-      { id: 'c_abcd1234', name: 'Technical', weight: 3, description: null },
-      { id: expect.stringMatching(/^c_[0-9a-f]{8}$/), name: 'Communication', weight: 1, description: null }
-    ]);
-  });
-
-  test('normalizeCriteria treats an empty rubric as none, and rejects duplicates and bad weights', () => {
-    expect(interviewService.normalizeCriteria([])).toBeNull();
-    expect(interviewService.normalizeCriteria(null)).toBeNull();
-    expect(() => interviewService.normalizeCriteria([{ name: 'A' }, { name: 'a' }])).toThrow(/twice/);
-    expect(() => interviewService.normalizeCriteria([{ name: 'A', weight: 0 }])).toThrow(/Weight/);
-    expect(() => interviewService.normalizeCriteria([{ name: 'A', weight: 1.5 }])).toThrow(/Weight/);
-  });
-
-  test('scoreFromCriteria weights each 1-5 rating into a 0-100 score', () => {
-    const criteria = [{ id: 'a', name: 'A', weight: 1 }, { id: 'b', name: 'B', weight: 1 }];
-    expect(interviewService.scoreFromCriteria(criteria, { a: 5, b: 5 }).score).toBe(100);
-    expect(interviewService.scoreFromCriteria(criteria, { a: 3, b: 3 }).score).toBe(60);
-    expect(interviewService.scoreFromCriteria(criteria, { a: 4, b: 3 }).score).toBe(70);
-    expect(() => interviewService.scoreFromCriteria(criteria, { a: 6, b: 3 })).toThrow(/Rate "A"/);
-    expect(() => interviewService.scoreFromCriteria(criteria, { a: 2.5, b: 3 })).toThrow();
-  });
-
-  test('panelProgress ignores recused panelists and reports the spread', () => {
-    expect(interviewService.panelProgress([
-      { score: 90 }, { score: 60 }, { score: null, recusedAt: new Date() }
-    ])).toEqual({ total: 2, scored: 2, complete: true, spread: 30 });
-    expect(interviewService.panelProgress([])).toEqual({ total: 0, scored: 0, complete: false, spread: null });
-  });
-
-  test('criterionAverages averages each criterion across active panelists', () => {
-    const round = { criteria: [{ id: 'a', name: 'A', weight: 2 }] };
-    const avgs = interviewService.criterionAverages(round, [
-      { criterionScores: { a: 4 } }, { criterionScores: { a: 5 } }, { criterionScores: { a: 1 }, recusedAt: new Date() }
-    ]);
-    expect(avgs).toEqual([{ id: 'a', name: 'A', weight: 2, average: 4.5 }]);
   });
 });
 

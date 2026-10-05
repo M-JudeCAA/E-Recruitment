@@ -1,11 +1,19 @@
 import TextField from '../../components/TextField';
 import TextArea from '../../components/TextArea';
 import Select from '../../components/Select';
+import { disqualifyingMet } from '../../utils/screeningQuestions';
+
+function IneligibleNote() {
+  return (
+    <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: -12, marginBottom: 16 }}>
+      With this answer you are not eligible for this role, and the application cannot be submitted.
+    </p>
+  );
+}
 
 // Application-level answers - unlike the Profile step's candidate-level
 // fields, these vary per application and are saved onto this specific
-// Application row (see ApplyForm.jsx's saveDraft). Work authorization is
-// asked once, on the Profile step, rather than duplicated here.
+// Application row (see ApplyForm.jsx's saveDraft).
 //
 // desirableRequirements comes straight from the vacancy's Person
 // Specification (see VacancyAdvert) - each one gets its own question here,
@@ -16,9 +24,10 @@ import Select from '../../components/Select';
 // other questions.
 //
 // disqualifyingRequirements is the mandatory counterpart - same
-// yesno/number split, but not meeting one DOES cause automated screening
-// to fail (see backend screeningService.screenApplication). Still never
-// blocks the application itself from being submitted.
+// yesno/number split, but screening starts here: an answer that doesn't
+// meet one makes the candidate ineligible, ApplyForm won't let them past
+// this step, and the backend refuses the submit (see
+// screeningService.assessEligibility).
 export default function QuestionsStep({
   questions, set, vacancyLocation, desirableRequirements, desirableAnswers, setDesirableAnswer,
   disqualifyingRequirements, disqualifyingAnswers, setDisqualifyingAnswer
@@ -47,21 +56,27 @@ export default function QuestionsStep({
             Eligibility for this role
           </span>
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 14 }}>
-            These determine your eligibility for this specific role - please answer accurately.
+            These determine your eligibility for this specific role - please answer accurately. If you don't meet one,
+            you won't be able to submit this application.
           </p>
-          {disqualifyingRequirements.map((req) => req.answerType === 'number' ? (
-            <TextField key={req.id} label={req.text} required type="number"
-              hint={req.minValue !== undefined ? `Must be at least ${req.minValue}` : undefined}
-              value={disqualifyingAnswers[req.id] === undefined ? '' : disqualifyingAnswers[req.id]}
-              onChange={setDisqualifyingAnswer(req.id)} />
-          ) : (
-            <Select key={req.id} label={req.text} required
-              value={disqualifyingAnswers[req.id] === undefined ? '' : (disqualifyingAnswers[req.id] ? 'Yes' : 'No')}
-              onChange={setDisqualifyingAnswer(req.id)}>
-              <option value="">Select one</option>
-              <option value="Yes">Yes</option>
-              <option value="No">No</option>
-            </Select>
+          {disqualifyingRequirements.map((req) => (
+            <div key={req.id}>
+              {req.answerType === 'number' ? (
+                <TextField label={req.text} required type="number"
+                  hint={req.minValue !== undefined ? `Must be at least ${req.minValue}` : undefined}
+                  value={disqualifyingAnswers[req.id] === undefined ? '' : disqualifyingAnswers[req.id]}
+                  onChange={setDisqualifyingAnswer(req.id)} />
+              ) : (
+                <Select label={req.text} required
+                  value={disqualifyingAnswers[req.id] === undefined ? '' : (disqualifyingAnswers[req.id] ? 'Yes' : 'No')}
+                  onChange={setDisqualifyingAnswer(req.id)}>
+                  <option value="">Select one</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </Select>
+              )}
+              {disqualifyingMet(req, disqualifyingAnswers[req.id]) === false && <IneligibleNote />}
+            </div>
           ))}
         </div>
       )}

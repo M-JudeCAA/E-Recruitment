@@ -21,7 +21,7 @@ async function notify(recipientId, taskType, taskId, message) {
 
 async function notifyAllWithRole(role, taskType, taskId, message) {
   const prisma = require('../config/db');
-  const recipients = await prisma.staffUser.findMany({ where: { role }, select: { id: true } });
+  const recipients = await prisma.staffUser.findMany({ where: { role, active: true }, select: { id: true } });
   await Promise.all(recipients.map((r) => notify(r.id, taskType, taskId, message)));
 }
 

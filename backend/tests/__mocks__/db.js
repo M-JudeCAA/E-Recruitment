@@ -1,21 +1,39 @@
 const mockDb = {
   application: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), count: jest.fn() },
-  vacancy: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
-  offer: { update: jest.fn(), updateMany: jest.fn(), count: jest.fn(), create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
+  applicationDocument: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), count: jest.fn(), delete: jest.fn() },
+  shortlistExercise: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+  shortlistMember: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },
+  shortlistAssignment: { findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), createMany: jest.fn(), update: jest.fn() },
+  shortlistRating: { upsert: jest.fn(), deleteMany: jest.fn() },
+  shortlistDecision: { upsert: jest.fn() },
+  vacancy: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), updateMany: jest.fn(), create: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+  offer: { update: jest.fn(), updateMany: jest.fn(), count: jest.fn(), create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), groupBy: jest.fn() },
   workExperience: { findMany: jest.fn() },
   education: { findMany: jest.fn() },
   certificate: { findMany: jest.fn() },
   examGrade: { findMany: jest.fn() },
-  auditLog: { create: jest.fn() },
-  candidate: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+  auditLog: { create: jest.fn(), findMany: jest.fn() },
+  jobRefSequence: { findUnique: jest.fn() },
+  vacancyDraft: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn(), deleteMany: jest.fn() },
+  candidate: { findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn(), create: jest.fn() },
   internalProfile: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
   panelMember: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },
   interviewRound: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
-  panelAccessToken: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), deleteMany: jest.fn() },
+  excoShortlistApproval: { create: jest.fn(), findMany: jest.fn() },
+  documentTemplate: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
+  setting: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
+  dataSubjectRequest: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+  dataPurgeLog: { create: jest.fn(), findMany: jest.fn() },
+  candidateTag: { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), delete: jest.fn() },
+  candidateTagging: { findMany: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
+  bulkEmail: { create: jest.fn(), findMany: jest.fn() },
+  bulkEmailRecipient: { updateMany: jest.fn() },
+  hire: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
   position: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
-  department: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
+  department: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
+  orgImport: { create: jest.fn() },
   directorate: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
-  staffUser: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
+  staffUser: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
   delegation: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
   delegationUsage: { create: jest.fn(), findMany: jest.fn() },
   slaPolicy: { findUnique: jest.fn(), upsert: jest.fn(), findMany: jest.fn() },
@@ -23,7 +41,9 @@ const mockDb = {
   notification: { create: jest.fn(), findMany: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
   candidateNotification: { create: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
   systemHealth: { findMany: jest.fn(), upsert: jest.fn(), updateMany: jest.fn() },
-  verificationToken: { deleteMany: jest.fn() }
+  verificationToken: { deleteMany: jest.fn(), create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+  pendingCandidateRegistration: { create: jest.fn(), findUnique: jest.fn(), delete: jest.fn() },
+  dataAccessLog: { create: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn() }
 };
 
 // Self-referencing so `tx.offer.updateMany(...)` etc. inside a
@@ -36,5 +56,9 @@ mockDb.$transaction = jest.fn((arg) => (typeof arg === 'function' ? arg(mockDb) 
 // Raw SQL - used for the vacancy row lock (SELECT ... FOR UPDATE) in
 // workflowService.acceptOfferTransactionally.
 mockDb.$queryRaw = jest.fn();
+
+// Raw SQL writes - the job reference counter upsert in
+// vacancyModel.createWithJobRef.
+mockDb.$executeRaw = jest.fn();
 
 module.exports = mockDb;

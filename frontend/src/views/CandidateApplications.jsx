@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Award, ClipboardList } from 'lucide-react';
+import { ClipboardList } from 'lucide-react';
 import client from '../models/apiClient';
 import { useAuth } from '../models/AuthContext';
 import CandidateSidebar from '../components/CandidateSidebar';
@@ -16,6 +16,7 @@ import BoardView from '../components/BoardView';
 import LoadMoreControl from '../components/LoadMoreControl';
 import { useConfirm } from '../components/ConfirmDialog';
 import CandidateInterviewCard from '../components/interviews/CandidateInterviewCard';
+import CandidateOfferPanel from '../components/offers/CandidateOfferPanel';
 
 const PAGE_SIZE = 10;
 
@@ -42,26 +43,6 @@ const FILTERS = [
   { key: 'closed', label: 'Closed', test: (a) => CLOSED_STATUSES.includes(a.status) },
 ];
 
-function OfferPanel({ offer, onRespond, busy }) {
-  return (
-    <div style={{
-      marginTop: 10, padding: '10px 12px', borderRadius: 'var(--radius-sm)',
-      background: 'var(--color-bg-subtle)', display: 'flex', alignItems: 'center',
-      justifyContent: 'space-between', flexWrap: 'wrap', gap: 10
-    }}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600 }}>
-        <Award size={16} color="var(--color-accent)" /> Offer <StatusBadge status={offer.status} />
-      </span>
-      {offer.status === 'Approved' && (
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Button loading={busy === 'accept'} onClick={() => onRespond('accept')}>Accept offer</Button>
-          <Button variant="ghost" loading={busy === 'decline'} onClick={() => onRespond('decline')}>Decline</Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // Candidate-level profile fields used to be edited from a form embedded at
 // the top of this page; they now have their own "My Profile" sidebar stop
 // (CandidateProfile.jsx), so this page can focus purely on what its name
@@ -73,6 +54,7 @@ export default function CandidateApplications() {
   const confirm = useConfirm();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   // ?filter=interviews (CandidateHome's "Confirm or reschedule") opens on that tab.
   const [filter, setFilter] = useState(() => {
     const requested = new URLSearchParams(window.location.search).get('filter');
@@ -94,7 +76,8 @@ export default function CandidateApplications() {
   useEffect(() => { setVisibleCount(PAGE_SIZE); }, [filter]);
 
   const loadApplications = () => client.get('/api/candidates/me/applications')
-    .then((res) => setApplications(res.data))
+    .then((res) => { setApplications(res.data); setLoadError(''); })
+    .catch((err) => setLoadError(err.response?.data?.error || 'Could not load your applications'))
     .finally(() => setLoading(false));
 
   useEffect(() => {
@@ -112,11 +95,11 @@ export default function CandidateApplications() {
     return applications.filter(test);
   }, [applications, filter]);
 
-  const respondToOffer = async (offerId, action) => {
+  const respondToOffer = async (offerId, action, reason) => {
     setOfferMessage('');
     setBusyOfferId(`${offerId}-${action}`);
     try {
-      await client.patch(`/api/applications/offers/${offerId}/${action}`);
+      await client.patch(`/api/applications/offers/${offerId}/${action}`, action === 'decline' ? { reason: reason || undefined } : undefined);
       setOfferMessage(action === 'accept' ? 'Offer accepted. Congratulations!' : 'Offer declined.');
       await loadApplications();
     } catch (err) {
@@ -168,6 +151,7 @@ export default function CandidateApplications() {
 
           <Alert type="info" message={offerMessage} />
           <Alert type="info" message={withdrawMessage} />
+          <Alert type="error" message={loadError} />
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 'var(--spacing-md)', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -187,7 +171,7 @@ export default function CandidateApplications() {
 
           {loading && <LoadingState label="Loading your applications..." />}
 
-          {!loading && applications.length === 0 && (
+          {!loading && !loadError && applications.length === 0 && (
             <Card style={{ textAlign: 'center', padding: 'var(--spacing-lg)' }}>
               <ClipboardList size={28} color="var(--color-text-muted)" style={{ marginBottom: 8 }} />
               <p style={{ color: 'var(--color-text-muted)', margin: '0 0 12px' }}>
@@ -306,10 +290,11 @@ export default function CandidateApplications() {
               )}
 
               {app.offer && (
-                <OfferPanel
+                <CandidateOfferPanel
                   offer={app.offer}
+                  jobTitle={app.vacancy.title}
                   busy={busyOfferId?.startsWith(`${app.offer.id}-`) ? busyOfferId.split('-')[1] : null}
-                  onRespond={(action) => respondToOffer(app.offer.id, action)}
+                  onRespond={(action, reason) => respondToOffer(app.offer.id, action, reason)}
                 />
               )}
 

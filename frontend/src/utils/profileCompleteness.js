@@ -7,16 +7,13 @@ const INTERNAL_PROFILE_FIELDS = ['employeeId', 'department', 'position', 'dateJo
 
 export function getMissingProfileFields(candidate) {
   const missing = [];
-  if (!candidate) return ['location', 'workAuthorization', 'nationalId', 'education', 'workExperience'];
+  if (!candidate) return ['location', 'districtOfOrigin', 'nationalId', 'education', 'workExperience'];
 
   if (!candidate.location) missing.push('location');
-  if (!candidate.workAuthorization) missing.push('workAuthorization');
+  if (!candidate.districtOfOrigin) missing.push('districtOfOrigin');
 
-  if (!candidate.nationalId) {
-    missing.push('nationalId');
-  } else if (candidate.idType === 'NationalID' && !validateNationalId(candidate.nationalId)) {
-    missing.push('nationalId');
-  }
+  // The NIN is the only identity document accepted.
+  if (!validateNationalId(candidate.nationalId)) missing.push('nationalId');
 
   if (!(candidate.education || []).length) missing.push('education');
   if (!(candidate.workExperience || []).length) missing.push('workExperience');
@@ -36,7 +33,7 @@ export function isProfileComplete(candidate) {
 }
 
 // Denominator matches getMissingProfileFields' own checks: the 5 base
-// fields it always checks (location, workAuthorization, nationalId,
+// fields it always checks (location, districtOfOrigin, nationalId,
 // education, workExperience), plus INTERNAL_PROFILE_FIELDS when the
 // candidate is Internal - so this stays in lockstep with that function's
 // notion of "missing" without duplicating the field list.

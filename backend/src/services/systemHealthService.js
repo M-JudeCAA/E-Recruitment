@@ -16,8 +16,13 @@ const JOBS = [
   { name: 'checkSlaEscalations', label: 'SLA escalation check' },
   { name: 'checkVacancyDeadlines', label: 'vacancy deadline notices' },
   { name: 'sendInterviewReminders', label: 'interview reminders and score follow-ups' },
+  { name: 'expireOffers', label: 'offer deadline reminders and expiry' },
   { name: 'cleanupPendingRegistrations', label: 'cleanup of abandoned registrations' },
-  { name: 'cleanupVerificationTokens', label: 'cleanup of old confirmation and reset links' }
+  { name: 'cleanupVerificationTokens', label: 'cleanup of old confirmation and reset links' },
+  { name: 'cleanupRequisitionUploads', label: 'cleanup of unused requisition uploads' },
+  { name: 'purgeAccessLog', label: 'removal of access log records past their retention period' },
+  { name: 'purgeCandidateData', label: 'erasure of candidates\' data past its retention period' },
+  { name: 'retryHrisHandoffs', label: 'sending hires to the HRIS' }
 ];
 const STALE_AFTER_HOURS = 3;
 // A single failed email shows on the banner straight away (it is the
@@ -99,7 +104,7 @@ async function getStatus(now = new Date()) {
 async function alertDirectors(key, message, now) {
   const claimed = await systemHealthModel.claimAlert(key, now, ALERT_WINDOW_MS);
   if (claimed.count === 0) return false;
-  const directors = await prisma.staffUser.findMany({ where: { role: 'Director' }, select: { id: true } });
+  const directors = await prisma.staffUser.findMany({ where: { role: 'Director', active: true }, select: { id: true } });
   await Promise.all(directors.map((d) => notificationModel.create({
     recipientId: d.id, channel: 'InApp', taskType: 'SystemHealthAlert', taskId: 0, message
   })));

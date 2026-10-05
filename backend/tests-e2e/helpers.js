@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const request = require('supertest');
 const prisma = require('../src/config/db');
 const app = require('../src/app');
+const { buildRequisitionDocx, buildScannedPdf } = require('../scripts/lib/requisitionDocument');
 
 const PASSWORD = 'ChangeMe123!';
 let passwordHash;
@@ -11,9 +12,15 @@ async function resetDatabase() {
   const tables = await prisma.$queryRaw`
     SELECT TABLE_NAME AS name FROM information_schema.TABLES
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME <> '_prisma_migrations'`;
-  await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
-  for (const { name } of tables) await prisma.$executeRawUnsafe(`TRUNCATE TABLE \`${name}\``);
-  await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
+  // FOREIGN_KEY_CHECKS is per connection and Prisma pools connections, so
+  // every statement must run on the same one - an interactive transaction
+  // pins it. (Run separately, a TRUNCATE could land on a connection that
+  // still has the checks on, failing at random.)
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
+    for (const { name } of tables) await tx.$executeRawUnsafe(`TRUNCATE TABLE \`${name}\``);
+    await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
+  }, { timeout: 30000 });
 }
 
 async function hash() {
@@ -42,7 +49,7 @@ async function createCandidate({ fullName, email, candidateType = 'External' }) 
   return prisma.candidate.create({
     data: {
       fullName, email, candidateType, passwordHash: await hash(), emailConfirmed: true,
-      location: 'Kampala', workAuthorization: 'Yes', idType: 'NationalID',
+      location: 'Kampala', districtOfOrigin: 'Wakiso',
       nationalId: `CM90${String(nationalIdSeq).padStart(10, '0')}`,
       education: { create: [{ institution: 'Makerere University', qualificationLevelText: 'Bachelors', qualificationLevel: 'Bachelors', fieldOfStudy: 'Human Resource Management', yearCompleted: 2015 }] },
       workExperience: { create: [{ employer: 'Uganda Revenue Authority', jobTitle: 'HR Assistant', startDate: new Date('2016-01-01'), endDate: new Date('2022-12-31') }] }
@@ -69,6 +76,7 @@ function api(token) {
     get: (url) => withAuth(request(app).get(url)),
     post: (url, body) => withAuth(request(app).post(url)).send(body || {}),
     patch: (url, body) => withAuth(request(app).patch(url)).send(body || {}),
+    put: (url, body) => withAuth(request(app).put(url)).send(body || {}),
     delete: (url) => withAuth(request(app).delete(url))
   };
 }
@@ -79,6 +87,69 @@ const REFEREES = JSON.stringify([
   { name: 'Referee Three', phone: '0700000003', email: 'ref3@example.com' }
 ]);
 
+// submit() requires at least one academic document on the draft.
+async function attachAcademicDocument(token, applicationId) {
+  const res = await request(app).post(`/api/applications/${applicationId}/documents`)
+    .set('Authorization', `Bearer ${token}`)
+    .field('category', 'Academic')
+    .attach('file', Buffer.from('%PDF-1.4 test certificate'), { filename: 'certificate.pdf', contentType: 'application/pdf' });
+  return expectStatus(res, 201).body;
+}
+
+// Uploads an EXCO-approved requisition (a generated Word document - see
+// scripts/lib/requisitionDocument.js) and returns what the server read from
+// it. Each call makes a distinct document, since one document can only
+// ever open one vacancy.
+let requisitionSeq = 0;
+async function uploadRequisition(token, spec = {}) {
+  requisitionSeq += 1;
+  const docx = await buildRequisitionDocx({ excoMinute: `EXCO MIN ${requisitionSeq}/2026`, ...spec });
+  const res = await request(app).post('/api/vacancies/requisition')
+    .set('Authorization', `Bearer ${token}`)
+    .attach('document', docx, { filename: 'Job Opening Request.docx', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+  return expectStatus(res, 200).body;
+}
+
+// Uploads the scan of the requisition as EXCO signed it (an image-only PDF)
+// and returns the stored upload to send as requisitionSignedCopy.
+async function uploadSignedCopy(token) {
+  const res = await request(app).post('/api/vacancies/requisition/signed-copy')
+    .set('Authorization', `Bearer ${token}`)
+    .attach('document', buildScannedPdf(1), { filename: 'Signed requisition.pdf', contentType: 'application/pdf' });
+  return expectStatus(res, 200).body;
+}
+
+// Creates a vacancy the only way the API allows - from an uploaded
+// requisition and its signed scan - with `body` as the reviewed form.
+// Returns the raw response.
+async function createVacancyFromRequisition(token, body, spec = {}) {
+  const requisition = await uploadRequisition(token, spec);
+  const signedCopy = await uploadSignedCopy(token);
+  return request(app).post('/api/vacancies').set('Authorization', `Bearer ${token}`)
+    .send({ ...body, requisitionDocument: requisition.document, requisitionSignedCopy: signedCopy, requisitionConfirmed: true });
+}
+
+// Records a panel's results the way the HR Officer does after the interview:
+// score, verdict and the signed score sheet (a small PDF). The round must
+// already be in the past - pass `backdate` to move it there first.
+async function recordInterviewResults(token, roundId, { score = 82, recommendation = 'Shortlist', notes, backdate = true, sheet = true } = {}) {
+  if (backdate) await prisma.interviewRound.update({ where: { id: roundId }, data: { scheduledDate: new Date(Date.now() - 3600000) } });
+  let req = request(app).patch(`/api/interviews/${roundId}/results`).set('Authorization', `Bearer ${token}`)
+    .field('score', String(score)).field('recommendation', recommendation);
+  if (notes) req = req.field('notes', notes);
+  if (sheet) req = req.attach('scoreSheet', Buffer.from('%PDF-1.4 signed score sheet'), { filename: 'Score sheet.pdf', contentType: 'application/pdf' });
+  return req;
+}
+
+// Attaches EXCO's signed approval of the interview shortlist (approved in
+// the system, then printed and signed outside it). struckOff: application
+// ids EXCO did not approve. Returns the raw response.
+async function attachExcoApproval(token, vacancyId, { struckOff = [], excoReference = 'EXCO MIN 12/2026' } = {}) {
+  return request(app).post(`/api/vacancies/${vacancyId}/exco-shortlist`).set('Authorization', `Bearer ${token}`)
+    .field('excoReference', excoReference).field('struckOff', JSON.stringify(struckOff))
+    .attach('document', buildScannedPdf(1), { filename: 'Signed shortlist.pdf', contentType: 'application/pdf' });
+}
+
 function expectStatus(res, status) {
   if (res.status !== status) {
     throw new Error(`Expected ${status} from ${res.req?.method} ${res.req?.path}, got ${res.status}: ${JSON.stringify(res.body)}`);
@@ -86,4 +157,7 @@ function expectStatus(res, status) {
   return res;
 }
 
-module.exports = { prisma, app, PASSWORD, resetDatabase, createStaff, createOrg, createCandidate, staffToken, candidateToken, api, REFEREES, expectStatus };
+module.exports = {
+  prisma, app, PASSWORD, resetDatabase, createStaff, createOrg, createCandidate, staffToken, candidateToken, api, REFEREES,
+  expectStatus, attachAcademicDocument, uploadRequisition, uploadSignedCopy, createVacancyFromRequisition, recordInterviewResults, attachExcoApproval
+};

@@ -1,9 +1,16 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
+const { parseSource } = require('../utils/applicationSources');
 const { sendError } = require('../utils/errorResponse');
 const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
 const candidateModel = require('../models/candidateModel');
 const workflow = require('../services/workflowService');
-const { screenApplication, scoreApplication, evaluateEssentialCriteria } = require('../services/screeningService');
+const audit = require('../services/auditService');
+const applicationDocumentModel = require('../models/applicationDocumentModel');
+const evidence = require('../utils/screeningEvidence');
+const {
+  screenApplication, scoreApplication, evaluateEssentialCriteria, assessEligibility
+} = require('../services/screeningService');
 const { fileUrl } = require('../middleware/upload');
 const {
   assertPostingTypeEligible, assertVacancyAcceptingApplications, assertBeforeDeadline
@@ -13,6 +20,7 @@ const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { countCompleteReferees } = require('../utils/referees');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { notify } = require('../services/notificationService');
+const { PRIVACY_NOTICE_VERSION } = require('../config/privacyNotice');
 
 // REPLACES the old single-step submit() entirely - having two parallel
 // "create an application" code paths (one direct-to-Submitted, one
@@ -212,6 +220,14 @@ async function submit(req, res) {
   if (countCompleteReferees(application.referees) < 3) {
     return res.status(400).json({ error: 'Three referees (with name, phone and email) are required before submitting' });
   }
+  // FR-ATS-038: the candidate agrees to UCAA processing and retaining their
+  // data, per the privacy notice, as part of submitting - never assumed.
+  if (req.body?.consent !== true) {
+    return res.status(400).json({
+      error: 'Please confirm that you consent to UCAA processing your personal data, as described in the privacy notice',
+      code: 'CONSENT_REQUIRED'
+    });
+  }
 
   const vacancy = await vacancyModel.findById(application.vacancyId);
   try {
@@ -237,24 +253,56 @@ async function submit(req, res) {
     return res.status(422).json({ error: 'Please complete your profile before submitting an application' });
   }
 
-  // If HR has already opened this vacancy's review queue
-  // (reviewStartedAt set), a late-but-valid applicant should join that
-  // queue immediately, screened the same way the original batch was -
-  // not sit invisibly at Submitted until someone remembers to re-run
-  // Begin Review a second time.
-  let data = { status: 'Submitted', submittedDate: new Date() };
-  if (vacancy.reviewStartedAt) {
-    const result = screenApplication(application, candidate, vacancy);
-    const score = scoreApplication(application, candidate, vacancy);
-    const essentialCriteria = evaluateEssentialCriteria(candidate, vacancy);
-    data = {
-      ...data, status: 'UnderReview',
-      screeningPassed: result.passed, screeningReasons: JSON.stringify(result.reasons), screenedAt: new Date(),
-      fieldOfStudyMatch: result.fieldOfStudyMatch,
-      shortlistScore: score.score, shortlistScoreReasons: JSON.stringify(score.reasons),
-      essentialCriteriaResults: JSON.stringify(essentialCriteria)
-    };
+  const documents = await applicationDocumentModel.findByApplication(applicationId);
+  if (!documents.some((d) => d.category === 'Academic')) {
+    return res.status(400).json({ error: 'Please upload at least one academic document (certificate or transcript) before submitting' });
   }
+
+  // Screening starts here, at the point of application: a candidate who
+  // doesn't meet the vacancy's minimums, or who answered a Disqualifying
+  // question the wrong way, never reaches the applicant pool. Their Draft
+  // stays as it is, so a profile that was merely out of date can be fixed
+  // and submitted again.
+  const eligibility = assessEligibility(application, candidate, vacancy);
+  if (eligibility.unanswered.length > 0) {
+    return res.status(400).json({
+      error: 'Please answer every eligibility question before submitting', unanswered: eligibility.unanswered
+    });
+  }
+  if (!eligibility.eligible) {
+    return res.status(422).json({
+      error: 'You do not meet the requirements for this vacancy, so this application cannot be submitted',
+      code: 'NOT_ELIGIBLE', reasons: eligibility.reasons
+    });
+  }
+  // What screening relied on must be backed by evidence: the National ID
+  // for an age limit, a certificate or licence for a question answered Yes.
+  const missing = evidence.missingEvidence(evidence.evidenceRequirements(vacancy, evidence.answersOf(application)), documents);
+  if (missing.length > 0) {
+    return res.status(400).json({
+      error: `Please upload the evidence for: ${missing.map((m) => m.label).join('; ')}`,
+      code: 'EVIDENCE_REQUIRED', missing
+    });
+  }
+
+  // Every submitted application carries its screening result from the
+  // start. If HR has already opened this vacancy's review queue
+  // (reviewStartedAt set), a late applicant also joins that queue
+  // immediately rather than sitting at Submitted until someone re-runs
+  // Begin Review.
+  const screening = screenApplication(application, candidate, vacancy);
+  const score = scoreApplication(application, candidate, vacancy);
+  const essentialCriteria = evaluateEssentialCriteria(candidate, vacancy);
+  const data = {
+    status: vacancy.reviewStartedAt ? 'UnderReview' : 'Submitted', submittedDate: new Date(),
+    consentGivenAt: new Date(), consentNoticeVersion: PRIVACY_NOTICE_VERSION,
+    // Where they saw the advert - optional, for the Source of Hire report.
+    ...parseSource(req.body),
+    screeningPassed: screening.passed, screeningReasons: JSON.stringify(screening.reasons), screenedAt: new Date(),
+    fieldOfStudyMatch: screening.fieldOfStudyMatch,
+    shortlistScore: score.score, shortlistScoreReasons: JSON.stringify(score.reasons),
+    essentialCriteriaResults: JSON.stringify(essentialCriteria)
+  };
 
   // Scoped to status: 'Draft' so a second, near-simultaneous submit call
   // for the same application (double click reaching the API, a retried
@@ -266,6 +314,10 @@ async function submit(req, res) {
     return res.status(409).json({ error: 'This application has already been submitted' });
   }
   const updated = await applicationModel.findById(applicationId);
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Application submitted', actor: audit.actorFrom(req),
+    before: application, after: updated, fields: ['status']
+  });
 
   await workflow.captureSnapshot({
     entityType: 'ApplicationSnapshot', entityId: applicationId, candidateId: req.user.id
@@ -288,6 +340,10 @@ async function submit(req, res) {
     vacancy.createdById, 'NewApplicationSubmitted', applicationId,
     `${candidate.fullName} applied for "${vacancy.title}" (${vacancy.jobRef}).`
   );
+
+  // A UCAA staff member applying - the conflict-of-interest rule shuts them
+  // out of the vacancy; this tells HR so someone else runs it.
+  await conflictOfInterest.flagStaffApplicant(candidate, vacancy, applicationId);
 
   broadcastDashboardEvent('ApplicationSubmitted', { applicationId, vacancyId: vacancy.id });
   res.json(updated);
@@ -329,7 +385,101 @@ async function withdraw(req, res) {
   const updated = await applicationModel.update(applicationId, {
     status: 'Withdrawn', withdrawalReason: reason || null
   });
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Application withdrawn by the candidate', actor: audit.actorFrom(req),
+    before: application, after: updated, fields: ['status'], comment: reason || null
+  });
   res.json(updated);
 }
 
-module.exports = { saveDraft, submit, withdraw };
+// The apply wizard's early screening check: whether this candidate, as
+// their profile stands now (and with the eligibility answers on their
+// draft, if they have one), may apply to this vacancy. Same rules submit()
+// enforces - see screeningService.assessEligibility. Only the reasons
+// derived from the candidate's own data are returned, never other
+// applicants' or HR's.
+async function eligibility(req, res) {
+  const vacancyId = Number(req.params.vacancyId);
+  if (!Number.isInteger(vacancyId)) return res.status(400).json({ error: 'Invalid vacancy id' });
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+
+  const [candidate, application] = await Promise.all([
+    candidateModel.findByIdWithRecords(req.user.id),
+    applicationModel.findFirst({ vacancyId, candidateId: req.user.id })
+  ]);
+  const result = assessEligibility(application, candidate, vacancy);
+  const documents = application ? await applicationDocumentModel.findByApplication(application.id) : [];
+  const requirements = evidence.evidenceRequirements(vacancy, evidence.answersOf(application));
+  const missing = new Set(evidence.missingEvidence(requirements, documents).map((r) => r.key));
+  res.json({
+    ...result,
+    academicDocuments: documents.filter((d) => d.category === 'Academic').length,
+    evidence: requirements.map((r) => ({ ...r, provided: !missing.has(r.key) }))
+  });
+}
+
+const DOCUMENT_CATEGORIES = ['Academic', 'Other', 'Evidence'];
+const MAX_DOCUMENTS_PER_CATEGORY = 10;
+const MAX_DOCUMENTS_PER_EVIDENCE = 5;
+
+// Loads an application for a document change: must be the caller's own and
+// still a Draft - once submitted, what HR received is fixed.
+async function loadOwnDraft(req, res) {
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId)) { res.status(400).json({ error: 'Invalid application id' }); return null; }
+  const application = await applicationModel.findById(applicationId);
+  if (!application) { res.status(404).json({ error: 'Application not found' }); return null; }
+  if (application.candidateId !== req.user.id) { res.status(403).json({ error: 'This is not your application' }); return null; }
+  if (application.status !== 'Draft') {
+    res.status(422).json({ error: 'Documents can only be changed before the application is submitted' });
+    return null;
+  }
+  return application;
+}
+
+// One academic or other supporting document, uploaded as soon as the
+// candidate picks it (not held until the next draft save).
+async function addDocument(req, res) {
+  const application = await loadOwnDraft(req, res);
+  if (!application) return;
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const category = req.body.category;
+  if (!DOCUMENT_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: `Document category must be one of: ${DOCUMENT_CATEGORIES.join(', ')}` });
+  }
+  let evidenceKey = null;
+  let label = (req.body.label || '').trim().slice(0, 150) || null;
+  if (category === 'Evidence') {
+    // Filed under one of this vacancy's evidence requirements, labelled
+    // with it so HR sees what it is meant to prove.
+    evidenceKey = String(req.body.evidenceKey || '');
+    const vacancy = await vacancyModel.findById(application.vacancyId);
+    const requirement = evidence.KEY_RE.test(evidenceKey) ? evidence.requirementFor(vacancy, evidenceKey) : null;
+    if (!requirement) return res.status(400).json({ error: 'Say which requirement this document is evidence for' });
+    const mine = await applicationDocumentModel.findByApplication(application.id);
+    if (mine.filter((d) => d.evidenceKey === evidenceKey).length >= MAX_DOCUMENTS_PER_EVIDENCE) {
+      return res.status(422).json({ error: `You can attach at most ${MAX_DOCUMENTS_PER_EVIDENCE} documents for one requirement` });
+    }
+    label = requirement.label.slice(0, evidence.MAX_LABEL);
+  } else if (await applicationDocumentModel.countByApplication(application.id, category) >= MAX_DOCUMENTS_PER_CATEGORY) {
+    return res.status(422).json({ error: `You can attach at most ${MAX_DOCUMENTS_PER_CATEGORY} documents of this kind` });
+  }
+  const document = await applicationDocumentModel.create({
+    applicationId: application.id, category, label, evidenceKey,
+    fileUrl: fileUrl(req.file), originalName: req.file.originalname.slice(0, 190)
+  });
+  res.status(201).json(document);
+}
+
+async function removeDocument(req, res) {
+  const application = await loadOwnDraft(req, res);
+  if (!application) return;
+  const documentId = Number(req.params.documentId);
+  const document = Number.isInteger(documentId) ? await applicationDocumentModel.findById(documentId) : null;
+  if (!document || document.applicationId !== application.id) return res.status(404).json({ error: 'Document not found' });
+  await applicationDocumentModel.remove(documentId);
+  res.json({ id: documentId, removed: true });
+}
+
+module.exports = { saveDraft, submit, withdraw, eligibility, addDocument, removeDocument };

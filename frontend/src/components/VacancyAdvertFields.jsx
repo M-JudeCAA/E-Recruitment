@@ -62,16 +62,25 @@ export default function VacancyAdvertFields({ values, onChange }) {
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 8 }}>
         Pick a requirement type from the dropdown, fill in its value, and add it - each one is checked automatically
         against the candidate's own profile data (education, experience, age, flying hours, O-Level/A-Level grades),
-        never a self-declared answer. The preview line shows exactly how it will read on the advert.
+        never a self-declared answer. A candidate who doesn't meet one, or whose profile lacks the data to check it,
+        cannot submit an application. The preview line shows exactly how it will read on the advert.
       </p>
       <EssentialRequirementsBuilder values={values} onChange={onChange} />
+
+      <span style={subtitle}>Desirable requirements</span>
+      <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 8 }}>
+        As stated on the requisition - shown on the advert only, never checked. To ask candidates about one, add it as
+        a Qualifying screening question below.
+      </p>
+      <BulletListEditor placeholder="e.g. Membership of a relevant professional body"
+        items={values.desirableQualifications} onChange={setList('desirableQualifications')} />
 
       <span style={sectionHeading}>Additional Screening Criteria</span>
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2, marginBottom: 8 }}>
         Custom questions for anything Requirements above can't verify automatically - a licence, citizenship, and the
         like. Each becomes a Yes/No question candidates answer when applying; the Usage dropdown decides what a "No"
         (or, for a Disqualifying question, an answer other than "Must answer") does - a Qualifying question only ever
-        flags the mismatch for HR, while a Disqualifying question actually fails automated screening. The preview line
+        flags the mismatch for HR, while a Disqualifying question stops the candidate from submitting at all. The preview line
         below each question shows candidates and HR exactly what that means.
       </p>
       <span style={subtitle}>Screening questions</span>

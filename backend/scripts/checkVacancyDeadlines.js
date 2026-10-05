@@ -13,6 +13,7 @@
 // this, emails sent from a cron-run script always failed.
 require('dotenv').config();
 const prisma = require('../src/config/db');
+const hiringManagers = require('../src/services/hiringManagerService');
 const { notify } = require('../src/services/notificationService');
 
 async function run() {
@@ -45,6 +46,7 @@ async function run() {
       + `${applicationCount === 1 ? 'was' : 'were'} received. ${reviewNote}`;
 
     await notify(vacancy.createdById, 'VacancyDeadlinePassed', vacancy.id, message);
+    await hiringManagers.notify(vacancy, 'applicationsClosed', { count: applicationCount });
     await prisma.vacancy.update({ where: { id: vacancy.id }, data: { deadlineNotifiedAt: now } });
   }
 

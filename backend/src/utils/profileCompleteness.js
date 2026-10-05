@@ -12,13 +12,12 @@ function getMissingProfileFields(candidate) {
   const missing = [];
 
   if (!candidate.location) missing.push('location');
-  if (!candidate.workAuthorization) missing.push('workAuthorization');
+  if (!candidate.districtOfOrigin) missing.push('districtOfOrigin');
 
-  if (!candidate.nationalId) {
-    missing.push('nationalId');
-  } else if (candidate.idType === 'NationalID' && !validateNationalId(candidate.nationalId)) {
-    missing.push('nationalId');
-  }
+  // The NIN is the only identity document accepted - a missing or invalid
+  // one (including a passport number from before passports were dropped)
+  // leaves the profile incomplete until a valid NIN is entered.
+  if (!validateNationalId(candidate.nationalId)) missing.push('nationalId');
 
   if (!(candidate.education || []).length) missing.push('education');
   if (!(candidate.workExperience || []).length) missing.push('workExperience');

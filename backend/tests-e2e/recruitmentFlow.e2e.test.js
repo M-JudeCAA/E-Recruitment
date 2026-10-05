@@ -1,11 +1,13 @@
+const request = require('supertest');
 const {
-  prisma, resetDatabase, createStaff, createOrg, createCandidate,
-  staffToken, candidateToken, api, REFEREES, expectStatus
+  prisma, app, resetDatabase, createStaff, createOrg, createCandidate,
+  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition, recordInterviewResults,
+  attachExcoApproval
 } = require('./helpers');
 
 // The whole recruitment lifecycle through the real API and a real database:
-// vacancy creation and approval, applications, screening, the shortlist
-// propose/approve split, interviews, and the offer recommend/approve/
+// vacancy creation and approval, applications, screening, the interview
+// shortlist and merit list propose/approve splits, interviews, and the offer recommend/approve/
 // accept/decline steps - including the rules added on 24 September 2026
 // (vacancy visibility, offer self-approval, decline notices).
 
@@ -34,8 +36,14 @@ afterAll(async () => {
 
 const inDays = (d) => new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString();
 
+// What every offer here is recommended with.
+const OFFER_TERMS = {
+  salaryAmount: 4500000, salaryPeriod: 'Monthly', employmentCategory: 'FullTime', startDate: inDays(45).slice(0, 10),
+  dutyStation: 'Entebbe', conditions: ['A certificate of medical fitness'], responseDays: 10
+};
+
 async function createApprovedVacancy({ positionsRequired = 1 } = {}) {
-  const created = expectStatus(await api(tokens.hro).post('/api/vacancies', {
+  const created = expectStatus(await createVacancyFromRequisition(tokens.hro, {
     positionId: org.position.id, postingType: 'External', deadline: inDays(30), positionsRequired,
     internalSalaryRange: 'UGX 10-12M', recruiterNotes: 'HR only'
   }), 201).body;
@@ -45,27 +53,36 @@ async function createApprovedVacancy({ positionsRequired = 1 } = {}) {
 async function applyAs(candidate, vacancyId) {
   const token = await candidateToken(candidate.email);
   const draft = expectStatus(await api(token).post('/api/applications', { vacancyId, referees: REFEREES }), 201).body;
-  expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`), 200);
+  await attachAcademicDocument(token, draft.id);
+  expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`, { consent: true }), 200);
   return { token, applicationId: draft.id };
 }
 
-// Carries the given applications (in rank order) through review, shortlist
-// approval and a "Shortlist" interview recommendation.
-async function shortlistAndInterview(vacancyId, applicationIds, interviewIds = applicationIds) {
+// Carries the given applications through review and interview-shortlist
+// approval, gives interviewIds a "Shortlist" interview verdict and - unless
+// merit is false - ranks them, in that order, on an approved merit list.
+async function shortlistAndInterview(vacancyId, applicationIds, interviewIds = applicationIds, { merit = true } = {}) {
   expectStatus(await api(tokens.shro).patch(`/api/vacancies/${vacancyId}/begin-review`), 200);
   const versions = Object.fromEntries((await prisma.application.findMany({ where: { id: { in: applicationIds } } }))
     .map((a) => [a.id, a.rankVersion]));
   expectStatus(await api(tokens.shro).post(`/api/vacancies/${vacancyId}/rank`, { applicationIds, applicationRankVersions: versions }), 200);
   expectStatus(await api(tokens.phro).post(`/api/applications/vacancies/${vacancyId}/approve-shortlist`), 200);
+  expectStatus(await attachExcoApproval(tokens.shro, vacancyId), 201);
 
   for (const applicationId of interviewIds) {
     const round = expectStatus(await api(tokens.shro).post(`/api/interviews/applications/${applicationId}/interviews`, {
       scheduledDate: inDays(3), mode: 'In person', panelMembers: [{ name: 'Panelist One', trade: 'HR', email: 'panel@caa.co.ug' }]
     }), 201).body;
-    const [panelMember] = await prisma.panelMember.findMany({ where: { interviewRoundId: round.id } });
-    expectStatus(await api(tokens.shro).patch(`/api/interviews/panel-members/${panelMember.id}/score`, { score: 82 }), 200);
-    expectStatus(await api(tokens.shro).patch(`/api/interviews/${round.id}/finalize`, { recommendation: 'Shortlist' }), 200);
+    expectStatus(await recordInterviewResults(tokens.hro, round.id, { score: 82, recommendation: 'Shortlist' }), 200);
   }
+  if (merit) await proposeAndApproveMeritList(vacancyId, interviewIds);
+}
+
+async function proposeAndApproveMeritList(vacancyId, applicationIds) {
+  const board = expectStatus(await api(tokens.shro).get(`/api/applications/vacancies/${vacancyId}/merit-list`), 200).body;
+  const versions = Object.fromEntries([...board.entries, ...board.eligible].map((r) => [r.applicationId, r.rankVersion]));
+  expectStatus(await api(tokens.shro).post(`/api/applications/vacancies/${vacancyId}/merit-list`, { applicationIds, applicationRankVersions: versions }), 200);
+  expectStatus(await api(tokens.phro).post(`/api/applications/vacancies/${vacancyId}/merit-list/approve`), 200);
 }
 
 test('carries a vacancy from creation to an accepted hire', async () => {
@@ -91,18 +108,59 @@ test('carries a vacancy from creation to an accepted hire', async () => {
   const b = await applyAs(bob, vacancy.id);
 
   await shortlistAndInterview(vacancy.id, [a.applicationId, b.applicationId], [a.applicationId]);
+  // The interview shortlist only orders who is interviewed; Primary/Reserve
+  // comes from the merit list, built from interview results.
   const ranked = await prisma.application.findMany({ where: { vacancyId: vacancy.id }, orderBy: { rank: 'asc' } });
-  expect(ranked.map((r) => [r.id, r.listStatus])).toEqual([[a.applicationId, 'Primary'], [b.applicationId, 'Reserve']]);
+  expect(ranked.map((r) => [r.id, r.listStatus, r.meritListStatus])).toEqual([
+    [a.applicationId, null, 'Primary'], [b.applicationId, null, null]
+  ]);
 
-  expectStatus(await api(tokens.phro).post(`/api/applications/${a.applicationId}/recommend-offer`), 201);
+  expectStatus(await api(tokens.phro).post(`/api/applications/${a.applicationId}/recommend-offer`, OFFER_TERMS), 201);
   const offer = await prisma.offer.findUnique({ where: { applicationId: a.applicationId } });
-  expectStatus(await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/approve`), 200);
+  // Recommended is HR's business - the candidate still sees Interviewed and no offer.
+  const before = expectStatus(await api(a.token).get('/api/candidates/me/applications'), 200).body;
+  expect(before[0].status).toBe('Interviewed');
+  expect(before[0].offer).toBeNull();
 
-  // The candidate's view of their applications carries no HR-only fields.
+  // The approver sends it back; the recommender revises and resubmits.
+  expectStatus(await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/return`, { reason: 'Use the top of the salary scale' }), 200);
+  expect((await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/approve`)).status).toBe(422);
+  expectStatus(await api(tokens.phro).patch(`/api/applications/offers/${offer.id}`, { ...OFFER_TERMS, salaryAmount: 5200000 }), 200);
+  expectStatus(await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/approve`), 200);
+  const issued = await prisma.offer.findUnique({ where: { id: offer.id } });
+  expect(issued.responseDeadline - issued.approvedDate).toBe(10 * 24 * 60 * 60 * 1000);
+
+  // The candidate's view of their applications carries no HR-only fields,
+  // and of the offer only its terms.
   const mine = expectStatus(await api(a.token).get('/api/candidates/me/applications'), 200).body;
   expect(mine[0].vacancy.internalSalaryRange).toBeUndefined();
+  expect(mine[0].offer).toMatchObject({ status: 'Approved', salaryAmount: '5200000', dutyStation: 'Entebbe' });
+  expect(mine[0].offer.recommendedById).toBeUndefined();
+  expect(mine[0].meritListStatus).toBeUndefined();
+
+  // Seeing it was viewing it; the offer letter comes from the template.
+  expect((await prisma.offer.findUnique({ where: { id: offer.id } })).viewedAt).not.toBeNull();
+  const letter = expectStatus(await api(a.token).get(`/api/candidates/me/offers/${offer.id}/letter`), 200).body;
+  expect(letter.html).toContain('OFFER OF EMPLOYMENT AS');
+  expect(letter.html).toContain('Alice Nakato');
+  expect(letter.html).toContain('5,200,000');
+  expect((await api(b.token).get(`/api/candidates/me/offers/${offer.id}/letter`)).status).toBe(404); // not hers
+  expect((await api(tokens.hro).get(`/api/documents/offers/${offer.id}/appointment`)).status).toBe(422); // not accepted yet
 
   expectStatus(await api(a.token).patch(`/api/applications/offers/${offer.id}/accept`), 200);
+
+  // HR prints the appointing instrument, in HR's own wording once a Manager edits it.
+  expect((await api(tokens.hro).put('/api/documents/templates/appointmentInstrument', { body: '<p>x</p>' })).status).toBe(403);
+  const bad = await api(tokens.manager).put('/api/documents/templates/appointmentInstrument', { body: '<p>{{candidateNme}}</p>' });
+  expect(bad.body.code).toBe('UNKNOWN_PLACEHOLDERS');
+  expectStatus(await api(tokens.manager).put('/api/documents/templates/appointmentInstrument', {
+    body: '<p>We appoint {{candidateName}} as {{jobTitle}} from {{startDate}}.</p>'
+  }), 200);
+  const appointment = expectStatus(await api(tokens.hro).get(`/api/documents/offers/${offer.id}/appointment`), 200).body;
+  expect(appointment.html).toMatch(/^<p>We appoint Alice Nakato as .+ from \d{1,2} \w+ \d{4}\.<\/p>$/);
+  expect(await prisma.dataAccessLog.count({ where: { action: 'Printed an appointing instrument' } })).toBe(1);
+  expectStatus(await api(tokens.manager).delete('/api/documents/templates/appointmentInstrument'), 200);
+  expect(expectStatus(await api(tokens.hro).get(`/api/documents/offers/${offer.id}/appointment`), 200).body.html).toContain('RE: APPOINTMENT AS');
 
   const filled = await prisma.vacancy.findUnique({ where: { id: vacancy.id } });
   expect(filled.status).toBe('Filled');
@@ -120,7 +178,7 @@ test('blocks a Manager from approving an offer they recommended themselves', asy
   await shortlistAndInterview(vacancy.id, [a.applicationId]);
 
   // A Manager meets both the recommend tier and the approve tier.
-  expectStatus(await api(tokens.manager).post(`/api/applications/${a.applicationId}/recommend-offer`), 201);
+  expectStatus(await api(tokens.manager).post(`/api/applications/${a.applicationId}/recommend-offer`, OFFER_TERMS), 201);
   const offer = await prisma.offer.findUnique({ where: { applicationId: a.applicationId } });
 
   const selfApproval = await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/approve`);
@@ -138,19 +196,57 @@ test('declining an offer promotes the reserve and tells every Principal HR Offic
   const bob = await createCandidate({ fullName: 'Bob Okello', email: 'bob@example.com' });
   const a = await applyAs(alice, vacancy.id);
   const b = await applyAs(bob, vacancy.id);
-  await shortlistAndInterview(vacancy.id, [a.applicationId, b.applicationId], [a.applicationId]);
-  expectStatus(await api(tokens.phro).post(`/api/applications/${a.applicationId}/recommend-offer`), 201);
+  await shortlistAndInterview(vacancy.id, [a.applicationId, b.applicationId]);
+  expectStatus(await api(tokens.phro).post(`/api/applications/${a.applicationId}/recommend-offer`, OFFER_TERMS), 201);
   const offer = await prisma.offer.findUnique({ where: { applicationId: a.applicationId } });
   expectStatus(await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/approve`), 200);
+  // Offers are in play - the merit list can no longer be re-ranked.
+  expect((await api(tokens.shro).post(`/api/applications/vacancies/${vacancy.id}/merit-list`, {
+    applicationIds: [b.applicationId], applicationRankVersions: { [b.applicationId]: 0 }
+  })).status).toBe(409);
 
   const res = expectStatus(await api(a.token).patch(`/api/applications/offers/${offer.id}/decline`), 200);
   // The reply never carries the promoted reserve's application.
   expect(res.body).toEqual({ message: 'Offer declined' });
 
-  expect((await prisma.application.findUnique({ where: { id: b.applicationId } })).listStatus).toBe('Primary');
+  expect((await prisma.application.findUnique({ where: { id: b.applicationId } })).meritListStatus).toBe('Primary');
+  // The promoted reserve can now be recommended.
+  expectStatus(await api(tokens.phro).post(`/api/applications/${b.applicationId}/recommend-offer`, OFFER_TERMS), 201);
   const notices = await prisma.notification.findMany({ where: { taskType: 'OfferDeclined', channel: 'InApp' } });
   expect(notices.map((n) => n.recipientId).sort()).toEqual([staff.phro.id, staff.phro2.id].sort());
   expect(notices[0].message).toMatch(new RegExp(`application #${b.applicationId}\\) has been moved to Primary`));
+});
+
+test('offers wait for an approved merit list, which its proposer cannot approve', async () => {
+  const vacancy = await createApprovedVacancy();
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
+  const alice = await createCandidate({ fullName: 'Alice Nakato', email: 'alice@example.com' });
+  const bob = await createCandidate({ fullName: 'Bob Okello', email: 'bob@example.com' });
+  const a = await applyAs(alice, vacancy.id);
+  const b = await applyAs(bob, vacancy.id);
+  await shortlistAndInterview(vacancy.id, [a.applicationId, b.applicationId], undefined, { merit: false });
+
+  // Interviewed, but no merit list yet.
+  const early = await api(tokens.phro).post(`/api/applications/${a.applicationId}/recommend-offer`, OFFER_TERMS);
+  expect(early.status).toBe(422);
+  expect(early.body.error).toMatch(/merit list/);
+
+  // A Principal HR Officer proposes (they meet the Senior tier), so they can't approve.
+  const board = expectStatus(await api(tokens.phro).get(`/api/applications/vacancies/${vacancy.id}/merit-list`), 200).body;
+  expect(board.state).toBe('NotStarted');
+  expect(board.eligible).toHaveLength(2);
+  const versions = Object.fromEntries(board.eligible.map((r) => [r.applicationId, r.rankVersion]));
+  expectStatus(await api(tokens.phro).post(`/api/applications/vacancies/${vacancy.id}/merit-list`, {
+    applicationIds: [b.applicationId, a.applicationId], applicationRankVersions: versions
+  }), 200);
+  expect((await prisma.notification.findMany({ where: { taskType: 'MeritListProposed', channel: 'InApp' } }))
+    .map((n) => n.recipientId).sort()).toEqual([staff.phro.id, staff.phro2.id].sort());
+  expect((await api(tokens.phro).post(`/api/applications/vacancies/${vacancy.id}/merit-list/approve`)).status).toBe(422);
+  expectStatus(await api(tokens.phro2).post(`/api/applications/vacancies/${vacancy.id}/merit-list/approve`), 200);
+
+  // Bob was ranked first, so Bob is Primary and Alice is on reserve.
+  expect((await api(tokens.phro).post(`/api/applications/${a.applicationId}/recommend-offer`, OFFER_TERMS)).status).toBe(422);
+  expectStatus(await api(tokens.phro).post(`/api/applications/${b.applicationId}/recommend-offer`, OFFER_TERMS), 201);
 });
 
 test('hides vacancies from the wrong audience but keeps them open to their own applicants', async () => {
@@ -165,9 +261,110 @@ test('hides vacancies from the wrong audience but keeps them open to their own a
   expect((await api(insiderToken).get(`/api/vacancies/${vacancy.id}`)).status).toBe(404);
 
   // ...and a Closed one from the public, but not from someone who applied.
-  expectStatus(await api(tokens.phro).patch(`/api/vacancies/${vacancy.id}/close`), 200);
+  expectStatus(await api(tokens.phro).patch(`/api/vacancies/${vacancy.id}/close`, { reason: 'Position frozen' }), 200);
   expect((await api().get(`/api/vacancies/${vacancy.id}`)).status).toBe(404);
   expectStatus(await api(a.token).get(`/api/vacancies/${vacancy.id}`), 200);
   // Staff always see it.
   expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}`), 200);
+});
+
+test('exports the shortlisting report and the merit list as CSV, and records each export (FR-ATS-053)', async () => {
+  const vacancy = await createApprovedVacancy();
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
+  const amina = await createCandidate({ fullName: 'Amina, Nakato', email: 'amina@example.com' });
+  const brian = await createCandidate({ fullName: '=Brian Okello', email: 'brian@example.com' });
+  const a = await applyAs(amina, vacancy.id);
+  const b = await applyAs(brian, vacancy.id);
+  await shortlistAndInterview(vacancy.id, [a.applicationId, b.applicationId]);
+
+  const report = expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}/export/shortlisting-report`), 200);
+  expect(report.headers['content-type']).toContain('text/csv');
+  expect(report.headers['content-disposition']).toContain(`shortlisting-report-${vacancy.jobRef.replace(/\//g, '-')}.csv`);
+  const lines = report.text.replace('﻿', '').trim().split('\r\n');
+  expect(lines).toHaveLength(3);
+  expect(lines[0]).toMatch(/^Committee rank,/);
+  expect(lines[1]).toContain('"Amina, Nakato"');
+  expect(lines[2]).toContain("'=Brian Okello");
+  expect(lines[1]).toContain('Wakiso');
+
+  const merit = expectStatus(await api(tokens.hro).get(`/api/applications/vacancies/${vacancy.id}/merit-list/export`), 200);
+  const meritLines = merit.text.replace('﻿', '').trim().split('\r\n');
+  expect(meritLines.slice(1).map((l) => l.split(',').slice(0, 3).join(','))).toEqual(['1,Primary,Approved', '2,Reserve,Approved']);
+
+  // Candidates can't export anything.
+  expect((await api(a.token).get(`/api/vacancies/${vacancy.id}/export/shortlisting-report`)).status).toBe(403);
+
+  const history = expectStatus(await api(tokens.hro).get(`/api/audit/Vacancy/${vacancy.id}`), 200).body;
+  expect(history.map((h) => h.action)).toEqual(expect.arrayContaining(['Shortlisting report exported', 'Merit list exported']));
+});
+
+test('a staff member who applies is shut out of that vacancy, and only that one', async () => {
+  const vacancy = await createApprovedVacancy();
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
+  const other = await createApprovedVacancy();
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${other.id}/approve`), 200);
+  // The Senior HR Officer's candidate account - same person, matched by
+  // email (in real use, also by their Microsoft identity). External here
+  // only because the vacancy is.
+  const sam = await createCandidate({ fullName: 'Sam Senior', email: 'shro@caa.co.ug' });
+  const alice = await createCandidate({ fullName: 'Alice Nakato', email: 'alice@example.com' });
+  await applyAs(sam, vacancy.id);
+  const a = await applyAs(alice, vacancy.id);
+
+  // Shut out of running the vacancy they applied for...
+  const refused = await api(tokens.shro).get(`/api/vacancies/${vacancy.id}/applications`);
+  expect(refused.status).toBe(409);
+  expect(refused.body.code).toBe('APPLICANT_CONFLICT');
+  expect((await api(tokens.shro).get(`/api/vacancies/${vacancy.id}`)).status).toBe(409);
+  expect((await api(tokens.shro).patch(`/api/applications/${a.applicationId}/reject`, { reason: 'x' })).status).toBe(409);
+  expect((await api(tokens.shro).get(`/api/applications/vacancies/${vacancy.id}/merit-list`)).status).toBe(409);
+  const queue = expectStatus(await api(tokens.shro).get('/api/applications'), 200).body;
+  expect(queue.data.some((row) => row.vacancyId === vacancy.id)).toBe(false);
+  const adminList = expectStatus(await api(tokens.shro).get('/api/vacancies/admin'), 200).body;
+  expect(adminList.map((v) => v.id)).not.toContain(vacancy.id);
+
+  // ...but not out of any other vacancy, and nobody else is affected.
+  expectStatus(await api(tokens.shro).get(`/api/vacancies/${other.id}/applications`), 200);
+  expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}/applications`), 200);
+
+  // The Principal HR Officers were told.
+  const notices = await prisma.notification.findMany({ where: { taskType: 'StaffApplicantConflict', channel: 'InApp' } });
+  expect(notices.map((n) => n.recipientId).sort()).toEqual([staff.phro.id, staff.phro2.id].sort());
+});
+
+test('a claim screening relies on needs its evidence before the application can be sent', async () => {
+  const created = expectStatus(await createVacancyFromRequisition(tokens.hro, {
+    positionId: org.position.id, postingType: 'External', deadline: inDays(30), positionsRequired: 1, minimumExperienceYears: 2,
+    disqualifyingRequirements: [{ text: 'Do you hold a valid HR practising certificate?', requiredAnswer: 'Yes', evidenceRequired: true, evidenceLabel: 'Your HR practising certificate' }]
+  }), 201).body;
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${created.id}/approve`), 200);
+  const question = created.disqualifyingRequirements[0];
+  expect(question).toEqual(expect.objectContaining({ evidenceRequired: true, evidenceLabel: 'Your HR practising certificate' }));
+
+  const candidate = await createCandidate({ fullName: 'Ivy Ikiriza', email: 'ivy@example.com' });
+  const token = await candidateToken(candidate.email);
+  const draft = expectStatus(await api(token).post('/api/applications', {
+    vacancyId: created.id, referees: REFEREES, disqualifyingResponses: JSON.stringify([{ id: question.id, answer: true }])
+  }), 201).body;
+  await attachAcademicDocument(token, draft.id);
+
+  const eligibility = expectStatus(await api(token).get(`/api/applications/eligibility/${created.id}`), 200).body;
+  expect(eligibility.evidence.map((e) => [e.key, e.provided])).toEqual([['experience', false], [`question:${question.id}`, false]]);
+  const refused = await api(token).patch(`/api/applications/${draft.id}/submit`, { consent: true });
+  expect(refused.status).toBe(400);
+  expect(refused.body.code).toBe('EVIDENCE_REQUIRED');
+
+  const attach = (evidenceKey) => request(app).post(`/api/applications/${draft.id}/documents`).set('Authorization', `Bearer ${token}`)
+    .field('category', 'Evidence').field('evidenceKey', evidenceKey)
+    .attach('file', Buffer.from('%PDF-1.4 evidence'), { filename: 'evidence.pdf', contentType: 'application/pdf' });
+  expect((await attach('nationalId')).status).toBe(400); // this vacancy has no age limit
+  expectStatus(await attach('experience'), 201);
+  const certificate = expectStatus(await attach(`question:${question.id}`), 201).body;
+  expect(certificate.label).toBe('Your HR practising certificate');
+
+  expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`, { consent: true }), 200);
+  // HR sees the evidence with the application.
+  const listed = expectStatus(await api(tokens.hro).get(`/api/vacancies/${created.id}/applications`), 200).body;
+  const mine = (Array.isArray(listed) ? listed : listed.data).find((a) => a.id === draft.id);
+  expect(mine.documents.filter((d) => d.category === 'Evidence').map((d) => d.evidenceKey).sort()).toEqual(['experience', `question:${question.id}`].sort());
 });

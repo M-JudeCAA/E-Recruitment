@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Briefcase, Award, Building2 } from 'lucide-react';
+import { Briefcase, Award, Building2, Trophy, Users } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useDashboardEvents } from '../models/dashboardSocket';
 import HRSidebar from '../components/HRSidebar';
@@ -15,9 +15,15 @@ import ViewSwitcher from '../components/ViewSwitcher';
 import DataTable from '../components/DataTable';
 import BoardView from '../components/BoardView';
 import PageControls from '../components/PageControls';
-import { useConfirm } from '../components/ConfirmDialog';
 import { urgencyOf } from '../utils/slaUrgency';
 import { debounce } from '../utils/debounce';
+import { useAuth } from '../models/AuthContext';
+import OfferSummary from '../components/offers/OfferSummary';
+import ReasonDialog from '../components/ReasonDialog';
+import OfferActions from '../components/offers/OfferActions';
+import { formatSalary } from '../components/offers/offerFormat';
+import { useConfirm } from '../components/ConfirmDialog';
+import { approveVacancy as approveVacancyRequest } from '../utils/approveVacancy';
 
 const MS_PER_DAY = 86400000;
 
@@ -94,6 +100,7 @@ const OFFERS_PAGE_SIZE = 10;
 
 export default function ApprovalsCenter() {
   const confirm = useConfirm();
+  const { staff } = useAuth();
   const [vacancies, setVacancies] = useState(null);
   // Offers is paginated (GET /api/applications/offers/pending-approval now
   // returns { data, total, page, limit }, not a bare array) - the backlog
@@ -103,6 +110,12 @@ export default function ApprovalsCenter() {
   const [offersTotal, setOffersTotal] = useState(0);
   const [offersPage, setOffersPage] = useState(1);
   const [departments, setDepartments] = useState(null);
+  // Post-interview merit lists awaiting approval, one row per vacancy.
+  const [meritLists, setMeritLists] = useState(null);
+  // Shortlisting committees waiting for the DHRA (Directors only).
+  const isDirector = staff?.role === 'Director';
+  const [committees, setCommittees] = useState(null);
+  const [committeeReturn, setCommitteeReturn] = useState(null);
   const [followUps, setFollowUps] = useState([]);
   const [rejectReason, setRejectReason] = useState({});
   const [message, setMessage] = useState('');
@@ -131,6 +144,12 @@ export default function ApprovalsCenter() {
       .catch((err) => setError(err.response?.data?.error || 'Could not load offers'))
       .finally(() => setOffersLoading(false));
   }, [offersPage]);
+  const loadMeritLists = useCallback(() => staffClient.get('/api/applications/merit-lists/pending-approval')
+    .then((res) => setMeritLists(res.data))
+    .catch((err) => setError(err.response?.data?.error || 'Could not load merit lists')), []);
+  const loadCommittees = useCallback(() => (isDirector
+    ? staffClient.get('/api/shortlist-committee/nominations/pending').then((res) => setCommittees(res.data)).catch(() => setCommittees([]))
+    : Promise.resolve()), [isDirector]);
   const loadDepartments = useCallback(() => staffClient.get('/api/departments/pending')
     .then((res) => setDepartments(res.data))
     .catch((err) => setError(err.response?.data?.error || 'Could not load departments')), []);
@@ -142,15 +161,15 @@ export default function ApprovalsCenter() {
     .then((res) => setFollowUps(res.data))
     .catch(() => {}), []); // urgency badges are a nice-to-have, never worth an error banner
 
-  useEffect(() => { loadVacancies(); loadDepartments(); loadFollowUps(); }, [loadVacancies, loadDepartments, loadFollowUps]);
+  useEffect(() => { loadVacancies(); loadDepartments(); loadFollowUps(); loadMeritLists(); loadCommittees(); }, [loadVacancies, loadDepartments, loadFollowUps, loadMeritLists, loadCommittees]);
   useEffect(() => { loadOffers(); }, [loadOffers]);
 
   // Refetches every queue plus the SLA lookup on any dashboard-relevant
   // broadcast - a newly-pending item appears, an approved/rejected one
   // disappears, without the Manager needing to manually refresh.
   const refetchAll = useCallback(debounce(() => {
-    loadVacancies(); loadOffers(); loadDepartments(); loadFollowUps();
-  }, 500), [loadVacancies, loadOffers, loadDepartments, loadFollowUps]);
+    loadVacancies(); loadOffers(); loadDepartments(); loadFollowUps(); loadMeritLists(); loadCommittees();
+  }, 500), [loadVacancies, loadOffers, loadDepartments, loadFollowUps, loadMeritLists, loadCommittees]);
   const { connected } = useDashboardEvents(refetchAll);
 
   const followUpFor = (taskType, taskId) => followUps.find((f) => f.taskType === taskType && f.taskId === taskId);
@@ -180,10 +199,22 @@ export default function ApprovalsCenter() {
     }
   };
 
+  const approveCommittee = (c) => runBusy(`committee-approve-${c.exerciseId}`, async () => {
+    setError(''); setMessage('');
+    if (!(await confirm(`Approve the shortlisting committee for ${c.vacancy.jobRef}? HR can then open rating.`, { title: 'Approve committee', confirmLabel: 'Approve' }))) return;
+    try {
+      await staffClient.post(`/api/shortlist-committee/vacancies/${c.vacancy.id}/nomination/approve`);
+      setMessage('Committee approved.');
+      loadCommittees();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Approval failed');
+    }
+  });
+
   const approveVacancy = (id) => runBusy(`vacancy-approve-${id}`, async () => {
     setError(''); setMessage('');
     try {
-      await staffClient.patch(`/api/vacancies/${id}/approve`);
+      if (!(await approveVacancyRequest(id, confirm))) return;
       setMessage('Vacancy approved.');
       loadVacancies();
     } catch (err) {
@@ -191,22 +222,18 @@ export default function ApprovalsCenter() {
     }
   });
 
-  // Declining a still-pending vacancy reuses the existing close() action -
-  // the same mechanism HRDashboard already offers ("Close vacancy" is
-  // available at every non-Closed status, PendingApproval included), not
-  // a separate reject endpoint.
-  const declineVacancy = async (id) => {
-    if (!(await confirm('Decline this vacancy? It will be closed without ever opening.', { title: 'Decline vacancy', confirmLabel: 'Decline', danger: true }))) return;
-    await runBusy(`vacancy-decline-${id}`, async () => {
-      setError(''); setMessage('');
-      try {
-        await staffClient.patch(`/api/vacancies/${id}/close`);
-        setMessage('Vacancy declined and closed.');
-        loadVacancies();
-      } catch (err) {
-        setError(err.response?.data?.error || 'Could not decline vacancy');
-      }
-    });
+  // Return (HR revises and resubmits) or reject (final) - both need a
+  // comment, which the vacancy's creator is sent (FR-ATS-009).
+  const [vacancyDecision, setVacancyDecision] = useState(null); // { vacancy, kind: 'return' | 'reject' }
+  const submitVacancyDecision = async (reason) => {
+    const { vacancy, kind } = vacancyDecision;
+    setError(''); setMessage('');
+    await staffClient.patch(`/api/vacancies/${vacancy.id}/${kind}`, { reason });
+    setVacancyDecision(null);
+    setMessage(kind === 'return'
+      ? 'Vacancy returned for revision. Its creator has been told what to change.'
+      : 'Vacancy rejected. Its creator has been told why.');
+    loadVacancies();
   };
 
   const approveOffer = (id) => runBusy(`offer-approve-${id}`, async () => {
@@ -215,6 +242,17 @@ export default function ApprovalsCenter() {
       await staffClient.patch(`/api/applications/offers/${id}/approve`);
       setMessage('Offer approved. The candidate has been notified.');
       loadOffers();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Approval failed');
+    }
+  });
+
+  const approveMeritList = (vacancyId) => runBusy(`merit-approve-${vacancyId}`, async () => {
+    setError(''); setMessage('');
+    try {
+      await staffClient.post(`/api/applications/vacancies/${vacancyId}/merit-list/approve`);
+      setMessage('Merit list approved. Offers can now be recommended for its Primary candidates.');
+      loadMeritLists();
     } catch (err) {
       setError(err.response?.data?.error || 'Approval failed');
     }
@@ -244,8 +282,8 @@ export default function ApprovalsCenter() {
     }
   });
 
-  const loading = vacancies === null || offers === null || departments === null;
-  const totalPending = (vacancies?.length || 0) + offersTotal + (departments?.length || 0);
+  const loading = vacancies === null || offers === null || departments === null || meritLists === null;
+  const totalPending = (vacancies?.length || 0) + (meritLists?.length || 0) + offersTotal + (departments?.length || 0);
   const offersTotalPages = Math.max(Math.ceil(offersTotal / OFFERS_PAGE_SIZE), 1);
 
   // Board view here groups by urgency, not status - every item in this
@@ -282,6 +320,21 @@ export default function ApprovalsCenter() {
           <Alert type="success" message={message} />
           <Alert type="error" message={error} />
 
+          {vacancyDecision && (
+            <ReasonDialog
+              title={`${vacancyDecision.kind === 'return' ? 'Return' : 'Reject'} vacancy — ${vacancyDecision.vacancy.jobRef}`}
+              intro={vacancyDecision.kind === 'return'
+                ? 'The vacancy goes back to HR to revise and resubmit. Your comment is sent to whoever created it and kept in its history.'
+                : 'Rejecting is final - the vacancy cannot be resubmitted. Your reason is sent to whoever created it and kept in its history.'}
+              label={vacancyDecision.kind === 'return' ? 'What needs to change' : 'Reason for rejecting'}
+              confirmLabel={vacancyDecision.kind === 'return' ? 'Return for revision' : 'Reject vacancy'}
+              busyLabel={vacancyDecision.kind === 'return' ? 'Returning...' : 'Rejecting...'}
+              danger={vacancyDecision.kind === 'reject'}
+              onSubmit={submitVacancyDecision}
+              onClose={() => setVacancyDecision(null)}
+            />
+          )}
+
           <SectionHeader icon={Briefcase} title="Vacancies" count={vacancies?.length ?? '—'} />
           {vacancies === null && <QueueRowSkeleton />}
           {sortedVacancies?.length === 0 && (
@@ -302,8 +355,10 @@ export default function ApprovalsCenter() {
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                         <Link to={`/hr/vacancy/${v.id}`} style={{ fontSize: 12 }}>View</Link>
                         <Button variant="ghost" style={{ padding: '2px 8px', fontSize: 12, color: 'var(--color-danger)' }} disabled={!!busy[`vacancy-approve-${v.id}`]}
-                          loading={!!busy[`vacancy-decline-${v.id}`]} loadingText="…" onClick={() => declineVacancy(v.id)}>Decline</Button>
-                        <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 12 }} disabled={!!busy[`vacancy-decline-${v.id}`]}
+                          onClick={() => setVacancyDecision({ vacancy: v, kind: 'reject' })}>Reject</Button>
+                        <Button variant="ghost" style={{ padding: '2px 8px', fontSize: 12 }} disabled={!!busy[`vacancy-approve-${v.id}`]}
+                          onClick={() => setVacancyDecision({ vacancy: v, kind: 'return' })}>Return</Button>
+                        <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 12 }}
                           loading={!!busy[`vacancy-approve-${v.id}`]} loadingText="…" onClick={() => approveVacancy(v.id)}>Approve</Button>
                       </div>
                     )
@@ -324,7 +379,7 @@ export default function ApprovalsCenter() {
                     <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{v.title}</div>
                     <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{v.jobRef} &middot; {v.postingType}</div>
                     <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                      <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 11 }} disabled={!!busy[`vacancy-decline-${v.id}`]}
+                      <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 11 }}
                         loading={!!busy[`vacancy-approve-${v.id}`]} loadingText="…" onClick={() => approveVacancy(v.id)}>Approve</Button>
                       <Link to={`/hr/vacancy/${v.id}`} style={{ fontSize: 11, alignSelf: 'center' }}>View</Link>
                     </div>
@@ -343,15 +398,88 @@ export default function ApprovalsCenter() {
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
                     {v.jobRef} &middot; {v.department?.directorate?.name} &mdash; {v.department?.name}
-                    {' '}&middot; {v.postingType} &middot; waiting {waitingSince(v.createdAt)}
+                    {' '}&middot; {v.postingType} &middot; waiting {waitingSince(v.approvalRequestedAt || v.createdAt)}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                   <Link to={`/hr/vacancy/${v.id}`} style={{ padding: '4px 10px', fontSize: 13 }}>View</Link>
                   <Button variant="ghost" style={{ padding: '4px 10px', color: 'var(--color-danger)' }} disabled={!!busy[`vacancy-approve-${v.id}`]}
-                    loading={!!busy[`vacancy-decline-${v.id}`]} loadingText="Declining..." onClick={() => declineVacancy(v.id)}>Decline</Button>
-                  <Button variant="secondary" style={{ padding: '4px 10px' }} disabled={!!busy[`vacancy-decline-${v.id}`]}
+                    onClick={() => setVacancyDecision({ vacancy: v, kind: 'reject' })}>Reject</Button>
+                  <Button variant="ghost" style={{ padding: '4px 10px' }} disabled={!!busy[`vacancy-approve-${v.id}`]}
+                    onClick={() => setVacancyDecision({ vacancy: v, kind: 'return' })}>Return for revision</Button>
+                  <Button variant="secondary" style={{ padding: '4px 10px' }}
                     loading={!!busy[`vacancy-approve-${v.id}`]} loadingText="Approving..." onClick={() => approveVacancy(v.id)}>Approve</Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+
+          {isDirector && (
+            <>
+              <div style={{ marginTop: 'var(--spacing-lg)' }}>
+                <SectionHeader icon={Users} title="Shortlisting committees" count={committees?.length ?? '—'} />
+              </div>
+              {committees === null && <QueueRowSkeleton />}
+              {committees?.length === 0 && (
+                <Card><p style={{ margin: 0, color: 'var(--color-text-muted)' }}>No committees awaiting your approval.</p></Card>
+              )}
+              {committees?.map((c) => (
+                <Card key={c.exerciseId}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600 }}>{c.vacancy.jobRef} &middot; {c.vacancy.title}</div>
+                      <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                        {c.members.length} members &middot; submitted by {c.submittedBy?.name || 'HR'}
+                        {c.submittedAt && <> &middot; waiting {waitingSince(c.submittedAt)}</>}
+                      </div>
+                      <div style={{ fontSize: 13, marginTop: 4 }}>
+                        {c.members.map((m) => `${m.name}${m.isChair ? ' (chair)' : ''}${m.externalReason ? ' (from outside UCAA)' : ''}`).join(', ')}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+                      <Link to={`/hr/applications?vacancyId=${c.vacancy.id}&stage=shortlist`} style={{ padding: '4px 10px', fontSize: 13 }}>Review or change</Link>
+                      <Button variant="ghost" style={{ padding: '4px 10px' }} onClick={() => setCommitteeReturn(c)}>Return</Button>
+                      <Button variant="secondary" style={{ padding: '4px 10px' }}
+                        loading={!!busy[`committee-approve-${c.exerciseId}`]} loadingText="Approving..." onClick={() => approveCommittee(c)}>Approve</Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+              {committeeReturn && (
+                <ReasonDialog title={`Return the committee for ${committeeReturn.vacancy.jobRef}`} intro="HR will see your reason, change the members and submit again."
+                  confirmLabel="Return" onClose={() => setCommitteeReturn(null)}
+                  onSubmit={async (reason) => {
+                    await staffClient.post(`/api/shortlist-committee/vacancies/${committeeReturn.vacancy.id}/nomination/return`, { reason });
+                    setCommitteeReturn(null); setMessage('Committee returned to HR.'); loadCommittees();
+                  }} />
+              )}
+            </>
+          )}
+
+          {/* Merit lists sit before offers - an offer can only be recommended
+              for a Primary candidate on an approved merit list. */}
+          <div style={{ marginTop: 'var(--spacing-lg)' }}>
+            <SectionHeader icon={Trophy} title="Merit lists" count={meritLists?.length ?? '—'} />
+          </div>
+          {meritLists === null && <QueueRowSkeleton />}
+          {meritLists?.length === 0 && (
+            <Card><p style={{ margin: 0, color: 'var(--color-text-muted)' }}>No merit lists awaiting approval.</p></Card>
+          )}
+          {meritLists?.map((m) => (
+            <Card key={m.vacancy.id}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600 }}>{m.vacancy.jobRef} &middot; {m.vacancy.title}</div>
+                  <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                    {m.candidates} ranked &middot; {m.primary} Primary for {m.vacancy.positionsRequired} position{m.vacancy.positionsRequired === 1 ? '' : 's'}
+                    {' '}&middot; proposed by {m.proposedBy?.name || 'HR'}
+                    {m.proposedAt && <> &middot; waiting {waitingSince(m.proposedAt)}</>}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+                  <Link to={`/hr/applications?vacancyId=${m.vacancy.id}&stage=merit`} style={{ padding: '4px 10px', fontSize: 13 }}>Review ranking</Link>
+                  <Button variant="secondary" style={{ padding: '4px 10px' }}
+                    loading={!!busy[`merit-approve-${m.vacancy.id}`]} loadingText="Approving..." onClick={() => approveMeritList(m.vacancy.id)}>Approve</Button>
                 </div>
               </div>
             </Card>
@@ -372,6 +500,7 @@ export default function ApprovalsCenter() {
                 columns={[
                   { key: 'candidate', label: 'Candidate', render: (o) => <span style={{ fontWeight: 600 }}>{o.application.candidate.fullName}</span> },
                   { key: 'vacancy', label: 'Vacancy', render: (o) => `${o.application.vacancy.jobRef} — ${o.application.vacancy.title}` },
+                  { key: 'salary', label: 'Salary', render: (o) => formatSalary(o) || '—' },
                   { key: 'by', label: 'Recommended by', render: (o) => o.recommendedBy?.name || 'HR' },
                   { key: 'urgency', label: 'Urgency', render: (o) => <UrgencyBadge followUp={followUpFor('OfferApproval', o.id)} /> },
                   {
@@ -406,9 +535,11 @@ export default function ApprovalsCenter() {
               )}
             />
           )}
+          {/* List view: the terms being signed off, where the candidate stood
+              on the merit list, and approve / return in one place. */}
           {offers?.length > 0 && view !== 'table' && view !== 'board' && offers.map((o) => (
             <Card key={o.id}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
                     {o.application.candidate.fullName}
@@ -416,15 +547,16 @@ export default function ApprovalsCenter() {
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
                     {o.application.vacancy.jobRef} &middot; {o.application.vacancy.title}
+                    {o.application.meritRank && <> &middot; merit list #{o.application.meritRank} ({o.application.meritListStatus})</>}
                     {' '}&middot; recommended by {o.recommendedBy?.name || 'HR'}
                     {' '}&middot; waiting {waitingSince(o.recommendedDate)}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                  <Link to={`/hr/vacancy/${o.application.vacancy.id}`} style={{ padding: '4px 10px', fontSize: 13 }}>View</Link>
-                  <Button variant="secondary" style={{ padding: '4px 10px' }}
-                    loading={!!busy[`offer-approve-${o.id}`]} loadingText="Approving..." onClick={() => approveOffer(o.id)}>Approve</Button>
-                </div>
+                <Link to={`/hr/applications?vacancyId=${o.application.vacancy.id}&stage=merit`} style={{ padding: '4px 10px', fontSize: 13 }}>Merit list</Link>
+              </div>
+              <OfferSummary offer={o} />
+              <div style={{ marginTop: 8 }}>
+                <OfferActions offer={o} applicationId={o.application.id} staffRole={staff?.role} onChanged={loadOffers} />
               </div>
             </Card>
           ))}

@@ -14,6 +14,10 @@ import ViewSwitcher from '../components/ViewSwitcher';
 import DataTable from '../components/DataTable';
 import BoardView from '../components/BoardView';
 import LoadMoreControl from '../components/LoadMoreControl';
+import PositionHeadcountCard from '../components/PositionHeadcountCard';
+import OrgImportCard from '../components/OrgImportCard';
+import { useConfirm } from '../components/ConfirmDialog';
+import { POSITION_LEVELS } from '../utils/positionLevels';
 
 const emptyDeptForm = { name: '', directorateId: '' };
 const emptyPositionForm = { name: '', departmentId: '', level: 1 };
@@ -27,6 +31,7 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 
 export default function DepartmentAdmin() {
   const { staff } = useAuth();
+  const confirm = useConfirm();
   const isReviewer = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Principal_HR_Officer;
 
   const [directorates, setDirectorates] = useState([]);
@@ -132,6 +137,29 @@ export default function DepartmentAdmin() {
     }
   });
 
+  const approveImport = async (imp, count) => {
+    if (!(await confirm(`Approve all ${count} pending department(s) from ${imp.fileName}? Their positions can then be used on vacancies.`,
+      { title: 'Approve imported departments', confirmLabel: `Approve ${count}` }))) return;
+    await approveImportNow(imp);
+  };
+  const approveImportNow = (imp) => runBusy(`approve-import-${imp.id}`, async () => {
+    setError(''); setMessage('');
+    try {
+      const res = await staffClient.patch(`/api/departments/imports/${imp.id}/approve`);
+      setMessage(`Approved ${res.data.approved} department(s) from ${imp.fileName}.`);
+      loadPending();
+      loadApprovedDepartments();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not approve the departments');
+    }
+  });
+
+  // Pending departments that came from a batch import, one entry per import.
+  const pendingImports = [...pendingDepartments.reduce((map, d) => {
+    if (d.import) map.set(d.import.id, { ...d.import, count: (map.get(d.import.id)?.count || 0) + 1 });
+    return map;
+  }, new Map()).values()];
+
   const rejectDepartment = (id) => runBusy(`reject-${id}`, async () => {
     setError('');
     const reason = rejectReason[id];
@@ -167,6 +195,8 @@ export default function DepartmentAdmin() {
       <Alert type="success" message={message} />
       <Alert type="error" message={error} />
 
+      <OrgImportCard onImported={() => { loadDirectorates(); loadApprovedDepartments(); if (isReviewer) loadPending(); }} />
+
       <Card accent="var(--color-primary)">
         <h3 style={{ marginTop: 0 }}>Propose a department</h3>
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
@@ -201,14 +231,19 @@ export default function DepartmentAdmin() {
               <option key={d.id} value={d.id}>{d.directorate.name} &mdash; {d.name}</option>
             ))}
           </Select>
-          <TextField label="Seniority level" type="number" min="1" value={positionForm.level}
-            onChange={(e) => setPositionForm({ ...positionForm, level: Number(e.target.value) })} />
+          <Select label="Level" value={positionForm.level}
+            onChange={(e) => setPositionForm({ ...positionForm, level: Number(e.target.value) })}>
+            {POSITION_LEVELS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+          </Select>
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-            Higher number = more senior. Only compared against other positions in the same department.
+            From most junior (Officer) to most senior (Director). A vacancy's "Reports to" is chosen from more senior
+            positions in the same department.
           </p>
           <Button type="submit" loading={isBusy('createPosition')} loadingText="Adding...">Add position</Button>
         </form>
       </Card>
+
+      <PositionHeadcountCard departments={approvedDepartments} editable={isReviewer} />
 
       {isReviewer && (
         <Card accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)' }}>
@@ -236,6 +271,16 @@ export default function DepartmentAdmin() {
       {isReviewer && (
         <>
           <h3>Pending departments</h3>
+          {pendingImports.map((imp) => (
+            <Card key={imp.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'var(--color-bg-subtle)' }}>
+              <span style={{ fontSize: 14, minWidth: 0 }}>
+                <strong>{imp.count} department(s)</strong> from the import of <strong style={{ overflowWrap: 'anywhere' }}>{imp.fileName}</strong>
+                {imp.createdBy?.name && <> by {imp.createdBy.name}</>} on {new Date(imp.createdAt).toLocaleDateString()}
+              </span>
+              <Button style={{ padding: '4px 12px' }} loading={isBusy(`approve-import-${imp.id}`)} loadingText="Approving..."
+                onClick={() => approveImport(imp, imp.count)}>Approve all {imp.count}</Button>
+            </Card>
+          ))}
           {loadingPending ? (
             [0, 1].map((i) => (
               <Card key={i}>
@@ -298,7 +343,7 @@ export default function DepartmentAdmin() {
               {pendingDepartments.slice(0, pendingVisibleCount).map((d) => (
                 <Card key={d.id}>
                   <strong>{d.directorate.name} &mdash; {d.name}</strong> <StatusBadge status={d.status} />
-                  {d.createdBy?.name && <span style={{ marginLeft: 8, fontSize: 13, color: 'var(--color-text-muted)' }}>proposed by {d.createdBy.name}</span>}
+                  {d.createdBy?.name && <span style={{ marginLeft: 8, fontSize: 13, color: 'var(--color-text-muted)' }}>proposed by {d.createdBy.name}{d.import ? ` (import of ${d.import.fileName})` : ''}</span>}
                   <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                     <Button style={{ padding: '2px 10px' }} disabled={isBusy(`reject-${d.id}`)}
                       loading={isBusy(`approve-${d.id}`)} loadingText="Approving..." onClick={() => approveDepartment(d.id)}>Approve</Button>

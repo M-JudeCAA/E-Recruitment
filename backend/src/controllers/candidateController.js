@@ -1,13 +1,15 @@
+const prisma = require('../config/db');
 const candidateModel = require('../models/candidateModel');
 const internalProfileModel = require('../models/internalProfileModel');
 const applicationModel = require('../models/applicationModel');
 const profileEntriesModel = require('../models/profileEntriesModel');
-const { validateNationalId } = require('../utils/validators');
+const { validateNationalId, normalizeNationalId } = require('../utils/validators');
 const { checkAndFireCompletionEvent } = require('../services/profileCompletionService');
 const { fileUrl } = require('../middleware/upload');
 const { educationKey, workExperienceKey, certificateKey, examGradeKey } = require('../utils/entryDedup');
 const { normalizeStringList } = require('../utils/vacancyValidation');
 const { toPublicVacancy } = require('../utils/publicVacancy');
+const { toCandidateOffer } = require('../services/offerService');
 const { toCandidateInterview } = require('../utils/candidateInterview');
 
 // Candidate rows carry passwordHash - fine for the internal auth-check
@@ -15,8 +17,9 @@ const { toCandidateInterview } = require('../utils/candidateInterview');
 // to the candidate's own browser as JSON, so it must never ride along.
 function omitPasswordHash(candidate) {
   if (!candidate) return candidate;
-  const { passwordHash, ...safe } = candidate;
-  return safe;
+  const { passwordHash, entraObjectId, ...safe } = candidate;
+  // Whether they sign in with Microsoft, without the identifier itself.
+  return { ...safe, signsInWithMicrosoft: Boolean(entraObjectId) };
 }
 
 async function me(req, res) {
@@ -248,41 +251,34 @@ async function deleteExamGrade(req, res) {
   res.json({ message: 'Exam grade entry deleted' });
 }
 
-const WORK_AUTHORIZATION_VALUES = ['Yes', 'No', 'Sponsorship'];
 
-// Candidate-level profile fields (location, NIN, work authorization,
+// Candidate-level profile fields (location, NIN, district of origin,
 // LinkedIn/portfolio links) - persist across every application this
 // candidate ever submits, same principle as education/workExperience.
 // nationalId already existed on Candidate (set at registration); this is
 // the first endpoint that lets a candidate edit it afterward.
-const ID_TYPE_VALUES = ['NationalID', 'Passport'];
 
 async function updateProfile(req, res) {
-  const { nationalId, idType, location, linkedinUrl, portfolioUrl, workAuthorization, dateOfBirth, flyingHours } = req.body;
-  if (workAuthorization !== undefined && workAuthorization !== '' && !WORK_AUTHORIZATION_VALUES.includes(workAuthorization)) {
-    return res.status(400).json({ error: `Work authorization must be one of: ${WORK_AUTHORIZATION_VALUES.join(', ')}` });
-  }
-  if (idType !== undefined && idType !== '' && !ID_TYPE_VALUES.includes(idType)) {
-    return res.status(400).json({ error: `ID type must be one of: ${ID_TYPE_VALUES.join(', ')}` });
-  }
-  // The Uganda NIN format is only enforced for candidates who declared
-  // their id as a National ID in this same request - a foreign candidate's
-  // passport format varies too much by country to validate meaningfully,
-  // and idType/nationalId are always submitted together by the frontend.
-  // Deliberately doesn't describe the NIN format - just flags the entry
-  // as wrong and asks for a correct one, matching the frontend's own
-  // validation message (ProfileCompletionForm.jsx / validators.js).
-  if (idType === 'NationalID' && nationalId && !validateNationalId(nationalId)) {
-    return res.status(400).json({ error: 'That doesn\'t look like a valid National ID number. Please check and enter it again.' });
+  const { location, districtOfOrigin, linkedinUrl, portfolioUrl, dateOfBirth, flyingHours } = req.body;
+  // The NIN is the only identity document a candidate gives (no passports).
+  const nationalId = req.body.nationalId === undefined ? undefined : normalizeNationalId(req.body.nationalId);
+  // Deliberately doesn't describe the NIN format - just flags the entry as
+  // wrong and asks for a correct one, matching the frontend's own message
+  // (ProfileCompletionForm.jsx / validators.js).
+  if (nationalId && !validateNationalId(nationalId)) {
+    return res.status(400).json({ error: 'That doesn\'t look like a valid National Identification Number (NIN). Please check and enter it again.' });
   }
 
   const data = {};
   if (nationalId !== undefined) data.nationalId = nationalId || null;
-  if (idType !== undefined) data.idType = idType || null;
   if (location !== undefined) data.location = location || null;
+  if (districtOfOrigin !== undefined) {
+    const district = typeof districtOfOrigin === 'string' ? districtOfOrigin.trim() : '';
+    if (district.length > 100) return res.status(400).json({ error: 'District of origin is too long' });
+    data.districtOfOrigin = district || null;
+  }
   if (linkedinUrl !== undefined) data.linkedinUrl = linkedinUrl || null;
   if (portfolioUrl !== undefined) data.portfolioUrl = portfolioUrl || null;
-  if (workAuthorization !== undefined) data.workAuthorization = workAuthorization || null;
   if (dateOfBirth !== undefined) data.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
   if (flyingHours !== undefined) data.flyingHours = flyingHours !== '' && flyingHours != null ? Number(flyingHours) : null;
 
@@ -291,10 +287,10 @@ async function updateProfile(req, res) {
     candidate = await candidateModel.update(req.user.id, data);
   } catch (err) {
     // nationalId is @unique (see schema.prisma) - two accounts claiming
-    // the same National ID/Passport number surfaces here as a Prisma
+    // the same NIN surfaces here as a Prisma
     // P2002 rather than something worth exposing raw to the candidate.
     if (err.code === 'P2002' && err.meta?.target?.includes('nationalId')) {
-      return res.status(409).json({ error: 'This National ID or Passport number is already registered on another account.' });
+      return res.status(409).json({ error: 'This NIN is already registered on another account.' });
     }
     throw err;
   }
@@ -335,15 +331,38 @@ async function updateInternalProfile(req, res) {
 // which carries HR-only columns - strip them before they reach the candidate.
 async function myApplications(req, res) {
   const applications = await applicationModel.findByCandidate(req.user.id);
+  // Seeing an issued offer here is the candidate viewing it (FR-ATS-065).
+  const unseen = applications.filter((a) => a.offer?.approvedDate && !a.offer.viewedAt).map((a) => a.offer.id);
+  if (unseen.length) {
+    await prisma.offer.updateMany({ where: { id: { in: unseen }, viewedAt: null }, data: { viewedAt: new Date() } })
+      .catch((err) => console.error('Recording that offers were viewed failed:', err));
+  }
   // Interview rounds go through the same kind of whitelist as the vacancy -
   // the panel's scores, recommendation and HR's internal notes stay staff-only.
-  res.json(applications.map((a) => ({
-    ...a,
-    vacancy: toPublicVacancy(a.vacancy),
-    interviewRounds: (a.interviewRounds || [])
-      .slice().sort((x, y) => x.roundNumber - y.roundNumber)
-      .map(toCandidateInterview)
-  })));
+  // The offer too: nothing until it is issued, and only its terms then
+  // (offerService.toCandidateOffer). Until then an Offered application
+  // still reads as Interviewed, so the candidate never learns of an offer
+  // that is only recommended - or that is then returned or withdrawn.
+  // Where they sit on the interview order, the shortlisting committee's
+  // ranking and the merit list (Primary or Reserve) is HR's working
+  // information, not the candidate's.
+  res.json(applications.map((a) => {
+    const {
+      rank, listStatus, meritRank, meritListStatus, meritStatus,
+      meritProposedAt, meritProposedById, meritApprovedAt, meritApprovedById,
+      committeeRank, committeeBand, committeeScore, committeeAgreement, ...rest
+    } = a;
+    const offer = toCandidateOffer(a.offer);
+    return {
+      ...rest,
+      status: a.status === 'Offered' && !offer ? 'Interviewed' : a.status,
+      offer,
+      vacancy: toPublicVacancy(a.vacancy),
+      interviewRounds: (a.interviewRounds || [])
+        .slice().sort((x, y) => x.roundNumber - y.roundNumber)
+        .map(toCandidateInterview)
+    };
+  }));
 }
 
 module.exports = {

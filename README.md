@@ -59,7 +59,7 @@ erecruitment/
   re-runs the mandatory verification gate for every application in the list before
   committing the rank.
 - Internal-candidate HR verification (mandatory comments/recommendation-letter evidence).
-- Interview scheduling and scoring.
+- Interview scheduling with calendar invitations; the panel scores on paper and HR records the results with the signed score sheet.
 - Offer approval.
 
 **Business logic (`workflowService.js`)**
@@ -95,6 +95,8 @@ erecruitment/
   simultaneously (found and fixed - the first version of this let both stay active).
 - Proxy entry (HR transcribes on the panelist's behalf) and self-service links are both
   available side by side - use whichever fits a given panelist.
+
+> **Superseded:** interviews are no longer scored in the system. Panels score on paper and an HR Officer records the overall score, the verdict and the signed score sheet afterwards; per-panelist scores and scoring links were removed. See CLAUDE.md for how it works now. The notes below are kept as history.
 
 **Interview panel — accounts optional** (redesigned to handle real-world panels)
 - Panel members are captured as lightweight records (`name`, `trade`, optional `email`),
@@ -166,10 +168,13 @@ Once running:
 - API: http://localhost:4000
 - Frontend: http://localhost:5173
 
-Seeded staff accounts (password for all: `ChangeMe123!`):
-- hro@caa.co.ug — HR Officer
-- phro@caa.co.ug — Principal HR Officer
-- dhra@caa.co.ug — DHRA / Manager HR
+Staff and internal candidates sign in with their UCAA Microsoft (Entra ID)
+account; see [SETUP.md](SETUP.md#microsoft-entra-id-sign-in). For local
+development without Entra, `npm run seed` creates demo staff accounts that
+sign in with a password while `DEV_PASSWORD_LOGIN=true` (listed in SETUP.md).
+
+To empty a server's database for a fresh round of user testing, see
+[docs/database-reset.md](docs/database-reset.md).
 
 ## Running tests
 

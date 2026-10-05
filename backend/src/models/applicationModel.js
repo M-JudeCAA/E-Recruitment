@@ -8,11 +8,13 @@ const prisma = require('../config/db');
 // reads to build the on-demand CV HR generates for an applicant - see
 // GeneratedCvPrintLayout.jsx.
 const CANDIDATE_SELECT = {
-  id: true, fullName: true, email: true, phone: true, candidateType: true,
-  location: true, linkedinUrl: true, portfolioUrl: true, workAuthorization: true,
-  nationalId: true, idType: true, dateOfBirth: true, flyingHours: true,
+  id: true, fullName: true, email: true, phone: true, phoneKey: true, candidateType: true,
+  location: true, districtOfOrigin: true, linkedinUrl: true, portfolioUrl: true,
+  nationalId: true, dateOfBirth: true, flyingHours: true,
   education: true, workExperience: true, examGrades: true, certificates: true,
-  internalProfile: true
+  internalProfile: true,
+  // HR's tags on the candidate (talentController).
+  tags: { select: { tag: { select: { id: true, name: true } } } }
 };
 
 // Interview rounds as HR lists show them - with the panel, so a review card
@@ -32,7 +34,9 @@ const HR_LIST_INCLUDE = {
   },
   interviewRounds: HR_ROUNDS_INCLUDE,
   offer: true,
-  rejectedBy: { select: { name: true } }
+  hire: { select: { id: true, caseRef: true, hiredAt: true } },
+  rejectedBy: { select: { name: true } },
+  documents: { orderBy: { uploadedAt: 'asc' } }
 };
 
 // candidateType/search both narrow on the related Candidate row, so they
@@ -45,10 +49,12 @@ const HR_LIST_INCLUDE = {
 // stays in place underneath it as defense-in-depth (every needsActionOr
 // branch is already non-Draft by construction, so this never excludes
 // anything real).
-function buildHrWhere({ vacancyId, status, departmentId, candidateType, screeningPassed, search, needsActionOr }) {
+function buildHrWhere({ vacancyId, status, departmentId, candidateType, screeningPassed, search, needsActionOr, excludeVacancyIds }) {
   const where = { status: status || { not: 'Draft' } };
   if (needsActionOr) where.OR = needsActionOr;
   if (vacancyId) where.vacancyId = vacancyId;
+  // Vacancies the viewer applied for (conflictOfInterestService).
+  else if (excludeVacancyIds?.length) where.vacancyId = { notIn: excludeVacancyIds };
   if (departmentId) where.vacancy = { departmentId };
   const candidateWhere = {};
   if (candidateType) candidateWhere.candidateType = candidateType;
@@ -90,7 +96,9 @@ module.exports = {
       candidate: { select: CANDIDATE_SELECT },
       interviewRounds: HR_ROUNDS_INCLUDE,
       offer: true,
-      rejectedBy: { select: { name: true } }
+      hire: { select: { id: true, caseRef: true, hiredAt: true } },
+      rejectedBy: { select: { name: true } },
+      documents: { orderBy: { uploadedAt: 'asc' } }
     },
     orderBy: [{ rank: 'asc' }, { shortlistScore: 'desc' }]
   }),
@@ -106,15 +114,26 @@ module.exports = {
   countForHr: (filters) => prisma.application.count({ where: buildHrWhere(filters) }),
   findByCandidate: (candidateId) => prisma.application.findMany({
     where: { candidateId },
-    include: { vacancy: true, interviewRounds: true, offer: true },
+    include: { vacancy: true, interviewRounds: true, offer: true, documents: { orderBy: { uploadedAt: 'asc' } } },
     orderBy: { createdAt: 'desc' }
   }),
   // url is always a single scalar path (see fileController.js's one caller,
   // built from one filename) - named singular here (it previously read
   // "urls", misleadingly suggesting array support the OR clause below
   // doesn't actually provide).
+  // The application a stored file belongs to, whoever owns it - for the
+  // data access log when staff open a document.
+  findByFileUrl: (url) => prisma.application.findFirst({
+    where: { OR: [{ cvUrl: url }, { coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] },
+    select: { id: true, vacancyId: true, candidateId: true }
+  }),
+  // The application whose interview score sheet this is (staff-only file).
+  findByScoreSheetUrl: (url) => prisma.application.findFirst({
+    where: { interviewRounds: { some: { scoreSheetUrl: url } } },
+    select: { id: true, vacancyId: true, candidateId: true }
+  }),
   findOwnedByCandidate: (candidateId, url) => prisma.application.findFirst({
-    where: { candidateId, OR: [{ cvUrl: url }, { coverLetterUrl: url }] }
+    where: { candidateId, OR: [{ cvUrl: url }, { coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] }
   }),
   findByVacancyAndStatus: (vacancyId, status) => prisma.application.findMany({
     where: { vacancyId, status }
@@ -133,10 +152,11 @@ module.exports = {
   // Applications an interview can be scheduled for on one vacancy - the
   // Interview Hub's scheduler. Same gate as interviewController's
   // SCHEDULABLE_STATUSES plus no offer yet; ordered like the shortlist.
+  // Not anyone already ranked on the merit list - see interviewController.schedule.
   findSchedulable: (vacancyId, statuses) => prisma.application.findMany({
-    where: { vacancyId, status: { in: statuses }, offer: null },
+    where: { vacancyId, status: { in: statuses }, offer: null, meritStatus: null },
     select: {
-      id: true, status: true, rank: true, listStatus: true, shortlistScore: true,
+      id: true, status: true, rank: true, listStatus: true, shortlistScore: true, excoApprovalId: true,
       candidate: { select: { id: true, fullName: true, email: true, candidateType: true } },
       interviewRounds: {
         select: { id: true, roundNumber: true, status: true, scheduledDate: true, recommendation: true },
@@ -150,9 +170,10 @@ module.exports = {
   findForSession: (vacancyId, ids) => prisma.application.findMany({
     where: { vacancyId, id: { in: ids } },
     select: {
-      id: true, status: true, candidateId: true,
+      id: true, status: true, candidateId: true, meritStatus: true, excoApprovalId: true,
       candidate: { select: { id: true, fullName: true } },
-      offer: { select: { id: true } }
+      offer: { select: { id: true } },
+      _count: { select: { interviewRounds: true } }
     }
   }),
   // Shortlisted with nothing scheduled yet - the Hub's "waiting to be
@@ -161,7 +182,9 @@ module.exports = {
     where: { status: 'Shortlisted', offer: null },
     select: { id: true, vacancy: { select: { id: true, jobRef: true, title: true } } }
   }),
-  countAll: () => prisma.application.count({ where: { status: { not: 'Draft' } } }),
+  countAll: (excludeVacancyIds = []) => prisma.application.count({
+    where: { status: { not: 'Draft' }, ...(excludeVacancyIds.length ? { vacancyId: { notIn: excludeVacancyIds } } : {}) }
+  }),
   // Same Draft exclusion, scoped to one vacancy.
   countByVacancy: (vacancyId) => prisma.application.count({ where: { vacancyId, status: { not: 'Draft' } } }),
   // include is optional (undefined -> Prisma returns scalars only, same

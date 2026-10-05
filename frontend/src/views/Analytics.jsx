@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Clock, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
 import { useDashboardEvents } from '../models/dashboardSocket';
@@ -130,7 +131,7 @@ function PanelWorkloadTable({ rows, loading }) {
       {loading ? (
         <PanelRowsSkeleton />
       ) : rows.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No scored interview rounds yet.</p>
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>No interviews held yet.</p>
       ) : (
         <div className="panel-scroll">
           {rows.map((r, i) => (
@@ -140,7 +141,7 @@ function PanelWorkloadTable({ rows, loading }) {
             }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{r.name}</div>
               <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-                {r.roundsScored} scored &middot; avg {r.avgScore}
+                {r.interviews} interview{r.interviews === 1 ? '' : 's'}{r.chaired ? <> &middot; chaired {r.chaired}</> : null}
               </div>
             </div>
           ))}
@@ -217,6 +218,9 @@ export default function Analytics() {
               <h2 style={{ margin: 0 }}>Analytics</h2>
               <p style={{ margin: '4px 0 0', fontSize: 14, color: 'var(--color-text-muted)' }}>
                 Historical and trend reporting - {staff?.role?.replace(/_/g, ' ')}
+              </p>
+              <p style={{ margin: '6px 0 0', fontSize: 14 }}>
+                <Link to="/hr/analytics/recruitment">Recruitment dashboard</Link> - time to hire, source of hire, pipeline health, open positions and more, with filters and export.
               </p>
             </div>
             <LiveIndicator connected={connected} />

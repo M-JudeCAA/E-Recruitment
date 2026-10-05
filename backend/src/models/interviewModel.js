@@ -6,6 +6,7 @@ const ROUND_INCLUDE = {
   application: {
     select: {
       id: true, status: true, rank: true, listStatus: true, candidateId: true,
+      meritRank: true, meritListStatus: true, meritStatus: true,
       candidate: { select: { id: true, fullName: true, email: true, phone: true, candidateType: true } },
       vacancy: { select: { id: true, jobRef: true, title: true, createdById: true, positionsRequired: true } },
       offer: { select: { id: true, status: true } }
@@ -28,7 +29,6 @@ const CLASH_SELECT = {
     }
   },
   panelMembers: {
-    where: { recusedAt: null },
     select: { name: true, email: true, staffUserId: true }
   }
 };
@@ -65,7 +65,7 @@ function createSession(entries, schedulableStatuses) {
     const created = [];
     for (const { round, panel } of entries) {
       const moved = await tx.application.updateMany({
-        where: { id: round.applicationId, status: { in: schedulableStatuses }, offer: null },
+        where: { id: round.applicationId, status: { in: schedulableStatuses }, offer: null, meritStatus: null },
         data: { status: 'InterviewScheduled' }
       });
       if (moved.count === 0) {
@@ -95,14 +95,12 @@ module.exports = {
     where: { id: { in: ids } }, include: ROUND_INCLUDE, orderBy: { scheduledDate: 'asc' }
   }),
   update: (id, data) => prisma.interviewRound.update({ where: { id }, data }),
-  // Atomic conditional update - scoping the write to recommendation: null
-  // means a second finalize call on the same round (double-click, or two
-  // HR officers racing) can't silently overwrite an already-finalized
-  // recommendation; the caller sees count 0 and reports a conflict instead.
-  updateIfNoRecommendation: (id, data) => prisma.interviewRound.updateMany({ where: { id, recommendation: null }, data }),
-  // Same guard idea for cancel/no-show/reschedule: only a round that is
-  // still Scheduled can move, so two people acting at once can't both win.
+  // Same guard for cancel/no-show/reschedule/recording results: only a round
+  // that is still Scheduled can move, so two people acting at once can't both
+  // win (the loser sees count 0 and reports a conflict).
   updateIfScheduled: (id, data) => prisma.interviewRound.updateMany({ where: { id, status: 'Scheduled' }, data }),
+  // Correcting recorded results - only on a round whose results are in.
+  updateIfCompleted: (id, data) => prisma.interviewRound.updateMany({ where: { id, status: 'Completed' }, data }),
   countByApplication: (applicationId) => prisma.interviewRound.count({ where: { applicationId } }),
   findByApplication: (applicationId) => prisma.interviewRound.findMany({ where: { applicationId } }),
 
@@ -142,13 +140,23 @@ module.exports = {
     orderBy: [{ createdAt: 'desc' }]
   }),
 
+  // Every round of a vacancy that falls in [start, end) - one interview day,
+  // for the panelists' calendar invitation for that day
+  // (interviewInvitationService).
+  findForVacancyDay: (vacancyId, start, end) => prisma.interviewRound.findMany({
+    where: { application: { vacancyId }, scheduledDate: { gte: start, lt: end } },
+    include: ROUND_INCLUDE,
+    orderBy: [{ scheduledDate: 'asc' }, { id: 'asc' }]
+  }),
+
   // scripts/sendInterviewReminders.js
   dueForReminder: (from, to) => prisma.interviewRound.findMany({
     where: { status: 'Scheduled', reminderSentAt: null, scheduledDate: { gte: from, lte: to } },
     include: ROUND_INCLUDE
   }),
-  overdueForScores: (before) => prisma.interviewRound.findMany({
-    where: { status: 'Scheduled', recommendation: null, scoreNudgeSentAt: null, scheduledDate: { lt: before } },
+  // Held (its time has passed) but no results recorded yet.
+  overdueForResults: (before) => prisma.interviewRound.findMany({
+    where: { status: 'Scheduled', resultsReminderSentAt: null, scheduledDate: { lt: before } },
     include: ROUND_INCLUDE
   })
 };

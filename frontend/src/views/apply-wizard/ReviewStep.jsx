@@ -3,22 +3,13 @@ import { Download } from 'lucide-react';
 import GeneratedCvPrintLayout from '../../components/GeneratedCvPrintLayout';
 import Button from '../../components/Button';
 import { downloadElementAsPdf, sanitizeFilenamePart } from '../../utils/downloadElementAsPdf';
+import { disqualifyingMet } from '../../utils/screeningQuestions';
 
 export default function ReviewStep({
-  profile, coverLetter, referees, profileDetails, questions, internalProfile, candidateType, goTo, stepIndexes,
-  desirableRequirements, desirableAnswers, disqualifyingRequirements, disqualifyingAnswers, vacancy
+  profile, coverLetter, documents, referees, profileDetails, questions, internalProfile, candidateType, goTo, stepIndexes,
+  desirableRequirements, desirableAnswers, disqualifyingRequirements, disqualifyingAnswers, vacancy, evidence = []
 }) {
-  const WORK_AUTH_LABELS = { Yes: 'Yes', No: 'No', Sponsorship: 'Would need sponsorship' };
   const RELOCATE_LABELS = { Yes: 'Yes', No: 'No', Depends: 'Depends on the offer' };
-
-  // Same reasoning a disqualifying question fails automated screening for
-  // (see backend screeningService.screenApplication) - reused here so a
-  // candidate sees the same signal HR will, before they submit rather than
-  // only after. Never blocks anything; it's advisory, matching how
-  // screeningPassed itself is only ever a flag for HR, never a hard gate.
-  const disqualifyingMet = (req, answer) => answer === undefined ? null
-    : req.answerType === 'number' ? (typeof answer === 'number' && answer >= req.minValue)
-      : answer === (req.requiredAnswer !== 'No');
 
   // Reuses the exact GeneratedCvPrintLayout/downloadElementAsPdf pipeline
   // HR already has (see useGeneratedCvDownload.jsx) - built from the
@@ -44,14 +35,19 @@ export default function ReviewStep({
     }
   };
 
+  const documentNames = (category) => (documents || [])
+    .filter((d) => d.category === category)
+    .map((d) => d.label || d.originalName)
+    .join(', ');
+
   const sections = [
     {
       i: stepIndexes.profile,
       title: 'Profile',
       rows: [
-        ['Location', profileDetails.location || '—'],
+        ['Place of residence', profileDetails.location || '—'],
+        ['District of origin', profileDetails.districtOfOrigin || '—'],
         ['National ID (NIN)', profileDetails.nationalId || '—'],
-        ['Work authorization', WORK_AUTH_LABELS[profileDetails.workAuthorization] || '—'],
         ['Education entries', (profile?.education || []).length],
         ['Work experience entries', (profile?.workExperience || []).length],
       ],
@@ -61,6 +57,12 @@ export default function ReviewStep({
       title: 'Documents',
       rows: [
         ['CV', 'Generated automatically from your profile and application details'],
+        ['Academic documents', documentNames('Academic') || 'None attached', !documentNames('Academic')],
+        ...evidence.map((e) => {
+          const attached = (documents || []).filter((d) => d.category === 'Evidence' && d.evidenceKey === e.key).map((d) => d.originalName).join(', ');
+          return [e.label, attached || 'Not attached - required', !attached];
+        }),
+        ['Other documents', documentNames('Other') || 'None attached'],
         ['Cover letter', coverLetter ? coverLetter.name : 'Not attached'],
         ['Portfolio', profileDetails.portfolioUrl || '—'],
       ],
@@ -131,11 +133,9 @@ export default function ReviewStep({
               <span style={{ color: 'var(--color-text-muted)', maxWidth: '55%', minWidth: 0, overflowWrap: 'break-word', wordBreak: 'break-word' }}>{label}</span>
               <span style={{ color: warn ? 'var(--color-danger)' : 'var(--color-text)', textAlign: 'right', maxWidth: '45%', minWidth: 0, overflowWrap: 'break-word', wordBreak: 'break-word' }}>
                 {value || '—'}
-                {/* Advisory only, never blocking - matches how screeningPassed
-                    itself works (see disqualifyingMet above). The candidate can
-                    still submit; this just means they won't be surprised later
-                    by why HR flagged it. */}
-                {warn && <span style={{ display: 'block', fontSize: 11 }}>May not meet this role's minimum requirement</span>}
+                {warn && <span style={{ display: 'block', fontSize: 11 }}>
+                  {section.title === 'Documents' ? 'At least one is required' : "Does not meet this role's requirement - you cannot submit with this answer"}
+                </span>}
               </span>
             </div>
           ))}

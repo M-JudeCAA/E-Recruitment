@@ -47,4 +47,45 @@ function describeSlot(round) {
   return parts.join(', ');
 }
 
-module.exports = { DEFAULT_DURATION_MINUTES, formatWhen, durationOf, endOf, escapeHtml, describeSlot, timeZone };
+// The calendar day (YYYY-MM-DD) an instant falls on in APP_TIMEZONE - an
+// interview at 01:00 Kampala time is on that Kampala day, not the previous
+// UTC one. A panelist's calendar meeting covers one such day
+// (interviewInvitationService).
+function localDay(date) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
+    timeZone: timeZone(), year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date(date)).map((p) => [p.type, p.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+// How far APP_TIMEZONE is ahead of UTC at a given instant, in ms.
+function zoneOffsetMs(instant) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: timeZone(), hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
+  }).formatToParts(instant).map((p) => [p.type, p.value]));
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return asUtc - Math.floor(instant.getTime() / 1000) * 1000;
+}
+
+// Local midnight to the next local midnight for a YYYY-MM-DD day, as UTC
+// instants: { start, end }.
+function dayBounds(day) {
+  const [y, m, d] = day.split('-').map(Number);
+  const startOf = (dd) => {
+    const guess = new Date(Date.UTC(y, m - 1, dd));
+    return new Date(guess.getTime() - zoneOffsetMs(guess));
+  };
+  return { start: startOf(d), end: startOf(d + 1) };
+}
+
+// "Thu, 1 Oct 2026" for a YYYY-MM-DD day.
+function formatDay(day) {
+  const { start } = dayBounds(day);
+  return start.toLocaleDateString('en-GB', { timeZone: timeZone(), weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+module.exports = {
+  DEFAULT_DURATION_MINUTES, formatWhen, durationOf, endOf, escapeHtml, describeSlot, timeZone,
+  localDay, dayBounds, formatDay
+};

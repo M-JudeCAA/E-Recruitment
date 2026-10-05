@@ -11,4 +11,9 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_PHOTO_SIZE = 3 * 1024 * 1024; // 3MB
 
-module.exports = { ALLOWED_MIME, MAX_FILE_SIZE, ALLOWED_IMAGE_MIME, MAX_PHOTO_SIZE };
+// Academic and other supporting documents on an application - the document
+// types above plus JPG/PNG, since certificates and transcripts are often
+// scanned or photographed rather than saved as PDF.
+const ALLOWED_SUPPORTING_DOC_MIME = [...ALLOWED_MIME, 'image/jpeg', 'image/png'];
+
+module.exports = { ALLOWED_MIME, MAX_FILE_SIZE, ALLOWED_IMAGE_MIME, MAX_PHOTO_SIZE, ALLOWED_SUPPORTING_DOC_MIME };

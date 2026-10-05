@@ -187,23 +187,22 @@ async function delegationActivity(req, res) {
   })));
 }
 
-// One row per panelist (grouped by name, not staffUserId - PanelMember's
-// own schema comment: an external panelist commonly has no system
-// account) - rounds scored and average score given, sorted by volume.
+// One row per panelist (grouped by name, not staffUserId - an external
+// panelist commonly has no system account): the interviews they sat on and
+// how many they chaired, busiest first. Panels score on paper, so there are
+// no per-panelist scores to average.
 async function panelWorkload(req, res) {
-  const rows = await dashboardModel.scoredPanelMembers();
+  const rows = await dashboardModel.heldPanelMembers();
 
   const byName = new Map();
   for (const row of rows) {
-    const entry = byName.get(row.name) || { name: row.name, count: 0, totalScore: 0 };
-    entry.count += 1;
-    entry.totalScore += row.score;
+    const entry = byName.get(row.name) || { name: row.name, interviews: 0, chaired: 0 };
+    entry.interviews += 1;
+    if (row.isChair) entry.chaired += 1;
     byName.set(row.name, entry);
   }
 
-  res.json(Array.from(byName.values())
-    .map((e) => ({ name: e.name, roundsScored: e.count, avgScore: round1(e.totalScore / e.count) }))
-    .sort((a, b) => b.roundsScored - a.roundsScored));
+  res.json(Array.from(byName.values()).sort((a, b) => b.interviews - a.interviews || a.name.localeCompare(b.name)));
 }
 
 module.exports = { slaCompliance, approvalTurnaround, offerOutcomes, hiringMix, timeToFill, delegationActivity, panelWorkload };

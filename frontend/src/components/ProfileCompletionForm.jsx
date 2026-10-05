@@ -33,7 +33,7 @@ export default function ProfileCompletionForm({ onComplete }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({
-    idType: '', nationalId: '', location: '', workAuthorization: '', linkedinUrl: '', portfolioUrl: '',
+    nationalId: '', location: '', districtOfOrigin: '', linkedinUrl: '', portfolioUrl: '',
     dateOfBirth: '', flyingHours: ''
   });
   const [internalForm, setInternalForm] = useState({ employeeId: '', department: '', position: '', dateJoined: '', supervisorName: '', supervisorEmail: '' });
@@ -86,14 +86,21 @@ export default function ProfileCompletionForm({ onComplete }) {
 
   const isInternal = candidate?.candidateType === 'Internal';
 
+  // After adding, editing or deleting an education, work or certificate
+  // entry: refresh the lists only. load() would also refill the personal
+  // details from the server and wipe anything typed there but not yet saved.
+  const refreshEntries = () => client.get('/api/candidates/me').then((res) => {
+    setProfile(res.data);
+    return res.data;
+  });
+
   const load = () => client.get('/api/candidates/me').then((res) => {
     const data = res.data;
     setProfile(data);
     setForm({
-      idType: data.idType || '',
       nationalId: data.nationalId || '',
       location: data.location || '',
-      workAuthorization: data.workAuthorization || '',
+      districtOfOrigin: data.districtOfOrigin || '',
       linkedinUrl: data.linkedinUrl || '',
       portfolioUrl: data.portfolioUrl || '',
       dateOfBirth: data.dateOfBirth ? data.dateOfBirth.slice(0, 10) : '',
@@ -116,13 +123,12 @@ export default function ProfileCompletionForm({ onComplete }) {
   const fieldError = (field) => {
     const value = form[field];
     switch (field) {
-      case 'idType': return value ? '' : 'Select an ID type.';
       case 'nationalId':
         if (!value) return 'This field is required.';
-        if (form.idType === 'NationalID' && !validateNationalId(value)) return NATIONAL_ID_ERROR;
+        if (!validateNationalId(value)) return NATIONAL_ID_ERROR;
         return '';
       case 'location': return value ? '' : 'This field is required.';
-      case 'workAuthorization': return value ? '' : 'This field is required.';
+      case 'districtOfOrigin': return value ? '' : 'This field is required.';
       default: return '';
     }
   };
@@ -149,7 +155,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       };
       if (id) await client.put(`/api/candidates/me/education/${id}`, payload);
       else await client.post('/api/candidates/me/education', payload);
-      await load();
+      await refreshEntries();
       return true;
     } catch (err) {
       setError(err.response?.data?.error || 'Could not save education entry');
@@ -165,7 +171,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       };
       if (id) await client.put(`/api/candidates/me/work-experience/${id}`, payload);
       else await client.post('/api/candidates/me/work-experience', payload);
-      await load();
+      await refreshEntries();
       return true;
     } catch (err) {
       setError(err.response?.data?.error || 'Could not save work experience entry');
@@ -181,7 +187,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       };
       if (id) await client.put(`/api/candidates/me/certificates/${id}`, payload);
       else await client.post('/api/candidates/me/certificates', payload);
-      await load();
+      await refreshEntries();
       return true;
     } catch (err) {
       setError(err.response?.data?.error || 'Could not save certificate entry');
@@ -317,7 +323,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     setError('');
     try {
       await client.delete(`/api/candidates/me/education/${id}`);
-      await load();
+      await refreshEntries();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not delete education entry');
     }
@@ -344,7 +350,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     setError('');
     try {
       await client.delete(`/api/candidates/me/work-experience/${id}`);
-      await load();
+      await refreshEntries();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not delete work experience entry');
     }
@@ -370,7 +376,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     setError('');
     try {
       await client.delete(`/api/candidates/me/certificates/${id}`);
-      await load();
+      await refreshEntries();
     } catch (err) {
       setError(err.response?.data?.error || 'Could not delete certificate entry');
     }
@@ -381,7 +387,7 @@ export default function ProfileCompletionForm({ onComplete }) {
     setSubmitted(true);
     setMessage(''); setError('');
 
-    const candidateFields = ['idType', 'nationalId', 'location', 'workAuthorization'];
+    const candidateFields = ['nationalId', 'location', 'districtOfOrigin'];
     const hasCandidateError = candidateFields.some((f) => fieldError(f));
     const internalFields = ['employeeId', 'department', 'position', 'dateJoined', 'supervisorName', 'supervisorEmail'];
     const hasInternalError = isInternal && internalFields.some((f) => internalFieldError(f));
@@ -460,27 +466,19 @@ export default function ProfileCompletionForm({ onComplete }) {
 
       <h3 style={{ fontSize: 15, marginBottom: 8 }}>Personal details</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
-        <Select label="ID type" required value={form.idType} onChange={setField('idType')} onBlur={blur('idType')} error={showError('idType')}>
-          <option value="">Select one</option>
-          <option value="NationalID">Uganda National ID</option>
-          <option value="Passport">Passport</option>
-        </Select>
+        {/* The NIN is the only identity document accepted - no passports. */}
         <TextField
-          label={form.idType === 'Passport' ? 'Passport number' : 'National ID number'}
-          required value={form.nationalId} onChange={setField('nationalId')} onBlur={blur('nationalId')}
+          label="National Identification Number (NIN)" hint="As it appears on your National ID card"
+          required maxLength={14} value={form.nationalId} onChange={setField('nationalId')} onBlur={blur('nationalId')}
           error={showError('nationalId')}
         />
+        <TextField label="District of origin" hint="The Ugandan district you come from" required maxLength={100}
+          value={form.districtOfOrigin} onChange={setField('districtOfOrigin')} onBlur={blur('districtOfOrigin')}
+          error={showError('districtOfOrigin')} />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
-        <TextField label="Current location" hint="City, country" required
+        <TextField label="Place of residence" hint="Town or district, country" required
           value={form.location} onChange={setField('location')} onBlur={blur('location')} error={showError('location')} />
-        <Select label="Authorized to work in Uganda?" required value={form.workAuthorization}
-          onChange={setField('workAuthorization')} onBlur={blur('workAuthorization')} error={showError('workAuthorization')}>
-          <option value="">Select one</option>
-          <option value="Yes">Yes</option>
-          <option value="No">No</option>
-          <option value="Sponsorship">Would need sponsorship</option>
-        </Select>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
         <TextField label="LinkedIn" hint="Optional" placeholder="linkedin.com/in/..."
@@ -752,7 +750,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       </div>
 
       <div style={{ marginBottom: 24 }}>
-        <ExamGradesEditor examGrades={profile?.examGrades} onChange={load} />
+        <ExamGradesEditor examGrades={profile?.examGrades} onChange={refreshEntries} />
       </div>
 
       {isInternal && (

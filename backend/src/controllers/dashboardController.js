@@ -1,3 +1,4 @@
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const dashboardModel = require('../models/dashboardModel');
 const slaModel = require('../models/slaModel');
 const { getPendingTasksWithStatus } = require('../services/slaStatusService');
@@ -8,12 +9,13 @@ const systemHealthService = require('../services/systemHealthService');
 // HRHome does today, plus the two figures (pending departments, offers
 // pending approval) nothing on the frontend currently fetches at all.
 async function summary(req, res) {
-  const [vacancyPairs, applicationPairs, offerPairs, pendingDepartments, offersPendingApproval] = await Promise.all([
+  const [vacancyPairs, applicationPairs, offerPairs, pendingDepartments, offersPendingApproval, committeesPendingApproval] = await Promise.all([
     dashboardModel.countVacanciesByStatus(),
     dashboardModel.countApplicationsByStatus(),
     dashboardModel.countOffersByStatus(),
     dashboardModel.countPendingDepartments(),
-    dashboardModel.countOffersPendingApproval()
+    dashboardModel.countOffersPendingApproval(),
+    dashboardModel.countCommitteesPendingApproval()
   ]);
 
   res.json({
@@ -23,7 +25,9 @@ async function summary(req, res) {
     // only: every field the old response shape had is still there unchanged.
     offersByStatus: Object.fromEntries(offerPairs),
     pendingDepartments,
-    offersPendingApproval
+    offersPendingApproval,
+    // Shortlisting committees waiting for the DHRA (shown to Directors).
+    committeesPendingApproval
   });
 }
 
@@ -186,7 +190,9 @@ async function upcomingInterviews(req, res) {
   const from = new Date();
   const to = new Date(from.getTime() + days * MS_PER_DAY);
 
-  const rounds = await dashboardModel.interviewRoundsScheduledBetween(from, to);
+  const conflicted = await conflictOfInterest.conflictedVacancyIds(req);
+  const rounds = (await dashboardModel.interviewRoundsScheduledBetween(from, to))
+    .filter((r) => !conflicted.includes(r.application?.vacancy?.id));
   res.json(rounds.map((r) => ({
     id: r.id, scheduledDate: r.scheduledDate, mode: r.mode, roundNumber: r.roundNumber,
     durationMinutes: r.durationMinutes, location: r.location, candidateResponse: r.candidateResponse,

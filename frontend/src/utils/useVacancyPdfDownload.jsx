@@ -62,6 +62,7 @@ export function useVacancyPdfDownload() {
           desirableRequirements={target.desirableRequirements}
           generalKnowledge={target.generalKnowledge}
           specialSkills={target.specialSkills}
+          desirableQualifications={target.desirableQualifications}
         />
       </div>
     </div>

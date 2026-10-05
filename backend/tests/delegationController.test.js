@@ -41,7 +41,7 @@ describe('create', () => {
   });
 
   test('rejects a delegate who is not exactly one tier below the caller', async () => {
-    prisma.staffUser.findUnique.mockResolvedValue({ id: 4, role: 'Principal_HR_Officer' });
+    prisma.staffUser.findUnique.mockResolvedValue({ id: 4, role: 'Principal_HR_Officer', active: true });
     const req = {
       body: { delegateId: '4', startDate: '2026-01-01', endDate: '2026-01-05', reason: 'leave' },
       user: { id: 2, role: 'Senior_HR_Officer' } // one tier below is HR_Officer, not Principal_HR_Officer
@@ -69,7 +69,7 @@ describe('create', () => {
   });
 
   test('a Senior HR Officer delegating to an HR Officer is accepted - the caller is always the delegator', async () => {
-    prisma.staffUser.findUnique.mockResolvedValue({ id: 4, role: 'HR_Officer' });
+    prisma.staffUser.findUnique.mockResolvedValue({ id: 4, role: 'HR_Officer', active: true });
     prisma.delegation.create.mockResolvedValue({ id: 1 });
     const req = {
       body: { delegateId: '4', startDate: '2026-01-01', endDate: '2026-01-05', reason: 'annual leave' },
@@ -86,7 +86,7 @@ describe('create', () => {
   });
 
   test('requires a non-empty reason', async () => {
-    prisma.staffUser.findUnique.mockResolvedValue({ id: 4, role: 'HR_Officer' });
+    prisma.staffUser.findUnique.mockResolvedValue({ id: 4, role: 'HR_Officer', active: true });
     const req = {
       body: { delegateId: '4', startDate: '2026-01-01', endDate: '2026-01-05', reason: '   ' },
       user: { id: 2, role: 'Senior_HR_Officer' }
@@ -100,7 +100,7 @@ describe('create', () => {
   });
 
   test('rejects an end date that is not after the start date', async () => {
-    prisma.staffUser.findUnique.mockResolvedValue({ id: 4, role: 'HR_Officer' });
+    prisma.staffUser.findUnique.mockResolvedValue({ id: 4, role: 'HR_Officer', active: true });
     const req = {
       body: { delegateId: '4', startDate: '2026-01-05', endDate: '2026-01-01', reason: 'leave' },
       user: { id: 2, role: 'Senior_HR_Officer' }

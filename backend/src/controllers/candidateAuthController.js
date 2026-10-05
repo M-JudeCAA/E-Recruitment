@@ -6,8 +6,29 @@ const internalProfileModel = require('../models/internalProfileModel');
 const pendingRegistrationModel = require('../models/pendingRegistrationModel');
 const { sendMail } = require('../utils/mailer');
 const { createToken, consumeToken } = require('../services/tokenService');
-const { validateEmail, validatePassword } = require('../utils/validators');
+const { validateEmail, validatePassword, validateNationalId, normalizeNationalId } = require('../utils/validators');
+const { phoneKey } = require('../utils/phoneKey');
 const { frontendUrl } = require('../config/frontendUrl');
+const { verifyIdToken, internalDomains, EntraAuthError } = require('../services/entraAuthService');
+
+const USE_MICROSOFT = {
+  code: 'USE_MICROSOFT',
+  error: 'UCAA staff sign in with their UCAA Microsoft account - use "Sign in with your UCAA account" instead.'
+};
+
+const isInternalEmail = (email) => internalDomains().includes(String(email).split('@')[1]?.toLowerCase());
+
+function candidateSession(candidate, firstLogin) {
+  const token = jwt.sign(
+    { type: 'candidate', id: candidate.id, candidateType: candidate.candidateType, fullName: candidate.fullName },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN }
+  );
+  return {
+    token, candidateType: candidate.candidateType, fullName: candidate.fullName,
+    photoUrl: candidate.photoUrl, email: candidate.email, firstLogin
+  };
+}
 
 // Only ever forwarded into a redirect target, never used for anything
 // else - restricting it to this exact shape rules out an open-redirect
@@ -22,22 +43,33 @@ const isValidReturnTo = (value) => typeof value === 'string' && RETURN_TO_RE.tes
 // design held the email hostage forever, since Candidate.email is unique
 // regardless of emailConfirmed.
 async function register(req, res) {
-  const { fullName, email, password, phone, nationalId, returnTo } = req.body;
+  const { fullName, email, password, phone, returnTo } = req.body;
+  // Optional at sign-up (it's required later, for a complete profile), but
+  // when given it must be a valid NIN - the only identity document accepted.
+  const nationalId = normalizeNationalId(req.body.nationalId) || null;
   if (!fullName || !email || !password) {
     return res.status(400).json({ error: 'fullName, email and password are required' });
   }
   if (!validateEmail(email)) {
     return res.status(400).json({ error: 'Enter a valid email address' });
   }
+  // Internal candidates are exactly the people who can sign in with a UCAA
+  // Microsoft account (entraLogin below) - a UCAA address can't also open
+  // a password account, or anyone could claim to be internal by typing one.
+  if (isInternalEmail(email)) return res.status(400).json(USE_MICROSOFT);
   if (!validatePassword(password)) {
     return res.status(400).json({ error: 'Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a digit, and a symbol' });
+  }
+
+  if (nationalId && !validateNationalId(nationalId)) {
+    return res.status(400).json({ error: 'That doesn\'t look like a valid National Identification Number (NIN). Please check and enter it again.' });
   }
 
   const existingCandidate = await candidateModel.findByEmail(email);
   if (existingCandidate) return res.status(409).json({ error: 'An account with this email already exists' });
 
   // Checked here, before the pending row/confirmation email ever exist, so
-  // a duplicate National ID/Passport is caught immediately rather than
+  // a duplicate NIN is caught immediately rather than
   // only surfacing as a raw unique-constraint error later in
   // confirmEmail() (see that function's own P2002 handling for the
   // residual race window this narrows but can't fully close - two people
@@ -46,8 +78,20 @@ async function register(req, res) {
   if (nationalId) {
     const existingByNationalId = await candidateModel.findByNationalId(nationalId);
     if (existingByNationalId) {
-      return res.status(409).json({ error: 'This National ID or Passport number is already registered on another account.' });
+      return res.status(409).json({ error: 'This NIN is already registered on another account.' });
     }
+  }
+
+  // FR-ATS-037: a phone number another account already uses is most
+  // likely the same person signing up again. Ask before going ahead -
+  // without saying which account it is - and let them carry on if it isn't
+  // them (a family can share a phone). Email and NIN can't repeat at all.
+  const key = phoneKey(phone);
+  if (key && req.body.confirmNotDuplicate !== true && await candidateModel.findByPhoneKey(key)) {
+    return res.status(409).json({
+      error: 'An account already uses this phone number. If it is yours, sign in or reset your password instead of creating a second account.',
+      code: 'POSSIBLE_DUPLICATE_ACCOUNT'
+    });
   }
 
   const existingPending = await pendingRegistrationModel.findByEmail(email);
@@ -62,10 +106,9 @@ async function register(req, res) {
     await pendingRegistrationModel.remove(existingPending.id);
   }
 
-  const domain = email.split('@')[1]?.toLowerCase();
-  const candidateType = domain === (process.env.INTERNAL_EMAIL_DOMAIN || '').toLowerCase()
-    ? 'Internal'
-    : 'External';
+  // Every password account is External - internal candidates come in
+  // through entraLogin.
+  const candidateType = 'External';
 
   const passwordHash = await bcrypt.hash(password, 10);
   const pending = await pendingRegistrationModel.create({
@@ -106,7 +149,7 @@ async function confirmEmail(req, res) {
     }
 
     const candidate = await candidateModel.create({
-      fullName: pending.fullName, email: pending.email, phone: pending.phone,
+      fullName: pending.fullName, email: pending.email, phone: pending.phone, phoneKey: phoneKey(pending.phone),
       nationalId: pending.nationalId, candidateType: pending.candidateType,
       passwordHash: pending.passwordHash, emailConfirmed: true
     });
@@ -120,7 +163,7 @@ async function confirmEmail(req, res) {
     res.json({ message: 'Email confirmed. You can now log in.' });
   } catch (err) {
     // register()'s own check narrows this to a genuine race (two people
-    // registering the same National ID/Passport within the same short
+    // registering the same NIN within the same short
     // window, both past that check before either confirms) rather than
     // the common case, but it can still happen. The confirmation token is
     // already single-use consumed by this point, so this exact link can
@@ -131,7 +174,7 @@ async function confirmEmail(req, res) {
     if (err.code === 'P2002' && pending) {
       await pendingRegistrationModel.remove(pending.id);
       return res.status(409).json({
-        error: 'This National ID or Passport number is already registered on another account. Please register again with the correct details.'
+        error: 'This NIN is already registered on another account. Please register again with the correct details.'
       });
     }
     sendError(res, err, 400);
@@ -142,10 +185,12 @@ async function login(req, res) {
   const { email, password } = req.body;
   const candidate = await candidateModel.findByEmail(email);
   if (!candidate) return res.status(401).json({ error: 'Invalid credentials' });
+  // An internal candidate's account has no password.
+  if (!candidate.passwordHash) return res.status(401).json(USE_MICROSOFT);
   if (!candidate.emailConfirmed) {
     return res.status(403).json({ error: 'Please confirm your email before logging in' });
   }
-  const valid = await bcrypt.compare(password, candidate.passwordHash);
+  const valid = await bcrypt.compare(password || '', candidate.passwordHash);
   if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
   // Read before overwriting - "first login" only exists in the one
@@ -155,21 +200,60 @@ async function login(req, res) {
   const firstLogin = candidate.lastLoginAt === null;
   await candidateModel.update(candidate.id, { lastLoginAt: new Date() });
 
-  const token = jwt.sign(
-    { type: 'candidate', id: candidate.id, candidateType: candidate.candidateType, fullName: candidate.fullName },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN }
-  );
-  res.json({
-    token, candidateType: candidate.candidateType, fullName: candidate.fullName,
-    photoUrl: candidate.photoUrl, email: candidate.email, firstLogin
-  });
+  res.json(candidateSession(candidate, firstLogin));
+}
+
+// Internal candidates sign in with their UCAA Microsoft account - any UCAA
+// employee may, HR staff included (applying is separate from working as
+// staff: a staff session never sees itself as an applicant, and the
+// conflict-of-interest rules keep them out of any vacancy they apply for).
+// The first sign-in creates the Internal candidate account, already
+// confirmed - Entra has proven the address. After that the oid alone
+// matches. The internal profile (supervisor etc.) is still self-declared
+// and HR-verified, as Entra holds none of it.
+async function entraLogin(req, res) {
+  let identity;
+  try {
+    identity = await verifyIdToken(req.body.idToken, 'candidate');
+  } catch (err) {
+    if (err instanceof EntraAuthError) return res.status(err.status).json({ error: err.message });
+    throw err;
+  }
+
+  let candidate = await candidateModel.findByEntraObjectId(identity.oid);
+  if (!candidate) {
+    const byEmail = await candidateModel.findByEmail(identity.email);
+    if (byEmail) {
+      if (byEmail.entraObjectId) {
+        // The address now belongs to a different Microsoft identity - a
+        // reused mailbox, not the person who opened this account.
+        return res.status(409).json({ error: 'This email is linked to a different Microsoft account. Contact UCAA HR.' });
+      }
+      candidate = await candidateModel.update(byEmail.id, {
+        entraObjectId: identity.oid, candidateType: 'Internal', emailConfirmed: true, passwordHash: null
+      });
+      if (!(await internalProfileModel.findByCandidateId(candidate.id))) {
+        await internalProfileModel.create({ candidateId: candidate.id });
+      }
+    } else {
+      candidate = await candidateModel.create({
+        fullName: identity.name, email: identity.email, candidateType: 'Internal',
+        entraObjectId: identity.oid, emailConfirmed: true
+      });
+      await internalProfileModel.create({ candidateId: candidate.id });
+    }
+  }
+
+  const firstLogin = candidate.lastLoginAt === null || candidate.lastLoginAt === undefined;
+  await candidateModel.update(candidate.id, { lastLoginAt: new Date() });
+  res.json(candidateSession(candidate, firstLogin));
 }
 
 async function forgotPassword(req, res) {
   const { email } = req.body;
   const candidate = await candidateModel.findByEmail(email);
-  if (candidate) {
+  // An internal candidate has no password to reset - Microsoft handles it.
+  if (candidate && candidate.passwordHash) {
     const token = await createToken({ type: 'PasswordReset', candidateId: candidate.id });
     const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
     await sendMail({
@@ -196,4 +280,4 @@ async function resetPassword(req, res) {
   }
 }
 
-module.exports = { register, confirmEmail, login, forgotPassword, resetPassword };
+module.exports = { register, confirmEmail, login, entraLogin, forgotPassword, resetPassword };

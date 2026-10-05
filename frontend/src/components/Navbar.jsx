@@ -5,6 +5,7 @@ import NotificationBell from "./NotificationBell";
 import CandidateNotificationBell from "./CandidateNotificationBell";
 import ProfileMenu from "./ProfileMenu";
 import { candidateFileSrc } from "../utils/fileSrc";
+import { staffHome } from "./ProtectedRoute";
 import ucaaLogo from "../assets/ucaa-logo.png";
 
 // CHANGED - was a separate, hardcoded palette disconnected from
@@ -24,14 +25,11 @@ const linkStyle = {
   fontWeight: 500,
 };
 
-// Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK.
-const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 
 export default function Navbar() {
   const { candidate, staff, logoutCandidate, logoutStaff } = useAuth();
   // Manager/Director land on the reimagined Executive Overview instead of
   // the HR Officer's operational Home - see HRSidebar.jsx/ExecutiveDashboard.jsx.
-  const isExecutive = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Manager;
 
   return (
     <nav
@@ -54,6 +52,7 @@ export default function Navbar() {
           drifting apart on wide viewports where a centered, width-capped
           bar would leave extra margin the page content doesn't have. */}
       <div
+        className="navbar-inner"
         style={{
           height: "100%",
           padding: "0 20px",
@@ -71,7 +70,7 @@ export default function Navbar() {
             account"/"Sign in" CTAs don't make sense once already signed
             in), or the guest landing page otherwise. */}
         <Link
-          to={staff ? (isExecutive ? "/hr/executive" : "/hr/home") : candidate ? "/dashboard" : "/"}
+          to={staff ? staffHome(staff) : candidate ? "/dashboard" : "/"}
           style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}
         >
           <span
@@ -90,7 +89,11 @@ export default function Navbar() {
           >
             <img src={ucaaLogo} alt="UCAA logo" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           </span>
-          <span style={{ display: "flex", flexDirection: "column", lineHeight: 1.15 }}>
+          {/* Phones get a short app-style title instead of the full name. */}
+          <span className="mobile-only" style={{ ...linkStyle, fontWeight: 700, fontSize: 16 }}>
+            UCAA Careers
+          </span>
+          <span className="desktop-only navbar-title" style={{ flexDirection: "column", lineHeight: 1.15 }}>
             <span style={{ ...linkStyle, fontWeight: 700, fontSize: 14.5 }}>
               Uganda Civil Aviation Authority
             </span>
@@ -102,7 +105,8 @@ export default function Navbar() {
         <span style={{ flex: 1 }} />
         {candidate && (
           <>
-            <Link to="/dashboard" style={linkStyle}>
+            {/* The phone tab bar already carries this. */}
+            <Link to="/dashboard" className="desktop-only" style={linkStyle}>
               My dashboard
             </Link>
             <CandidateNotificationBell />
@@ -127,7 +131,8 @@ export default function Navbar() {
             {/* Staff accounts / Delegations moved off the top nav - both
                 now live under the "Staff Management" sidebar entry
                 (HRSidebar.jsx) on one combined page (StaffManagement.jsx). */}
-            <NotificationBell />
+            {/* An accounts-only system administrator (no HR role) gets no HR notifications. */}
+            {staff.role && <NotificationBell />}
 
             {/* Account panel - carries "logged in as <name> (<role>)" plus
                 email, moved here from the HR dashboard's page header so
@@ -136,7 +141,7 @@ export default function Navbar() {
                 always-visible chip + separate "Staff log out" button. */}
             <ProfileMenu
               name={staff?.name}
-              subtitle={staff?.role?.replace(/_/g, ' ')}
+              subtitle={staff?.role ? staff.role.replace(/_/g, ' ') : 'System administrator'}
               email={staff?.email}
               onLogout={logoutStaff}
             />

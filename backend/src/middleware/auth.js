@@ -29,11 +29,27 @@ const ROLE_RANK = {
 // checks for an active delegation only when the user's own role
 // wouldn't otherwise pass, to avoid an extra database query on every
 // single request for staff who were never delegated to.
+// The account as it is now, not as the session token remembers it: a
+// deactivated account loses its open sessions at once, and a role change
+// applies on the next request. Refreshes req.user's role/isSystemAdmin.
+async function loadCurrentStaff(req, res) {
+  const staffModel = require('../models/staffModel');
+  const current = await staffModel.findAuthState(req.user.id);
+  if (!current || !current.active) {
+    res.status(401).json({ error: 'Your staff account is no longer active' });
+    return false;
+  }
+  req.user.role = current.role;
+  req.user.isSystemAdmin = current.isSystemAdmin;
+  return true;
+}
+
 function requireStaffRole(minRole) {
   return async (req, res, next) => {
     if (req.user.type !== 'staff') {
       return res.status(403).json({ error: 'Staff access required' });
     }
+    if (!(await loadCurrentStaff(req, res))) return;
 
     const ownRank = ROLE_RANK[req.user.role] || 0;
     const minRank = ROLE_RANK[minRole] || 0;
@@ -59,6 +75,34 @@ function requireStaffRole(minRole) {
   };
 }
 
+// Staff account administration. Deliberately outside ROLE_RANK: a system
+// administrator manages accounts, and approves nothing unless they also
+// hold an HR role - and no HR role, however senior, manages accounts.
+function requireSystemAdmin() {
+  return async (req, res, next) => {
+    if (req.user.type !== 'staff') {
+      return res.status(403).json({ error: 'Staff access required' });
+    }
+    if (!(await loadCurrentStaff(req, res))) return;
+    if (!req.user.isSystemAdmin) {
+      return res.status(403).json({ error: 'Only a system administrator can do this' });
+    }
+    next();
+  };
+}
+
+// A system administrator, or staff at minRole or above - for settings both
+// look after (the Settings page).
+function requireSystemAdminOrRole(minRole) {
+  const byRole = requireStaffRole(minRole);
+  return async (req, res, next) => {
+    if (req.user.type !== 'staff') return res.status(403).json({ error: 'Staff access required' });
+    if (!(await loadCurrentStaff(req, res))) return;
+    if (req.user.isSystemAdmin) return next();
+    return byRole(req, res, next);
+  };
+}
+
 function requireCandidate(req, res, next) {
   if (req.user.type !== 'candidate') {
     return res.status(403).json({ error: 'Candidate access required' });
@@ -80,4 +124,4 @@ function optionalAuthenticate(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, optionalAuthenticate, requireStaffRole, requireCandidate, ROLE_RANK };
+module.exports = { authenticate, optionalAuthenticate, requireStaffRole, requireSystemAdmin, requireSystemAdminOrRole, requireCandidate, ROLE_RANK };

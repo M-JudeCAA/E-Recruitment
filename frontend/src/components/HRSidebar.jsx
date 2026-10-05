@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Home, Briefcase, FileText, Building2, CalendarClock, Award, LayoutDashboard, ClipboardCheck, Users, BarChart3 } from 'lucide-react';
+import { Home, Briefcase, FileText, Building2, CalendarClock, Award, LayoutDashboard, ClipboardCheck, Users, BarChart3, Share2, FileSignature, Settings, Search } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useAuth } from '../models/AuthContext';
 import staffClient from '../models/staffApiClient';
@@ -23,6 +23,11 @@ export default function HRSidebar({ active }) {
   // Officer has nothing to do there (can't create accounts, has nobody to
   // delegate to), so the item is hidden rather than shown and 403'd.
   const canManageTeam = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
+  // Staff account administration is a system administrator's, not any HR
+  // role's (StaffAccounts.jsx).
+  const accountsItem = { key: 'staff-accounts', label: 'Staff accounts', icon: Users, to: '/hr/staff-accounts', section: 'Administration' };
+  // Settings & data (SettingsAndData.jsx): a system administrator or Manager+.
+  const settingsItem = { key: 'settings', label: 'Settings & data', icon: Settings, to: '/hr/settings', section: 'Administration' };
   const [pendingApprovals, setPendingApprovals] = useState(null);
 
   useEffect(() => {
@@ -30,7 +35,8 @@ export default function HRSidebar({ active }) {
     staffClient.get('/api/dashboard/summary')
       .then((res) => {
         const s = res.data;
-        setPendingApprovals((s.vacanciesByStatus?.PendingApproval || 0) + s.offersPendingApproval + s.pendingDepartments);
+        setPendingApprovals((s.vacanciesByStatus?.PendingApproval || 0) + s.offersPendingApproval + s.pendingDepartments
+          + (staff?.role === 'Director' ? s.committeesPendingApproval || 0 : 0));
       })
       .catch(() => {}); // sidebar badge is a nice-to-have, never worth surfacing an error banner for
   }, [isExecutive]);
@@ -50,13 +56,20 @@ export default function HRSidebar({ active }) {
     { key: 'applications', label: 'Applications', icon: FileText, to: '/hr/applications', section: 'Recruitment' },
     { key: 'interviews', label: 'Interviews', icon: CalendarClock, to: '/hr/interviews', section: 'Recruitment' },
     { key: 'offers', label: 'Offers', icon: Award, to: '/hr?tab=offers', section: 'Recruitment' },
+    { key: 'candidates', label: 'Candidates', icon: Search, to: '/hr/candidates', section: 'Recruitment' },
     { key: 'departments', label: 'Departments', icon: Building2, to: '/hr/departments', section: 'Organization' },
+    { key: 'templates', label: 'Document templates', icon: FileSignature, to: '/hr/templates', section: 'Organization' },
     ...(canManageTeam
-      ? [{ key: 'staff-management', label: 'Staff & Delegations', icon: Users, to: '/hr/staff-management', section: 'Organization' }]
+      ? [{ key: 'staff-management', label: 'Delegations', icon: Share2, to: '/hr/staff-management', section: 'Organization' }]
       : []),
+    ...(staff?.isSystemAdmin ? [accountsItem] : []),
+    ...(staff?.isSystemAdmin || isExecutive ? [settingsItem] : []),
   ];
 
-  const items = isExecutive
+  // An accounts-only system administrator (no HR role) has nothing else here.
+  const items = !staff?.role
+    ? [accountsItem, settingsItem]
+    : isExecutive
     ? [
         { key: 'executive', label: 'Executive Overview', icon: LayoutDashboard, to: '/hr/executive' },
         { key: 'approvals', label: 'Approvals Center', icon: ClipboardCheck, to: '/hr/approvals', badge: pendingApprovals },

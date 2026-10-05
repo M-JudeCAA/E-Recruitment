@@ -15,26 +15,27 @@ import ApplicationReviewCard from './ApplicationReviewCard';
 import { safeJsonParse } from '../utils/safeJsonParse';
 
 // ===========================================================================
-// A drag-and-drop pipeline board replacing the old single reorderable list +
-// separate "All applications" dump. Five columns, each with exactly one
-// meaning, so a card's column IS its state - no inferred cutoff line, no
-// guessing what a given row's status is:
+// Step one of selection: the interview shortlist - WHO gets interviewed, in
+// what order. Five columns, each with exactly one meaning, so a card's
+// column IS its state:
 //
-//   Pool (screened, unranked) -> Primary / Reserve (staged locally, only
-//   persisted on "Propose shortlist") -> Interview (Shortlisted and beyond -
-//   view only here, acted on via the detail panel) -> Decided (terminal).
+//   Applicant pool (screened, not shortlisted) -> Interview shortlist
+//   (staged locally, only persisted on "Propose interview shortlist") ->
+//   Interviewing (approved, interview booked or pending) -> Interviewed
+//   (verdict in, heading for the merit list) -> Decided (terminal).
 //
-// Primary/Reserve stay draggable even once a card is ShortlistProposed
-// (matches the backend: re-ranking a proposed application demotes it back
-// to ShortlistProposed for re-approval, by design) - a per-card pill always
-// shows the truth of what's actually persisted vs. what's staged locally.
-// Nothing here bypasses the real API contract: "Propose shortlist" still
-// calls POST /vacancies/:id/rank with the exact same order-implies-Primary/
-// Reserve semantics the backend has always used: this is a richer way to
-// build that same array, not a new endpoint.
+// There is no Primary/Reserve here any more: before an interview nobody
+// knows who the best candidate is. That is decided afterwards, from the
+// interview results, on the merit list (MeritListBoard.jsx). The shortlist
+// column stays draggable once proposed (re-ordering demotes it back to
+// ShortlistProposed for re-approval, as the backend does) - a per-card pill
+// shows what is actually persisted vs. what is staged locally. "Propose"
+// calls POST /vacancies/:id/rank with the order.
 // ===========================================================================
 
-const CAPACITY_COLUMN = 'primary';
+// Interview more candidates than there are posts, so the merit list has
+// reserves to fall back on - a hint, not a rule.
+const SUGGESTED_INTERVIEWS_PER_POSITION = 3;
 
 function scoreTier(score) {
   if (score == null) return 'var(--color-text-muted)';
@@ -50,7 +51,7 @@ function essentialSummary(app) {
   return { met, total: results.length };
 }
 
-// Truth pill for a Primary/Reserve card - always reflects what's actually
+// Truth pill for a shortlist card - always reflects what's actually
 // persisted server-side, independent of where the card currently sits in
 // this session's unsaved local arrangement.
 function PersistedStatusPill({ status }) {
@@ -94,7 +95,7 @@ function PipelineCard({
   app, draggable, onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isOver,
   onOpen, onMoveUp, onMoveDown, onQuickMove, quickMoveTargets, compareMode, compareSelected, onToggleCompare
 }) {
-  // Reorder buttons only make sense in Primary/Reserve, where position is a
+  // Reorder buttons only make sense in the shortlist, where position is a
   // manual choice - Pool is always score-sorted, so onMoveUp is undefined
   // there and the buttons are simply omitted rather than shown inert.
   const showReorder = !!(onMoveUp && onMoveDown);
@@ -158,6 +159,12 @@ function PipelineCard({
                 </span>
               )}
               <VerificationChip app={app} />
+              {app.possibleDuplicates?.length > 0 && (
+                <span title={`Same phone number as ${app.possibleDuplicates.map((d) => `${d.candidateName} (#${d.applicationId})`).join(', ')}`}
+                  style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-danger)' }}>
+                  &#9888; Possible duplicate
+                </span>
+              )}
             </div>
             {(app.status === 'UnderReview' || app.status === 'Submitted' || app.status === 'ShortlistProposed' || app.status === 'Shortlisted') && (
               <div style={{ marginTop: 3 }}><PersistedStatusPill status={app.status} /></div>
@@ -169,6 +176,7 @@ function PipelineCard({
                   const latest = [...app.interviewRounds].sort((a, b) => b.roundNumber - a.roundNumber)[0];
                   return latest.recommendation ? <StatusBadge status={latest.recommendation} /> : null;
                 })()}
+                {app.meritListStatus && <StatusBadge status={app.meritListStatus} label={`Merit #${app.meritRank}`} />}
               </div>
             )}
             {['Offered', 'Rejected', 'Withdrawn'].includes(app.status) && (
@@ -297,10 +305,12 @@ function CompareDrawer({ apps, onClose }) {
 // onDownloadCv/downloadingId: passed through from the parent's single
 // useGeneratedCvDownload instance, so this board doesn't spin up a second
 // hidden print area of its own.
-export default function ShortlistPipelineBoard({ vacancy, applications, staffRole, onUpdated, onDownloadCv, downloadingId }) {
+export default function ShortlistPipelineBoard({ vacancy, applications, staffRole, onUpdated, onDownloadCv, downloadingId, onGoToStage, committeeManaged = false }) {
   const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
   const rank = ROLE_RANK[staffRole] || 0;
-  const canRank = rank >= ROLE_RANK.Senior_HR_Officer;
+  // A committee-run vacancy takes its shortlist from the committee's ranking
+  // (ShortlistCommittee.jsx) - no hand-ranking here.
+  const canRank = rank >= ROLE_RANK.Senior_HR_Officer && !committeeManaged;
   const canApprove = rank >= ROLE_RANK.Principal_HR_Officer;
 
   const byId = useMemo(() => Object.fromEntries(applications.map((a) => [a.id, a])), [applications]);
@@ -316,9 +326,7 @@ export default function ShortlistPipelineBoard({ vacancy, applications, staffRol
   // so a live WS refresh from someone else's action never silently wipes
   // out an in-progress drag arrangement.
   const seedStaging = (apps) => ({
-    primary: apps.filter((a) => a.rank != null && a.listStatus === 'Primary' && ['UnderReview', 'ShortlistProposed'].includes(a.status))
-      .sort((a, b) => a.rank - b.rank).map((a) => a.id),
-    reserve: apps.filter((a) => a.rank != null && a.listStatus === 'Reserve' && ['UnderReview', 'ShortlistProposed'].includes(a.status))
+    shortlist: apps.filter((a) => a.rank != null && ['UnderReview', 'ShortlistProposed'].includes(a.status))
       .sort((a, b) => a.rank - b.rank).map((a) => a.id)
   });
 
@@ -381,51 +389,36 @@ export default function ShortlistPipelineBoard({ vacancy, applications, staffRol
 
   const poolApps = applications
     .filter((a) => (a.status === 'UnderReview' && a.rank == null) || a.status === 'Submitted')
-    .filter((a) => !staging.primary.includes(a.id) && !staging.reserve.includes(a.id))
+    .filter((a) => !staging.shortlist.includes(a.id))
     .filter(matches)
     .sort((a, b) => (a.status === 'Submitted' ? 1 : 0) - (b.status === 'Submitted' ? 1 : 0) || (b.shortlistScore ?? -Infinity) - (a.shortlistScore ?? -Infinity));
 
-  const interviewApps = applications.filter((a) => ['Shortlisted', 'InterviewScheduled', 'Interviewed'].includes(a.status)).filter(matches);
+  const interviewingApps = applications.filter((a) => ['Shortlisted', 'InterviewScheduled'].includes(a.status)).filter(matches);
+  const interviewedApps = applications.filter((a) => a.status === 'Interviewed').filter(matches)
+    .sort((a, b) => (a.meritRank ?? 1e9) - (b.meritRank ?? 1e9));
   const decidedApps = applications.filter((a) => ['Offered', 'Rejected', 'Withdrawn'].includes(a.status)).filter(matches);
 
-  const primaryApps = staging.primary.map((id) => byId[id]).filter(Boolean).filter(matches);
-  const reserveApps = staging.reserve.map((id) => byId[id]).filter(Boolean).filter(matches);
+  const shortlistApps = staging.shortlist.map((id) => byId[id]).filter(Boolean).filter(matches);
+  const suggestedSize = vacancy.positionsRequired * SUGGESTED_INTERVIEWS_PER_POSITION;
 
-  const hasProposedAwaitingApproval = [...staging.primary, ...staging.reserve].some((id) => byId[id]?.status === 'ShortlistProposed');
+  const hasProposedAwaitingApproval = staging.shortlist.some((id) => byId[id]?.status === 'ShortlistProposed');
 
   // --- drag/move mechanics ---
-  const removeFromStaging = (id) => ({
-    primary: staging.primary.filter((x) => x !== id),
-    reserve: staging.reserve.filter((x) => x !== id)
-  });
+  const removeFromStaging = (id) => ({ shortlist: staging.shortlist.filter((x) => x !== id) });
 
   const applyMove = (id, targetCol, targetIndex) => {
     pushHistory();
     const next = removeFromStaging(id);
-    const arr = targetCol === 'primary' ? next.primary : targetCol === 'reserve' ? next.reserve : null;
-    if (arr) {
-      // No explicit drop index (quick-move button, not a drag onto a
-      // specific card) defaults to the END of the column - except Primary,
-      // where appending at the end would make the just-added candidate the
-      // immediate bump target below (capacity trims the tail), silently
-      // undoing the very action the user just took. Defaulting to the
-      // FRONT for Primary means "promote this candidate" actually promotes
-      // them, correctly bumping whoever was previously lowest-priority
-      // instead of the newcomer.
-      const idx = targetIndex != null ? Math.min(targetIndex, arr.length) : targetCol === 'primary' ? 0 : arr.length;
-      arr.splice(idx, 0, id);
-      if (targetCol === CAPACITY_COLUMN && next.primary.length > vacancy.positionsRequired) {
-        const bumped = next.primary.pop();
-        next.reserve.unshift(bumped);
-        showToast(`${byId[bumped]?.candidate.fullName || 'Candidate'} moved to Reserve - Primary is full (${vacancy.positionsRequired}).`, undo);
-      } else {
-        const wasProposed = byId[id]?.status === 'ShortlistProposed';
-        showToast(
-          `${byId[id]?.candidate.fullName || 'Candidate'} moved to ${targetCol === 'primary' ? 'Primary' : 'Reserve'}` +
-            (wasProposed ? ' - re-propose to update the pending approval.' : '.'),
-          undo
-        );
-      }
+    if (targetCol === 'shortlist') {
+      // No explicit drop index (quick-move button) appends to the end.
+      const idx = targetIndex != null ? Math.min(targetIndex, next.shortlist.length) : next.shortlist.length;
+      next.shortlist.splice(idx, 0, id);
+      const wasProposed = byId[id]?.status === 'ShortlistProposed';
+      showToast(
+        `${byId[id]?.candidate.fullName || 'Candidate'} added to the interview shortlist` +
+          (wasProposed ? ' - re-propose to update the pending approval.' : '.'),
+        undo
+      );
     } else {
       showToast(`${byId[id]?.candidate.fullName || 'Candidate'} returned to the pool.`, undo);
     }
@@ -480,7 +473,7 @@ export default function ShortlistPipelineBoard({ vacancy, applications, staffRol
 
   const proposeShortlist = async () => {
     setError(''); setProposing(true);
-    const ids = [...staging.primary, ...staging.reserve];
+    const ids = staging.shortlist;
     const applicationRankVersions = Object.fromEntries(ids.map((id) => [id, byId[id]?.rankVersion ?? 0]));
     try {
       await staffClient.post(`/api/vacancies/${vacancy.id}/rank`, { applicationIds: ids, applicationRankVersions });
@@ -515,7 +508,7 @@ export default function ShortlistPipelineBoard({ vacancy, applications, staffRol
   };
 
   const quickMoveTargetsFor = (currentCol) => {
-    const all = [{ key: 'pool', label: 'Pool' }, { key: 'primary', label: 'Primary' }, { key: 'reserve', label: 'Reserve' }];
+    const all = [{ key: 'pool', label: 'Back to pool' }, { key: 'shortlist', label: 'Shortlist' }];
     return all.filter((t) => t.key !== currentCol);
   };
 
@@ -549,7 +542,7 @@ export default function ShortlistPipelineBoard({ vacancy, applications, staffRol
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13 }}>
               <Sparkles size={14} style={{ verticalAlign: -2, marginRight: 4, color: 'var(--color-warning)' }} />
-              A proposed shortlist is awaiting your approval before candidates are notified and interviews can be scheduled.
+              A proposed interview shortlist is awaiting your approval before candidates are notified and interviews can be scheduled.
             </span>
             <Button onClick={approveShortlist} disabled={approving}>{approving ? 'Approving...' : 'Approve shortlist'}</Button>
           </div>
@@ -572,9 +565,9 @@ export default function ShortlistPipelineBoard({ vacancy, applications, staffRol
           <Button variant="ghost" onClick={undo} style={{ padding: '6px 12px', fontSize: 13 }}>Undo last move</Button>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {canRank && (primaryApps.length + reserveApps.length) > 0 && (
+          {canRank && staging.shortlist.length > 0 && (
             <Button onClick={proposeShortlist} disabled={proposing}>
-              {proposing ? 'Proposing...' : `Propose shortlist (${primaryApps.length + reserveApps.length})`}
+              {proposing ? 'Proposing...' : `Propose interview shortlist (${staging.shortlist.length})`}
             </Button>
           )}
         </div>
@@ -611,54 +604,66 @@ export default function ShortlistPipelineBoard({ vacancy, applications, staffRol
               isDragging={dragging?.id === a.id} isOver={dragOver === `pool:${poolApps.indexOf(a)}`}
               onOpen={setDetailApp}
               onQuickMove={(key) => quickMove(a.id, 'pool', key)}
-              quickMoveTargets={a.status === 'Submitted' ? [] : [{ key: 'primary', label: 'Primary' }, { key: 'reserve', label: 'Reserve' }]}
+              quickMoveTargets={a.status === 'Submitted' ? [] : [{ key: 'shortlist', label: 'Shortlist for interview' }]}
               compareMode={compareMode} compareSelected={compareIds.includes(a.id)} onToggleCompare={toggleCompare}
             />
           ))}
         </ColumnShell>
 
         <ColumnShell
-          title="Primary" count={`${primaryApps.length}/${vacancy.positionsRequired}`} accent="var(--color-accent)"
-          onDragOver={onColumnDragOver('primary')} onDrop={onColumnDrop('primary')} isOver={dragOver === 'primary'}
-          headerExtra={<ProgressRing percent={Math.round((primaryApps.length / Math.max(vacancy.positionsRequired, 1)) * 100)} size={26} strokeWidth={4} color="var(--color-accent)" />}
+          title="Interview shortlist" count={`${shortlistApps.length}`} accent="var(--color-accent)"
+          onDragOver={onColumnDragOver('shortlist')} onDrop={onColumnDrop('shortlist')} isOver={dragOver === 'shortlist'}
+          headerExtra={<ProgressRing percent={Math.min(100, Math.round((staging.shortlist.length / Math.max(suggestedSize, 1)) * 100))} size={26} strokeWidth={4} color="var(--color-accent)" />}
         >
-          {primaryApps.length === 0 && <p style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: '0 4px' }}>Drag candidates here to fill {vacancy.positionsRequired} position(s).</p>}
-          {primaryApps.map((a, i) => (
+          <p style={{ fontSize: 11, color: 'var(--color-text-muted)', padding: '0 4px', margin: '0 0 8px' }}>
+            {vacancy.positionsRequired} position{vacancy.positionsRequired === 1 ? '' : 's'} - around {suggestedSize} interviews leaves room for reserves.
+            Order is the interview order; who gets the job is decided on the merit list.
+          </p>
+          {shortlistApps.length === 0 && <p style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: '0 4px' }}>Drag candidates here to invite them to interview.</p>}
+          {shortlistApps.map((a, i) => (
             <PipelineCard
               key={a.id} app={a} draggable={canRank}
-              onDragStart={onCardDragStart(a.id, 'primary')} onDragEnd={onCardDragEnd}
-              onDragOver={(e) => { e.stopPropagation(); onCardDragOver('primary', i)(e); }}
-              onDrop={(e) => onCardDrop('primary', i)(e)}
-              isDragging={dragging?.id === a.id} isOver={dragOver === `primary:${i}`}
-              onOpen={setDetailApp} onMoveUp={() => moveWithin('primary', a.id, -1)} onMoveDown={() => moveWithin('primary', a.id, 1)}
-              onQuickMove={(key) => quickMove(a.id, 'primary', key)} quickMoveTargets={quickMoveTargetsFor('primary')}
+              onDragStart={onCardDragStart(a.id, 'shortlist')} onDragEnd={onCardDragEnd}
+              onDragOver={(e) => { e.stopPropagation(); onCardDragOver('shortlist', i)(e); }}
+              onDrop={(e) => onCardDrop('shortlist', i)(e)}
+              isDragging={dragging?.id === a.id} isOver={dragOver === `shortlist:${i}`}
+              onOpen={setDetailApp} onMoveUp={() => moveWithin('shortlist', a.id, -1)} onMoveDown={() => moveWithin('shortlist', a.id, 1)}
+              onQuickMove={(key) => quickMove(a.id, 'shortlist', key)} quickMoveTargets={quickMoveTargetsFor('shortlist')}
               compareMode={compareMode} compareSelected={compareIds.includes(a.id)} onToggleCompare={toggleCompare}
             />
           ))}
         </ColumnShell>
 
         <ColumnShell
-          title="Reserve" count={reserveApps.length} accent="var(--color-warning)"
-          onDragOver={onColumnDragOver('reserve')} onDrop={onColumnDrop('reserve')} isOver={dragOver === 'reserve'}
+          title="Interviewing" count={interviewingApps.length} accent="var(--color-primary)"
+          headerExtra={onGoToStage && interviewingApps.length > 0 && (
+            <button type="button" onClick={() => onGoToStage('interviews')}
+              style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
+              Manage <ArrowRight size={11} style={{ verticalAlign: -1 }} />
+            </button>
+          )}
         >
-          {reserveApps.length === 0 && <p style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: '0 4px' }}>Overflow candidates land here automatically.</p>}
-          {reserveApps.map((a, i) => (
+          {interviewingApps.length === 0 && <p style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: '0 4px' }}>Nobody is waiting on an interview.</p>}
+          {interviewingApps.map((a) => (
             <PipelineCard
-              key={a.id} app={a} draggable={canRank}
-              onDragStart={onCardDragStart(a.id, 'reserve')} onDragEnd={onCardDragEnd}
-              onDragOver={(e) => { e.stopPropagation(); onCardDragOver('reserve', i)(e); }}
-              onDrop={(e) => onCardDrop('reserve', i)(e)}
-              isDragging={dragging?.id === a.id} isOver={dragOver === `reserve:${i}`}
-              onOpen={setDetailApp} onMoveUp={() => moveWithin('reserve', a.id, -1)} onMoveDown={() => moveWithin('reserve', a.id, 1)}
-              onQuickMove={(key) => quickMove(a.id, 'reserve', key)} quickMoveTargets={quickMoveTargetsFor('reserve')}
+              key={a.id} app={a} draggable={false} onOpen={setDetailApp}
               compareMode={compareMode} compareSelected={compareIds.includes(a.id)} onToggleCompare={toggleCompare}
+              quickMoveTargets={[]}
             />
           ))}
         </ColumnShell>
 
-        <ColumnShell title="Interview" count={interviewApps.length} accent="var(--color-primary)">
-          {interviewApps.length === 0 && <p style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: '0 4px' }}>Nobody has reached interview stage yet.</p>}
-          {interviewApps.map((a) => (
+        <ColumnShell
+          title="Interviewed" count={interviewedApps.length} accent="var(--color-accent)"
+          headerExtra={onGoToStage && interviewedApps.length > 0 && (
+            <button type="button" onClick={() => onGoToStage('merit')}
+              style={{ background: 'none', border: 'none', color: 'var(--color-primary)', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
+              Merit list <ArrowRight size={11} style={{ verticalAlign: -1 }} />
+            </button>
+          )}
+        >
+          {interviewedApps.length === 0 && <p style={{ fontSize: 12, color: 'var(--color-text-muted)', padding: '0 4px' }}>No interview verdicts yet.</p>}
+          {interviewedApps.map((a) => (
             <PipelineCard
               key={a.id} app={a} draggable={false} onOpen={setDetailApp}
               compareMode={compareMode} compareSelected={compareIds.includes(a.id)} onToggleCompare={toggleCompare}

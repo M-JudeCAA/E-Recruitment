@@ -1,6 +1,7 @@
 const express = require('express');
 const controller = require('../controllers/departmentController');
 const positionController = require('../controllers/positionController');
+const orgImportController = require('../controllers/orgImportController');
 const { authenticate, requireStaffRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -9,6 +10,7 @@ router.post('/', authenticate, requireStaffRole('HR_Officer'), controller.propos
 router.get('/approved', authenticate, requireStaffRole('HR_Officer'), controller.listApproved);
 router.get('/pending', authenticate, requireStaffRole('Principal_HR_Officer'), controller.listPending);
 router.get('/admin', authenticate, requireStaffRole('Principal_HR_Officer'), controller.listAllForAdmin);
+router.patch('/imports/:importId/approve', authenticate, requireStaffRole('Principal_HR_Officer'), orgImportController.approveImported);
 router.patch('/:id/approve', authenticate, requireStaffRole('Principal_HR_Officer'), controller.approve);
 router.patch('/:id/reject', authenticate, requireStaffRole('Principal_HR_Officer'), controller.reject);
 // NEW - positions scoped to one department, for the vacancy form's

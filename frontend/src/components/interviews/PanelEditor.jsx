@@ -9,7 +9,7 @@ const samePerson = (a, b) => (a.email && b.email
   : a.name.trim().toLowerCase() === b.name.trim().toLowerCase());
 
 // The panel for a round or session: name, role/trade, optional email (for
-// the calendar invite and scoring link) and who chairs. Panelists don't
+// the calendar invitation) and who chairs. Panelists don't
 // need system accounts. `suggestions` are people who sat on this vacancy's
 // panels before - one click adds them back.
 export default function PanelEditor({ value, onChange, suggestions = [] }) {
@@ -29,7 +29,7 @@ export default function PanelEditor({ value, onChange, suggestions = [] }) {
     <div>
       <span style={sectionLabel}>Interview panel</span>
       <p style={{ ...hintText, margin: '0 0 8px' }}>
-        No system account needed. Panelists with an email get a calendar invite now and a scoring link after the interview.
+        No system account needed. Panelists with an email get a calendar invitation for their interviews, kept up to date if anything changes. They score on the paper score sheet.
       </p>
       {unused.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10, alignItems: 'center' }}>

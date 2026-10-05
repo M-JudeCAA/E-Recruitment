@@ -1,11 +1,14 @@
 import React, { useState } from "react";
-import { useNavigate, Navigate, Link } from "react-router-dom";
+import { useNavigate, Navigate, useSearchParams, Link } from "react-router-dom";
 import client from "../models/apiClient";
-import { useAuth } from "../models/AuthContext";
+import { useAuth, useSessionEndedMessage } from "../models/AuthContext";
+import { signInWithMicrosoft, isEntraConfigured } from "../models/entraAuth";
+import { staffHome } from "../components/ProtectedRoute";
 import PageHeader from "../components/PageHeader";
 import TextField from "../components/TextField";
 import Button from "../components/Button";
 import Alert from "../components/Alert";
+import MicrosoftSignInButton from "../components/MicrosoftSignInButton";
 
 // Uganda Civil Aviation Authority brand palette
 const ucaa = {
@@ -17,72 +20,65 @@ const ucaa = {
   line: "#DCE6EF",
 };
 
-// Matches the same 5-tier ROLE_RANK used everywhere else (auth.js,
-// Navbar.jsx, HRSidebar.jsx) - Manager/Director land on the reimagined
-// Executive Overview, everyone else on the operational Home.
-const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
-
-function validate(values) {
-  const errors = {};
-
-  if (!values.email.trim()) {
-    errors.email = "Email is required.";
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) {
-    errors.email = "Enter a valid email address.";
-  }
-
-  if (!values.password) {
-    errors.password = "Password is required.";
-  } else if (values.password.length < 6) {
-    errors.password = "Password must be at least 6 characters.";
-  }
-
-  return errors;
-}
-
+// Staff sign in with their UCAA Microsoft account - there are no staff
+// passwords. Being a UCAA employee isn't enough: the API only lets in
+// someone a system administrator has given a staff account, with the role
+// on that account (staffAuthController.entraLogin).
+//
+// /staff/login?password shows a password form instead, for the two cases
+// the API still accepts one: a system administrator's break-glass sign-in
+// while Microsoft sign-in is down (BREAK_GLASS_LOGIN), and the seeded demo
+// accounts in local development (DEV_PASSWORD_LOGIN). It isn't linked from
+// anywhere; with neither switched on, the API refuses it.
 export default function StaffLogin() {
+  const [params] = useSearchParams();
+  const passwordMode = params.has("password");
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { loginStaff, staff } = useAuth();
+  const sessionEnded = useSessionEndedMessage();
   const navigate = useNavigate();
 
-  // Already signed in - the `replace: true` below on a successful submit
-  // only keeps THIS page from staying reachable by Back after login;
-  // it does nothing to stop this route being reached some other way
-  // (a stale bookmark/tab, a second tab, or - per a real report - Back
-  // still landing here in some sequence) while the session is still
-  // valid. Navbar renders unconditionally on every route (see App.jsx),
-  // so without this an already-authenticated staff member would see
-  // their own logged-in navbar above a fully live login form underneath.
-  // Redirect away before ever rendering that form.
-  if (staff) {
-    const alreadyExecutive = (ROLE_RANK[staff.role] || 0) >= ROLE_RANK.Manager;
-    return <Navigate to={alreadyExecutive ? "/hr/executive" : "/hr/home"} replace />;
+  // Already signed in - see the same check in CandidateLogin.jsx.
+  if (staff && (staff.role || staff.isSystemAdmin)) {
+    return <Navigate to={staffHome(staff)} replace />;
   }
 
-  const handleSubmit = async (e) => {
+  const startSession = (data) => {
+    loginStaff(data.token, data.role, data.name, data.email, data.isSystemAdmin);
+    // `replace: true` - this login page must not stay in browser history
+    // once login succeeds, or Back from inside the dashboard lands back on
+    // the (now-stale) login form instead of leaving the app.
+    navigate(staffHome(data), { replace: true });
+  };
+
+  const microsoftSignIn = async () => {
+    setError("");
+    setSubmitting(true);
+    try {
+      const idToken = await signInWithMicrosoft("staff");
+      if (!idToken) return; // closed the Microsoft window
+      const res = await client.post("/api/staff/auth/entra", { idToken });
+      startSession(res.data);
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || "Sign-in failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const passwordSignIn = async (e) => {
     e.preventDefault();
     setError("");
-
-    const errors = validate(form);
-    if (Object.keys(errors).length > 0) {
-      // Combined into one message since Alert only surfaces a single string.
-      setError(Object.values(errors).join(" "));
+    if (!form.email.trim() || !form.password) {
+      setError("Email and password are required.");
       return;
     }
-
     setSubmitting(true);
     try {
       const res = await client.post("/api/staff/auth/login", form);
-      loginStaff(res.data.token, res.data.role, res.data.name, res.data.email);
-      const isExecutive = (ROLE_RANK[res.data.role] || 0) >= ROLE_RANK.Manager;
-      // `replace: true` - this login page must not stay in browser history
-      // once login succeeds, or Back from inside the dashboard lands back
-      // on the (now-stale) login form instead of leaving the app. Every
-      // navigation made *after* this one is normal history, so Back still
-      // steps through those as expected.
-      navigate(isExecutive ? "/hr/executive" : "/hr/home", { replace: true });
+      startSession(res.data);
     } catch (err) {
       setError(err.response?.data?.error || "Login failed");
     } finally {
@@ -115,26 +111,43 @@ export default function StaffLogin() {
         }}
       >
         <PageHeader title="Staff login" />
-        <form onSubmit={handleSubmit} noValidate>
-          <TextField
-            label="Email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-          />
-          <TextField
-            label="Password"
-            type="password"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-          />
-          <Button type="submit" disabled={submitting}>
-            {submitting ? "Signing in..." : "Log in"}
-          </Button>
-        </form>
+        <Alert type="warning" message={sessionEnded} />
+        {passwordMode ? (
+          <>
+            <p style={{ fontSize: 13, color: "var(--color-text-muted)", marginTop: 0 }}>
+              Emergency administrator sign-in. It only works while it has been switched on at the server.
+            </p>
+            <form onSubmit={passwordSignIn} noValidate>
+              <TextField
+                label="Email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
+              <TextField
+                label="Password"
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+              />
+              <Button type="submit" loading={submitting} loadingText="Signing in...">Log in</Button>
+            </form>
+            <p style={{ textAlign: "center", marginTop: 18, marginBottom: 0 }}>
+              <Link to="/staff/login">Sign in with Microsoft instead</Link>
+            </p>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: 14, color: "var(--color-text-muted)", marginTop: 0 }}>
+              Sign in with your UCAA Microsoft account. You need a staff account on this system - ask
+              the system administrator if you don't have one.
+            </p>
+            <MicrosoftSignInButton onClick={microsoftSignIn} loading={submitting} />
+            {!isEntraConfigured("staff") && (
+              <Alert type="warning" message="Microsoft sign-in has not been set up for this site yet." />
+            )}
+          </>
+        )}
         <Alert type="error" message={error} />
-        <p style={{ textAlign: "center", marginTop: 18, marginBottom: 0 }}>
-          <Link to="/staff/forgot-password">Forgot password?</Link>
-        </p>
       </div>
     </div>
   );

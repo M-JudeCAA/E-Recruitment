@@ -7,6 +7,11 @@ import React from 'react';
 export const STATUS_COLORS = {
   // Panel/interview recommendation
   Shortlist: 'var(--color-accent)', Hold: 'var(--color-warning)', Reject: 'var(--color-danger)',
+  // How sure the requisition reader is of a value it read (RequisitionPanel)
+  HighConfidence: 'var(--color-accent)', MediumConfidence: 'var(--color-warning)',
+  LowConfidence: 'var(--color-danger)', NotFound: 'var(--color-text-muted)',
+  // Merit list place (Application.meritListStatus)
+  Primary: 'var(--color-accent)', Reserve: 'var(--color-primary)',
   // Vacancy
   PendingApproval: 'var(--color-warning)',
   Open: 'var(--color-accent)', PartiallyFilled: 'var(--color-warning)',
@@ -20,16 +25,23 @@ export const STATUS_COLORS = {
   // Offer
   Recommended: 'var(--color-warning)', Approved: 'var(--color-accent)',
   Extended: 'var(--color-accent)', Accepted: 'var(--color-accent)',
-  Declined: 'var(--color-danger)',
+  Declined: 'var(--color-danger)', Returned: 'var(--color-warning)', Expired: 'var(--color-text-muted)',
   // Interview round status (InterviewRoundStatus) and the candidate's answer
   // (InterviewCandidateResponse). "Held" is the candidate-facing name for
   // Completed (see backend utils/candidateInterview.js).
   Scheduled: 'var(--color-primary)', Completed: 'var(--color-accent)', Held: 'var(--color-accent)',
   Cancelled: 'var(--color-text-muted)', NoShow: 'var(--color-danger)',
   Confirmed: 'var(--color-accent)', RescheduleRequested: 'var(--color-warning)',
+  // Staff account state (StaffAccounts.jsx)
+  Active: 'var(--color-accent)', Deactivated: 'var(--color-text-muted)',
   // Verification
   Pending: 'var(--color-warning)', HR_Verified: 'var(--color-accent)',
   Discrepancy_Flagged: 'var(--color-danger)',
+  // Shortlisting committee band (ShortlistBand) and exercise stage
+  // (ShortlistExerciseStatus)
+  Unanimous: 'var(--color-accent)', Majority: 'var(--color-primary)',
+  Disputed: 'var(--color-warning)', NotQualified: 'var(--color-danger)',
+  Setup: 'var(--color-text-muted)', Rating: 'var(--color-warning)', Moderation: 'var(--color-warning)',
   // Not a real enum value - a derived tag shown next to a vacancy's title
   // when it was created via readvertise() (Vacancy.readvertisedFromId is
   // set). Reuses this same lookup/component rather than a bespoke badge.

@@ -13,7 +13,7 @@ function round(id, overrides = {}) {
       candidateId: 100 + id, candidate: { fullName: `Candidate ${id}` },
       vacancy: { jobRef: 'R1', title: 'ATC', createdById: 2 }
     },
-    panelMembers: [{ id: 1, name: 'Ann', email: 'ann@example.test', score: null }],
+    panelMembers: [{ id: 1, name: 'Ann', email: 'ann@example.test' }],
     ...overrides
   };
 }
@@ -27,7 +27,7 @@ beforeEach(() => {
 test('reminds each candidate, sends each panelist one email, and marks the rounds reminded', async () => {
   prisma.interviewRound.findMany
     .mockResolvedValueOnce([round(1), round(2)]) // due for reminder
-    .mockResolvedValueOnce([]); // overdue for scores
+    .mockResolvedValueOnce([]); // results overdue
 
   const summary = await run();
 
@@ -39,22 +39,26 @@ test('reminds each candidate, sends each panelist one email, and marks the round
   expect(summary).toMatch(/2 candidate reminder/);
 });
 
-test('groups overdue rounds into one notice per scheduler per kind', async () => {
+test('reminds whoever scheduled the interviews, once, to record results not yet entered a day after', async () => {
   const past = new Date(Date.now() - 48 * 3600000);
   prisma.interviewRound.findMany
     .mockResolvedValueOnce([])
     .mockResolvedValueOnce([
-      round(1, { scheduledDate: past }), // missing scores
-      round(2, { scheduledDate: past }), // missing scores
-      round(3, { scheduledDate: past, panelMembers: [{ id: 2, score: 80 }] }) // complete
+      round(1, { scheduledDate: past }),
+      round(2, { scheduledDate: past }),
+      round(3, { scheduledDate: past, scheduledById: null }) // falls back to the vacancy's creator
     ]);
 
-  await run();
+  const summary = await run();
 
+  expect(prisma.interviewRound.findMany.mock.calls[1][0].where).toEqual(expect.objectContaining({
+    status: 'Scheduled', resultsReminderSentAt: null
+  }));
   const inApp = prisma.notification.create.mock.calls.map((c) => c[0].data).filter((d) => d.channel === 'InApp');
-  expect(inApp.map((d) => d.taskType).sort()).toEqual(['InterviewReadyToFinalize', 'InterviewScoresOverdue']);
-  expect(inApp.find((d) => d.taskType === 'InterviewScoresOverdue').message).toMatch(/2 interviews/);
+  expect(inApp.map((d) => [d.recipientId, d.taskType])).toEqual([[9, 'InterviewResultsOverdue'], [2, 'InterviewResultsOverdue']]);
+  expect(inApp[0].message).toMatch(/2 interviews.*signed score sheets/);
   for (const id of [1, 2, 3]) {
-    expect(prisma.interviewRound.update).toHaveBeenCalledWith({ where: { id }, data: { scoreNudgeSentAt: expect.any(Date) } });
+    expect(prisma.interviewRound.update).toHaveBeenCalledWith({ where: { id }, data: { resultsReminderSentAt: expect.any(Date) } });
   }
+  expect(summary).toMatch(/2 results reminder\(s\) covering 3 interview/);
 });

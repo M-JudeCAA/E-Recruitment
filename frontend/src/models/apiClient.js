@@ -4,6 +4,7 @@ export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
 export const OFFLINE_MESSAGE = 'Server offline. We can\'t reach the server right now - please check your connection and try again shortly.';
 export const TIMEOUT_MESSAGE = 'The server is taking too long to respond. Please try again.';
+export const SESSION_ENDED_EVENT = 'erecruit:session-ended';
 export const SERVER_ERROR_MESSAGE = 'Something went wrong on our side. Please try again in a moment.';
 
 const client = axios.create({ baseURL: API_URL });
@@ -43,10 +44,22 @@ client.interceptors.response.use(
     }
 
     const { status } = error.response;
+    // A 401 on a request that carried a session means the session is over -
+    // expired, or the staff account was deactivated (which the API applies
+    // at once). AuthContext ends it and the route guards send the person to
+    // sign in again. Sign-in calls themselves use 401 for wrong credentials,
+    // so they are left to their own screens.
+    if (status === 401 && error.config?.headers?.Authorization && !/\/auth\//.test(error.config.url || '')) {
+      window.dispatchEvent(new CustomEvent(SESSION_ENDED_EVENT, {
+        detail: { kind: error.config.asStaff ? 'staff' : 'candidate', message: error.response.data?.error }
+      }));
+    }
     if (status === 502 || status === 503 || status === 504) {
       return overrideError(error, status, OFFLINE_MESSAGE);
     }
-    if (status >= 500) {
+    // 501 is deliberate too: a feature not set up on this server yet (e.g.
+    // Microsoft sign-in with no Entra settings) - its message says which.
+    if (status >= 500 && status !== 501) {
       return overrideError(error, status, SERVER_ERROR_MESSAGE);
     }
     return Promise.reject(error);

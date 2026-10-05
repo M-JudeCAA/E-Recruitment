@@ -23,8 +23,16 @@ describe('getPendingTasks', () => {
       label: 'UCAA/ADV/EXT/01/2026 — Accountant', to: '/hr/vacancy/5'
     }]);
     expect(prisma.vacancy.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { approvedAt: null, status: { not: 'Closed' } }
+      where: { approvedAt: null, status: 'PendingApproval' }
     }));
+  });
+
+  test('restarts the clock when a returned vacancy was resubmitted', async () => {
+    prisma.vacancy.findMany.mockResolvedValue([
+      { id: 5, createdAt: new Date('2026-01-01T00:00:00Z'), approvalRequestedAt: new Date('2026-01-09T00:00:00Z'), jobRef: 'R', title: 'T' }
+    ]);
+    const [task] = await slaStatusService.getPendingTasks('VacancyApproval');
+    expect(task.since).toEqual(new Date('2026-01-09T00:00:00Z'));
   });
 
   test('shapes a pending offer with a candidate/vacancy label and an applications-queue link', async () => {
