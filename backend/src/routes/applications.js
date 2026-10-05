@@ -70,5 +70,13 @@ router.patch('/offers/:offerId/return', authenticate, requireStaffRole('Manager'
 router.patch('/offers/:offerId/accept', authenticate, requireCandidate, offerController.accept);
 router.patch('/offers/:offerId/decline', authenticate, requireCandidate, offerController.decline);
 router.patch('/offers/:offerId/withdraw', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), offerController.withdraw);
+// Mark as Hired (FR-ATS-067): one onboarding case per accepted offer.
+const hireController = require('../controllers/hireController');
+const { uploadSignedAppointment } = require('../middleware/upload');
+router.get('/hires', authenticate, requireStaffRole('HR_Officer'), hireController.list);
+router.post('/offers/:offerId/hire', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), uploadSignedAppointment.single('signedInstrument'), hireController.markHired);
+router.get('/offers/:offerId/hire', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), hireController.get);
+router.get('/offers/:offerId/hire/package', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), hireController.downloadPackage);
+router.post('/offers/:offerId/hire/retry', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), hireController.retry);
 
 module.exports = router;

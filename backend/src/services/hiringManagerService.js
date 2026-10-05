@@ -67,6 +67,10 @@ const MESSAGES = {
     subject: d.filled ? 'filled' : 'offer accepted',
     body: `<p><strong>${escapeHtml(d.candidateName)}</strong> has accepted the offer${d.startDate ? `, starting on ${day(d.startDate)}` : ''}.</p>${d.filled ? '<p>All positions on this vacancy are now filled.</p>' : ''}`
   }),
+  hired: (v, d) => ({
+    subject: 'hired',
+    body: `<p><strong>${escapeHtml(d.candidateName)}</strong> has been hired${d.startDate ? `, starting on ${day(d.startDate)}` : ''}. HR has opened onboarding case ${escapeHtml(d.caseRef)}.</p>`
+  }),
   offerNotTaken: (v, d) => ({
     subject: 'offer not taken up',
     body: `<p>The offer to <strong>${escapeHtml(d.candidateName)}</strong> was ${escapeHtml(d.outcome)}.${d.promotedName ? ` <strong>${escapeHtml(d.promotedName)}</strong>, next on the merit list, moves up.` : ''}</p>`

@@ -8,7 +8,8 @@ function sendRequisitionError(res, err) {
     return res.status(err.status).json({
       error: err.message,
       ...(err.code ? { code: err.code } : {}),
-      ...(err.existing ? { existingVacancy: err.existing } : {})
+      ...(err.existing ? { existingVacancy: err.existing } : {}),
+      ...(err.details ? { headcount: err.details } : {})
     });
   }
   return sendError(res, err);

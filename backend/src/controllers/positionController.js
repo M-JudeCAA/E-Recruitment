@@ -1,6 +1,9 @@
 const positionModel = require('../models/positionModel');
 const departmentModel = require('../models/departmentModel');
 const { levelFromInput, LEVEL_WORDS } = require('../utils/positionLevels');
+const prisma = require('../config/db');
+const headcount = require('../services/headcountService');
+const audit = require('../services/auditService');
 
 // Positions are operational, not structural, the way Directorates and
 // Departments are - new job titles get added far more often than new
@@ -56,4 +59,34 @@ async function listByDepartment(req, res) {
   res.json(positions);
 }
 
-module.exports = { create, listForDropdown, listSeniorOptions, listByDepartment };
+// GET /api/positions/:id/headcount - the approved headcount and what is
+// free of it (FR-ATS-006), for the New Listing form.
+async function getHeadcount(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid position id' });
+  res.json(await headcount.availability(id));
+}
+
+// PUT /api/positions/:id/headcount { headcount, occupied } - Principal HR
+// Officer+. headcount null clears it (nothing is checked then).
+async function setHeadcount(req, res) {
+  const id = Number(req.params.id);
+  const position = Number.isInteger(id) ? await prisma.position.findUnique({ where: { id } }) : null;
+  if (!position) return res.status(404).json({ error: 'Position not found' });
+  const parse = (v) => (v === null || v === '' || v === undefined ? null : Number(v));
+  const hc = 'headcount' in req.body ? parse(req.body.headcount) : position.headcount;
+  const occupied = 'occupied' in req.body ? parse(req.body.occupied) ?? 0 : position.occupied;
+  if (hc !== null && (!Number.isInteger(hc) || hc < 0 || hc > 10000)) return res.status(400).json({ error: 'Headcount must be a whole number from 0' });
+  if (!Number.isInteger(occupied) || occupied < 0) return res.status(400).json({ error: 'Filled posts must be a whole number from 0' });
+  if (hc !== null && occupied > hc) return res.status(400).json({ error: 'More posts filled than the approved headcount' });
+  const updated = await prisma.position.update({
+    where: { id }, data: { headcount: hc, occupied, headcountUpdatedAt: new Date(), headcountUpdatedById: req.user.id }
+  });
+  await audit.record({
+    entityType: 'Position', entityId: id, action: 'Position headcount set', actor: audit.actorFrom(req),
+    before: position, after: updated, fields: ['headcount', 'occupied']
+  });
+  res.json({ ...updated, ...(await headcount.availability(id)) });
+}
+
+module.exports = { create, listForDropdown, listSeniorOptions, listByDepartment, getHeadcount, setHeadcount };

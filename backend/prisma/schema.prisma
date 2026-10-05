@@ -202,6 +202,7 @@ model StaffUser {
   excoShortlistApprovalsUploaded ExcoShortlistApproval[] @relation("ExcoShortlistApprovalUploadedBy")
   documentTemplatesUpdated       DocumentTemplate[]      @relation("DocumentTemplateUpdatedBy")
   settingsUpdated                Setting[]               @relation("SettingUpdatedBy")
+  hiresRecorded                  Hire[]                  @relation("HireRecordedBy")
   dataRequestsDecided            DataSubjectRequest[]    @relation("DataSubjectRequestDecidedBy")
   applicationsMeritProposed      Application[]           @relation("ApplicationMeritProposedBy")
   applicationsMeritApproved      Application[]           @relation("ApplicationMeritApprovedBy")
@@ -277,19 +278,26 @@ model OrgImport {
 }
 
 model Position {
-  id           Int        @id @default(autoincrement())
-  name         String
-  departmentId Int
-  department   Department @relation(fields: [departmentId], references: [id])
+  id                   Int        @id @default(autoincrement())
+  name                 String
+  departmentId         Int
+  department           Department @relation(fields: [departmentId], references: [id])
   // Higher = more senior. Comparisons only ever happen within the same
   // department (the Reports To options). Entered and shown as words -
   // Officer 1, Senior 2, Principal 3, Manager 4, Director 5
   // (utils/positionLevels.js); stored as the number so the comparison
   // stays a plain integer one.
-  level        Int
-  createdById  Int
-  createdBy    StaffUser  @relation("PositionCreatedBy", fields: [createdById], references: [id])
-  createdAt    DateTime   @default(now())
+  level                Int
+  // The approved establishment for this position (FR-ATS-006) and how many
+  // of those posts are filled now - kept by HR (no HRIS link yet); Mark as
+  // Hired adds one. Null headcount: not recorded, so not checked.
+  headcount            Int?
+  occupied             Int        @default(0)
+  headcountUpdatedAt   DateTime?
+  headcountUpdatedById Int?
+  createdById          Int
+  createdBy            StaffUser  @relation("PositionCreatedBy", fields: [createdById], references: [id])
+  createdAt            DateTime   @default(now())
 
   vacancies              Vacancy[] @relation("VacancyPosition")
   vacanciesReportingHere Vacancy[] @relation("VacancyReportsToPosition")
@@ -394,6 +402,7 @@ model Vacancy {
   createdBy              StaffUser               @relation("VacancyCreatedBy", fields: [createdById], references: [id])
   createdAt              DateTime                @default(now())
   applications           Application[]
+  hires                  Hire[]
   shortlistExercise      ShortlistExercise?
   excoShortlistApprovals ExcoShortlistApproval[]
 
@@ -933,6 +942,7 @@ model Application {
 
   interviewRounds InterviewRound[]
   offer           Offer?
+  hire            Hire?
   // Academic certificates/transcripts and any other supporting documents
   // the candidate attaches in the wizard's Documents step. submit()
   // requires at least one Academic document.
@@ -1212,6 +1222,7 @@ model Offer {
   id              Int         @id @default(autoincrement())
   applicationId   Int         @unique
   application     Application @relation(fields: [applicationId], references: [id])
+  hire            Hire?
   status          OfferStatus @default(Recommended)
   recommendedById Int?
   recommendedBy   StaffUser?  @relation("OfferRecommendedBy", fields: [recommendedById], references: [id])
@@ -1635,4 +1646,48 @@ model DataPurgeLog {
   at            DateTime @default(now())
 
   @@index([at])
+}
+
+// "Mark as Hired" (FR-ATS-067 to 069, BR-ATS-11): exactly one onboarding
+// case per accepted offer (applicationId and offerId are unique), made by
+// HR with the signed appointing instrument attached. `package` is what is
+// handed to the core HRIS - the candidate's profile, contact details, the
+// offer terms and the signed documents - sent by hrisHandoffService when
+// HRIS_HANDOFF_URL is set (retried by scripts/retryHrisHandoffs.js), else
+// left NotConfigured for HR to pass on by hand. onboardingCaseId is the
+// HRIS's own case id, once it answers.
+model Hire {
+  id                   Int           @id @default(autoincrement())
+  applicationId        Int           @unique
+  application          Application   @relation(fields: [applicationId], references: [id])
+  offerId              Int           @unique
+  offer                Offer         @relation(fields: [offerId], references: [id])
+  vacancyId            Int
+  vacancy              Vacancy       @relation(fields: [vacancyId], references: [id])
+  candidateId          Int
+  positionId           Int?
+  caseRef              String        @unique
+  startDate            DateTime?
+  signedInstrumentUrl  String
+  signedInstrumentName String
+  package              Json
+  handoffStatus        HandoffStatus @default(NotConfigured)
+  handoffAttempts      Int           @default(0)
+  handoffLastError     String?       @db.Text
+  handoffLastAttemptAt DateTime?
+  handoffSentAt        DateTime?
+  onboardingCaseId     String?
+  hiredAt              DateTime      @default(now())
+  hiredById            Int
+  hiredBy              StaffUser     @relation("HireRecordedBy", fields: [hiredById], references: [id])
+
+  @@index([vacancyId])
+  @@index([handoffStatus])
+}
+
+enum HandoffStatus {
+  NotConfigured // no HRIS connection set up - HR passes the package on by hand
+  Pending // waiting to be sent, or to be retried
+  Sent // the HRIS accepted it
+  Failed // gave up after the retries; Directors are alerted
 }

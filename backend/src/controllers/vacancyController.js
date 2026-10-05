@@ -15,6 +15,8 @@ const hiringManagers = require('../services/hiringManagerService');
 const duplicateApplicants = require('../services/duplicateApplicantService');
 const accessLog = require('../services/accessLogService');
 const { sendRequisitionError } = require('./requisitionController');
+const headcount = require('../services/headcountService');
+const { ROLE_RANK } = require('../middleware/auth');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { toPublicVacancy } = require('../utils/publicVacancy');
 const { escapeHtml } = require('../utils/interviewFormat');
@@ -145,6 +147,10 @@ async function create(req, res) {
   let requisition;
   try {
     requisition = await requisitionService.forCreate(req.body, req.user.id);
+    // Within the approved headcount, or an exception with a reason that a
+    // Director authorises at approval (FR-ATS-006).
+    const headcountException = await headcount.exceptionFor(position.id, Number(req.body.positionsRequired) || 1, req.body.headcountExceptionReason, req.user.id);
+    if (headcountException) requisition.requisitionDetails = { ...requisition.requisitionDetails, headcountException };
   } catch (err) {
     return sendRequisitionError(res, err);
   }
@@ -236,11 +242,21 @@ async function readvertise(req, res) {
     return res.status(400).json({ error: 'The position behind this vacancy no longer exists' });
   }
 
+  const carried = requisitionService.carriedOver(vacancy);
+  let headcountException;
+  try {
+    headcountException = await headcount.exceptionFor(position.id, Number(positionsRequired) || 1, req.body.headcountExceptionReason, req.user.id);
+  } catch (err) {
+    return sendRequisitionError(res, err);
+  }
+  const { headcountException: _old, ...carriedDetails } = carried.requisitionDetails || {};
+  carried.requisitionDetails = { ...carriedDetails, ...(headcountException ? { headcountException } : {}) };
+
   const created = await vacancyModel.createWithJobRef(postingType, {
     status: 'PendingApproval',
     readvertisedFromId: vacancy.id,
     // Re-running the same approved position - same requisition.
-    ...requisitionService.carriedOver(vacancy),
+    ...carried,
     // The same hiring manager, unless HR names another.
     hiringManagerName: vacancy.hiringManagerName, hiringManagerEmail: vacancy.hiringManagerEmail,
     hiringManagerEntraId: vacancy.hiringManagerEntraId, hiringManagerJobTitle: vacancy.hiringManagerJobTitle,
@@ -340,6 +356,29 @@ async function update(req, res) {
       });
     }
     data.positionsRequired = n;
+    if (n > vacancy.positionsRequired) {
+      // More posts than before: within headcount, or an exception. Before
+      // approval the approver authorises it; on a published vacancy only a
+      // Director may raise it, which authorises it there and then.
+      let exception;
+      try {
+        exception = await headcount.exceptionFor(vacancy.positionId, n, req.body.headcountExceptionReason, req.user.id, vacancyId);
+      } catch (err) {
+        return sendRequisitionError(res, err);
+      }
+      if (exception) {
+        const approved = !['PendingApproval', 'Returned'].includes(vacancy.status);
+        if (approved && (ROLE_RANK[req.user.role] || 0) < ROLE_RANK.Director) {
+          return res.status(403).json({ error: 'Raising a published vacancy above the approved headcount needs a Director', code: 'HEADCOUNT_EXCEPTION_NEEDS_DIRECTOR' });
+        }
+        data.requisitionDetails = {
+          ...(vacancy.requisitionDetails || {}),
+          headcountException: approved
+            ? { ...exception, authorisedById: req.user.id, authorisedByRole: req.user.role, authorisedAt: new Date().toISOString() }
+            : exception
+        };
+      }
+    }
   }
 
   // Moving the deadline of a vacancy candidates can already see - extending
@@ -509,6 +548,19 @@ async function close(req, res) {
 // changes later (the same principle already used for Vacancy.title and
 // ApplicationSnapshot - a historical fact must reflect what was true at
 // the time, not what is true now).
+// A Director's authority through an active delegation (the route itself
+// is Manager+).
+async function actsAsDirector(req) {
+  const delegationModel = require('../models/delegationModel');
+  const delegation = await delegationModel.findActiveForDelegate(req.user.id, new Date());
+  if (delegation && (ROLE_RANK[delegation.delegator.role] || 0) >= ROLE_RANK.Director) {
+    await delegationModel.logUsage(delegation.id, `${req.method} ${req.originalUrl} (headcount exception)`);
+    req.actingAsDelegateFor = delegation.delegatorId;
+    return true;
+  }
+  return false;
+}
+
 async function approve(req, res) {
   const vacancyId = Number(req.params.id);
   const vacancy = await vacancyModel.findById(vacancyId);
@@ -549,13 +601,35 @@ async function approve(req, res) {
     });
   }
 
+  // FR-ATS-006: more posts than the approved headcount leaves - only a
+  // Director authorises that, explicitly.
+  const headcountException = vacancy.requisitionDetails?.headcountException;
+  const needsHeadcountAuthorisation = headcountException && !headcountException.authorisedAt;
+  if (needsHeadcountAuthorisation) {
+    if ((ROLE_RANK[req.user.role] || 0) < ROLE_RANK.Director && !(await actsAsDirector(req))) {
+      return res.status(403).json({
+        error: `This vacancy is above the approved headcount (reason given: ${headcountException.reason}) - a Director must approve it.`,
+        code: 'HEADCOUNT_EXCEPTION_NEEDS_DIRECTOR'
+      });
+    }
+    if (req.body?.authoriseHeadcountException !== true) {
+      return res.status(422).json({
+        error: `This vacancy asks for ${headcountException.requested} post(s) where the approved headcount left ${headcountException.available} `
+          + `(reason given: ${headcountException.reason}). Approving it authorises that exception - confirm to go ahead.`,
+        code: 'HEADCOUNT_EXCEPTION_NOT_AUTHORISED'
+      });
+    }
+  }
+  const stamp = { authorisedById: req.user.id, authorisedByRole: req.user.role, authorisedAt: new Date().toISOString() };
+
   const result = await vacancyModel.updateIfStatus(vacancyId, vacancy.status, {
     status: 'Open', approvedAt: new Date(), approvedById: req.user.id,
     approvedByRole: req.user.role, // the role snapshot itself
-    ...(needsJdAuthorisation ? {
+    ...(needsJdAuthorisation || needsHeadcountAuthorisation ? {
       requisitionDetails: {
         ...vacancy.requisitionDetails,
-        jdException: { ...jdException, authorisedById: req.user.id, authorisedByRole: req.user.role, authorisedAt: new Date().toISOString() }
+        ...(needsJdAuthorisation ? { jdException: { ...jdException, ...stamp } } : {}),
+        ...(needsHeadcountAuthorisation ? { headcountException: { ...headcountException, ...stamp } } : {})
       }
     } : {})
   });
@@ -569,7 +643,12 @@ async function approve(req, res) {
     entityType: 'Vacancy', entityId: vacancyId,
     action: vacancy.status === 'Closed' ? 'Vacancy re-opened' : 'Vacancy approved', actor: audit.actorFrom(req),
     before: vacancy, after: updated, fields: ['status'],
-    ...(needsJdAuthorisation ? { comment: `Authorised the exception for an unapproved job description: ${jdException.reason}` } : {})
+    ...(needsJdAuthorisation || needsHeadcountAuthorisation ? {
+      comment: [
+        needsJdAuthorisation && `Authorised the exception for an unapproved job description: ${jdException.reason}`,
+        needsHeadcountAuthorisation && `Authorised going above the approved headcount: ${headcountException.reason}`
+      ].filter(Boolean).join(' ')
+    } : {})
   });
 
   await hiringManagers.notify(updated, 'published');

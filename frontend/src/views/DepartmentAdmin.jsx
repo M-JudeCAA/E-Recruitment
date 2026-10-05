@@ -14,6 +14,7 @@ import ViewSwitcher from '../components/ViewSwitcher';
 import DataTable from '../components/DataTable';
 import BoardView from '../components/BoardView';
 import LoadMoreControl from '../components/LoadMoreControl';
+import PositionHeadcountCard from '../components/PositionHeadcountCard';
 import OrgImportCard from '../components/OrgImportCard';
 import { useConfirm } from '../components/ConfirmDialog';
 import { POSITION_LEVELS } from '../utils/positionLevels';
@@ -241,6 +242,8 @@ export default function DepartmentAdmin() {
           <Button type="submit" loading={isBusy('createPosition')} loadingText="Adding...">Add position</Button>
         </form>
       </Card>
+
+      <PositionHeadcountCard departments={approvedDepartments} editable={isReviewer} />
 
       {isReviewer && (
         <Card accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)' }}>

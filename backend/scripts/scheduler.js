@@ -30,7 +30,8 @@ const JOBS = [
   { name: 'cleanupVerificationTokens', run: () => require('./cleanupVerificationTokens').run() },
   { name: 'cleanupRequisitionUploads', run: () => require('./cleanupRequisitionUploads').run() },
   { name: 'purgeAccessLog', run: () => require('./purgeAccessLog').run() },
-  { name: 'purgeCandidateData', run: () => require('./purgeCandidateData').run() }
+  { name: 'purgeCandidateData', run: () => require('./purgeCandidateData').run() },
+  { name: 'retryHrisHandoffs', run: () => require('./retryHrisHandoffs').run() }
 ];
 
 const intervalMinutes = Number(process.env.SCHEDULER_INTERVAL_MINUTES || 60);

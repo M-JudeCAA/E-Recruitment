@@ -64,6 +64,7 @@ Every other field in `.env.example` needs a real value too:
 | `TRUST_PROXY` | Optional. Which reverse proxy to believe about a client's address, used by the sign-in rate limits. Default `loopback` (a proxy on the same machine, e.g. nginx or IIS). Set to `false` if nothing sits in front of the API, or to a hop count or proxy address if the proxy is on another machine |
 | `APP_TIMEZONE` | Optional. Time zone used for interview times in emails, notifications and calendar invitations. Default `Africa/Kampala` |
 | `INTERVIEW_ORGANIZER_EMAIL` | Optional but recommended. The mailbox shown as the organizer of interview calendar invitations - when a panelist or candidate accepts or declines, the reply goes here (e.g. the HR recruitment mailbox). Default: the address in `SMTP_FROM` |
+| `HRIS_HANDOFF_URL`, `HRIS_HANDOFF_TOKEN` | Optional, for when the core HRIS can take new hires. "Mark as Hired" POSTs each onboarding case there as JSON (with the case reference as the `Idempotency-Key` header, and the token as a bearer token), retrying until it is accepted. Unset: HR downloads each case's package and passes it on by hand |
 | `SCHEDULER_INTERVAL_MINUTES` | Optional. How often the scheduler worker runs the maintenance jobs. Default `60` |
 | `DATABASE_URL_TEST` | Only for the end-to-end tests: a separate, empty MySQL database whose name contains `test`. See [Running tests](#running-tests) |
 
@@ -251,6 +252,7 @@ them, so they have to be started as part of every deployment:
 | `cleanupVerificationTokens.js` | Deletes email-confirmation and password-reset links that were used or expired more than 7 days ago |
 | `cleanupRequisitionUploads.js` | Deletes uploaded requisitions (and their signed scans) that no vacancy or draft uses, after 24 hours |
 | `purgeAccessLog.js` | Deletes the record of who viewed candidate data once it is older than the retention set on the Settings & data page (else `ACCESS_LOG_RETENTION_DAYS`) |
+| `retryHrisHandoffs.js` | Re-sends onboarding cases the HRIS hasn't accepted yet (only with `HRIS_HANDOFF_URL` set); after six failed tries the Directors are alerted |
 | `purgeCandidateData.js` | Erases the personal data of candidates with no activity for the retention period set on the Settings & data page (default 24 months); hired candidates and anyone with an application in progress are never erased |
 
 **If they stop running, staff are told.** Every run is recorded in the
@@ -299,6 +301,7 @@ both, or SLA escalations could be checked twice in the same hour.
 0 * * * * cd /path/to/backend && node scripts/cleanupRequisitionUploads.js >> /var/log/erecruitment/cleanup.log 2>&1
 0 * * * * cd /path/to/backend && node scripts/purgeAccessLog.js >> /var/log/erecruitment/cleanup.log 2>&1
 0 * * * * cd /path/to/backend && node scripts/purgeCandidateData.js >> /var/log/erecruitment/cleanup.log 2>&1
+0 * * * * cd /path/to/backend && node scripts/retryHrisHandoffs.js >> /var/log/erecruitment/cleanup.log 2>&1
 ```
 
 All of them run hourly: the warning treats a job as stopped after 3 hours

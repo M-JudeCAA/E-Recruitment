@@ -24,6 +24,7 @@ const mockDb = {
   setting: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
   dataSubjectRequest: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
   dataPurgeLog: { create: jest.fn(), findMany: jest.fn() },
+  hire: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn() },
   position: { create: jest.fn(), findUnique: jest.fn(), findMany: jest.fn() },
   department: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
   orgImport: { create: jest.fn() },

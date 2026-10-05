@@ -8,6 +8,7 @@ import OfferComposer from './OfferComposer';
 import { errorMessage } from '../../utils/interviews';
 import { OPEN_OFFER_STATUSES } from './offerFormat';
 import { printFromApi } from '../../utils/printDocument';
+import HireSection from './HireSection';
 
 // Whatever the viewer's rank lets them do to an offer next, in one place for
 // every screen that shows one (merit list, review card, Approvals Center,
@@ -32,7 +33,8 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
   const canRevise = rank >= ROLE_RANK.Principal_HR_Officer && ['Recommended', 'Returned'].includes(offer.status);
   const canDecide = rank >= ROLE_RANK.Manager && offer.status === 'Recommended';
   const canWithdraw = rank >= ROLE_RANK.Principal_HR_Officer && OPEN_OFFER_STATUSES.includes(offer.status);
-  if (!canRevise && !canDecide && !canWithdraw) return null;
+  const hasLetters = offer.salaryAmount != null && offer.status !== 'Withdrawn';
+  if (!canRevise && !canDecide && !canWithdraw && !hasLetters && offer.status !== 'Accepted') return null;
 
   const act = async (key, fn, done) => {
     setBusy(key); setError(''); setNotice('');
@@ -91,6 +93,7 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
           </Button>
         )}
       </div>
+      <HireSection offer={offer} staffRole={staffRole} onChanged={onChanged} />
       {error && !modal && <div style={{ color: 'var(--color-danger)', fontSize: 12, marginTop: 4 }}>{error}</div>}
       {notice && <div style={{ color: 'var(--color-success)', fontSize: 12, marginTop: 4 }}>{notice}</div>}
 

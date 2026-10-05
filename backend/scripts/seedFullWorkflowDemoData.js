@@ -352,6 +352,15 @@ async function approveShortlist(vacancyId, { struckOff = [] } = {}) {
   return api('POST', `/api/vacancies/${vacancyId}/exco-shortlist`, { token: T.shro, form });
 }
 
+// Mark as Hired, with the appointing instrument as signed.
+async function markHired(offerId, name) {
+  const form = new FormData();
+  form.append('signedInstrument', new Blob([pdfDocument('Appointing instrument - signed', [
+    `Appointment of ${name}`, 'Accepted and signed by the appointee.', 'Signed: ____________________  Director Human Resource & Administration'
+  ])], { type: 'application/pdf' }), 'Appointing instrument - signed.pdf');
+  return api('POST', `/api/applications/offers/${offerId}/hire`, { token: T.phro, form });
+}
+
 async function verifyInternal(candidateId, decision, comments) {
   const form = new FormData();
   form.append('decision', decision);
@@ -762,6 +771,7 @@ async function scenarioFilled() {
   const oy = await recommendOffer(ay.id, { ...terms, salaryAmount: 4800000 });
   await approveOffer(oy.id, 'dhra');
   await api('PATCH', `/api/applications/offers/${oy.id}/accept`, { token: y.token });
+  await markHired(oy.id, y.name);
 
   await retime(v.id, { created: S + 18, deadline: S + 9, review: S + 8.5, slProposed: S + 3.5, slApproved: S + 3, meritProposed: S - 2, meritApproved: S - 2.5 });
   await retimeCommittee(v.id, { created: S + 8.4, opened: S + 8, moderation: S + 4.5, closed: S + 4 });

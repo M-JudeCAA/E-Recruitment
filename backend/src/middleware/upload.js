@@ -99,10 +99,27 @@ const uploadSignedRequisition = multer({
   limits: { fileSize: MAX_FILE_SIZE }
 });
 
+// The signed appointing instrument attached when HR marks a candidate hired
+// (hireController) - kept as evidence of the signature and handed to the
+// HRIS. Stored as appointment-signed-<uuid>.
+const uploadSignedAppointment = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => cb(null, `appointment-signed-${uuidv4()}${SIGNED_COPY_EXT[file.mimetype]}`)
+  }),
+  fileFilter: (req, file, cb) => {
+    if (!SIGNED_COPY_EXT[file.mimetype]) {
+      return cb(new AppError('Upload the signed appointing instrument as a PDF, JPG or PNG scan.', 422));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
 // Returns a URL path the frontend can use to reference the uploaded file,
 // via the authenticated /api/files route rather than a plain static mount.
 function fileUrl(file) {
   return file ? `/api/files/${file.filename}` : null;
 }
 
-module.exports = { upload, uploadPhoto, uploadSupportingDocument, uploadRequisition, uploadSignedRequisition, fileUrl };
+module.exports = { upload, uploadPhoto, uploadSupportingDocument, uploadRequisition, uploadSignedRequisition, uploadSignedAppointment, fileUrl };

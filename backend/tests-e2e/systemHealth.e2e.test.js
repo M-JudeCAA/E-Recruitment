@@ -30,7 +30,8 @@ const JOBS = {
   cleanupVerificationTokens: () => require('../scripts/cleanupVerificationTokens').run(),
   cleanupRequisitionUploads: () => require('../scripts/cleanupRequisitionUploads').run(),
   purgeAccessLog: () => require('../scripts/purgeAccessLog').run(),
-  purgeCandidateData: () => require('../scripts/purgeCandidateData').run()
+  purgeCandidateData: () => require('../scripts/purgeCandidateData').run(),
+  retryHrisHandoffs: () => require('../scripts/retryHrisHandoffs').run()
 };
 const daysAgo = (d) => new Date(Date.now() - d * 24 * 60 * 60 * 1000);
 

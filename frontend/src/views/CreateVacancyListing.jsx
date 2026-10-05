@@ -98,6 +98,9 @@ export default function CreateVacancyListing() {
   const [customLocation, setCustomLocation] = useState(false);
   const [creating, setCreating] = useState(false); // double-submission lock
   const [error, setError] = useState('');
+  // The position's approved headcount (FR-ATS-006) - more than are free
+  // needs a reason, which a Director authorises at approval.
+  const [headcountInfo, setHeadcountInfo] = useState(null);
   const [previewData, setPreviewData] = useState(null);
   // The EXCO-approved requisition this vacancy is created from - nothing
   // below it is shown until one has been read (see RequisitionPanel).
@@ -252,6 +255,12 @@ export default function CreateVacancyListing() {
     });
   };
 
+  useEffect(() => {
+    if (!form.positionId) { setHeadcountInfo(null); return; }
+    staffClient.get(`/api/positions/${form.positionId}/headcount`).then((res) => setHeadcountInfo(res.data)).catch(() => setHeadcountInfo(null));
+  }, [form.positionId]);
+  const overHeadcount = headcountInfo?.headcount != null && Number(form.positionsRequired) > headcountInfo.available;
+
   const createVacancy = async (e) => {
     e.preventDefault();
     if (creating) return; // a double-click or slow-network retry must not create two vacancies
@@ -364,8 +373,19 @@ export default function CreateVacancyListing() {
           </div>
 
           <div style={fieldGrid}>
-            <TextField label="Positions required" type="number" min="1" value={form.positionsRequired}
-              onChange={(e) => setForm({ ...form, positionsRequired: Number(e.target.value) })} />
+            <div>
+              <TextField label="Positions required" type="number" min="1" value={form.positionsRequired}
+                onChange={(e) => setForm({ ...form, positionsRequired: Number(e.target.value) })} />
+              {headcountInfo?.headcount != null && (
+                <div style={{ fontSize: 12, color: overHeadcount ? 'var(--color-danger)' : 'var(--color-text-muted)', marginTop: -8, marginBottom: 8 }}>
+                  Headcount: {headcountInfo.headcount} approved, {headcountInfo.occupied} filled, {headcountInfo.inRecruitment} being recruited - {headcountInfo.available} free.
+                </div>
+              )}
+              {overHeadcount && (
+                <TextArea label="Why more than the approved headcount? (a Director must authorise it)" required value={form.headcountExceptionReason || ''}
+                  onChange={(e) => setForm({ ...form, headcountExceptionReason: e.target.value })} />
+              )}
+            </div>
             <Select label="Posting type" required value={form.postingType} onChange={(e) => setForm({ ...form, postingType: e.target.value })}>
               <option value="">Select one</option>
               <option value="Internal">Internal only</option>
