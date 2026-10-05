@@ -8,6 +8,7 @@ const { computeExperienceYears } = require('../services/screeningService');
 const { sendMail } = require('../utils/mailer');
 const { frontendUrl } = require('../config/frontendUrl');
 const { validateEmail } = require('../utils/validators');
+const { internalDomains } = require('../services/entraAuthService');
 const { escapeHtml, formatWhen } = require('../utils/interviewFormat');
 const { classifyError, sendError } = require('../utils/errorResponse');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
@@ -138,7 +139,7 @@ function memberProgress(exercise, assignments) {
     const mine = assignments.filter((a) => a.memberId === m.id);
     const done = mine.filter((a) => a.conflictAt || criterionIds.every((id) => a.ratings.some((r) => r.criterionId === id)));
     return {
-      id: m.id, name: m.name, email: m.email, isChair: m.isChair, submittedAt: m.submittedAt,
+      id: m.id, name: m.name, email: m.email, isChair: m.isChair, submittedAt: m.submittedAt, externalReason: m.externalReason,
       assigned: mine.length, completed: done.length, conflicts: mine.filter((a) => a.conflictAt).length
     };
   });
@@ -243,7 +244,29 @@ async function update(req, res) {
   return get(req, res);
 }
 
-// POST members - HR staff can never sit on the committee.
+const MIN_EXTERNAL_REASON = 10;
+const isInternalEmail = (email) => internalDomains().includes(email.split('@')[1]);
+
+// Who may sit on the committee: anyone at UCAA, HR included; someone from
+// outside only as a special case, with the reason. Never an applicant for
+// the vacancy. Returns { error, status } or { externalReason }.
+async function memberRules(exercise, email, externalReasonInput) {
+  const applicant = await prisma.application.findFirst({
+    where: { vacancyId: exercise.vacancyId, status: { not: 'Draft' }, candidate: { email } }, select: { id: true }
+  });
+  if (applicant) return { status: 422, error: 'This person has applied for this vacancy, so they cannot sit on its committee' };
+  if (isInternalEmail(email)) return { externalReason: null };
+  const reason = typeof externalReasonInput === 'string' ? externalReasonInput.trim().slice(0, 2000) : '';
+  if (reason.length < MIN_EXTERNAL_REASON) {
+    return {
+      status: 422, code: 'EXTERNAL_REASON_REQUIRED',
+      error: 'This is not a UCAA address. A member from outside UCAA is a special case - give the reason they are needed.'
+    };
+  }
+  return { externalReason: reason };
+}
+
+// POST members - anyone at UCAA, HR included; an outsider with a reason.
 async function addMember(req, res) {
   const exercise = await loadExercise(req, res, ['Setup']);
   if (!exercise) return;
@@ -251,12 +274,17 @@ async function addMember(req, res) {
   const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   if (name.length < 2) return res.status(400).json({ error: 'Enter the member\'s name' });
   if (!validateEmail(email)) return res.status(400).json({ error: 'Enter a valid email - the member\'s private link is sent there' });
-  const staff = await prisma.staffUser.findFirst({ where: { email } });
-  if (staff) return res.status(422).json({ error: 'HR staff cannot sit on the shortlisting committee' });
   if (exercise.members.some((m) => m.email.toLowerCase() === email)) return res.status(409).json({ error: 'This person is already on the committee' });
+  const rules = await memberRules(exercise, email, req.body.externalReason);
+  if (rules.error) return res.status(rules.status).json({ error: rules.error, ...(rules.code ? { code: rules.code } : {}) });
 
   if (req.body.isChair) await model.clearChair(exercise.id);
-  await model.createMember({ exerciseId: exercise.id, name, email, isChair: Boolean(req.body.isChair), token: newToken() });
+  await model.createMember({
+    exerciseId: exercise.id, name, email, isChair: Boolean(req.body.isChair), token: newToken(), externalReason: rules.externalReason
+  });
+  if (rules.externalReason) {
+    await audit(exercise.vacancyId, 'External shortlisting committee member added', req.user.id, { name, email, reason: rules.externalReason });
+  }
   return get(req, res);
 }
 
@@ -283,8 +311,13 @@ async function updateMember(req, res) {
     if ('email' in req.body) {
       const email = String(req.body.email || '').trim().toLowerCase();
       if (!validateEmail(email)) return res.status(400).json({ error: 'Enter a valid email' });
-      if (await prisma.staffUser.findFirst({ where: { email } })) return res.status(422).json({ error: 'HR staff cannot sit on the shortlisting committee' });
+      if (exercise.members.some((m) => m.id !== member.id && m.email.toLowerCase() === email)) {
+        return res.status(409).json({ error: 'This person is already on the committee' });
+      }
+      const rules = await memberRules(exercise, email, req.body.externalReason ?? member.externalReason);
+      if (rules.error) return res.status(rules.status).json({ error: rules.error, ...(rules.code ? { code: rules.code } : {}) });
       data.email = email;
+      data.externalReason = rules.externalReason;
     }
   }
   if (req.body.isChair === true) {

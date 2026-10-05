@@ -54,17 +54,51 @@ beforeEach(() => {
   prisma.application.count.mockResolvedValue(0);
   prisma.shortlistAssignment.findMany.mockResolvedValue([]);
   prisma.staffUser.findFirst.mockResolvedValue(null);
+  prisma.application.findFirst.mockResolvedValue(null);
   prisma.$transaction = jest.fn((ops) => Promise.all(ops));
   sendMail.mockResolvedValue({ messageId: 'x' });
 });
 
 describe('committee membership', () => {
-  test('HR staff can never sit on the committee', async () => {
-    prisma.staffUser.findFirst.mockResolvedValue({ id: 9, email: 'hro@caa.co.ug' });
+  const add = async (body) => {
     const res = mockRes();
-    await hr.addMember({ ...staff, params, body: { name: 'An HR Officer', email: 'HRO@caa.co.ug' } }, res);
+    await hr.addMember({ ...staff, params, body }, res);
+    return res;
+  };
+
+  test('anyone at UCAA may sit on it, HR staff included', async () => {
+    process.env.INTERNAL_EMAIL_DOMAIN = 'caa.co.ug';
+    const res = await add({ name: 'An HR Officer', email: 'HRO@caa.co.ug' });
+    expect(res.status).not.toHaveBeenCalled();
+    expect(prisma.shortlistMember.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ email: 'hro@caa.co.ug', externalReason: null })
+    });
+  });
+
+  test('someone from outside UCAA only with the reason, which is audited', async () => {
+    process.env.INTERNAL_EMAIL_DOMAIN = 'caa.co.ug';
+    let res = await add({ name: 'Dr Outside', email: 'expert@makerere.ac.ug' });
     expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json.mock.calls[0][0].code).toBe('EXTERNAL_REASON_REQUIRED');
     expect(prisma.shortlistMember.create).not.toHaveBeenCalled();
+
+    res = await add({ name: 'Dr Outside', email: 'expert@makerere.ac.ug', externalReason: 'No UCAA staff hold the ATC licence needed to judge this.' });
+    expect(res.status).not.toHaveBeenCalled();
+    expect(prisma.shortlistMember.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      externalReason: 'No UCAA staff hold the ATC licence needed to judge this.'
+    }) });
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ action: 'External shortlisting committee member added' }) });
+  });
+
+  test('never an applicant for the vacancy', async () => {
+    process.env.INTERNAL_EMAIL_DOMAIN = 'caa.co.ug';
+    prisma.application.findFirst.mockResolvedValue({ id: 77 });
+    const res = await add({ name: 'Applying Officer', email: 'officer@caa.co.ug' });
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json.mock.calls[0][0].error).toMatch(/applied for this vacancy/);
+    expect(prisma.application.findFirst.mock.calls[0][0].where).toEqual(expect.objectContaining({
+      vacancyId: 3, status: { not: 'Draft' }, candidate: { email: 'officer@caa.co.ug' }
+    }));
   });
 
   test('rating needs at least three members and a chair', async () => {

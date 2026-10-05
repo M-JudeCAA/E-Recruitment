@@ -68,19 +68,22 @@ function CriteriaEditor({ criteria, onSave, saving }) {
 }
 
 function MembersEditor({ members, editable, onAdd, onRemove, onMakeChair, onReissue, busy }) {
-  const [form, setForm] = useState({ name: '', email: '', isChair: false });
+  const blank = { name: '', email: '', isChair: false, external: false, externalReason: '' };
+  const [form, setForm] = useState(blank);
   return (
     <div style={{ marginBottom: 16 }}>
       <span style={sectionLabel}>Committee</span>
       <p style={{ ...hintText, marginTop: 0 }}>
-        People outside HR - HR staff cannot sit on it. One member chairs: at moderation the chair rules on the items the committee
-        disagreed on. The chair can be changed until the exercise closes.
+        Anyone at UCAA, HR included - but not an applicant for this vacancy. Someone from outside UCAA only as a special case,
+        with the reason. One member chairs: at moderation the chair rules on the items the committee disagreed on. The chair can
+        be changed until the exercise closes.
       </p>
       {members.map((m) => (
         <div key={m.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderTop: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
           <span style={{ flex: '1 1 200px', minWidth: 0 }}>
             <strong>{m.name}</strong> {m.isChair && <span style={{ ...hintText, color: 'var(--color-gold-dark)' }}><Crown size={12} /> chair</span>}
             <span style={{ display: 'block', ...hintText }}>{m.email}</span>
+            {m.externalReason && <span style={{ display: 'block', ...hintText }}><strong>From outside UCAA:</strong> {m.externalReason}</span>}
           </span>
           {m.assigned != null && m.assigned > 0 && (
             <span style={hintText}>
@@ -94,13 +97,24 @@ function MembersEditor({ members, editable, onAdd, onRemove, onMakeChair, onReis
         </div>
       ))}
       {editable && (
-        <form onSubmit={(e) => { e.preventDefault(); onAdd(form).then((ok) => ok && setForm({ name: '', email: '', isChair: false })); }}
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          const { external, ...body } = form;
+          onAdd(external ? body : { ...body, externalReason: undefined }).then((ok) => ok && setForm(blank));
+        }}
           style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
           <input aria-label="Name" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={{ ...inputStyle, flex: '1 1 160px' }} />
           <input aria-label="Email" placeholder="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={{ ...inputStyle, flex: '1 1 200px' }} />
           <label style={{ ...hintText, display: 'flex', gap: 4, alignItems: 'center' }}>
             <input type="checkbox" checked={form.isChair} onChange={(e) => setForm({ ...form, isChair: e.target.checked })} /> Chair
           </label>
+          <label style={{ ...hintText, display: 'flex', gap: 4, alignItems: 'center' }}>
+            <input type="checkbox" checked={form.external} onChange={(e) => setForm({ ...form, external: e.target.checked })} /> From outside UCAA
+          </label>
+          {form.external && (
+            <input aria-label="Why someone from outside UCAA is needed" placeholder="Why someone from outside UCAA is needed (special case)"
+              value={form.externalReason} onChange={(e) => setForm({ ...form, externalReason: e.target.value })} style={{ ...inputStyle, flex: '1 1 100%' }} />
+          )}
           <Button type="submit" variant="secondary" disabled={busy}><Plus size={14} /> Add member</Button>
         </form>
       )}
@@ -252,7 +266,7 @@ export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onMa
           <div style={{ flex: 1, minWidth: 240 }}>
             <strong>Shortlisting committee</strong>
             <p style={{ ...hintText, fontSize: 13 }}>
-              A committee from outside HR rates every screened applicant ({data.poolCount} now) against the job's requirements. The
+              A committee of UCAA staff rates every screened applicant ({data.poolCount} now) against the job's requirements. The
               system ranks them by how the committee agrees, and the interview shortlist is taken from the top - it can't be
               reordered by hand.
             </p>

@@ -1026,6 +1026,9 @@ model ShortlistMember {
   name        String
   email       String
   isChair     Boolean               @default(false)
+  // A member from outside UCAA (an email not on INTERNAL_EMAIL_DOMAIN) is a
+  // rare special case and needs the reason HR gave when adding them.
+  externalReason String?          @db.Text
   token       String                @unique
   submittedAt DateTime?
   createdAt   DateTime              @default(now())
