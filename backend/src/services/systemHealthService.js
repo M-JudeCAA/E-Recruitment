@@ -20,7 +20,8 @@ const JOBS = [
   { name: 'cleanupPendingRegistrations', label: 'cleanup of abandoned registrations' },
   { name: 'cleanupVerificationTokens', label: 'cleanup of old confirmation and reset links' },
   { name: 'cleanupRequisitionUploads', label: 'cleanup of unused requisition uploads' },
-  { name: 'purgeAccessLog', label: 'removal of access log records past their retention period' }
+  { name: 'purgeAccessLog', label: 'removal of access log records past their retention period' },
+  { name: 'purgeCandidateData', label: 'erasure of candidates\' data past its retention period' }
 ];
 const STALE_AFTER_HOURS = 3;
 // A single failed email shows on the banner straight away (it is the

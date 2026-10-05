@@ -31,12 +31,13 @@ import DepartmentAdmin from "./views/DepartmentAdmin";
 import StaffManagement from "./views/StaffManagement";
 import StaffAccounts from "./views/StaffAccounts";
 import DocumentTemplates from "./views/DocumentTemplates";
+import SettingsAndData from "./views/SettingsAndData";
 import VacancyDetail from "./views/VacancyDetail";
 import CreateVacancyListing from "./views/CreateVacancyListing";
 import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
 import InterviewHub from "./views/InterviewHub";
 import PrivacyNotice from "./views/PrivacyNotice";
-import { RequireCandidate, RequireStaff, RequireSystemAdmin, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
+import { RequireCandidate, RequireStaff, RequireSystemAdmin, RequireSystemAdminOrRole, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
 
 // Padding lives here, not on the app shell - Navbar/Footer render outside
 // this entirely, full width with no inset. Only routes nested under this
@@ -171,6 +172,14 @@ export default function App() {
               <RequireSystemAdmin>
                 <StaffAccounts />
               </RequireSystemAdmin>
+            }
+          />
+          <Route
+            path="/hr/settings"
+            element={
+              <RequireSystemAdminOrRole minRole="Manager">
+                <SettingsAndData />
+              </RequireSystemAdminOrRole>
             }
           />
           <Route

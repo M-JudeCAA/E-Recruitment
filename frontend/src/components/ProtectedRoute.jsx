@@ -61,6 +61,15 @@ export function RequireSystemAdmin({ children }) {
   return children;
 }
 
+// Settings & data - a system administrator, or Manager+ (backend:
+// requireSystemAdminOrRole).
+export function RequireSystemAdminOrRole({ minRole, children }) {
+  const { staff } = useAuth();
+  if (!staff) return <Navigate to="/staff/login" replace />;
+  if (!staff.isSystemAdmin && (ROLE_RANK[staff.role] || 0) < (ROLE_RANK[minRole] || 0)) return <Navigate to={staffHome(staff)} replace />;
+  return children;
+}
+
 export function RequireCandidate({ children }) {
   const { candidate } = useAuth();
   const location = useLocation();

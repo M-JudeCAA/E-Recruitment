@@ -91,6 +91,18 @@ function requireSystemAdmin() {
   };
 }
 
+// A system administrator, or staff at minRole or above - for settings both
+// look after (the Settings page).
+function requireSystemAdminOrRole(minRole) {
+  const byRole = requireStaffRole(minRole);
+  return async (req, res, next) => {
+    if (req.user.type !== 'staff') return res.status(403).json({ error: 'Staff access required' });
+    if (!(await loadCurrentStaff(req, res))) return;
+    if (req.user.isSystemAdmin) return next();
+    return byRole(req, res, next);
+  };
+}
+
 function requireCandidate(req, res, next) {
   if (req.user.type !== 'candidate') {
     return res.status(403).json({ error: 'Candidate access required' });
@@ -112,4 +124,4 @@ function optionalAuthenticate(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, optionalAuthenticate, requireStaffRole, requireSystemAdmin, requireCandidate, ROLE_RANK };
+module.exports = { authenticate, optionalAuthenticate, requireStaffRole, requireSystemAdmin, requireSystemAdminOrRole, requireCandidate, ROLE_RANK };

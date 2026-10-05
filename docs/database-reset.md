@@ -18,9 +18,9 @@ removes the demo staff accounts.
 | Deleted | Kept or recreated |
 |---|---|
 | All vacancies, drafts and requisitions | Real staff accounts and their Microsoft links |
-| All candidates and their applications | SLA settings |
+| All candidates and their applications | SLA settings and the data-retention settings |
 | Shortlisting, interviews, merit lists, offers | The 6 directorates and 29 departments (recreated) |
-| Notifications, audit and access logs | Job references restart at `UCAA/ADV/…/001/<year>` |
+| Notifications, audit and access logs, erasure requests and the erasure log | Job references restart at `UCAA/ADV/…/001/<year>` |
 | Edited document templates (they go back to the default wording) | |
 | Uploaded files in the upload folder | |
 | The six demo staff accounts | |

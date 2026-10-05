@@ -119,3 +119,88 @@ test('the retention job removes access records past the retention period and kee
   expect((await prisma.dataAccessLog.findMany({ orderBy: { at: 'asc' } })).map((r) => r.action))
     .toEqual(['Opened a document', 'Viewed the applicants']);
 });
+
+describe('data retention and erasure (FR-ATS-079/080)', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const uploads = () => path.resolve(process.env.UPLOAD_DIR || './uploads');
+
+  test('a candidate downloads their data and asks for erasure; a Manager completes it once nothing is in progress', async () => {
+    const vacancy = await createVacancy();
+    expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
+    const ivy = await createCandidate({ fullName: 'Ivy Isingoma', email: 'ivy@example.com' });
+    const { applicationId, document } = await applyAs(ivy, vacancy.id);
+    const token = await candidateToken(ivy.email);
+
+    const copy = expectStatus(await api(token).get('/api/candidates/me/data-export'), 200);
+    expect(copy.headers['content-disposition']).toContain('attachment');
+    expect(copy.body).toEqual(expect.objectContaining({ fullName: 'Ivy Isingoma', email: 'ivy@example.com' }));
+    expect(copy.body.passwordHash).toBeUndefined();
+    expect(copy.body.applications[0].vacancy.jobRef).toBe(vacancy.jobRef);
+
+    const asked = expectStatus(await api(token).post('/api/candidates/me/data-requests', { reason: 'I no longer want to be considered.' }), 201).body;
+    expect((await api(token).post('/api/candidates/me/data-requests', {})).status).toBe(409);
+    expect(await prisma.notification.count({ where: { recipientId: staff.manager.id, taskType: 'DataErasureRequested' } })).toBeGreaterThan(0);
+
+    // Not while the application is in progress.
+    expect((await api(tokens.hro).get('/api/data-protection/requests')).status).toBe(403);
+    const pending = expectStatus(await api(tokens.manager).get('/api/data-protection/requests?status=Pending'), 200).body;
+    expect(pending[0].blocker).toMatch(/in progress/);
+    expect((await api(tokens.manager).patch(`/api/data-protection/requests/${asked.id}/complete`)).status).toBe(409);
+
+    // Once it's over, the data goes.
+    await prisma.application.update({ where: { id: applicationId }, data: { status: 'Rejected', rejectedAt: new Date() } });
+    const file = path.join(uploads(), path.basename(document.fileUrl));
+    expect(fs.existsSync(file)).toBe(true);
+    const done = expectStatus(await api(tokens.manager).patch(`/api/data-protection/requests/${asked.id}/complete`), 200).body;
+    expect(done.removed).toEqual(expect.objectContaining({ documents: 1, files: 1, applications: 1 }));
+
+    const erased = await prisma.candidate.findUnique({ where: { id: ivy.id }, include: { education: true, workExperience: true } });
+    expect(erased).toEqual(expect.objectContaining({
+      fullName: `Removed candidate ${ivy.id}`, email: `removed-${ivy.id}@removed.invalid`, nationalId: null, passwordHash: null, location: null
+    }));
+    expect(erased.purgedAt).not.toBeNull();
+    expect(erased.education).toEqual([]);
+    expect(erased.workExperience).toEqual([]);
+    const application = await prisma.application.findUnique({ where: { id: applicationId }, include: { documents: true } });
+    expect(application).toEqual(expect.objectContaining({ status: 'Rejected', referees: null, whyThisRole: null }));
+    expect(application.documents).toEqual([]);
+    expect(fs.existsSync(file)).toBe(false);
+    expect((await request(app).post('/api/candidates/auth/login').send({ email: 'ivy@example.com', password: 'ChangeMe123!' })).status).toBe(401);
+    const log = expectStatus(await api(tokens.manager).get('/api/data-protection/purges'), 200).body;
+    expect(log[0]).toEqual(expect.objectContaining({ candidateId: ivy.id, reason: 'ErasureRequest', requestId: asked.id, performedById: staff.manager.id }));
+  });
+
+  test('a refused request tells the candidate why', async () => {
+    const joe = await createCandidate({ fullName: 'Joe Juuko', email: 'joe@example.com' });
+    const token = await candidateToken(joe.email);
+    const asked = expectStatus(await api(token).post('/api/candidates/me/data-requests', {}), 201).body;
+    expect((await api(tokens.manager).patch(`/api/data-protection/requests/${asked.id}/refuse`, { reason: 'x' })).status).toBe(400);
+    expectStatus(await api(tokens.manager).patch(`/api/data-protection/requests/${asked.id}/refuse`, { reason: 'Your appeal on the last recruitment is still open.' }), 200);
+    expect(await prisma.candidateNotification.count({ where: { candidateId: joe.id, type: 'DataRequestRefused' } })).toBeGreaterThan(0);
+    expect(expectStatus(await api(token).get('/api/candidates/me/data-requests'), 200).body[0]).toEqual(expect.objectContaining({ status: 'Refused' }));
+  });
+
+  test('the retention purge erases candidates inactive past the setting, and nobody else', async () => {
+    const old = new Date(Date.now() - 30 * 30 * 86400000); // ~30 months ago
+    const gone = await createCandidate({ fullName: 'Old Applicant', email: 'old@example.com' });
+    const recent = await createCandidate({ fullName: 'Recent Applicant', email: 'recent@example.com' });
+    await prisma.candidate.update({ where: { id: gone.id }, data: { createdAt: old, lastLoginAt: old } });
+
+    // Settings: a Manager or a system administrator, never an HR Officer.
+    expect((await api(tokens.hro).put('/api/settings/candidateRetentionMonths', { value: 12 })).status).toBe(403);
+    expect((await api(tokens.manager).put('/api/settings/candidateRetentionMonths', { value: 3 })).status).toBe(400);
+    const list = expectStatus(await api(tokens.manager).put('/api/settings/candidateRetentionMonths', { value: 36 }), 200).body;
+    expect(list.find((s) => s.key === 'candidateRetentionMonths').value).toBe(36);
+    const admin = await prisma.staffUser.create({ data: { name: 'Sys Admin', email: 'admin@caa.co.ug', role: null, isSystemAdmin: true, department: 'ICT', passwordHash: (await prisma.staffUser.findUnique({ where: { id: staff.hro.id } })).passwordHash } });
+    expectStatus(await api(await staffToken(admin.email)).get('/api/settings'), 200);
+
+    const job = require('../scripts/purgeCandidateData');
+    expect(await job.run()).toMatch(/0 candidate/); // 30 months < 36
+    expectStatus(await api(tokens.manager).put('/api/settings/candidateRetentionMonths', { value: 24 }), 200);
+    expect(await job.run()).toMatch(/1 candidate/);
+    expect((await prisma.candidate.findUnique({ where: { id: gone.id } })).purgedAt).not.toBeNull();
+    expect((await prisma.candidate.findUnique({ where: { id: recent.id } })).purgedAt).toBeNull();
+    expect((await prisma.dataPurgeLog.findFirst({ where: { candidateId: gone.id } })).reason).toBe('Retention');
+  });
+});

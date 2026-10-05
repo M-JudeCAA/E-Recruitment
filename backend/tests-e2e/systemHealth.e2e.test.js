@@ -29,7 +29,8 @@ const JOBS = {
   cleanupPendingRegistrations: () => require('../scripts/cleanupPendingRegistrations').run(),
   cleanupVerificationTokens: () => require('../scripts/cleanupVerificationTokens').run(),
   cleanupRequisitionUploads: () => require('../scripts/cleanupRequisitionUploads').run(),
-  purgeAccessLog: () => require('../scripts/purgeAccessLog').run()
+  purgeAccessLog: () => require('../scripts/purgeAccessLog').run(),
+  purgeCandidateData: () => require('../scripts/purgeCandidateData').run()
 };
 const daysAgo = (d) => new Date(Date.now() - d * 24 * 60 * 60 * 1000);
 

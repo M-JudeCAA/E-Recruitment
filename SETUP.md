@@ -60,7 +60,7 @@ Every other field in `.env.example` needs a real value too:
 | `FRONTEND_URL` | Comma-separated list of allowed CORS origins. Leave as `http://localhost:5173,http://localhost:4174` (guest dev server + staff preview, see [below](#staff-access-on-a-separate-port)) |
 | `SMTP_*` | See [Email](#email-gmail-smtp) below |
 | `UPLOAD_DIR` | Leave as `./uploads` |
-| `ACCESS_LOG_RETENTION_DAYS` | Optional. How long the record of who viewed candidate data is kept before the scheduled job deletes it (default `730`, minimum `90`) |
+| `ACCESS_LOG_RETENTION_DAYS` | Optional. How long the record of who viewed candidate data is kept before the scheduled job deletes it (default `730`, minimum `90`). Once set on the Settings & data page (`/hr/settings`), the page's value wins |
 | `TRUST_PROXY` | Optional. Which reverse proxy to believe about a client's address, used by the sign-in rate limits. Default `loopback` (a proxy on the same machine, e.g. nginx or IIS). Set to `false` if nothing sits in front of the API, or to a hop count or proxy address if the proxy is on another machine |
 | `APP_TIMEZONE` | Optional. Time zone used for interview times in emails, notifications and calendar invitations. Default `Africa/Kampala` |
 | `INTERVIEW_ORGANIZER_EMAIL` | Optional but recommended. The mailbox shown as the organizer of interview calendar invitations - when a panelist or candidate accepts or declines, the reply goes here (e.g. the HR recruitment mailbox). Default: the address in `SMTP_FROM` |
@@ -250,7 +250,8 @@ them, so they have to be started as part of every deployment:
 | `cleanupPendingRegistrations.js` | Deletes abandoned candidate registrations whose confirmation link expired unused |
 | `cleanupVerificationTokens.js` | Deletes email-confirmation and password-reset links that were used or expired more than 7 days ago |
 | `cleanupRequisitionUploads.js` | Deletes uploaded requisitions (and their signed scans) that no vacancy or draft uses, after 24 hours |
-| `purgeAccessLog.js` | Deletes the record of who viewed candidate data once it is older than `ACCESS_LOG_RETENTION_DAYS` |
+| `purgeAccessLog.js` | Deletes the record of who viewed candidate data once it is older than the retention set on the Settings & data page (else `ACCESS_LOG_RETENTION_DAYS`) |
+| `purgeCandidateData.js` | Erases the personal data of candidates with no activity for the retention period set on the Settings & data page (default 24 months); hired candidates and anyone with an application in progress are never erased |
 
 **If they stop running, staff are told.** Every run is recorded in the
 `SystemHealth` table. If any job hasn't succeeded in 3 hours, the HR home
@@ -297,6 +298,7 @@ both, or SLA escalations could be checked twice in the same hour.
 0 * * * * cd /path/to/backend && node scripts/expireOffers.js >> /var/log/erecruitment/offers.log 2>&1
 0 * * * * cd /path/to/backend && node scripts/cleanupRequisitionUploads.js >> /var/log/erecruitment/cleanup.log 2>&1
 0 * * * * cd /path/to/backend && node scripts/purgeAccessLog.js >> /var/log/erecruitment/cleanup.log 2>&1
+0 * * * * cd /path/to/backend && node scripts/purgeCandidateData.js >> /var/log/erecruitment/cleanup.log 2>&1
 ```
 
 All of them run hourly: the warning treats a job as stopped after 3 hours

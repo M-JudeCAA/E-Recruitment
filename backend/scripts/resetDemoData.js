@@ -28,14 +28,14 @@ const { spawnSync } = require('child_process');
 const prisma = require('../src/config/db');
 const { DEMO_STAFF } = require('./lib/demoStaff');
 
-// Children before parents, so no delete trips a foreign key. StaffUser and
-// SlaPolicy are deliberately absent.
+// Children before parents, so no delete trips a foreign key. StaffUser,
+// SlaPolicy and Setting (the retention settings) are deliberately absent.
 const TABLES = [
   'DelegationUsage', 'Delegation',
   'ShortlistDecision', 'ShortlistRating', 'ShortlistAssignment', 'ShortlistMember', 'ShortlistExercise',
   'PanelMember', 'InterviewRound',
   'Offer', 'ApplicationDocument', 'Application', 'ExcoShortlistApproval',
-  'CandidateNotification', 'VerificationToken', 'PendingCandidateRegistration',
+  'CandidateNotification', 'VerificationToken', 'PendingCandidateRegistration', 'DataSubjectRequest', 'DataPurgeLog',
   'InternalProfile', 'WorkExperience', 'Education', 'ExamGrade', 'Certificate', 'Candidate',
   'Notification', 'TaskEscalation', 'AuditLog', 'SystemHealth', 'DataAccessLog',
   'VacancyDraft', 'DocumentTemplate', 'Vacancy', 'JobRefSequence', 'Position', 'Department', 'OrgImport', 'Directorate'
@@ -49,7 +49,7 @@ const DELEGATE = {
   PanelMember: 'panelMember', InterviewRound: 'interviewRound',
   Offer: 'offer', Application: 'application', ExcoShortlistApproval: 'excoShortlistApproval',
   CandidateNotification: 'candidateNotification', VerificationToken: 'verificationToken',
-  PendingCandidateRegistration: 'pendingCandidateRegistration',
+  PendingCandidateRegistration: 'pendingCandidateRegistration', DataSubjectRequest: 'dataSubjectRequest', DataPurgeLog: 'dataPurgeLog',
   InternalProfile: 'internalProfile', WorkExperience: 'workExperience', Education: 'education',
   ExamGrade: 'examGrade', Certificate: 'certificate', Candidate: 'candidate',
   Notification: 'notification', TaskEscalation: 'taskEscalation', AuditLog: 'auditLog', SystemHealth: 'systemHealth',

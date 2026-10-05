@@ -201,6 +201,8 @@ model StaffUser {
   applicationsShortlistApproved  Application[]           @relation("ApplicationShortlistApprovedBy")
   excoShortlistApprovalsUploaded ExcoShortlistApproval[] @relation("ExcoShortlistApprovalUploadedBy")
   documentTemplatesUpdated       DocumentTemplate[]      @relation("DocumentTemplateUpdatedBy")
+  settingsUpdated                Setting[]               @relation("SettingUpdatedBy")
+  dataRequestsDecided            DataSubjectRequest[]    @relation("DataSubjectRequestDecidedBy")
   applicationsMeritProposed      Application[]           @relation("ApplicationMeritProposedBy")
   applicationsMeritApproved      Application[]           @relation("ApplicationMeritApprovedBy")
   offersReturned                 Offer[]                 @relation("OfferReturnedBy")
@@ -674,6 +676,11 @@ model Candidate {
   // notification exactly once; completeness itself is always computed
   // fresh (see backend/src/utils/profileCompleteness.js), never cached.
   profileCompletedAt DateTime?
+  // Set when the candidate's personal data was erased - by the retention
+  // purge or an erasure request (services/candidatePurgeService.js). The
+  // row stays, anonymised, so their applications still count in the
+  // recruitment history.
+  purgedAt           DateTime?
 
   workExperience     WorkExperience[]
   education          Education[]
@@ -683,6 +690,7 @@ model Candidate {
   internalProfile    InternalProfile?
   verificationTokens VerificationToken[]
   notifications      CandidateNotification[]
+  dataRequests       DataSubjectRequest[]
 
   @@index([phoneKey])
 }
@@ -1396,6 +1404,9 @@ enum SlaTaskType {
   OfferExpired
   // Legacy (interview sessions, removed) - see InterviewReadyToFinalize.
   InterviewSessionNotStarted
+  // A candidate asked for their data to be erased - to every Manager
+  // (dataProtectionController). taskId is the DataSubjectRequest id.
+  DataErasureRequested
   // An approver returned a vacancy for revision, or rejected it, with a
   // comment - to whoever created it (vacancyController.returnForRevision /
   // reject). taskId is the vacancy id.
@@ -1472,6 +1483,10 @@ enum CandidateNotificationType {
   // response deadline, and the notice once it has lapsed.
   OfferExpiring
   OfferExpired
+  // A data-subject request was refused, with the reason
+  // (dataProtectionController). A completed erasure is told by email only -
+  // nothing is left to show it in.
+  DataRequestRefused
 }
 
 // A separate model rather than reusing Notification above: recipientId
@@ -1546,4 +1561,54 @@ model DocumentTemplate {
   updatedById Int
   updatedBy   StaffUser @relation("DocumentTemplateUpdatedBy", fields: [updatedById], references: [id])
   updatedAt   DateTime  @updatedAt
+}
+
+// System settings a system administrator or HR Manager+ can change
+// (services/settingsService.js, which holds each one's default and limits).
+model Setting {
+  key         String     @id @db.VarChar(60)
+  value       Json
+  updatedById Int?
+  updatedBy   StaffUser? @relation("SettingUpdatedBy", fields: [updatedById], references: [id])
+  updatedAt   DateTime   @updatedAt
+}
+
+enum DataRequestStatus {
+  Pending
+  Completed
+  Refused
+}
+
+// A candidate's request to have their personal data erased (FR-ATS-080).
+// A Manager+ completes it (the data is purged at once) or refuses it with
+// a reason. A copy of their data is self-service and needs no request.
+model DataSubjectRequest {
+  id             Int               @id @default(autoincrement())
+  candidateId    Int
+  candidate      Candidate         @relation(fields: [candidateId], references: [id])
+  reason         String?           @db.Text
+  status         DataRequestStatus @default(Pending)
+  decidedById    Int?
+  decidedBy      StaffUser?        @relation("DataSubjectRequestDecidedBy", fields: [decidedById], references: [id])
+  decidedAt      DateTime?
+  decisionReason String?           @db.Text
+  createdAt      DateTime          @default(now())
+
+  @@index([status])
+  @@index([candidateId])
+}
+
+// One row per candidate whose personal data was erased (FR-ATS-079/080):
+// why (Retention or ErasureRequest), by whom (null for the scheduled purge),
+// and what was removed. No personal data in it.
+model DataPurgeLog {
+  id            Int      @id @default(autoincrement())
+  candidateId   Int
+  reason        String   @db.VarChar(30)
+  requestId     Int?
+  performedById Int?
+  removed       Json
+  at            DateTime @default(now())
+
+  @@index([at])
 }

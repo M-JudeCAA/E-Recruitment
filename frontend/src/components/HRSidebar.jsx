@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Home, Briefcase, FileText, Building2, CalendarClock, Award, LayoutDashboard, ClipboardCheck, Users, BarChart3, Share2, FileSignature } from 'lucide-react';
+import { Home, Briefcase, FileText, Building2, CalendarClock, Award, LayoutDashboard, ClipboardCheck, Users, BarChart3, Share2, FileSignature, Settings } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useAuth } from '../models/AuthContext';
 import staffClient from '../models/staffApiClient';
@@ -26,6 +26,8 @@ export default function HRSidebar({ active }) {
   // Staff account administration is a system administrator's, not any HR
   // role's (StaffAccounts.jsx).
   const accountsItem = { key: 'staff-accounts', label: 'Staff accounts', icon: Users, to: '/hr/staff-accounts', section: 'Administration' };
+  // Settings & data (SettingsAndData.jsx): a system administrator or Manager+.
+  const settingsItem = { key: 'settings', label: 'Settings & data', icon: Settings, to: '/hr/settings', section: 'Administration' };
   const [pendingApprovals, setPendingApprovals] = useState(null);
 
   useEffect(() => {
@@ -59,11 +61,12 @@ export default function HRSidebar({ active }) {
       ? [{ key: 'staff-management', label: 'Delegations', icon: Share2, to: '/hr/staff-management', section: 'Organization' }]
       : []),
     ...(staff?.isSystemAdmin ? [accountsItem] : []),
+    ...(staff?.isSystemAdmin || isExecutive ? [settingsItem] : []),
   ];
 
   // An accounts-only system administrator (no HR role) has nothing else here.
   const items = !staff?.role
-    ? [accountsItem]
+    ? [accountsItem, settingsItem]
     : isExecutive
     ? [
         { key: 'executive', label: 'Executive Overview', icon: LayoutDashboard, to: '/hr/executive' },
