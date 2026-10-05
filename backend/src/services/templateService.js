@@ -26,7 +26,7 @@ async function get(key) {
     where: { key }, include: { updatedBy: { select: { id: true, name: true } } }
   });
   return {
-    key, name: def.name, description: def.description, placeholders: def.placeholders,
+    key, name: def.name, description: def.description, placeholders: def.placeholders, kind: def.kind || 'document', subject: def.subject || null,
     body: row ? row.body : def.body, defaultBody: def.body, edited: Boolean(row),
     updatedAt: row?.updatedAt || null, updatedBy: row?.updatedBy || null
   };
@@ -36,7 +36,7 @@ async function list() {
   const rows = await prisma.documentTemplate.findMany({ include: { updatedBy: { select: { id: true, name: true } } } });
   return Object.entries(DEFAULTS).map(([key, def]) => {
     const row = rows.find((r) => r.key === key);
-    return { key, name: def.name, description: def.description, edited: Boolean(row), updatedAt: row?.updatedAt || null, updatedBy: row?.updatedBy || null };
+    return { key, name: def.name, description: def.description, kind: def.kind || 'document', edited: Boolean(row), updatedAt: row?.updatedAt || null, updatedBy: row?.updatedBy || null };
   });
 }
 

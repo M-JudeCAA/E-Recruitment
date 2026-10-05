@@ -12,7 +12,9 @@ const CANDIDATE_SELECT = {
   location: true, districtOfOrigin: true, linkedinUrl: true, portfolioUrl: true,
   nationalId: true, dateOfBirth: true, flyingHours: true,
   education: true, workExperience: true, examGrades: true, certificates: true,
-  internalProfile: true
+  internalProfile: true,
+  // HR's tags on the candidate (talentController).
+  tags: { select: { tag: { select: { id: true, name: true } } } }
 };
 
 // Interview rounds as HR lists show them - with the panel, so a review card
@@ -32,6 +34,7 @@ const HR_LIST_INCLUDE = {
   },
   interviewRounds: HR_ROUNDS_INCLUDE,
   offer: true,
+  hire: { select: { id: true, caseRef: true, hiredAt: true } },
   rejectedBy: { select: { name: true } },
   documents: { orderBy: { uploadedAt: 'asc' } }
 };
@@ -93,6 +96,7 @@ module.exports = {
       candidate: { select: CANDIDATE_SELECT },
       interviewRounds: HR_ROUNDS_INCLUDE,
       offer: true,
+      hire: { select: { id: true, caseRef: true, hiredAt: true } },
       rejectedBy: { select: { name: true } },
       documents: { orderBy: { uploadedAt: 'asc' } }
     },

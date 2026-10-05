@@ -1,3 +1,4 @@
+import VacancyPipelineBoard from '../components/VacancyPipelineBoard';
 import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
@@ -31,6 +32,8 @@ import { debounce } from '../utils/debounce';
 // decision with its own propose/approve split on the backend: who to
 // interview, what the panel concluded, and who is offered the job.
 const STAGES = [
+  // Every applicant on one board, by stage (VacancyPipelineBoard).
+  { key: 'pipeline', label: 'All stages', hint: 'Everyone on one board; email or reject in bulk' },
   { key: 'shortlist', label: 'Shortlist for interview', hint: 'Screen and choose who to interview' },
   { key: 'interviews', label: 'Interviews', hint: 'Schedule and record results' },
   { key: 'merit', label: 'Merit list & offers', hint: 'Rank results, approve, offer' }
@@ -55,7 +58,7 @@ function StageTabs({ stage, counts, onChange }) {
               width: 26, height: 26, borderRadius: '50%', flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               fontWeight: 700, fontSize: 13, background: active ? 'var(--color-primary)' : 'var(--color-bg-subtle)', color: active ? '#fff' : 'var(--color-text-muted)'
             }}>
-              {i + 1}
+              {s.key === 'pipeline' ? '\u2261' : i}
             </span>
             <span style={{ minWidth: 0, flex: 1 }}>
               <span style={{ display: 'block', fontWeight: 600, fontSize: 14 }}>{s.label}</span>
@@ -327,6 +330,7 @@ export default function ApplicationManagement() {
     { label: 'On merit list', value: vacancyApps.filter((a) => a.meritStatus).length, color: 'var(--color-accent)' }
   ] : null;
   const stageCounts = {
+    pipeline: vacancyApps.length,
     shortlist: countStatus('Submitted', 'UnderReview', 'ShortlistProposed'),
     interviews: countStatus('Shortlisted', 'InterviewScheduled'),
     merit: countStatus('Interviewed')
@@ -507,6 +511,10 @@ export default function ApplicationManagement() {
                   onGoToStage={setStage} committeeManaged={committeeManaged}
                 />
               </>
+            )}
+            {stage === 'pipeline' && (
+              <VacancyPipelineBoard vacancy={vacancy} applications={vacancyApps} staffRole={staff?.role}
+                onUpdated={loadVacancyMode} onGoToStage={setStage} />
             )}
             {stage === 'interviews' && (
               <VacancyInterviewsPanel

@@ -37,6 +37,8 @@ const directoryRoutes = require('./routes/directory');
 const documentRoutes = require('./routes/documents');
 const settingsRoutes = require('./routes/settings');
 const dataProtectionRoutes = require('./routes/dataProtection');
+const talentRoutes = require('./routes/talent');
+const bulkEmailRoutes = require('./routes/bulkEmail');
 const { errorHandler } = require('./utils/errorResponse');
 
 const app = express();
@@ -94,6 +96,8 @@ app.use('/api/directory', directoryRoutes);
 app.use('/api/documents', documentRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/data-protection', dataProtectionRoutes);
+app.use('/api/talent', talentRoutes);
+app.use('/api/bulk-email', bulkEmailRoutes);
 
 // Catch-all error handler - logs the full error server-side but only ever
 // sends the client a sanitized message (never Prisma query text, database

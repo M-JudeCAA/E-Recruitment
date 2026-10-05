@@ -203,6 +203,9 @@ model StaffUser {
   documentTemplatesUpdated       DocumentTemplate[]      @relation("DocumentTemplateUpdatedBy")
   settingsUpdated                Setting[]               @relation("SettingUpdatedBy")
   hiresRecorded                  Hire[]                  @relation("HireRecordedBy")
+  tagsCreated                    CandidateTag[]          @relation("CandidateTagCreatedBy")
+  taggingsAdded                  CandidateTagging[]      @relation("CandidateTaggingAddedBy")
+  bulkEmailsSent                 BulkEmail[]             @relation("BulkEmailSentBy")
   dataRequestsDecided            DataSubjectRequest[]    @relation("DataSubjectRequestDecidedBy")
   applicationsMeritProposed      Application[]           @relation("ApplicationMeritProposedBy")
   applicationsMeritApproved      Application[]           @relation("ApplicationMeritApprovedBy")
@@ -700,6 +703,8 @@ model Candidate {
   verificationTokens VerificationToken[]
   notifications      CandidateNotification[]
   dataRequests       DataSubjectRequest[]
+  tags               CandidateTagging[]
+  bulkEmailsReceived BulkEmailRecipient[]
 
   @@index([phoneKey])
 }
@@ -1695,4 +1700,63 @@ enum HandoffStatus {
   Pending // waiting to be sent, or to be retried
   Sent // the HRIS accepted it
   Failed // gave up after the retries; Directors are alerted
+}
+
+// HR's own labels on candidates (FR-ATS-051), e.g. "Qualified", "ATM
+// trainees" - kept on the candidate, so they follow them across vacancies
+// and show in the candidate search (talentController). Removed with the
+// candidate's other data by the erasure purge.
+model CandidateTag {
+  id          Int                @id @default(autoincrement())
+  name        String             @unique @db.VarChar(60)
+  createdById Int
+  createdBy   StaffUser          @relation("CandidateTagCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime           @default(now())
+  taggings    CandidateTagging[]
+}
+
+model CandidateTagging {
+  candidateId Int
+  candidate   Candidate    @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  tagId       Int
+  tag         CandidateTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  addedById   Int
+  addedBy     StaffUser    @relation("CandidateTaggingAddedBy", fields: [addedById], references: [id])
+  addedAt     DateTime     @default(now())
+
+  @@id([candidateId, tagId])
+  @@index([tagId])
+}
+
+// An email HR sent to many candidates at once (FR-ATS-050), from one of
+// the email templates (config/documentTemplates.js) - the subject and the
+// body as sent (with {{placeholders}} still in it; each recipient's copy is
+// filled with their own details), and who it went to.
+model BulkEmail {
+  id             Int                  @id @default(autoincrement())
+  templateKey    String?              @db.VarChar(60)
+  subject        String               @db.VarChar(200)
+  body           String               @db.Text
+  vacancyId      Int?
+  sentById       Int
+  sentBy         StaffUser            @relation("BulkEmailSentBy", fields: [sentById], references: [id])
+  sentAt         DateTime             @default(now())
+  recipientCount Int
+  failedCount    Int                  @default(0)
+  recipients     BulkEmailRecipient[]
+
+  @@index([vacancyId])
+}
+
+model BulkEmailRecipient {
+  id            Int       @id @default(autoincrement())
+  bulkEmailId   Int
+  bulkEmail     BulkEmail @relation(fields: [bulkEmailId], references: [id], onDelete: Cascade)
+  candidateId   Int
+  candidate     Candidate @relation(fields: [candidateId], references: [id])
+  applicationId Int?
+  email         String
+  sent          Boolean
+
+  @@index([candidateId])
 }

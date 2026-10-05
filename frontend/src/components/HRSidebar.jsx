@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Home, Briefcase, FileText, Building2, CalendarClock, Award, LayoutDashboard, ClipboardCheck, Users, BarChart3, Share2, FileSignature, Settings } from 'lucide-react';
+import { Home, Briefcase, FileText, Building2, CalendarClock, Award, LayoutDashboard, ClipboardCheck, Users, BarChart3, Share2, FileSignature, Settings, Search } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useAuth } from '../models/AuthContext';
 import staffClient from '../models/staffApiClient';
@@ -56,6 +56,7 @@ export default function HRSidebar({ active }) {
     { key: 'applications', label: 'Applications', icon: FileText, to: '/hr/applications', section: 'Recruitment' },
     { key: 'interviews', label: 'Interviews', icon: CalendarClock, to: '/hr/interviews', section: 'Recruitment' },
     { key: 'offers', label: 'Offers', icon: Award, to: '/hr?tab=offers', section: 'Recruitment' },
+    { key: 'candidates', label: 'Candidates', icon: Search, to: '/hr/candidates', section: 'Recruitment' },
     { key: 'departments', label: 'Departments', icon: Building2, to: '/hr/departments', section: 'Organization' },
     { key: 'templates', label: 'Document templates', icon: FileSignature, to: '/hr/templates', section: 'Organization' },
     ...(canManageTeam

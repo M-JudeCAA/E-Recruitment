@@ -24,6 +24,16 @@ const CANDIDATE = [
   { key: 'signatoryTitle', label: 'Signatory\'s title' }
 ];
 
+// What an email to a candidate can use. For a candidate picked in the
+// candidate search, the job is that of their most recent application.
+const EMAIL = [
+  { key: 'date', label: 'Today\'s date' },
+  { key: 'candidateName', label: 'Candidate\'s full name' },
+  { key: 'jobTitle', label: 'Job title' },
+  { key: 'jobRef', label: 'Job reference' },
+  { key: 'department', label: 'Department' }
+];
+
 const OFFER = [
   ...CANDIDATE,
   { key: 'salary', label: 'Salary, e.g. UGX 4,500,000 per month' },
@@ -145,6 +155,44 @@ ${SIGNATURE}`
 </tbody>
 </table>
 <p>{{date}}</p>`
+  },
+
+  // Emails HR sends to many candidates at once (bulkEmailController,
+  // FR-ATS-050). `kind: 'email'` - HR can still change the subject and
+  // wording for one send; each copy is filled with that candidate's details.
+  emailRegret: {
+    kind: 'email',
+    name: 'Email: not successful',
+    description: 'Sent in bulk to candidates whose applications did not go further.',
+    subject: 'Your application for {{jobTitle}} ({{jobRef}})',
+    placeholders: EMAIL,
+    body: `<p>Dear {{candidateName}},</p>
+<p>Thank you for applying for the position of <strong>{{jobTitle}}</strong> ({{jobRef}}) at the Uganda Civil Aviation Authority.</p>
+<p>We regret to inform you that your application was not successful on this occasion. We received many strong applications and the selection was competitive.</p>
+<p>We encourage you to apply for future vacancies that match your qualifications and experience.</p>
+<p>Yours sincerely,<br>UCAA Human Resources</p>`
+  },
+  emailScreeningInvitation: {
+    kind: 'email',
+    name: 'Email: invitation to an assessment',
+    description: 'Invites candidates to a screening test, aptitude test or document check - fill in the details before sending.',
+    subject: 'Invitation - {{jobTitle}} ({{jobRef}})',
+    placeholders: EMAIL,
+    body: `<p>Dear {{candidateName}},</p>
+<p>Thank you for your application for the position of <strong>{{jobTitle}}</strong> ({{jobRef}}).</p>
+<p>You are invited to [describe the assessment] on [date] at [time], at [venue]. Please bring your National ID and the originals of your academic documents.</p>
+<p>Please confirm your attendance by replying to this email.</p>
+<p>Yours sincerely,<br>UCAA Human Resources</p>`
+  },
+  emailGeneral: {
+    kind: 'email',
+    name: 'Email: general update',
+    description: 'A plain message to the selected candidates - write it before sending.',
+    subject: 'Update on your application - {{jobRef}}',
+    placeholders: EMAIL,
+    body: `<p>Dear {{candidateName}},</p>
+<p>[Your message]</p>
+<p>Yours sincerely,<br>UCAA Human Resources</p>`
   }
 };
 

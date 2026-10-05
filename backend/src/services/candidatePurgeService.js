@@ -91,6 +91,8 @@ async function purgeCandidate(candidateId, { reason, requestId = null, performed
     await tx.internalProfile.deleteMany({ where: { candidateId } });
     await tx.verificationToken.deleteMany({ where: { candidateId } });
     await tx.candidateNotification.deleteMany({ where: { candidateId } });
+    await tx.candidateTagging.deleteMany({ where: { candidateId } });
+    await tx.bulkEmailRecipient.updateMany({ where: { candidateId }, data: { email: `removed-${candidateId}@removed.invalid` } });
     if (applicationIds.length) {
       await tx.applicationDocument.deleteMany({ where: { applicationId: { in: applicationIds } } });
       await tx.application.updateMany({

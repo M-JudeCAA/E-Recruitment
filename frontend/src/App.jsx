@@ -27,6 +27,7 @@ import ExecutiveDashboard from "./views/ExecutiveDashboard";
 import ApprovalsCenter from "./views/ApprovalsCenter";
 import Analytics from "./views/Analytics";
 import RecruitmentDashboard from "./views/RecruitmentDashboard";
+import CandidateSearch from "./views/CandidateSearch";
 import HRDashboard from "./views/HRDashboard";
 import ApplicationManagement from "./views/ApplicationManagement";
 import DepartmentAdmin from "./views/DepartmentAdmin";
@@ -152,6 +153,14 @@ export default function App() {
             element={
               <RequireStaff minRole="Manager">
                 <Analytics />
+              </RequireStaff>
+            }
+          />
+          <Route
+            path="/hr/candidates"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <CandidateSearch />
               </RequireStaff>
             }
           />

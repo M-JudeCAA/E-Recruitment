@@ -8,6 +8,7 @@ import StatusBadge from './StatusBadge';
 import Modal from './Modal';
 import AuditTrail from './AuditTrail';
 import AccessLog from './AccessLog';
+import TagEditor from './TagEditor';
 import TextArea from './TextArea';
 import { fileLink } from '../utils/fileLink';
 import { safeJsonParse } from '../utils/safeJsonParse';
@@ -149,6 +150,10 @@ export default function ApplicationReviewCard({
               &#9888; Possible duplicate of {app.possibleDuplicates.map((d) => `${d.candidateName} (#${d.applicationId})`).join(', ')} - same phone number
             </span>
           )}
+          {/* HR's tags on the candidate - clicks here mustn't fold the card. */}
+          <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}>
+            <TagEditor candidateId={app.candidate.id} tags={(app.candidate.tags || []).map((t) => t.tag || t)} />
+          </div>
           {app.screeningPassed === false && (
             <span title={safeJsonParse(app.screeningReasons, []).join('; ')}
               style={{ color: 'var(--color-warning)', marginLeft: 8, fontSize: 13 }}>
