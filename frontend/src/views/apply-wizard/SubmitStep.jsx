@@ -117,6 +117,8 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
   }
 
   const missingAcademic = eligibility && eligibility.academicDocuments === 0;
+  const missingEvidence = (eligibility?.evidence || []).filter((e) => !e.provided);
+  const blocked = missingAcademic || missingEvidence.length > 0;
 
   return (
     <div className="text-center py-6">
@@ -128,6 +130,15 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
             Go to Documents
           </button>
         </p>
+      ) : missingEvidence.length > 0 ? (
+        <div style={{ fontSize: 14, color: 'var(--color-danger)', maxWidth: 460, margin: '0 auto 24px', textAlign: 'left' }}>
+          Please attach the evidence for:
+          <ul style={{ margin: '6px 0' }}>{missingEvidence.map((e) => <li key={e.key}>{e.label}</li>)}</ul>
+          <button type="button" onClick={() => goToStep('documents')}
+            style={{ fontSize: 14, color: 'var(--color-primary)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}>
+            Go to Documents
+          </button>
+        </div>
       ) : (
         <p style={{ fontSize: 14, color: 'var(--color-text-muted)', marginBottom: 24, maxWidth: 420, margin: '0 auto 24px' }}>
           {eligibility?.eligible ? "You meet this role's requirements. " : ''}Once you send this, UCAA will confirm receipt by email.
@@ -142,9 +153,9 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
           <a href="/privacy" target="_blank" rel="noopener noreferrer">privacy notice</a>.
         </span>
       </label>
-      <button onClick={handleSubmit} disabled={busy || missingAcademic || !consent}
+      <button onClick={handleSubmit} disabled={busy || blocked || !consent}
         className="inline-flex items-center gap-2"
-        style={{ background: 'var(--color-primary)', color: '#fff', padding: '12px 28px', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, border: 'none', cursor: (busy || missingAcademic || !consent) ? 'not-allowed' : 'pointer', opacity: (busy || missingAcademic || !consent) ? 0.6 : 1 }}>
+        style={{ background: 'var(--color-primary)', color: '#fff', padding: '12px 28px', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, border: 'none', cursor: (busy || blocked || !consent) ? 'not-allowed' : 'pointer', opacity: (busy || blocked || !consent) ? 0.6 : 1 }}>
         <Send size={15} /> {busy ? 'Sending...' : 'Send application'}
       </button>
       {error && <p style={{ fontSize: 13, color: 'var(--color-danger)', marginTop: 16 }}>{error}</p>}

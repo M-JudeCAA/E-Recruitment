@@ -177,7 +177,7 @@ export default function ApplicationReviewCard({
           Cover letter: {app.coverLetterUrl ? <a href={fileLink(app.coverLetterUrl)} target="_blank" rel="noreferrer">view</a> : 'none'}
         </span>
       </div>
-      {[['Academic', 'Academic documents'], ['Other', 'Other documents']].map(([category, heading]) => {
+      {[['Academic', 'Academic documents'], ['Evidence', 'Evidence for screening'], ['Other', 'Other documents']].map(([category, heading]) => {
         const docs = (app.documents || []).filter((d) => d.category === category);
         if (docs.length === 0) return null;
         return (

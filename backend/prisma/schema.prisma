@@ -939,6 +939,7 @@ model Application {
 enum ApplicationDocumentCategory {
   Academic // certificates, transcripts, result slips
   Other // professional certificates, licences, testimonials, anything else relevant
+  Evidence // proof of a claim screening relies on (utils/screeningEvidence.js) - see evidenceKey
 }
 
 // One uploaded file attached to an application (see Application.documents).
@@ -952,6 +953,9 @@ model ApplicationDocument {
   application   Application                 @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   category      ApplicationDocumentCategory
   label         String? // candidate's own description, e.g. "BSc transcript"
+  // For an Evidence document: which requirement it backs - nationalId,
+  // flyingHours, examResults, experience, transcript, or question:<id>.
+  evidenceKey   String?                     @db.VarChar(80)
   fileUrl       String
   originalName  String
   uploadedAt    DateTime                    @default(now())

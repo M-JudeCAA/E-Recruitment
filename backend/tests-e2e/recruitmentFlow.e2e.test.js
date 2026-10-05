@@ -1,5 +1,6 @@
+const request = require('supertest');
 const {
-  prisma, resetDatabase, createStaff, createOrg, createCandidate,
+  prisma, app, resetDatabase, createStaff, createOrg, createCandidate,
   staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition, recordInterviewResults,
   attachExcoApproval
 } = require('./helpers');
@@ -307,4 +308,41 @@ test('a staff member who applies is shut out of that vacancy, and only that one'
   // The Principal HR Officers were told.
   const notices = await prisma.notification.findMany({ where: { taskType: 'StaffApplicantConflict', channel: 'InApp' } });
   expect(notices.map((n) => n.recipientId).sort()).toEqual([staff.phro.id, staff.phro2.id].sort());
+});
+
+test('a claim screening relies on needs its evidence before the application can be sent', async () => {
+  const created = expectStatus(await createVacancyFromRequisition(tokens.hro, {
+    positionId: org.position.id, postingType: 'External', deadline: inDays(30), positionsRequired: 1, minimumExperienceYears: 2,
+    disqualifyingRequirements: [{ text: 'Do you hold a valid HR practising certificate?', requiredAnswer: 'Yes', evidenceRequired: true, evidenceLabel: 'Your HR practising certificate' }]
+  }), 201).body;
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${created.id}/approve`), 200);
+  const question = created.disqualifyingRequirements[0];
+  expect(question).toEqual(expect.objectContaining({ evidenceRequired: true, evidenceLabel: 'Your HR practising certificate' }));
+
+  const candidate = await createCandidate({ fullName: 'Ivy Ikiriza', email: 'ivy@example.com' });
+  const token = await candidateToken(candidate.email);
+  const draft = expectStatus(await api(token).post('/api/applications', {
+    vacancyId: created.id, referees: REFEREES, disqualifyingResponses: JSON.stringify([{ id: question.id, answer: true }])
+  }), 201).body;
+  await attachAcademicDocument(token, draft.id);
+
+  const eligibility = expectStatus(await api(token).get(`/api/applications/eligibility/${created.id}`), 200).body;
+  expect(eligibility.evidence.map((e) => [e.key, e.provided])).toEqual([['experience', false], [`question:${question.id}`, false]]);
+  const refused = await api(token).patch(`/api/applications/${draft.id}/submit`, { consent: true });
+  expect(refused.status).toBe(400);
+  expect(refused.body.code).toBe('EVIDENCE_REQUIRED');
+
+  const attach = (evidenceKey) => request(app).post(`/api/applications/${draft.id}/documents`).set('Authorization', `Bearer ${token}`)
+    .field('category', 'Evidence').field('evidenceKey', evidenceKey)
+    .attach('file', Buffer.from('%PDF-1.4 evidence'), { filename: 'evidence.pdf', contentType: 'application/pdf' });
+  expect((await attach('nationalId')).status).toBe(400); // this vacancy has no age limit
+  expectStatus(await attach('experience'), 201);
+  const certificate = expectStatus(await attach(`question:${question.id}`), 201).body;
+  expect(certificate.label).toBe('Your HR practising certificate');
+
+  expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`, { consent: true }), 200);
+  // HR sees the evidence with the application.
+  const listed = expectStatus(await api(tokens.hro).get(`/api/vacancies/${created.id}/applications`), 200).body;
+  const mine = (Array.isArray(listed) ? listed : listed.data).find((a) => a.id === draft.id);
+  expect(mine.documents.filter((d) => d.category === 'Evidence').map((d) => d.evidenceKey).sort()).toEqual(['experience', `question:${question.id}`].sort());
 });

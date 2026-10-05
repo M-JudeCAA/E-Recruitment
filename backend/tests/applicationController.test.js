@@ -23,6 +23,7 @@ function mockRes() {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  prisma.applicationDocument.findMany.mockResolvedValue([{ category: 'Academic', evidenceKey: null }]);
 });
 
 describe('saveDraft', () => {
@@ -255,7 +256,7 @@ describe('submit', () => {
     };
     const licenceQuestion = { id: 'q1', text: 'Do you hold a valid ATC licence?', requiredAnswer: 'Yes' };
 
-    function arrange({ application = {}, vacancy = {}, academicDocuments = 1 } = {}) {
+    function arrange({ application = {}, vacancy = {}, academicDocuments = 1, documents = [] } = {}) {
       prisma.application.findUnique.mockResolvedValue({
         id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', referees: completeReferees,
         candidate: { candidateType: 'External', internalProfile: null }, ...application
@@ -265,7 +266,9 @@ describe('submit', () => {
         title: 'Air Traffic Controller', jobRef: 'UCAA/1', reviewStartedAt: null, ...vacancy
       });
       prisma.candidate.findUnique.mockResolvedValue(completeCandidate);
-      prisma.applicationDocument.count.mockResolvedValue(academicDocuments);
+      prisma.applicationDocument.findMany.mockResolvedValue([
+        ...Array.from({ length: academicDocuments }, () => ({ category: 'Academic', evidenceKey: null })), ...documents
+      ]);
       prisma.application.updateMany.mockResolvedValue({ count: 1 });
       prisma.workExperience.findMany.mockResolvedValue([]);
       prisma.education.findMany.mockResolvedValue([]);
@@ -277,8 +280,24 @@ describe('submit', () => {
 
       await applicationDraftController.submit({ params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } }, res);
 
-      expect(prisma.applicationDocument.count).toHaveBeenCalledWith({ where: { applicationId: 1, category: 'Academic' } });
+      expect(prisma.applicationDocument.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { applicationId: 1 } }));
       expect(res.status).toHaveBeenCalledWith(400);
+      expect(prisma.application.updateMany).not.toHaveBeenCalled();
+    });
+
+    test('a claim that passes screening needs its evidence attached - the licence for a Yes', async () => {
+      const licence = { ...licenceQuestion, evidenceRequired: true, evidenceLabel: 'Your ATC licence' };
+      arrange({
+        vacancy: { disqualifyingRequirements: [licence] },
+        application: { disqualifyingResponses: [{ ...licence, answer: true }] },
+        documents: [{ category: 'Other', evidenceKey: null }]
+      });
+      const res = mockRes();
+      await applicationDraftController.submit({ params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } }, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json.mock.calls[0][0]).toEqual(expect.objectContaining({
+        code: 'EVIDENCE_REQUIRED', missing: [expect.objectContaining({ key: 'question:q1', label: 'Your ATC licence' })]
+      }));
       expect(prisma.application.updateMany).not.toHaveBeenCalled();
     });
 
@@ -370,9 +389,26 @@ describe('supporting documents', () => {
     }, res);
 
     expect(prisma.applicationDocument.create).toHaveBeenCalledWith({
-      data: { applicationId: 1, category: 'Academic', label: 'Transcript', fileUrl: '/api/files/abc.pdf', originalName: 'BSc transcript.pdf' }
+      data: { applicationId: 1, category: 'Academic', label: 'Transcript', evidenceKey: null, fileUrl: '/api/files/abc.pdf', originalName: 'BSc transcript.pdf' }
     });
     expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  test('files evidence under one of the vacancy\'s requirements, labelled with it', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, status: 'Draft', vacancyId: 10 });
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 10, maximumAge: 35 });
+    prisma.applicationDocument.findMany.mockResolvedValue([]);
+    prisma.applicationDocument.create.mockResolvedValue({ id: 8 });
+    let res = mockRes();
+    await applicationDraftController.addDocument({ params: { id: '1' }, user: { id: 5 }, file, body: { category: 'Evidence', evidenceKey: 'nationalId' } }, res);
+    expect(prisma.applicationDocument.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      category: 'Evidence', evidenceKey: 'nationalId', label: 'Copy of your National ID'
+    }) });
+
+    // Something this vacancy doesn't ask for is refused.
+    res = mockRes();
+    await applicationDraftController.addDocument({ params: { id: '1' }, user: { id: 5 }, file, body: { category: 'Evidence', evidenceKey: 'flyingHours' } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
   });
 
   test('refuses changes once the application has been submitted', async () => {

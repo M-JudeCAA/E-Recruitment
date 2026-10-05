@@ -7,7 +7,7 @@ import { disqualifyingMet } from '../../utils/screeningQuestions';
 
 export default function ReviewStep({
   profile, coverLetter, documents, referees, profileDetails, questions, internalProfile, candidateType, goTo, stepIndexes,
-  desirableRequirements, desirableAnswers, disqualifyingRequirements, disqualifyingAnswers, vacancy
+  desirableRequirements, desirableAnswers, disqualifyingRequirements, disqualifyingAnswers, vacancy, evidence = []
 }) {
   const RELOCATE_LABELS = { Yes: 'Yes', No: 'No', Depends: 'Depends on the offer' };
 
@@ -58,6 +58,10 @@ export default function ReviewStep({
       rows: [
         ['CV', 'Generated automatically from your profile and application details'],
         ['Academic documents', documentNames('Academic') || 'None attached', !documentNames('Academic')],
+        ...evidence.map((e) => {
+          const attached = (documents || []).filter((d) => d.category === 'Evidence' && d.evidenceKey === e.key).map((d) => d.originalName).join(', ');
+          return [e.label, attached || 'Not attached - required', !attached];
+        }),
         ['Other documents', documentNames('Other') || 'None attached'],
         ['Cover letter', coverLetter ? coverLetter.name : 'Not attached'],
         ['Portfolio', profileDetails.portfolioUrl || '—'],

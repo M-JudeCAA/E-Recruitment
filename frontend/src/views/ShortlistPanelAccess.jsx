@@ -56,7 +56,7 @@ function Profile({ applicant }) {
       <div style={{ display: 'grid', gap: 4, marginTop: 4 }}>
         {applicant.documents.map((d) => (
           <a key={d.id} href={`${API_URL}${d.fileUrl}`} target="_blank" rel="noreferrer" style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
-            <Paperclip size={13} /> {d.category === 'Academic' ? 'Academic' : 'Other'}: {d.label || d.originalName}
+            <Paperclip size={13} /> {{ Academic: 'Academic', Evidence: 'Evidence', Other: 'Other' }[d.category] || 'Other'}: {d.label || d.originalName}
           </a>
         ))}
         {applicant.coverLetterUrl && (

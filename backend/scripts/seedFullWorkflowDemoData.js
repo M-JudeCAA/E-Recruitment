@@ -183,6 +183,21 @@ async function attachDocuments(c, applicationId) {
   }
 }
 
+// The evidence the vacancy asks for given the candidate's answers (the
+// National ID for an age limit, a licence for a "Yes", ...) - one scan each,
+// as the wizard's Documents step would collect.
+async function attachEvidence(c, applicationId, vacancyId) {
+  const { evidence = [] } = await api('GET', `/api/applications/eligibility/${vacancyId}`, { token: c.token });
+  for (const item of evidence.filter((e) => !e.provided)) {
+    const form = new FormData();
+    form.append('category', 'Evidence');
+    form.append('evidenceKey', item.key);
+    form.append('file', new Blob([pdfDocument(item.label, [`Submitted by ${c.name}`, item.hint || ''])], { type: 'application/pdf' }),
+      `${item.key.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`);
+    await api('POST', `/api/applications/${applicationId}/documents`, { token: c.token, form });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Candidates
 // ---------------------------------------------------------------------------
@@ -289,6 +304,7 @@ async function apply(c, vacancy, { submit = true, strong = true, desirable = {},
   form.append('referees', referees(c));
   const draft = await api('POST', '/api/applications', { token: c.token, form });
   await attachDocuments(c, draft.id);
+  await attachEvidence(c, draft.id, vacancy.id);
   if (!submit) return draft;
   try {
     const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: c.token, json: { consent: true } });

@@ -108,8 +108,22 @@ async function submitApplication(candidateToken, { vacancyId, desirableResponses
   draftForm.append('disqualifyingResponses', JSON.stringify(disqualifyingResponses));
   draftForm.append('referees', refereesForm());
   const draft = await api('POST', '/api/applications', { token: candidateToken, form: draftForm });
+  // Submission needs an academic document, and the evidence the vacancy asks
+  // for (the National ID for an age limit, a transcript for a minimum CGPA...).
+  await attachFile(candidateToken, draft.id, { category: 'Academic', label: 'Degree certificate' });
+  const { evidence = [] } = await api('GET', `/api/applications/eligibility/${vacancyId}`, { token: candidateToken });
+  for (const item of evidence.filter((e) => !e.provided)) {
+    await attachFile(candidateToken, draft.id, { category: 'Evidence', evidenceKey: item.key });
+  }
   const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: candidateToken, json: { consent: true } });
   return submitted;
+}
+
+async function attachFile(candidateToken, applicationId, fields) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) form.append(key, value);
+  form.append('file', new Blob([Buffer.from('%PDF-1.4 seeded demo document')], { type: 'application/pdf' }), 'document.pdf');
+  return api('POST', `/api/applications/${applicationId}/documents`, { token: candidateToken, form });
 }
 
 async function main() {
