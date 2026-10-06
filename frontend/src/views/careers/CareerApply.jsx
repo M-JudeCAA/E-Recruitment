@@ -13,17 +13,17 @@ import { PageTop, Meta } from '../../components/workspace/ui';
 import { failedDisqualifyingRequirements } from '../../utils/screeningQuestions';
 import { evidenceRequirements, missingEvidence } from '../../utils/screeningEvidence';
 import { EmploymentForm } from './forms';
-import { InternalShell, WizardRail, profileGaps, formatDay } from './careers';
+import { SITE, CareerShell, WizardRail, profileGaps, formatDay } from './careers';
 
-// Applying on Internal Careers (/careers/apply/:vacancyId): the same draft,
-// documents and submit API as the public apply wizard (ApplyForm.jsx), in
-// six short steps. The profile isn't re-typed: Check only lists what this
-// vacancy needs that the profile lacks. Employment details come filled in
-// for confirmation - HR verifies them, and changing them sends them back to
-// HR (candidateController.updateInternalProfile).
+// Applying (Internal Careers: /careers/apply/:vacancyId; public site:
+// /apply/:vacancyId) on the draft/submit API (applicationDraftController),
+// in short steps. The profile isn't re-typed: Check only lists what this
+// vacancy needs that the profile lacks. On Internal Careers, employment
+// details come filled in for confirmation - HR verifies them, and changing
+// them sends them back to HR (candidateController.updateInternalProfile).
 const STEPS = [
-  { key: 'check', label: 'Check', note: 'What this vacancy needs' },
-  { key: 'employment', label: 'Employment', note: 'Confirm your details' },
+  { key: 'check', label: 'Check', note: `What this ${SITE.jobWord} needs` },
+  ...(SITE.internal ? [{ key: 'employment', label: 'Employment', note: 'Confirm your details' }] : []),
   { key: 'questions', label: 'Questions', note: 'A few specifics' },
   { key: 'referees', label: 'Referees', note: 'Three people' },
   { key: 'documents', label: 'Documents', note: 'Certificates and evidence' },
@@ -43,7 +43,7 @@ const toList = (answers) => Object.entries(answers)
   .filter(([, a]) => typeof a === 'boolean' || (typeof a === 'number' && Number.isFinite(a)))
   .map(([id, answer]) => ({ id, answer }));
 
-export default function InternalApply() {
+export default function CareerApply() {
   const { vacancyId } = useParams();
   const navigate = useNavigate();
   const [vacancy, setVacancy] = useState(null);
@@ -67,7 +67,9 @@ export default function InternalApply() {
   const loadMe = () => client.get('/api/candidates/me').then((r) => setMe(r.data));
   useEffect(() => {
     client.get(`/api/vacancies/${vacancyId}`).then((r) => setVacancy(r.data))
-      .catch((err) => setLoadError(err.response?.status === 404 ? 'This vacancy isn’t open to UCAA employees, or is no longer available.' : 'Could not load this vacancy.'));
+      .catch((err) => setLoadError(err.response?.status === 404
+        ? (SITE.internal ? 'This vacancy isn’t open to UCAA employees, or is no longer available.' : 'This job is no longer available.')
+        : `Could not load this ${SITE.jobWord}.`));
     loadMe();
     client.get('/api/candidates/me/applications').then((r) => {
       const existing = r.data.find((a) => a.vacancyId === Number(vacancyId));
@@ -105,17 +107,17 @@ export default function InternalApply() {
     setApplication(res.data);
   };
 
-  if (loadError) return <InternalShell active="vacancies"><Alert type="error" message={loadError} /><Link to="/careers/vacancies">Back to vacancies</Link></InternalShell>;
-  if (!vacancy || !me || !loaded) return <InternalShell active="vacancies"><Skeleton width={300} height={26} /><Skeleton height={360} /></InternalShell>;
+  if (loadError) return <CareerShell active="vacancies"><Alert type="error" message={loadError} /><Link to={SITE.jobs}>Back to {SITE.jobsLabel.toLowerCase()}</Link></CareerShell>;
+  if (!vacancy || !me || !loaded) return <CareerShell active="vacancies"><Skeleton width={300} height={26} /><Skeleton height={360} /></CareerShell>;
 
   const decided = application && application.status !== 'Draft';
   const closed = vacancy.deadline && new Date(vacancy.deadline) < new Date();
   if (closed && !decided) {
     return (
-      <InternalShell active="vacancies">
+      <CareerShell active="vacancies">
         <PageTop title="Applications closed" subtitle={`${vacancy.title} closed on ${formatDay(vacancy.deadline)}.`} />
-        <div className="ws-panel ws-empty">{application ? 'Your draft is kept under My applications, but it can no longer be sent.' : 'This vacancy no longer accepts applications.'}</div>
-      </InternalShell>
+        <div className="ws-panel ws-empty">{application ? 'Your draft is kept under My applications, but it can no longer be sent.' : `This ${SITE.jobWord} no longer accepts applications.`}</div>
+      </CareerShell>
     );
   }
 
@@ -157,12 +159,12 @@ export default function InternalApply() {
 
   const supervisor = me.internalProfile?.supervisorName;
   return (
-    <InternalShell active="vacancies">
+    <CareerShell active="vacancies">
       <PageTop
-        crumb={[{ label: 'Vacancies', to: '/careers/vacancies' }, { label: vacancy.title, to: `/careers/vacancies/${vacancy.id}` }, { label: 'Application' }]}
+        crumb={[{ label: SITE.jobsLabel, to: SITE.jobs }, { label: vacancy.title, to: SITE.job(vacancy.id) }, { label: 'Application' }]}
         title={`Apply: ${vacancy.title}`}
         subtitle={<Meta parts={[<span className="ws-mono">{vacancy.jobRef}</span>, vacancy.deadline && `Closes ${formatDay(vacancy.deadline)}`, !decided && 'Saved as you go']} />}
-        actions={!decided && <Button variant="ghost" onClick={async () => { setBusy(true); try { await saveDraft(); } catch { /* shown on next save */ } setBusy(false); navigate('/careers/applications'); }}>Save and exit</Button>}
+        actions={!decided && <Button variant="ghost" onClick={async () => { setBusy(true); try { await saveDraft(); } catch { /* shown on next save */ } setBusy(false); navigate(SITE.applications); }}>Save and exit</Button>}
       />
       <div className="ws-wizard">
         <WizardRail steps={STEPS} index={step} onGo={decided ? null : (i) => setStep(i)} />
@@ -172,16 +174,16 @@ export default function InternalApply() {
             {stepKey === 'check' && (
               <>
                 {gaps.personal.length > 0 && (
-                  <Alert type="warning" message={<>Your profile needs {gaps.personal.join(', ').toLowerCase()} before you can apply. <Link to="/careers/profile">Update your profile</Link>, then come back.</>} />
+                  <Alert type="warning" message={<>Your profile needs {gaps.personal.join(', ').toLowerCase()} before you can apply. <Link to={SITE.profile}>Update your profile</Link>, then come back.</>} />
                 )}
                 {eligibility && !eligibility.eligible && eligibility.reasons.length > 0 && (
                   <Alert type="warning" message={<>Based on your profile you don’t meet: {eligibility.reasons.join('; ')}. You won’t be able to submit unless your profile shows you do.</>} />
                 )}
-                {eligibility?.eligible && gaps.personal.length === 0 && <Alert type="success" message="Your profile meets this vacancy’s minimum requirements." />}
+                {eligibility?.eligible && gaps.personal.length === 0 && <Alert type="success" message={`Your profile meets this ${SITE.jobWord}’s minimum requirements.`} />}
                 <div>
                   {evidence.length > 0 ? evidence.map((e) => (
-                    <div key={e.key} className="ws-check"><span className="mark miss">!</span><div><b>{e.label}</b><div className="d">This vacancy asks for it. You add it on the Documents step.</div></div></div>
-                  )) : <div className="ws-note">Besides your academic documents, this vacancy asks for no extra evidence so far.</div>}
+                    <div key={e.key} className="ws-check"><span className="mark miss">!</span><div><b>{e.label}</b><div className="d">This {SITE.jobWord} asks for it. You add it on the Documents step.</div></div></div>
+                  )) : <div className="ws-note">Besides your academic documents, this {SITE.jobWord} asks for no extra evidence so far.</div>}
                 </div>
               </>
             )}
@@ -215,16 +217,16 @@ export default function InternalApply() {
               <>
                 {!decided && (
                   <ReviewStep profile={me} coverLetter={coverLetter} documents={documents} referees={referees} vacancy={vacancy} evidence={evidence}
-                    profileDetails={me} questions={questions} internalProfile={me.internalProfile || {}} candidateType="Internal"
-                    goTo={(i) => setStep(i)} stepIndexes={{ profile: STEP_INDEX.check, documents: STEP_INDEX.documents, referees: STEP_INDEX.referees, questions: STEP_INDEX.questions, internal: STEP_INDEX.employment }}
+                    profileDetails={me} questions={questions} internalProfile={me.internalProfile || {}} candidateType={me.candidateType}
+                    goTo={(i) => setStep(i)} stepIndexes={{ profile: STEP_INDEX.check, documents: STEP_INDEX.documents, referees: STEP_INDEX.referees, questions: STEP_INDEX.questions, ...(SITE.internal ? { internal: STEP_INDEX.employment } : {}) }}
                     desirableRequirements={vacancy.desirableRequirements} desirableAnswers={desirable}
                     disqualifyingRequirements={vacancy.disqualifyingRequirements} disqualifyingAnswers={disqualifying} />
                 )}
                 <SubmitStep vacancy={vacancy} applicationId={application?.id} status={application?.status} eligibility={eligibility}
                   goToStep={(k) => setStep(STEP_INDEX[k] ?? STEP_INDEX.documents)}
                   onSubmitted={() => setApplication({ ...application, status: 'Submitted' })}
-                  onWithdrawn={() => navigate('/careers/applications')} />
-                {!decided && <div className="ws-note">After you submit, HR checks your employment details{supervisor ? ` and ${supervisor} is told` : ''}. Follow progress under My applications.</div>}
+                  onWithdrawn={() => navigate(SITE.applications)} />
+                {!decided && <div className="ws-note">{SITE.internal ? <>After you submit, HR checks your employment details{supervisor ? ` and ${supervisor} is told` : ''}. Follow progress under My applications.</> : 'After you submit, a confirmation is emailed to you. Follow progress under My applications.'}</div>}
               </>
             )}
             {missing.length > 0 && stepKey !== 'check' && <div className="ws-note" style={{ color: 'var(--color-danger)' }}>Before continuing, please complete: {missing.join(', ')}</div>}
@@ -237,15 +239,15 @@ export default function InternalApply() {
           </div>
           {stepKey !== 'submit' && (
             <div className="ws-wfoot">
-              <Button variant="ghost" onClick={() => (step === 0 ? navigate(`/careers/vacancies/${vacancy.id}`) : setStep(step - 1))}>{step === 0 ? 'Back to the advert' : 'Back'}</Button>
+              <Button variant="ghost" onClick={() => (step === 0 ? navigate(SITE.job(vacancy.id)) : setStep(step - 1))}>{step === 0 ? 'Back to the advert' : 'Back'}</Button>
               <Button loading={busy} loadingText="Saving..." disabled={missing.length > 0 || (stepKey === 'questions' && failedQuestions.length > 0)} onClick={next}>Continue</Button>
             </div>
           )}
           {stepKey === 'submit' && decided && (
-            <div className="ws-wfoot"><span /><Button variant="secondary" onClick={() => navigate('/careers/applications')}>Go to My applications</Button></div>
+            <div className="ws-wfoot"><span /><Button variant="secondary" onClick={() => navigate(SITE.applications)}>Go to My applications</Button></div>
           )}
         </div>
       </div>
-    </InternalShell>
+    </CareerShell>
   );
 }

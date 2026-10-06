@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../models/AuthContext";
 import NotificationBell from "./NotificationBell";
 import CandidateNotificationBell from "./CandidateNotificationBell";
@@ -42,6 +42,9 @@ export default function Navbar() {
   // Internal Careers (internalPort.js): its own name, and the same rail sidebar.
   const internal = isInternalPort();
   const signedInInternal = internal && candidate?.candidateType === 'Internal';
+  // Already in their own area (the sidebar is there), no "My dashboard" link.
+  const { pathname } = useLocation();
+  const inCandidateArea = /^\/(dashboard|jobs|apply)(\/|$)/.test(pathname);
 
   return (
     <nav
@@ -126,7 +129,7 @@ export default function Navbar() {
         {candidate && (
           <>
             {/* The phone tab bar already carries this. */}
-            {!internal && (
+            {!internal && !inCandidateArea && (
               <Link to="/dashboard" className="desktop-only" style={linkStyle}>
                 My dashboard
               </Link>

@@ -132,6 +132,41 @@
   content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* The public careers site's signed-in candidate area (App.jsx puts     */
+/* .careers-ui on <html> on /dashboard, /jobs/:id and /apply/:id while  */
+/* a candidate is signed in). Same pages and layout as Internal Careers */
+/* (views/careers), kept in the site's own blue: a light blue canvas,   */
+/* white surfaces, soft status pills, and the sidebar instead of the    */
+/* breadcrumb strip and footer.                                         */
+/* ------------------------------------------------------------------ */
+.careers-ui {
+  --color-canvas: #F2F7FB;
+  --color-border: #D7E4EE;
+  --color-border-strong: #BDD0DF;
+  --color-bg-subtle: #EEF5FA;
+  --radius: 8px;
+  --radius-sm: 5px;
+  --font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-size-base: 14px;
+  --footer-height: 0px;
+  --breadcrumb-height: 0px;
+  --sidebar-width: 236px;
+}
+.careers-ui body { background: var(--color-canvas); }
+.careers-ui .app-shell { font-family: var(--font-family) !important; }
+.careers-ui .site-footer,
+.careers-ui .breadcrumb-bar { display: none !important; }
+.careers-ui .ws-ph h1 { color: var(--color-primary-dark); font-size: 24px; }
+.careers-ui .status-badge {
+  gap: 6px; padding: 1px 8px; font-weight: 500;
+  color: color-mix(in srgb, var(--badge-color) 82%, #000);
+  background: color-mix(in srgb, var(--badge-color) 13%, #fff);
+}
+.careers-ui .status-badge::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0;
+}
+
 /* Sidebar rail (Sidebar.jsx variant="rail"): flush with the left edge,
    full height under the app bar, white with a hairline border. */
 .app-rail {

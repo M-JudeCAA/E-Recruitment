@@ -5,21 +5,25 @@ import Button from '../../components/Button';
 import Alert from '../../components/Alert';
 import Skeleton from '../../components/Skeleton';
 import ReasonDialog from '../../components/ReasonDialog';
+import { offerAwaitingAnswer, candidateOfferStatus } from '../../components/offers/offerFormat';
 import { PageTop, Meta, Pill } from '../../components/workspace/ui';
-import { InternalShell, useCareer, profileGaps, employmentCheck, interviewsToConfirm, formatDay, daysLeft } from './careers';
+import { SITE, CareerShell, useCareer, profileGaps, employmentCheck, interviewsToConfirm, formatDay, daysLeft } from './careers';
 import { VacancyFitTable, ApplicationsTable } from './tables';
 
-// Internal Careers home (/careers): what needs the employee now - an
-// interview to confirm, an offer to answer, a draft to finish, a profile to
-// complete - then the open internal vacancies, each checked against their
-// profile, and their applications.
-export default function InternalHome() {
+// The candidate's home (Internal Careers: /careers; public site: /dashboard):
+// what needs them now - an interview to confirm, an offer to answer, a draft
+// to finish, a profile to complete - then the open vacancies, each checked
+// against their profile, and their applications.
+const LAPSED_SHOWN_DAYS = 14;
+
+export default function CareerHome() {
   const navigate = useNavigate();
   const { me, applications, vacancies, fit, error, reload } = useCareer({ fitFor: 'open' });
   const [asking, setAsking] = useState(null);
   const [message, setMessage] = useState('');
 
-  if (me && !me.internalProfile?.employeeId && !(applications || []).length) return <Navigate to="/careers/welcome" replace />;
+  // A UCAA employee's first visit sets up their employment details first.
+  if (SITE.internal && me && !me.internalProfile?.employeeId && !(applications || []).length) return <Navigate to="/careers/welcome" replace />;
 
   const respond = async (round, response, note) => {
     await client.patch(`/api/candidates/me/interviews/${round.id}/respond`, { response, note });
@@ -38,12 +42,22 @@ export default function InternalHome() {
       <Button style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => respond(round, 'Confirmed')}>Confirm</Button>
     </div>
   ));
-  (applications || []).filter((a) => a.offer && ['Approved', 'Extended'].includes(a.offer.status)).forEach((a) => tasks.push(
+  (applications || []).filter((a) => offerAwaitingAnswer(a.offer)).forEach((a) => tasks.push(
     <div key={`of-${a.id}`} className="ws-task over">
       <div className="kind">Offer to answer</div>
       <div className="what"><b>{a.vacancy.title}</b><div>{a.offer.responseDeadline ? `Answer by ${formatDay(a.offer.responseDeadline)}` : 'Accept or decline it'}</div></div>
       <span />
-      <Button style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => navigate(`/careers/applications?open=${a.id}`)}>Open</Button>
+      <Button style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => navigate(`${SITE.applications}?open=${a.id}`)}>Open the offer</Button>
+    </div>
+  ));
+  // An offer whose answer was due recently, so it isn't simply gone from the list.
+  (applications || []).filter((a) => a.offer && candidateOfferStatus(a.offer) === 'Expired' && a.offer.responseDeadline
+    && Date.now() - new Date(a.offer.responseDeadline) < LAPSED_SHOWN_DAYS * 86400000).forEach((a) => tasks.push(
+    <div key={`lapsed-${a.id}`} className="ws-task">
+      <div className="kind">Offer lapsed</div>
+      <div className="what"><b>{a.vacancy.title}</b><div>The answer was due by {formatDay(a.offer.responseDeadline)}. Contact HR at careers@caa.co.ug if you still want the role.</div></div>
+      <span />
+      <Button variant="secondary" style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => navigate(`${SITE.applications}?open=${a.id}`)}>View</Button>
     </div>
   ));
   (applications || []).filter((a) => a.status === 'Draft' && (daysLeft(a.vacancy.deadline) ?? 1) >= 0).forEach((a) => {
@@ -53,7 +67,7 @@ export default function InternalHome() {
         <div className="kind">Draft application</div>
         <div className="what"><b>{a.vacancy.title}</b><div>Not submitted yet{a.vacancy.deadline ? ` · applications close ${formatDay(a.vacancy.deadline)}` : ''}</div></div>
         {left != null ? <span className={`ws-due${left <= 3 ? ' soon' : ''}`}>{left <= 0 ? 'closes today' : `${left} day${left === 1 ? '' : 's'} left`}</span> : <span />}
-        <Button variant="secondary" style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => navigate(`/careers/apply/${a.vacancyId}`)}>Continue</Button>
+        <Button variant="secondary" style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => navigate(SITE.apply(a.vacancyId))}>Continue</Button>
       </div>
     );
   });
@@ -62,7 +76,7 @@ export default function InternalHome() {
       <div className="kind">Profile</div>
       <div className="what"><b>Finish your profile</b><div>Still needed: {[...(gaps.employment ? ['employment details'] : []), ...gaps.personal].join(', ')}</div></div>
       <span />
-      <Button variant="secondary" style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => navigate('/careers/profile')}>Open</Button>
+      <Button variant="secondary" style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => navigate(SITE.profile)}>Open</Button>
     </div>
   );
 
@@ -70,13 +84,13 @@ export default function InternalHome() {
   const firstName = (me?.fullName || '').split(' ')[0];
   const hour = new Date().getHours();
   return (
-    <InternalShell active="home">
+    <CareerShell active="home">
       <PageTop
         title={`${hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'}${firstName ? `, ${firstName}` : ''}`}
-        subtitle={me && <Meta parts={[
+        subtitle={me && <Meta parts={SITE.internal ? [
           me.internalProfile?.position && `${me.internalProfile.position}${me.internalProfile.department ? ` · ${me.internalProfile.department}` : ''}`,
           check.tone === 'ok' ? <Pill tone="ok">Employment verified by HR</Pill> : check.tone === 'bad' ? <Pill tone="bad">Employment details don’t match HR records</Pill> : null
-        ]} />}
+        ] : [gaps.personal.length ? 'Your profile is not complete yet.' : 'Your profile is complete.']} />}
       />
       <Alert type="error" message={error} />
       <Alert type="success" message={message} />
@@ -87,7 +101,7 @@ export default function InternalHome() {
 
       <section className="ws-group">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-          <h3 style={{ margin: 0 }}>Open internal vacancies</h3><Link to="/careers/vacancies">All vacancies</Link>
+          <h3 style={{ margin: 0 }}>{SITE.internal ? 'Open internal vacancies' : 'Open jobs'}</h3><Link to={SITE.jobs}>{SITE.internal ? 'All vacancies' : 'All jobs'}</Link>
         </div>
         <VacancyFitTable vacancies={vacancies} fit={fit} applications={applications} limit={6} />
       </section>
@@ -95,7 +109,7 @@ export default function InternalHome() {
       {(applications || []).length > 0 && (
         <section className="ws-group">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-            <h3 style={{ margin: 0 }}>Your applications</h3><Link to="/careers/applications">All applications</Link>
+            <h3 style={{ margin: 0 }}>Your applications</h3><Link to={SITE.applications}>All applications</Link>
           </div>
           <ApplicationsTable applications={applications.slice(0, 4)} me={me} />
         </section>
@@ -106,6 +120,6 @@ export default function InternalHome() {
           label="Why, and when suits you" confirmLabel="Send" onClose={() => setAsking(null)}
           onSubmit={(note) => respond(asking, 'RescheduleRequested', note)} />
       )}
-    </InternalShell>
+    </CareerShell>
   );
 }

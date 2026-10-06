@@ -6,13 +6,15 @@ import Alert from '../../components/Alert';
 import Skeleton from '../../components/Skeleton';
 import CandidateInterviewCard from '../../components/interviews/CandidateInterviewCard';
 import CandidateOfferPanel from '../../components/offers/CandidateOfferPanel';
+import { candidateOfferStatus } from '../../components/offers/offerFormat';
 import { useConfirm } from '../../components/ConfirmDialog';
 import { PageTop, SidePanel, Pill } from '../../components/workspace/ui';
-import { InternalShell, useCareer, stageOf, employmentCheck, formatDay, daysLeft } from './careers';
+import { SITE, CareerShell, useCareer, stageOf, employmentCheck, formatDay, daysLeft } from './careers';
 import { ApplicationsTable } from './tables';
 
-// My applications on Internal Careers (/careers/applications): every
-// application with its stage and HR's employment check. A row opens its
+// My applications (Internal Careers: /careers/applications; public site:
+// /dashboard/applications): every application with its stage (and, for UCAA
+// employees, HR's employment check). A row opens its
 // progress in a side panel, with the interview (confirm, ask for another
 // time, add to calendar) and an issued offer to accept or decline.
 // ?open=<id> opens one straight away (links from Home).
@@ -26,12 +28,14 @@ function trackOf(app, me) {
   const t = [];
   if (app.status === 'Draft') {
     return [['now', 'Draft', `Not sent yet${app.vacancy.deadline ? ` · applications close ${formatDay(app.vacancy.deadline)}` : ''}`],
-      ['todo', 'Submitted'], ['todo', 'Employment details verified by HR'], ['todo', 'Shortlisting'], ['todo', 'Interview'], ['todo', 'Offer']];
+      ['todo', 'Submitted'], ...(SITE.internal ? [['todo', 'Employment details verified by HR']] : []), ['todo', 'Shortlisting'], ['todo', 'Interview'], ['todo', 'Offer']];
   }
   t.push(['done', 'Submitted', formatDay(app.submittedDate)]);
-  t.push(verified ? ['done', 'Employment details verified by HR', formatDay(p.verifiedDate)]
-    : flagged ? ['bad', 'Your employment details don’t match HR’s records', 'HR will contact you']
-      : ['wait', 'Employment details verified by HR', 'HR is checking']);
+  if (SITE.internal) {
+    t.push(verified ? ['done', 'Employment details verified by HR', formatDay(p.verifiedDate)]
+      : flagged ? ['bad', 'Your employment details don’t match HR’s records', 'HR will contact you']
+        : ['wait', 'Employment details verified by HR', 'HR is checking']);
+  }
   if (app.status === 'Withdrawn') return [...t, ['done', 'You withdrew this application', '']];
   if (app.status === 'Rejected' && !reached(app.status)) return [...t, ['done', 'Not taken forward', app.rejectionReason || '']];
   t.push(reached(app.status) ? ['done', 'Shortlisted for interview', ''] : ['now', 'Shortlisting', 'HR and the committee are reviewing applications']);
@@ -43,15 +47,15 @@ function trackOf(app, me) {
   } else if (reached(app.status)) t.push(['todo', 'Interview', 'HR will invite you']);
   if (app.status === 'Rejected') return [...t, ['done', 'Not taken forward', app.rejectionReason || '']];
   if (app.offer) {
-    const s = app.offer.status;
+    const s = candidateOfferStatus(app.offer);
     t.push(s === 'Accepted' ? ['done', 'Offer accepted', formatDay(app.offer.decidedAt)]
-      : ['Approved', 'Extended'].includes(s) ? ['now', 'Offer', app.offer.responseDeadline ? `Answer by ${formatDay(app.offer.responseDeadline)}` : 'Accept or decline it']
+      : s === 'Approved' ? ['now', 'Offer', app.offer.responseDeadline ? `Answer by ${formatDay(app.offer.responseDeadline)}` : 'Accept or decline it']
         : ['done', `Offer ${s.toLowerCase()}`, '']);
   } else t.push(['todo', 'Offer']);
   return t;
 }
 
-export default function InternalApplications() {
+export default function CareerApplications() {
   const navigate = useNavigate();
   const confirm = useConfirm();
   const [params, setParams] = useSearchParams();
@@ -93,7 +97,7 @@ export default function InternalApplications() {
   const check = open && employmentCheck(me, open);
   const left = open && daysLeft(open.vacancy.deadline);
   return (
-    <InternalShell active="applications">
+    <CareerShell active="applications">
       <PageTop title="My applications" subtitle="Every application, where it stands, and what happens next" />
       <Alert type="error" message={error} />
       <Alert type="success" message={message} />
@@ -101,12 +105,12 @@ export default function InternalApplications() {
 
       {open && (
         <SidePanel title={open.vacancy.title} eyebrow={<span className="ws-mono">{open.vacancy.jobRef}</span>}
-          badges={<><Pill tone={stage.tone}>{stage.label}</Pill>{check.tone && <Pill tone={check.tone}>{check.label}</Pill>}</>}
+          badges={<><Pill tone={stage.tone}>{stage.label}</Pill>{SITE.internal && check.tone && <Pill tone={check.tone}>{check.label}</Pill>}</>}
           onClose={() => setOpen(null)}
           footer={open.status === 'Draft' ? (
             <>
               <Button variant="ghost" style={{ color: 'var(--color-danger)' }} onClick={() => withdraw(open)}>Delete draft</Button>
-              {(left == null || left >= 0) && <Button onClick={() => navigate(`/careers/apply/${open.vacancyId}`)}>Continue</Button>}
+              {(left == null || left >= 0) && <Button onClick={() => navigate(SITE.apply(open.vacancyId))}>Continue</Button>}
             </>
           ) : ['Submitted', 'UnderReview', 'Shortlisted', 'InterviewScheduled', 'Interviewed'].includes(open.status) && !open.offer ? (
             <Button variant="ghost" style={{ color: 'var(--color-danger)' }} onClick={() => withdraw(open)}>Withdraw application</Button>
@@ -137,6 +141,6 @@ export default function InternalApplications() {
           )}
         </SidePanel>
       )}
-    </InternalShell>
+    </CareerShell>
   );
 }

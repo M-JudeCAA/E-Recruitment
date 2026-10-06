@@ -6,9 +6,9 @@ import DirectoryPersonField from '../../components/DirectoryPersonField';
 import Alert from '../../components/Alert';
 import { validateNationalId } from '../../utils/validators';
 
-// The two short forms Internal Careers asks for - the employee's UCAA
-// employment (what HR verifies) and their personal details - shared by the
-// first-time setup (InternalWelcome) and My profile (InternalProfile). Each
+// The short forms the candidate pages ask for - a UCAA employee's employment
+// (what HR verifies; Internal Careers only) and personal details - shared by
+// the first-time setup (InternalWelcome) and My profile (CareerProfile). Each
 // owns its state and exposes save() through the `bind` callback, so the page
 // around it decides where the Save button sits.
 
@@ -117,10 +117,12 @@ export function EmploymentForm({ me, bind, onSaved }) {
   );
 }
 
-export function PersonalForm({ me, bind, onSaved }) {
+// links: also LinkedIn and a portfolio (the public site's applicants).
+export function PersonalForm({ me, bind, onSaved, links = false }) {
   const [form, setForm] = useState({
     nationalId: me?.nationalId || '', districtOfOrigin: me?.districtOfOrigin || '', location: me?.location || '',
-    dateOfBirth: day(me?.dateOfBirth)
+    dateOfBirth: day(me?.dateOfBirth), flyingHours: me?.flyingHours ?? '',
+    ...(links ? { linkedinUrl: me?.linkedinUrl || '', portfolioUrl: me?.portfolioUrl || '' } : {})
   });
   const [error, setError] = useState('');
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -150,6 +152,9 @@ export function PersonalForm({ me, bind, onSaved }) {
         <TextField label="District of origin" required maxLength={100} value={form.districtOfOrigin} onChange={set('districtOfOrigin')} hint="The Ugandan district you come from" />
         <TextField label="Place of residence" required value={form.location} onChange={set('location')} hint="Town or district" />
         <TextField label="Date of birth" type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} hint="Only needed when a vacancy has an age limit" />
+        <TextField label="Flying hours" type="number" min="0" value={form.flyingHours} onChange={set('flyingHours')} hint="Only for flight crew roles" />
+        {links && <TextField label="LinkedIn" value={form.linkedinUrl} onChange={set('linkedinUrl')} placeholder="linkedin.com/in/..." hint="Optional" />}
+        {links && <TextField label="Portfolio or personal website" value={form.portfolioUrl} onChange={set('portfolioUrl')} hint="Optional" />}
       </div>
       <Alert type="error" message={error} />
     </div>

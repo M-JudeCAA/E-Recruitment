@@ -7,7 +7,7 @@ import Skeleton from '../../components/Skeleton';
 import ProfileStep from '../apply-wizard/ProfileStep';
 import { PageTop } from '../../components/workspace/ui';
 import { EmploymentForm, PersonalForm } from './forms';
-import { InternalShell, WizardRail, useCareer, profileGaps } from './careers';
+import { CareerShell, WizardRail, useCareer, profileGaps } from './careers';
 
 // First sign-in on Internal Careers (/careers/welcome): the profile in four
 // short steps instead of one long form - employment first, since that is
@@ -41,7 +41,7 @@ export default function InternalWelcome() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, me?.internalProfile?.position]);
 
-  if (!me) return <InternalShell active="home"><Skeleton width={260} height={26} /><Skeleton height={320} /></InternalShell>;
+  if (!me) return <CareerShell active="home"><Skeleton width={260} height={26} /><Skeleton height={320} /></CareerShell>;
 
   const gaps = profileGaps(me);
   const entriesMissing = [!(me.education || []).length && 'a qualification', !(me.workExperience || []).length && 'a job'].filter(Boolean);
@@ -62,7 +62,7 @@ export default function InternalWelcome() {
   };
 
   return (
-    <InternalShell active="home">
+    <CareerShell active="home">
       <PageTop title={`Welcome, ${(me.fullName || '').split(' ')[0]}`} subtitle="Set up your profile once. Every application is built from it." />
       <div className="ws-wizard">
         <WizardRail steps={STEPS} index={step} onGo={(i) => setStep(i)} />
@@ -105,6 +105,6 @@ export default function InternalWelcome() {
           </div>
         </div>
       </div>
-    </InternalShell>
+    </CareerShell>
   );
 }

@@ -213,3 +213,11 @@ dl.ws-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .ws-suggest li small { display: block; font-size: 12px; color: var(--color-text-muted); margin-top: 1px; }
 .ws-suggest li.on { background: var(--color-primary-light); }
 .ws-suggest .msg { display: block; padding: 10px 12px; font-size: 13px; color: var(--color-text-muted); }
+
+/* Candidate pages: closed vacancies folded under the open ones. */
+.ws-closed > summary { cursor: pointer; padding: 12px 16px; color: var(--color-text-muted); font-size: 13px; list-style: none; }
+.ws-closed > summary::-webkit-details-marker { display: none; }
+.ws-closed > summary::before { content: "▸ "; }
+.ws-closed[open] > summary::before { content: "▾ "; }
+.ws-closed[open] > summary { border-bottom: 1px solid var(--color-border); }
+.ws-closed .t { color: var(--color-text-muted); }

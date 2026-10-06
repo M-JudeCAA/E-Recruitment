@@ -8,14 +8,14 @@ import MobileTabBar from "./components/MobileTabBar";
 import { useAuth } from "./models/AuthContext";
 import { isStaffPort } from "./staffPort";
 import { isInternalPort } from "./internalPort";
-import InternalSignIn from "./views/internal/InternalSignIn";
-import InternalWelcome from "./views/internal/InternalWelcome";
-import InternalHome from "./views/internal/InternalHome";
-import InternalVacancies from "./views/internal/InternalVacancies";
-import InternalVacancy from "./views/internal/InternalVacancy";
-import InternalApply from "./views/internal/InternalApply";
-import InternalApplications from "./views/internal/InternalApplications";
-import InternalProfile from "./views/internal/InternalProfile";
+import InternalSignIn from "./views/careers/InternalSignIn";
+import InternalWelcome from "./views/careers/InternalWelcome";
+import CareerHome from "./views/careers/CareerHome";
+import CareerJobs from "./views/careers/CareerJobs";
+import CareerJob from "./views/careers/CareerJob";
+import CareerApply from "./views/careers/CareerApply";
+import CareerApplications from "./views/careers/CareerApplications";
+import CareerProfile from "./views/careers/CareerProfile";
 
 import Home from "./views/Home";
 import Register from "./views/Register";
@@ -24,11 +24,6 @@ import CandidateLogin from "./views/CandidateLogin";
 import ForgotPassword from "./views/ForgotPassword";
 import ResetPassword from "./views/ResetPassword";
 import ProfileCompletePage from "./views/ProfileCompletePage";
-import CandidateHome from "./views/CandidateHome";
-import CandidateJobs from "./views/CandidateJobs";
-import CandidateProfile from "./views/CandidateProfile";
-import CandidateApplications from "./views/CandidateApplications";
-import ApplyForm from "./views/ApplyForm";
 import JobDetails from "./views/JobDetails";
 import StaffLogin from "./views/StaffLogin";
 import Inbox from "./views/Inbox";
@@ -74,6 +69,18 @@ function PaddedLayout() {
 // completion, and a shortlisting committee member's private link.
 const NO_TABBAR_PATHS = [/^\/apply\//, /^\/profile\/complete/, /^\/shortlist-panel\//];
 
+// The public site's signed-in candidate area (views/careers, the same pages
+// as Internal Careers) wears .careers-ui (theme.css): the site's own colours
+// with the sidebar layout, and no breadcrumb strip or footer.
+const CAREER_PATHS = [/^\/dashboard(\/|$)/, /^\/jobs\//, /^\/apply\//];
+
+// A job advert: a signed-in applicant gets it in their own area, with "Your
+// fit" and Apply; a guest gets the public page.
+function JobPage() {
+  const { candidate } = useAuth();
+  return candidate ? <CareerJob /> : <JobDetails />;
+}
+
 export default function App() {
   const { candidate, staff } = useAuth();
   const { pathname, search } = useLocation();
@@ -87,10 +94,12 @@ export default function App() {
   // modals and anything else outside the app shell pick it up as well.
   // Internal Careers wears it too: UCAA employees get the same corporate look.
   const staffUi = Boolean(staff) || isStaffPort() || isInternalPort();
+  const careersUi = !staffUi && Boolean(candidate) && CAREER_PATHS.some((re) => re.test(pathname));
   // Before paint, so a staff page never flashes the candidate look.
   useLayoutEffect(() => {
     document.documentElement.classList.toggle("staff-ui", staffUi);
-  }, [staffUi]);
+    document.documentElement.classList.toggle("careers-ui", careersUi);
+  }, [staffUi, careersUi]);
 
   return (
     // app-shell / with-tabbar drive the phone-only layout in theme.css
@@ -252,13 +261,13 @@ export default function App() {
         <Route element={<InternalPortGate />}>
           <Route path="/careers/sign-in" element={<InternalSignIn />} />
           <Route element={<PaddedLayout />}>
-            <Route path="/careers" element={<RequireInternalCandidate><InternalHome /></RequireInternalCandidate>} />
+            <Route path="/careers" element={<RequireInternalCandidate><CareerHome /></RequireInternalCandidate>} />
             <Route path="/careers/welcome" element={<RequireInternalCandidate><InternalWelcome /></RequireInternalCandidate>} />
-            <Route path="/careers/vacancies" element={<RequireInternalCandidate><InternalVacancies /></RequireInternalCandidate>} />
-            <Route path="/careers/vacancies/:id" element={<RequireInternalCandidate><InternalVacancy /></RequireInternalCandidate>} />
-            <Route path="/careers/apply/:vacancyId" element={<RequireInternalCandidate><InternalApply /></RequireInternalCandidate>} />
-            <Route path="/careers/applications" element={<RequireInternalCandidate><InternalApplications /></RequireInternalCandidate>} />
-            <Route path="/careers/profile" element={<RequireInternalCandidate><InternalProfile /></RequireInternalCandidate>} />
+            <Route path="/careers/vacancies" element={<RequireInternalCandidate><CareerJobs /></RequireInternalCandidate>} />
+            <Route path="/careers/vacancies/:id" element={<RequireInternalCandidate><CareerJob /></RequireInternalCandidate>} />
+            <Route path="/careers/apply/:vacancyId" element={<RequireInternalCandidate><CareerApply /></RequireInternalCandidate>} />
+            <Route path="/careers/applications" element={<RequireInternalCandidate><CareerApplications /></RequireInternalCandidate>} />
+            <Route path="/careers/profile" element={<RequireInternalCandidate><CareerProfile /></RequireInternalCandidate>} />
           </Route>
         </Route>
         <Route
@@ -278,7 +287,7 @@ export default function App() {
             {/* Public - no RequireCandidate. Reached from Home.jsx's "View
                 details" link and directly shareable, since a guest should
                 be able to read a full advert before creating an account. */}
-            <Route path="/jobs/:id" element={<JobDetails />} />
+            <Route path="/jobs/:id" element={<JobPage />} />
             <Route path="/confirm-email" element={<ConfirmEmail />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
@@ -286,7 +295,7 @@ export default function App() {
               path="/dashboard"
               element={
                 <RequireCandidate>
-                  <CandidateHome />
+                  <CareerHome />
                 </RequireCandidate>
               }
             />
@@ -294,7 +303,7 @@ export default function App() {
               path="/dashboard/jobs"
               element={
                 <RequireCandidate>
-                  <CandidateJobs />
+                  <CareerJobs />
                 </RequireCandidate>
               }
             />
@@ -302,7 +311,7 @@ export default function App() {
               path="/dashboard/applications"
               element={
                 <RequireCandidate>
-                  <CandidateApplications />
+                  <CareerApplications />
                 </RequireCandidate>
               }
             />
@@ -310,7 +319,15 @@ export default function App() {
               path="/dashboard/profile"
               element={
                 <RequireCandidate>
-                  <CandidateProfile />
+                  <CareerProfile />
+                </RequireCandidate>
+              }
+            />
+            <Route
+              path="/apply/:vacancyId"
+              element={
+                <RequireCandidate>
+                  <CareerApply />
                 </RequireCandidate>
               }
             />
@@ -329,14 +346,6 @@ export default function App() {
             element={
               <RequireCandidate>
                 <ProfileCompletePage />
-              </RequireCandidate>
-            }
-          />
-          <Route
-            path="/apply/:vacancyId"
-            element={
-              <RequireCandidate>
-                <ApplyForm />
               </RequireCandidate>
             }
           />
