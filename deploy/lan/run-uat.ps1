@@ -1,8 +1,10 @@
 # Runs the test (UAT) deployment on this server and keeps it running:
-# the API, the scheduler worker, and the three sites over HTTPS
-#   external candidates :5173   HR staff :4174   Internal Careers :4175
-# Each site is `vite preview` (IPv4 and IPv6) serving the same build and forwarding /api and
-# /ws to the API, which only listens on this machine (see README.md here).
+# the API, the scheduler worker, the three sites over HTTPS - careers
+# (external candidates) on 443, HR staff :4174, Internal Careers :4175 - and
+# the http -> https redirect. The list is processes.ps1, read again on every
+# (re)start. Each site is `vite preview` serving the same build and
+# forwarding /api and /ws to the API, which only listens on this machine
+# (see README.md here).
 #
 # Normally started at boot by the scheduled task install-uat.ps1 registers.
 # By hand, from the deployment folder (Ctrl+C stops everything):
@@ -25,13 +27,7 @@ $pidFile = Join-Path $logs 'pids.txt'
 $node = (Get-Command node.exe).Source
 $vite = Join-Path $frontend 'node_modules\vite\bin\vite.js'
 
-$specs = @(
-  @{ Name = 'api';      Dir = $backend;  Args = @('src/server.js') },
-  @{ Name = 'jobs';     Dir = $backend;  Args = @('scripts/scheduler.js') },
-  @{ Name = 'external'; Dir = $frontend; Args = @($vite, 'preview', '--host', '::', '--port', '5173', '--strictPort') },
-  @{ Name = 'staff';    Dir = $frontend; Args = @($vite, 'preview', '--host', '::', '--port', '4174', '--strictPort') },
-  @{ Name = 'internal'; Dir = $frontend; Args = @($vite, 'preview', '--host', '::', '--port', '4175', '--strictPort') }
-)
+$specs = @()
 
 function Write-Log($message) {
   $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $message"
@@ -78,6 +74,13 @@ function Start-One($spec) {
 
 function Start-All {
   if (-not (Test-Ready)) { return $false }
+  # Re-read every time, so a deployment that changes it takes effect.
+  try {
+    $script:specs = @(& (Join-Path $PSScriptRoot 'processes.ps1') -Root $root)
+  } catch {
+    Write-Log "processes.ps1 failed: $($_.Exception.Message)"
+    return $false
+  }
   foreach ($s in $specs) { Start-One $s }
   Save-Pids
   return $true

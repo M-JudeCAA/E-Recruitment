@@ -1,6 +1,7 @@
 # One-time setup that needs an ADMINISTRATOR PowerShell on the server:
-#   - opens the three site ports (5173, 4174, 4175) in Windows Firewall, for
-#     the domain and private networks only
+#   - opens the site ports in Windows Firewall - 443 (careers), 80 (redirect to
+#     https), 4174 (HR staff), 4175 (Internal Careers) - for the domain and
+#     private networks only
 #   - registers two scheduled tasks, both running as SYSTEM:
 #       "UCAA e-Recruitment UAT"         run-uat.ps1 from boot - keeps the app running
 #       "UCAA e-Recruitment UAT deploy"  auto-deploy.ps1 every 5 minutes - deploys
@@ -20,7 +21,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $appTask = 'UCAA e-Recruitment UAT'
 $deployTask = 'UCAA e-Recruitment UAT deploy'
-$ruleName = 'UCAA e-Recruitment UAT (HTTPS 5173, 4174, 4175)'
+$ruleName = 'UCAA e-Recruitment UAT (443, 80, 4174, 4175)'
+$oldRuleNames = @('UCAA e-Recruitment UAT (HTTPS 5173, 4174, 4175)')   # earlier versions
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $dataDir = 'C:\ProgramData\UCAA-eRecruitment-UAT'
 
@@ -41,15 +43,15 @@ foreach ($name in @($appTask, $deployTask)) {
     Write-Host "Removed the existing task '$name'."
   }
 }
-Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+foreach ($r in @($ruleName) + $oldRuleNames) { Get-NetFirewallRule -DisplayName $r -ErrorAction SilentlyContinue | Remove-NetFirewallRule }
 if ($Uninstall) {
   Write-Host 'Uninstalled. Stop any node processes it left with deploy\lan\logs\pids.txt if needed.'
   return
 }
 
-New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP -LocalPort 5173, 4174, 4175 `
+New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP -LocalPort 443, 80, 4174, 4175 `
   -Action Allow -Profile Domain, Private | Out-Null
-Write-Host "Firewall: opened 5173, 4174, 4175 (domain and private networks)."
+Write-Host "Firewall: opened 443, 80, 4174, 4175 (domain and private networks)."
 
 # Security descriptor letting the operator run and end the tasks.
 $sddl = 'D:(A;;FA;;;SY)(A;;FA;;;BA)'

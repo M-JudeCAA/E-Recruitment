@@ -365,7 +365,7 @@ run somewhere with that file present and network access to the database.
 ## Test (UAT) deployment on the office network
 
 See [deploy/lan/README.md](deploy/lan/README.md): the whole system on one
-Windows server for user testing, over HTTPS on ports 5173 (careers), 4174
+Windows server for user testing, over HTTPS - careers on the standard port (443), 4174
 (HR staff) and 4175 (Internal Careers), from its own folder, database and
 upload directory, kept running by a scheduled task.
 

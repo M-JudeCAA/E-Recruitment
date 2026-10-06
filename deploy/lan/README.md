@@ -5,12 +5,13 @@ reachable from UCAA's network only:
 
 | Site | Address | Who |
 |---|---|---|
-| Careers (external candidates) | `https://<host>:5173` | Register with email and password |
+| Careers (external candidates) | `https://<host>` | Register with email and password |
 | Internal Careers | `https://<host>:4175` | UCAA employees, **Sign in with Microsoft** |
 | HR staff | `https://<host>:4174/staff/login` | HR testers, **Sign in with Microsoft** |
 
-`<host>` is the server's name on the network (for example
-`ark-atams.caa.co.ug`), the same in every address.
+`<host>` is the site's name on the network, `erecruitment-uat.caa.co.ug` (a DNS
+alias of the server), the same in every address. Plain `http://<host>` redirects
+to the careers site.
 
 ## How it fits together
 
@@ -33,7 +34,10 @@ reachable from UCAA's network only:
 - **The API isn't exposed.** It listens on port 4100 and is reached only
   through the three sites, which forward `/api` and `/ws` to it (built with
   `VITE_API_URL=same-origin`; `PREVIEW_API_TARGET` in `frontend\vite.config.js`).
-  The firewall opens 5173, 4174 and 4175 only.
+  The firewall opens 443, 80, 4174 and 4175 only. The careers site takes
+  443 on the office address only, because Tailscale serves another app on
+  this server's 443 on its own addresses. The processes and their ports are
+  in `processes.ps1`.
 - **Kept running.** The scheduled task `UCAA e-Recruitment UAT` runs
   `run-uat.ps1` as SYSTEM from boot. It starts the API, the scheduler worker
   and the three sites, and restarts any that stop.
@@ -65,7 +69,7 @@ reachable from UCAA's network only:
    NODE_ENV=production
    PORT=4100
    DATABASE_URL="mysql://erec_uat:<password>@localhost:<mysql port>/erecruitment_uat"
-   FRONTEND_URL="https://<host>:5173,https://<host>:4174,https://<host>:4175"
+   FRONTEND_URL="https://<host>,https://<host>:4174,https://<host>:4175"
    UPLOAD_DIR="C:\ProgramData\UCAA-eRecruitment-UAT\uploads"
    TRUST_PROXY=loopback
    JWT_SECRET=<a new long random string, not the development one>
@@ -119,7 +123,7 @@ reachable from UCAA's network only:
 
 ## Checking it works
 
-- `https://<host>:5173` shows the job list.
+- `https://<host>` (and `http://<host>`) shows the job list.
 - `https://<host>:4174/staff/login`: the administrator signs in with
   Microsoft and lands on **Staff accounts**.
 - On the HR home page, no system-health warnings a few minutes after start.
@@ -168,8 +172,9 @@ It never deploys a commit older than what's live, nor one without the
 | See what happened | `deploy\lan\logs\supervisor.log`, and `<process>-<date>.out.log` / `.err.log` for `api`, `jobs`, `external`, `staff`, `internal` |
 | Start over with an empty system | [docs/database-reset.md](../../docs/database-reset.md), from the deployment folder |
 
-Development servers on the same machine (`npm run dev`, `npm run preview:staff`
-…) can't run while the test deployment is up: they use the same ports.
+Development preview servers on the same machine (`npm run preview:staff`,
+`preview:internal`) can't run while the test deployment is up: they use the
+same ports. `npm run dev` (5173) can.
 
 ## Troubleshooting
 
