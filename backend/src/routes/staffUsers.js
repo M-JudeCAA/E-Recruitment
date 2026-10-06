@@ -7,6 +7,8 @@ const router = express.Router();
 // Account administration - system administrators only, whatever HR role
 // anyone holds (see requireSystemAdmin).
 router.get('/accounts', authenticate, requireSystemAdmin(), controller.listAccounts);
+// People assigned to the staff app in Entra with no account yet.
+router.get('/entra-assignments', authenticate, requireSystemAdmin(), controller.entraAssignments);
 router.post('/', authenticate, requireSystemAdmin(), controller.create);
 router.patch('/:id', authenticate, requireSystemAdmin(), controller.update);
 router.post('/:id/unlink', authenticate, requireSystemAdmin(), controller.unlink);
