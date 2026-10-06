@@ -1,7 +1,7 @@
 # Runs the test (UAT) deployment on this server and keeps it running:
 # the API, the scheduler worker, and the three sites over HTTPS
 #   external candidates :5173   HR staff :4174   Internal Careers :4175
-# Each site is `vite preview` serving the same build and forwarding /api and
+# Each site is `vite preview` (IPv4 and IPv6) serving the same build and forwarding /api and
 # /ws to the API, which only listens on this machine (see README.md here).
 #
 # Normally started at boot by the scheduled task install-uat.ps1 registers.
@@ -28,9 +28,9 @@ $vite = Join-Path $frontend 'node_modules\vite\bin\vite.js'
 $specs = @(
   @{ Name = 'api';      Dir = $backend;  Args = @('src/server.js') },
   @{ Name = 'jobs';     Dir = $backend;  Args = @('scripts/scheduler.js') },
-  @{ Name = 'external'; Dir = $frontend; Args = @($vite, 'preview', '--host', '0.0.0.0', '--port', '5173', '--strictPort') },
-  @{ Name = 'staff';    Dir = $frontend; Args = @($vite, 'preview', '--host', '0.0.0.0', '--port', '4174', '--strictPort') },
-  @{ Name = 'internal'; Dir = $frontend; Args = @($vite, 'preview', '--host', '0.0.0.0', '--port', '4175', '--strictPort') }
+  @{ Name = 'external'; Dir = $frontend; Args = @($vite, 'preview', '--host', '::', '--port', '5173', '--strictPort') },
+  @{ Name = 'staff';    Dir = $frontend; Args = @($vite, 'preview', '--host', '::', '--port', '4174', '--strictPort') },
+  @{ Name = 'internal'; Dir = $frontend; Args = @($vite, 'preview', '--host', '::', '--port', '4175', '--strictPort') }
 )
 
 function Write-Log($message) {

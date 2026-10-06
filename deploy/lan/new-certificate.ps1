@@ -32,7 +32,7 @@ try {
   Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)"
 }
 
-Write-Host "Certificate for $($HostNames + $IpAddresses -join ', '), valid until $($cert.NotAfter.ToString('yyyy-MM-dd'))"
+Write-Host "Certificate for $(($HostNames + $IpAddresses) -join ', '), valid until $($cert.NotAfter.ToString('yyyy-MM-dd'))"
 Write-Host "  $OutDir\uat-tls.pfx"
 Write-Host "  $OutDir\uat-tls.cer"
 Write-Host ''

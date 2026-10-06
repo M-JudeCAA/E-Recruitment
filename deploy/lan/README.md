@@ -38,8 +38,12 @@ reachable from UCAA's network only:
 
 1. **Deployment folder**, from the development copy:
    ```powershell
-   git worktree add E:\eRecruitment-UAT <branch>
+   git fetch
+   git worktree add -b uat --track E:\eRecruitment-UAT origin/main
    ```
+   Its local branch `uat` follows `main`, so `update-uat.ps1` deploys
+   whatever has been merged there. (A worktree can't use a branch that's
+   checked out elsewhere, such as `main` in the development copy.)
 2. **Database.** On the server's MySQL, create an empty database and a user
    for it:
    ```sql
