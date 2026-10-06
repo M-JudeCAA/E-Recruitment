@@ -58,6 +58,8 @@ No frontend test suite exists yet.
 
 `.github/workflows/ci.yml` runs on push/PR to `main`/`develop`: backend job does `npm install && npx prisma generate && npm test`; backend-e2e job runs `npm run test:e2e` against a MySQL 8 service container; frontend job does `npm install && npm run build`. All must pass.
 
+**CD**: a push to `main` that passes CI goes live on the test (UAT) server within ~5 minutes - pulled, not pushed: `deploy/lan/auto-deploy.ps1` (scheduled task, SYSTEM) asks GitHub's public API for the newest successful `ci.yml` run on `main` and runs `deploy/lan/update-uat.ps1 -Commit <sha>` (pause app, `npm ci`, `db:prepare`, build to `dist-next` and swap, resume); a failed deploy rolls back to the previous commit. No self-hosted runner (public repo). Merging to `main` is therefore a release to testers - new migrations included. See [deploy/lan/README.md](deploy/lan/README.md).
+
 ## Architecture
 
 ### MVC-ish split, backend and frontend use matching vocabulary
@@ -171,5 +173,5 @@ Every suite in `backend/tests/` mocks the shared Prisma client via `jest.mock('.
 - The migration history can't build a database from scratch (`20260915120000_age_flying_hours_exam_grades` alters a column no earlier migration creates - columns were added directly on the shared DB; see the READMEs in `prisma/migrations/`). The e2e suite uses `prisma db push` instead. New migrations still go in `prisma/migrations/` as usual.
 - Rate limits are in-memory per API process; a multi-process deployment would need a shared store.
 - No frontend test suite.
-- `docker-compose.yml` exists but isn't wired up for local dev — use the two-terminal `npm run dev` flow (backend + frontend) in [SETUP.md](SETUP.md) instead.
+- `docker-compose.yml` exists but isn't wired up for local dev — use the two-terminal `npm run dev` flow (backend + frontend) in [SETUP.md](SETUP.md) instead. The user-testing deployment is `deploy/lan/` (one Windows server, its own worktree/DB/uploads; `vite preview` serves the build over HTTPS on 5173/4174/4175 and proxies `/api`/`/ws` to the API - built with `VITE_API_URL=same-origin`, `PREVIEW_*` settings in `vite.config.js`; `npm run db:prepare` = `scripts/prepareDatabase.js`, `db push` + baseline on an empty DB, else `migrate deploy`).
 - Entra ID is used for sign-in only - no HRMS/Graph sync. `candidateType` Internal means "signed in with a UCAA Microsoft account"; `InternalProfile` fields (supervisor etc.) are self-declared + HR-verified, not read from Entra, which holds no department/trade data. Committee members and interview panelists still get link-only access (no Microsoft sign-in yet).

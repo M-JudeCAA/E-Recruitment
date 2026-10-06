@@ -1,6 +1,13 @@
 import axios from 'axios';
 
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+// VITE_API_URL=same-origin: the browser reaches the API through the server
+// that served the page (the `vite preview` proxy in vite.config.js), so one
+// build works on every site port and over HTTPS - used by the office-network
+// test deployment in deploy/lan/.
+const configuredApiUrl = import.meta.env.VITE_API_URL;
+export const API_URL = configuredApiUrl === 'same-origin'
+  ? window.location.origin
+  : (configuredApiUrl || 'http://localhost:4000');
 
 export const OFFLINE_MESSAGE = 'Server offline. We can\'t reach the server right now - please check your connection and try again shortly.';
 export const TIMEOUT_MESSAGE = 'The server is taking too long to respond. Please try again.';

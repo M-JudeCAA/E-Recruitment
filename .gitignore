@@ -14,6 +14,8 @@ dist/
 build/
 */dist/
 */build/
+frontend/dist-next/
+frontend/dist-previous/
 
 # Uploaded files (CVs, cover letters, recommendation letters)
 uploads/
@@ -24,6 +26,7 @@ backend/prisma/migrations/dev.db
 *.db
 
 # Logs
+deploy/lan/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
