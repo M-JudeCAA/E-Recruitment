@@ -108,9 +108,14 @@ reachable from UCAA's network only:
    ```
 10. **Testers' PCs trust the certificate.** Until they do, browsers show a
     "not secure" warning that each tester has to click through on each of
-    the three addresses. IT can push `uat-tls.cer` to *Trusted Root
-    Certification Authorities* by group policy, or replace the certificate
-    with one from UCAA's certificate authority (same file, same settings).
+    the three addresses. A Domain Admin pushes it to every domain computer
+    with a Group Policy Object (administrator PowerShell; re-run it whenever
+    the certificate is remade):
+    ```powershell
+    powershell -ExecutionPolicy Bypass -File E:\eRecruitment-UAT\deploy\lan\trust-certificate-gpo.ps1
+    ```r
+    Or replace the certificate with one from UCAA's certificate authority
+    (same file, same settings).
 
 ## Checking it works
 

@@ -4,7 +4,7 @@
 #   uat-tls.cer  the certificate alone, for IT to make testers' PCs trust it
 # and prints the passphrase for PREVIEW_TLS_PASSPHRASE.
 #
-#   powershell -ExecutionPolicy Bypass -File deploy\lan\new-certificate.ps1 -HostNames ark-atams.caa.co.ug -IpAddresses 192.168.20.115
+#   powershell -ExecutionPolicy Bypass -File deploy\lan\new-certificate.ps1 -HostNames erecruitment-uat.caa.co.ug,ark-atams.caa.co.ug -IpAddresses 192.168.20.115
 #
 # HTTPS is required, not cosmetic: Microsoft sign-in only redirects to https
 # addresses (other than localhost) and won't run on an insecure page.
@@ -18,6 +18,11 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 New-Item -ItemType Directory -Force $OutDir | Out-Null
+
+# `powershell -File` passes "a,b,c" as ONE string, not three names - which
+# made a certificate for a single name with commas in it, matching nothing.
+$HostNames = @($HostNames -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$IpAddresses = @($IpAddresses -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
 $san = (@($HostNames | ForEach-Object { "DNS=$_" }) + @($IpAddresses | ForEach-Object { "IPAddress=$_" })) -join '&'
 $cert = New-SelfSignedCertificate -Subject "CN=$($HostNames[0])" -FriendlyName 'UCAA e-Recruitment UAT' `
