@@ -1,5 +1,4 @@
 const multer = require('multer');
-const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const {
@@ -10,12 +9,21 @@ const { AppError } = require('../utils/errorResponse');
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
+// The stored file's extension comes from its (allow-listed) type, never from
+// the uploader's file name - the name is theirs to choose, so "cv.html" sent
+// as application/pdf would otherwise be stored, and served back, as a web page.
+const EXTENSION_FOR_MIME = {
+  'application/pdf': '.pdf',
+  'application/msword': '.doc',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+  'image/jpeg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp'
+};
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${uuidv4()}${ext}`);
-  }
+  filename: (req, file, cb) => cb(null, `${uuidv4()}${EXTENSION_FOR_MIME[file.mimetype] || ''}`)
 });
 
 const fileFilter = (req, file, cb) => {

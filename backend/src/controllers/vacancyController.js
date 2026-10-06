@@ -23,7 +23,7 @@ const { toPublicVacancy } = require('../utils/publicVacancy');
 const { escapeHtml } = require('../utils/interviewFormat');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
 const {
-  validateVacancyEditableFields, screeningQuestionCountError,
+  validateVacancyEditableFields, parseDeadline, screeningQuestionCountError,
   normalizeStringList, normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades
 } = require('../utils/vacancyValidation');
 
@@ -68,7 +68,7 @@ function buildVacancyCreateData(position, reportsToPositionId, body, createdById
     requiredExamGrades: normalizeRequiredExamGrades(requiredExamGrades) ?? [],
     positionsRequired: positionsRequired !== undefined ? Number(positionsRequired) : 1,
     postingType, // required, validated by the caller - no more Open fallback
-    deadline: deadline ? new Date(deadline) : null,
+    deadline: parseDeadline(deadline),
     regulatoryDriver, category, priority,
     // Structured advert content (Job Purpose / Person Specification) -
     // all optional, normalized defensively since these arrive as nested
@@ -302,13 +302,34 @@ async function update(req, res) {
   const questionError = screeningQuestionCountError(nextDesirable, nextDisqualifying,
     countOf(vacancy.desirableRequirements) + countOf(vacancy.disqualifyingRequirements));
   if (questionError) fieldErrors.push(questionError);
+  // The age limits as they will stand - an edit may send only one of them,
+  // which the validation above can't compare with the other.
+  const ageAfter = (sent, stored) => (sent === undefined ? stored : (sent ? Number(sent) : null));
+  const nextMinimumAge = ageAfter(minimumAge, vacancy.minimumAge);
+  const nextMaximumAge = ageAfter(maximumAge, vacancy.maximumAge);
+  const AGE_ORDER_ERROR = 'Minimum age cannot be greater than maximum age';
+  if (nextMinimumAge && nextMaximumAge && nextMinimumAge > nextMaximumAge && !fieldErrors.includes(AGE_ORDER_ERROR)) {
+    fieldErrors.push(AGE_ORDER_ERROR);
+  }
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
   if (vacancy.status === 'Rejected') return res.status(422).json({ error: 'A rejected vacancy can no longer be edited' });
 
+  // Before approval the posting type is part of the draft. After it, a
+  // change is a transition: Manager+, audited, locked once made after the
+  // deadline - transitionPostingType, never this HR Officer edit. The form
+  // always sends the type, so the same value is just left alone.
+  const drafting = ['PendingApproval', 'Returned'].includes(vacancy.status);
+  if (postingType !== undefined && postingType !== vacancy.postingType && !drafting) {
+    return res.status(409).json({
+      error: 'This vacancy has been approved - change its posting type with "Change to ...", which a Manager or Director approves',
+      code: 'USE_POSTING_TYPE_TRANSITION'
+    });
+  }
+
   const data = {};
-  if (postingType !== undefined) data.postingType = postingType;
-  if (deadline !== undefined) data.deadline = deadline ? new Date(deadline) : null;
+  if (postingType !== undefined && drafting) data.postingType = postingType;
+  if (deadline !== undefined) data.deadline = parseDeadline(deadline);
   if (salaryScale !== undefined) data.salaryScale = salaryScale;
   if (regulatoryDriver !== undefined) data.regulatoryDriver = regulatoryDriver;
   if (category !== undefined) data.category = category;
@@ -395,15 +416,23 @@ async function update(req, res) {
     return res.status(400).json({ error: 'Give a reason for changing the deadline of a published vacancy' });
   }
 
-  const updated = await vacancyModel.update(vacancyId, data);
+  let updated = await vacancyModel.update(vacancyId, data);
+  // A different number of posts changes whether the vacancy is filled, and
+  // a raised one is filled from the merit list's reserves.
+  let promoted = [];
+  if (data.positionsRequired !== undefined && data.positionsRequired !== vacancy.positionsRequired) {
+    ({ promoted } = await workflow.rebalancePositions(vacancyId));
+    updated = await vacancyModel.findById(vacancyId);
+  }
   await audit.record({
     entityType: 'Vacancy', entityId: vacancyId,
     action: deadlineMoved && published
       ? (vacancy.deadline && data.deadline && data.deadline > vacancy.deadline ? 'Vacancy deadline extended' : 'Vacancy deadline changed')
       : 'Vacancy edited',
-    actor: audit.actorFrom(req), before: vacancy, after: updated, fields: Object.keys(data), comment: reason
+    actor: audit.actorFrom(req), before: vacancy, after: updated, fields: [...Object.keys(data), 'status'], comment: reason,
+    details: promoted.length ? { promotedApplicationIds: promoted.map((a) => a.id) } : undefined
   });
-  res.json(updated);
+  res.json(promoted.length ? { ...updated, promotedApplicationIds: promoted.map((a) => a.id) } : updated);
 }
 
 // A comment is mandatory wherever an approver says no, and when a vacancy
@@ -562,6 +591,18 @@ async function actsAsDirector(req) {
   return false;
 }
 
+const VACANCY_CHANGED = {
+  error: 'This vacancy has changed since you opened it - refresh, review it again and then approve',
+  code: 'VACANCY_CHANGED'
+};
+// An approver's "the version I reviewed": null when not sent, false when
+// not a date.
+function versionSeen(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? false : d;
+}
+
 async function approve(req, res) {
   const vacancyId = Number(req.params.id);
   const vacancy = await vacancyModel.findById(vacancyId);
@@ -574,6 +615,14 @@ async function approve(req, res) {
     const why = vacancy.status === 'Returned' ? 'It was returned for revision - HR needs to resubmit it first'
       : vacancy.status === 'Rejected' ? 'It was rejected' : 'It does not need approval right now';
     return res.status(422).json({ error: `This vacancy can't be approved. ${why}.` });
+  }
+  // The version the approver reviewed (the vacancy's updatedAt as they saw
+  // it). When sent, approval applies only to that version - an edit since
+  // is refused, never approved unseen. Checked again in the write below.
+  const seen = versionSeen(req.body?.expectedUpdatedAt);
+  if (seen === false) return res.status(400).json({ error: 'expectedUpdatedAt must be a date' });
+  if (seen && vacancy.updatedAt && seen.getTime() !== new Date(vacancy.updatedAt).getTime()) {
+    return res.status(409).json(VACANCY_CHANGED);
   }
   // Approving (or re-opening) a vacancy whose deadline has already passed
   // would publish it in a state that can never accept an application -
@@ -633,8 +682,8 @@ async function approve(req, res) {
         ...(needsHeadcountAuthorisation ? { headcountException: { ...headcountException, ...stamp } } : {})
       }
     } : {})
-  });
-  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  }, seen ? { updatedAt: seen } : {});
+  if (result.count === 0) return res.status(409).json(seen ? VACANCY_CHANGED : { error: 'This vacancy was already updated - please refresh and try again' });
   const updated = await vacancyModel.findById(vacancyId);
 
   // VacancyApproval can now be tracked and escalated by the SLA checker,
@@ -696,7 +745,7 @@ async function transitionPostingType(req, res) {
   // being changed - re-sending the vacancy's own already-past deadline
   // unchanged (the "kept as is" choice) must still be accepted.
   const currentDeadlineTime = vacancy.deadline ? vacancy.deadline.getTime() : null;
-  const newDeadline = deadline !== undefined ? (deadline ? new Date(deadline) : null) : undefined;
+  const newDeadline = deadline !== undefined ? parseDeadline(deadline) : undefined;
   const deadlineChanged = newDeadline !== undefined && (newDeadline?.getTime() ?? null) !== currentDeadlineTime;
   if (deadlineChanged) {
     const fieldErrors = validateVacancyEditableFields({ deadline });

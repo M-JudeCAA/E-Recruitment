@@ -2,6 +2,7 @@ const prisma = require('../config/db');
 const { AppError } = require('../utils/errorResponse');
 const meritList = require('./meritListService');
 const { notifyAllWithRole } = require('./notificationService');
+const { localDay } = require('../utils/interviewFormat');
 
 // ===========================================================================
 // Offer management - step four of selection, fed by the merit list:
@@ -224,9 +225,25 @@ async function revise(offerId, body, revisedById) {
  * fixed from responseDays. Refused when the terms are missing (an offer
  * recommended before terms existed) or every position is already filled.
  */
-async function approve(offer, approverId, now = new Date()) {
+// `seen` - the offer's recommendedDate as the approver saw it, when sent:
+// revising the terms moves it on, so terms changed after the approver
+// reviewed them are refused (409 OFFER_CHANGED), never issued unseen.
+const OFFER_CHANGED = 'The terms of this offer have changed since you opened it - refresh, review them again and then approve';
+async function approve(offer, approverId, now = new Date(), seen = null) {
+  if (seen && (!offer.recommendedDate || new Date(offer.recommendedDate).getTime() !== seen.getTime())) {
+    const err = new AppError(OFFER_CHANGED, 409);
+    err.code = 'OFFER_CHANGED';
+    throw err;
+  }
   if (!hasTerms(offer)) {
     throw new AppError('This offer has no terms yet - the recommending officer needs to add the salary, start date and contract before it can be approved', 422);
+  }
+  // Checked when it was recommended, but an offer can wait a while for
+  // approval: one whose start date has gone by can't be issued as it stands.
+  if (localDay(offer.startDate) < localDay(now)) {
+    const err = new AppError('The start date on this offer has already passed - return it so the terms can be revised', 422);
+    err.code = 'START_DATE_PASSED';
+    throw err;
   }
   const vacancy = offer.application.vacancy;
   const accepted = await prisma.offer.count({ where: { status: 'Accepted', application: { vacancyId: vacancy.id } } });
@@ -235,10 +252,14 @@ async function approve(offer, approverId, now = new Date()) {
   }
   const responseDeadline = new Date(now.getTime() + (offer.responseDays || DEFAULT_RESPONSE_DAYS) * DAY_MS);
   const result = await prisma.offer.updateMany({
-    where: { id: offer.id, status: 'Recommended' },
+    where: { id: offer.id, status: 'Recommended', ...(seen ? { recommendedDate: seen } : {}) },
     data: { status: 'Approved', approvedById: approverId, approvedDate: now, responseDeadline }
   });
-  if (result.count === 0) throw new AppError('This offer was already updated - please refresh and try again', 409);
+  if (result.count === 0) {
+    const err = new AppError(seen ? OFFER_CHANGED : 'This offer was already updated - please refresh and try again', 409);
+    if (seen) err.code = 'OFFER_CHANGED';
+    throw err;
+  }
   return responseDeadline;
 }
 

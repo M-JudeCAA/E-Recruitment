@@ -45,6 +45,19 @@ async function vacancyIdsAppliedForByStaff(staffId) {
   return [...new Set(applications.map((a) => a.vacancyId))];
 }
 
+// The other way round: the staff members who applied for a vacancy - left
+// out of anything sent about its applicants.
+async function staffIdsAppliedFor(vacancyId) {
+  const candidates = await prisma.candidate.findMany({
+    where: { applications: { some: { vacancyId, status: { notIn: CONFLICT_STATUSES_EXCLUDED } } } },
+    select: { email: true, entraObjectId: true }
+  });
+  if (!candidates.length) return [];
+  const or = candidates.flatMap((c) => [{ email: c.email }, ...(c.entraObjectId ? [{ entraObjectId: c.entraObjectId }] : [])]);
+  const staff = await prisma.staffUser.findMany({ where: { OR: or }, select: { id: true } });
+  return staff.map((s) => s.id);
+}
+
 // The vacancies the requester is shut out of: their own applications, and
 // their delegator's when this request runs under a delegation. Worked out
 // once per request.
@@ -108,6 +121,7 @@ module.exports = {
   ApplicantConflictError,
   flagStaffApplicant,
   vacancyIdsAppliedForByStaff,
+  staffIdsAppliedFor,
   conflictedVacancyIds,
   isConflicted,
   assertNotApplicant,

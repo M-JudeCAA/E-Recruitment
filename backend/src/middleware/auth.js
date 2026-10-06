@@ -75,6 +75,22 @@ function requireStaffRole(minRole) {
   };
 }
 
+// For an action a route gates lower than the action itself needs (a check
+// requireStaffRole can't make up front): whether the staff member holds
+// minRole by their own role or by an active delegation, logging the
+// delegation's use as requireStaffRole does.
+async function hasRankOrDelegation(req, minRole) {
+  if ((ROLE_RANK[req.user.role] || 0) >= ROLE_RANK[minRole]) return true;
+  const delegationModel = require('../models/delegationModel');
+  const delegation = await delegationModel.findActiveForDelegate(req.user.id, new Date());
+  if (delegation && (ROLE_RANK[delegation.delegator.role] || 0) >= ROLE_RANK[minRole]) {
+    await delegationModel.logUsage(delegation.id, `${req.method} ${req.originalUrl}`);
+    req.actingAsDelegateFor = delegation.delegatorId;
+    return true;
+  }
+  return false;
+}
+
 // Staff account administration. Deliberately outside ROLE_RANK: a system
 // administrator manages accounts, and approves nothing unless they also
 // hold an HR role - and no HR role, however senior, manages accounts.
@@ -103,10 +119,20 @@ function requireSystemAdminOrRole(minRole) {
   };
 }
 
-function requireCandidate(req, res, next) {
+// The account as it is now, like loadCurrentStaff: once a candidate's data
+// is erased their open sessions end at once rather than at token expiry
+// (which would leave the anonymised account writable). Refreshes
+// req.user.candidateType, which can change at a first Microsoft sign-in.
+async function requireCandidate(req, res, next) {
   if (req.user.type !== 'candidate') {
     return res.status(403).json({ error: 'Candidate access required' });
   }
+  const candidateModel = require('../models/candidateModel');
+  const current = await candidateModel.findAuthState(req.user.id);
+  if (!current || current.purgedAt) {
+    return res.status(401).json({ error: 'This account has been closed' });
+  }
+  req.user.candidateType = current.candidateType;
   next();
 }
 
@@ -124,4 +150,4 @@ function optionalAuthenticate(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, optionalAuthenticate, requireStaffRole, requireSystemAdmin, requireSystemAdminOrRole, requireCandidate, ROLE_RANK };
+module.exports = { authenticate, optionalAuthenticate, requireStaffRole, hasRankOrDelegation, requireSystemAdmin, requireSystemAdminOrRole, requireCandidate, ROLE_RANK };

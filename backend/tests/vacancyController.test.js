@@ -280,7 +280,9 @@ describe('update', () => {
   // creation now - update() doesn't even read positionId from the body,
   // so silently passing one has no effect. Title stays as the original snapshot.
   test('ignores a positionId in the payload - position/title/department are immutable after creation', async () => {
-    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionId: 100, title: 'CWG Officer', positionsRequired: 1 });
+    prisma.vacancy.findUnique.mockResolvedValue({
+      id: 1, positionId: 100, title: 'CWG Officer', positionsRequired: 1, status: 'PendingApproval', postingType: 'External'
+    });
     prisma.vacancy.update.mockResolvedValue({ id: 1 });
     const req = { params: { id: '1' }, body: { positionId: '999', postingType: 'Internal' } };
     const res = mockRes();
@@ -292,6 +294,62 @@ describe('update', () => {
     expect(data.title).toBeUndefined();
     expect(data.postingType).toBe('Internal');
     expect(prisma.position.findUnique).not.toHaveBeenCalled();
+  });
+
+  test('checks one age limit sent alone against the other one as stored', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 1, status: 'Open', postingType: 'External', minimumAge: 21, maximumAge: 35 });
+    let res = mockRes();
+    await vacancyController.update({ params: { id: '1' }, body: { minimumAge: 40 }, user: { id: 5, role: 'HR_Officer' } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ errors: ['Minimum age cannot be greater than maximum age'] });
+
+    // Clearing the maximum makes any minimum fine.
+    prisma.vacancy.update.mockResolvedValue({ id: 1 });
+    res = mockRes();
+    await vacancyController.update({ params: { id: '1' }, body: { minimumAge: 40, maximumAge: '' }, user: { id: 5, role: 'HR_Officer' } }, res);
+    expect(prisma.vacancy.update).toHaveBeenCalled();
+  });
+
+  test('a changed number of posts recomputes the vacancy and fills new posts from the merit list', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionId: 100, positionsRequired: 1, status: 'Filled', postingType: 'External' });
+    prisma.vacancy.update.mockResolvedValue({ id: 1 });
+    prisma.offer.count.mockResolvedValue(1);
+    prisma.position.findUnique.mockResolvedValue({ id: 100, headcount: null });
+    const rebalance = jest.spyOn(require('../src/services/workflowService'), 'rebalancePositions').mockResolvedValue({ promoted: [{ id: 45 }] });
+    const res = mockRes();
+
+    await vacancyController.update({ params: { id: '1' }, body: { positionsRequired: 2 }, user: { id: 5, role: 'Director' } }, res);
+
+    expect(rebalance).toHaveBeenCalledWith(1);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ promotedApplicationIds: [45] }));
+    rebalance.mockRestore();
+  });
+
+  describe('posting type', () => {
+    test.each(['PendingApproval', 'Returned'])('can change while the vacancy is %s', async (status) => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 1, status, postingType: 'External' });
+      prisma.vacancy.update.mockResolvedValue({ id: 1 });
+      await vacancyController.update({ params: { id: '1' }, body: { postingType: 'Internal' }, user: { id: 5, role: 'HR_Officer' } }, mockRes());
+      expect(prisma.vacancy.update.mock.calls[0][0].data.postingType).toBe('Internal');
+    });
+
+    test.each(['Open', 'PartiallyFilled', 'Filled', 'Closed'])('cannot change once the vacancy is %s - that is the Manager transition', async (status) => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 1, status, postingType: 'External' });
+      const res = mockRes();
+      await vacancyController.update({ params: { id: '1' }, body: { postingType: 'Internal' }, user: { id: 5, role: 'HR_Officer' } }, res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'USE_POSTING_TYPE_TRANSITION' }));
+      expect(prisma.vacancy.update).not.toHaveBeenCalled();
+    });
+
+    test('the same posting type, as the edit form always sends it, saves the other changes', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 1, status: 'Open', postingType: 'External' });
+      prisma.vacancy.update.mockResolvedValue({ id: 1 });
+      await vacancyController.update({ params: { id: '1' }, body: { postingType: 'External', salaryScale: 'U4' }, user: { id: 5, role: 'HR_Officer' } }, mockRes());
+      const data = prisma.vacancy.update.mock.calls[0][0].data;
+      expect(data.postingType).toBeUndefined();
+      expect(data.salaryScale).toBe('U4');
+    });
   });
 
   test('rejects reducing positionsRequired below the number of accepted offers', async () => {
@@ -403,6 +461,36 @@ describe('approve', () => {
       expect(res.status).not.toHaveBeenCalledWith(422);
       expect(prisma.vacancy.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 1, status } }));
     });
+
+  describe('approves only the version the approver reviewed', () => {
+    const seen = new Date('2026-10-01T09:00:00.000Z');
+
+    test('a vacancy edited since they opened it is refused', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5, updatedAt: new Date('2026-10-01T09:05:00.000Z') });
+      const res = mockRes();
+      await vacancyController.approve({ params: { id: '1' }, body: { expectedUpdatedAt: seen.toISOString() }, user: { id: 2, role: 'Manager' } }, res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'VACANCY_CHANGED' }));
+      expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
+    });
+
+    test('the version seen is approved - checked again in the write itself', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5, updatedAt: seen });
+      prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+      const res = mockRes();
+      await vacancyController.approve({ params: { id: '1' }, body: { expectedUpdatedAt: seen.toISOString() }, user: { id: 2, role: 'Manager' } }, res);
+      expect(prisma.vacancy.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 1, status: 'PendingApproval', updatedAt: seen } }));
+    });
+
+    test('an edit landing between the check and the write is refused too', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5, updatedAt: seen });
+      prisma.vacancy.updateMany.mockResolvedValue({ count: 0 });
+      const res = mockRes();
+      await vacancyController.approve({ params: { id: '1' }, body: { expectedUpdatedAt: seen.toISOString() }, user: { id: 2, role: 'Manager' } }, res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'VACANCY_CHANGED' }));
+    });
+  });
 
   test('refuses to approve a vacancy whose deadline has already passed', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5, deadline: new Date('2000-01-01') });
@@ -681,7 +769,8 @@ describe('transitionPostingType', () => {
       params: { id: '1' }, body: { postingType: 'External', deadline: '2999-01-01' }, user: { id: 2, role: 'Manager' }
     }, res);
     expect(prisma.vacancy.update).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ deadline: new Date('2999-01-01'), postingTypeLocked: true })
+      // The whole of that day in Kampala (vacancyValidation.parseDeadline).
+      data: expect.objectContaining({ deadline: new Date('2999-01-01T20:59:59.999Z'), postingTypeLocked: true })
     }));
   });
 });

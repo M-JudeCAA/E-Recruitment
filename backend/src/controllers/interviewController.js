@@ -17,6 +17,7 @@ const { validateEmail } = require('../utils/validators');
 const { buildCalendar } = require('../utils/icsCalendar');
 const { endOf } = require('../utils/interviewFormat');
 const { fileUrl } = require('../middleware/upload');
+const { removeUploads } = require('../utils/uploadFiles');
 const { CLEARED_MERIT } = require('../services/meritListService');
 
 // Interviews are scheduled here and held outside the system: the panel
@@ -861,7 +862,7 @@ async function recordResults(req, res) {
     const notes = cleanText(req.body.notes, 2000);
     if (!correcting && !req.file) throw new AppError('Attach the signed score sheet', 400);
 
-    const application = await applicationModel.findById(round.applicationId, { offer: true });
+    const application = await applicationModel.findById(round.applicationId, { offer: true, vacancy: true });
     if (correcting) {
       if (round.recommendation === 'Reject' || recommendation === 'Reject') {
         throw new AppError('A rejection is final and the candidate has been told - it can\'t be changed by correcting the results', 409);
@@ -869,7 +870,17 @@ async function recordResults(req, res) {
       if (application.meritStatus || application.offer) {
         throw new AppError('This candidate is already on the merit list - take them off it (re-propose without them) before correcting their results', 409);
       }
-    } else if (!FINALIZABLE_STATUSES.includes(application.status)) {
+    }
+    // The latest round that went ahead speaks for the candidate (as on the
+    // merit list - meritListService.latestHeldRound). Results for an earlier
+    // round recorded late are kept on that round, but don't move the
+    // application: a late "Reject" for round 1 must not undo round 2.
+    const laterRound = correcting ? null : await prisma.interviewRound.findFirst({
+      where: { applicationId: round.applicationId, roundNumber: { gt: round.roundNumber }, status: { notIn: ['Cancelled', 'NoShow'] } },
+      select: { roundNumber: true }
+    });
+    const decides = !correcting && !laterRound;
+    if (decides && !FINALIZABLE_STATUSES.includes(application.status)) {
       throw new AppError(`This application is at status "${application.status}" and can no longer have interview results recorded`, 409);
     }
 
@@ -879,25 +890,38 @@ async function recordResults(req, res) {
       data.scoreSheetUrl = fileUrl(req.file);
       data.scoreSheetName = String(req.file.originalname || 'score-sheet').slice(0, 190);
     }
-    const result = correcting
-      ? await interviewModel.updateIfCompleted(round.id, data)
-      : await interviewModel.updateIfScheduled(round.id, { ...data, status: 'Completed', completedAt: now });
-    if (result.count === 0) throw new AppError('This interview was changed by someone else - refresh and try again', 409);
-
-    if (!correcting) {
-      if (recommendation === 'Reject') {
+    // The round and the application move together, each only from the state
+    // read above: an HR rejection (or anything else) landing on the
+    // application in the meantime is never overwritten - the whole entry is
+    // refused instead.
+    await prisma.$transaction(async (tx) => {
+      const result = correcting
+        ? await tx.interviewRound.updateMany({ where: { id: round.id, status: 'Completed' }, data })
+        : await tx.interviewRound.updateMany({ where: { id: round.id, status: 'Scheduled' }, data: { ...data, status: 'Completed', completedAt: now } });
+      if (result.count === 0) throw new AppError('This interview was changed by someone else - refresh and try again', 409);
+      if (!decides) return;
+      const applicationData = recommendation === 'Reject'
         // Same path as applicationController's own reject() - rank/listStatus
         // cleared and rankVersion bumped for the same reasons.
-        const updatedApplication = await applicationModel.update(round.applicationId, {
+        ? {
           status: 'Rejected', rejectedAt: now, rejectedById: req.user.id,
           rejectionReason: 'Not recommended following the interview panel\'s assessment.',
           rank: null, listStatus: null, ...CLEARED_MERIT, rankVersion: { increment: 1 }
-        }, { vacancy: true });
-        await notifyCandidateSafely(updatedApplication.candidateId, 'ApplicationRejected',
-          `We're sorry to let you know your application for "${updatedApplication.vacancy.title}" was not successful this time.`);
-      } else {
-        await applicationModel.update(round.applicationId, { status: 'Interviewed' });
+        }
+        : { status: 'Interviewed' };
+      const moved = await tx.application.updateMany({
+        where: { id: round.applicationId, status: { in: FINALIZABLE_STATUSES } }, data: applicationData
+      });
+      if (moved.count === 0) {
+        throw new AppError('This application was changed by someone else while the results were being recorded - refresh and try again', 409);
       }
+    }, { timeout: 15000, maxWait: 5000 });
+    // A corrected sheet replaces the old one, which nothing refers to now.
+    if (req.file && round.scoreSheetUrl) await removeUploads(round.scoreSheetUrl);
+
+    if (decides && recommendation === 'Reject') {
+      await notifyCandidateSafely(application.candidateId, 'ApplicationRejected',
+        `We're sorry to let you know your application for "${application.vacancy?.title}" was not successful this time.`);
     }
 
     const before = { score: round.score, recommendation: round.recommendation, resultNotes: round.resultNotes, scoreSheetName: round.scoreSheetName };
@@ -906,7 +930,8 @@ async function recordResults(req, res) {
     await auditService.record({
       entityType: 'Application', entityId: round.applicationId,
       action: correcting ? `Interview results corrected (round ${round.roundNumber})`
-        : recommendation === 'Reject' ? 'Application rejected (interview panel)' : `Interview results recorded: ${recommendation}`,
+        : laterRound ? `Interview results recorded for round ${round.roundNumber}: ${recommendation} (round ${laterRound.roundNumber} decides)`
+          : recommendation === 'Reject' ? 'Application rejected (interview panel)' : `Interview results recorded: ${recommendation}`,
       actor: auditService.actorFrom(req),
       before: correcting ? before : null, after, fields: ['score', 'recommendation', 'resultNotes', 'scoreSheetName'],
       details: { interviewRoundId: round.id }, comment: notes || null

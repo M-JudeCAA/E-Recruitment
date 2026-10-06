@@ -28,11 +28,18 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  // undefined until HireSection has looked; null when not marked hired.
+  const [hire, setHire] = useState(undefined);
 
   if (!offer) return null;
+  const accepted = offer.status === 'Accepted';
   const canRevise = rank >= ROLE_RANK.Principal_HR_Officer && ['Recommended', 'Returned'].includes(offer.status);
   const canDecide = rank >= ROLE_RANK.Manager && offer.status === 'Recommended';
-  const canWithdraw = rank >= ROLE_RANK.Principal_HR_Officer && OPEN_OFFER_STATUSES.includes(offer.status);
+  // An accepted offer the candidate didn't take up: a Manager+ withdraws it,
+  // until they are marked hired (the API also accepts a delegated Manager).
+  const canWithdraw = (rank >= ROLE_RANK.Principal_HR_Officer && OPEN_OFFER_STATUSES.includes(offer.status))
+    || (rank >= ROLE_RANK.Manager && accepted && hire === null);
+  const reasonNeeded = accepted ? 10 : 0;
   const hasLetters = offer.salaryAmount != null && offer.status !== 'Withdrawn';
   if (!canRevise && !canDecide && !canWithdraw && !hasLetters && offer.status !== 'Accepted') return null;
 
@@ -74,7 +81,8 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
         {canDecide && (
           <>
             <Button style={small} loading={busy === 'approve'} loadingText="Issuing..." disabled={!!busy}
-              onClick={() => act('approve', () => staffClient.patch(`/api/applications/offers/${offer.id}/approve`), () => 'Offer approved and issued to the candidate.')}>
+              // The terms on screen are what is approved - changed since, the API refuses (OFFER_CHANGED).
+              onClick={() => act('approve', () => staffClient.patch(`/api/applications/offers/${offer.id}/approve`, { expectedRecommendedDate: offer.recommendedDate }), () => 'Offer approved and issued to the candidate.')}>
               <CheckCircle2 size={13} /> Approve &amp; issue
             </Button>
             <Button variant="secondary" style={small} disabled={!!busy} onClick={() => open('return')}>
@@ -93,7 +101,7 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
           </Button>
         )}
       </div>
-      <HireSection offer={offer} staffRole={staffRole} onChanged={onChanged} />
+      <HireSection offer={offer} staffRole={staffRole} onChanged={onChanged} onHire={setHire} />
       {error && !modal && <div style={{ color: 'var(--color-danger)', fontSize: 12, marginTop: 4 }}>{error}</div>}
       {notice && <div style={{ color: 'var(--color-success)', fontSize: 12, marginTop: 4 }}>{notice}</div>}
 
@@ -118,7 +126,7 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
       {modal === 'withdraw' && (
         <Modal title="Withdraw offer" onClose={() => setModal(null)} footer={<>
           <Button variant="ghost" onClick={() => setModal(null)} disabled={!!busy}>Cancel</Button>
-          <Button loading={busy === 'withdraw'} loadingText="Withdrawing..."
+          <Button loading={busy === 'withdraw'} loadingText="Withdrawing..." disabled={reason.trim().length < reasonNeeded}
             onClick={() => act('withdraw', () => staffClient.patch(`/api/applications/offers/${offer.id}/withdraw`, { reason: reason || undefined }),
               (res) => (res.data.promotedApplicationId
                 ? `Offer withdrawn. The next reserve (application #${res.data.promotedApplicationId}) is now Primary.`
@@ -128,12 +136,15 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
         </>}>
           {error && <div style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
-            {offer.status === 'Approved'
-              ? 'The candidate has already been sent this offer and will be told it is withdrawn, with your reason. '
-              : 'The candidate was never told about this offer. '}
+            {accepted
+              ? 'The candidate accepted this offer. Withdraw it only if they will not be taking up the post; they will be told, with your reason. '
+              : offer.status === 'Approved'
+                ? 'The candidate has already been sent this offer and will be told it is withdrawn, with your reason. '
+                : 'The candidate was never told about this offer. '}
             Unless the vacancy is already filled, the next reserve on the merit list moves up to Primary.
           </p>
-          <TextArea label="Reason (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
+          <TextArea label={accepted ? 'Reason' : 'Reason (optional)'} required={accepted} value={reason}
+            hint={accepted ? 'At least 10 characters.' : undefined} onChange={(e) => setReason(e.target.value)} />
         </Modal>
       )}
     </div>

@@ -219,6 +219,25 @@ describe('handleOfferDeclined', () => {
     expect(result.promoted).toBeNull();
   });
 
+  // A release racing an acceptance on the same vacancy: the vacancy row is
+  // locked before anything in the transaction is read, as on acceptance.
+  test('locks the vacancy row before anything else in the transaction', async () => {
+    const order = [];
+    prisma.offer.findUnique.mockResolvedValue({ id: 10, application: { vacancyId: 1, candidateId: 7 } });
+    prisma.$queryRaw.mockImplementation(async () => { order.push('lock'); return [{ id: 1 }]; });
+    prisma.offer.updateMany.mockImplementation(async () => { order.push('close'); return { count: 1 }; });
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 1, status: 'Filled' });
+    prisma.offer.count.mockResolvedValue(1);
+
+    const result = await workflow.handleOfferDeclined(10);
+
+    expect(order).toEqual(['lock', 'close']);
+    expect(prisma.$queryRaw.mock.calls[0][0].join('?')).toMatch(/FROM Vacancy WHERE id = \? FOR UPDATE/);
+    expect(prisma.$queryRaw.mock.calls[0][1]).toBe(1);
+    // Filled by then - nobody moves up.
+    expect(result.promoted).toBeNull();
+  });
+
   // Atomic guard - an offer that's no longer Approved (already declined by
   // a prior/concurrent call, or approved-then-accepted in the meantime)
   // must not re-run the reserve-promotion cascade a second time.
@@ -228,6 +247,59 @@ describe('handleOfferDeclined', () => {
     const result = await workflow.handleOfferDeclined(10);
 
     expect(result.conflict).toBe(true);
+    expect(prisma.application.findFirst).not.toHaveBeenCalled();
+  });
+});
+
+describe('rebalancePositions', () => {
+  test('raising the number of posts moves reserves up until enough Primaries hold a post', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 3, status: 'Filled' }]);
+    // Has a merit list (counted again by each promotion); 1 Primary holding a post.
+    prisma.application.count.mockResolvedValue(4).mockResolvedValueOnce(4).mockResolvedValueOnce(1);
+    prisma.application.findFirst.mockResolvedValueOnce({ id: 31 }).mockResolvedValueOnce({ id: 32 });
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 3, status: 'Filled' });
+    prisma.offer.count.mockResolvedValue(1);
+
+    const result = await workflow.rebalancePositions(1);
+
+    expect(result.promoted.map((a) => a.id)).toEqual([31, 32]);
+    expect(prisma.application.update).toHaveBeenCalledWith({ where: { id: 32 }, data: { meritListStatus: 'Primary' } });
+    // 1 accepted of 3 - no longer Filled.
+    expect(prisma.vacancy.update).toHaveBeenCalledWith({ where: { id: 1 }, data: { status: 'PartiallyFilled' } });
+  });
+
+  test('stops when the reserves run out', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 3, status: 'Open' }]);
+    prisma.application.count.mockResolvedValue(2).mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+    prisma.application.findFirst.mockResolvedValue(null);
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, positionsRequired: 3, status: 'Open' });
+    prisma.offer.count.mockResolvedValue(0);
+
+    expect((await workflow.rebalancePositions(1)).promoted).toEqual([]);
+  });
+
+  test.each(['PendingApproval', 'Returned', 'Closed'])('leaves a %s vacancy alone', async (status) => {
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 3, status }]);
+    expect((await workflow.rebalancePositions(1)).promoted).toEqual([]);
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('releasePrimary', () => {
+  test('the post of a Primary who left goes to the next reserve', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 2 }]);
+    prisma.offer.count.mockResolvedValue(1);
+    prisma.application.count.mockResolvedValue(3);
+    prisma.application.findFirst.mockResolvedValue({ id: 31 });
+
+    expect((await workflow.releasePrimary(1)).id).toBe(31);
+  });
+
+  test('nobody moves up once every post is filled', async () => {
+    prisma.$queryRaw.mockResolvedValue([{ positionsRequired: 1 }]);
+    prisma.offer.count.mockResolvedValue(1);
+
+    expect(await workflow.releasePrimary(1)).toBeNull();
     expect(prisma.application.findFirst).not.toHaveBeenCalled();
   });
 });

@@ -212,8 +212,13 @@ export default function MeritListBoard({ vacancy, staffRole, reloadKey, onChange
     const applicationRankVersions = Object.fromEntries([...board.entries, ...board.eligible].map((r) => [r.applicationId, r.rankVersion]));
     return staffClient.post(`/api/applications/vacancies/${vacancy.id}/merit-list`, { applicationIds: staging, applicationRankVersions });
   }, 'Merit list proposed. A Principal HR Officer who did not propose it now needs to approve it.');
-  const approve = () => run('approve', () => staffClient.post(`/api/applications/vacancies/${vacancy.id}/merit-list/approve`),
-    'Merit list approved. Offers can now be recommended for the Primary candidates.');
+  // The list on screen is what is approved - re-proposed since, the API
+  // refuses (MERIT_LIST_CHANGED) and the board reloads.
+  const approve = () => run('approve', () => {
+    const applicationRankVersions = Object.fromEntries(board.entries
+      .filter((r) => r.meritStatus === 'Proposed').map((r) => [r.applicationId, r.rankVersion]));
+    return staffClient.post(`/api/applications/vacancies/${vacancy.id}/merit-list/approve`, { applicationRankVersions });
+  }, 'Merit list approved. Offers can now be recommended for the Primary candidates.');
   const afterOfferChange = () => { load(); onChanged?.(); };
 
   const onDrop = (index) => (e) => {

@@ -252,24 +252,52 @@ async function propose(vacancyId, applicationIds, applicationRankVersions, propo
  * Approves the proposed merit list as one decision. Blocked for anyone who
  * proposed any of it - the same self-approval rule as the shortlist
  * (workflowService.assertNotSelfApprovedShortlist).
+ *
+ * seenVersions ({ applicationId: rankVersion }, from the board the approver
+ * reviewed), when sent, pins the approval to that list: every proposal
+ * bumps rankVersion, so a list re-proposed or changed since is refused
+ * (409 MERIT_LIST_CHANGED) rather than approved unseen. Each row is
+ * approved only at the version seen, all in one transaction.
  */
-async function approve(vacancyId, approverId) {
+const MERIT_LIST_CHANGED = 'The merit list has changed since you opened it - refresh, review it again and then approve';
+function meritListChanged() {
+  const err = new AppError(MERIT_LIST_CHANGED, 409);
+  err.code = 'MERIT_LIST_CHANGED';
+  return err;
+}
+
+async function approve(vacancyId, approverId, seenVersions) {
   const proposed = await prisma.application.findMany({
     where: { vacancyId, meritStatus: 'Proposed' },
-    select: { id: true, meritProposedById: true, meritListStatus: true }
+    select: { id: true, meritProposedById: true, meritListStatus: true, rankVersion: true }
   });
   if (proposed.length === 0) throw new AppError('No proposed merit list is awaiting approval for this vacancy', 422);
   if (proposed.some((a) => a.meritProposedById === approverId)) {
     throw new AppError('You proposed this merit list, so it must be approved by another Principal HR Officer or above', 422);
   }
-  const result = await prisma.application.updateMany({
-    where: { vacancyId, meritStatus: 'Proposed' },
-    data: { meritStatus: 'Approved', meritApprovedAt: new Date(), meritApprovedById: approverId }
-  });
-  return {
-    approvedCount: result.count,
-    primaryCount: proposed.filter((a) => a.meritListStatus === 'Primary').length
-  };
+  const data = { meritStatus: 'Approved', meritApprovedAt: new Date(), meritApprovedById: approverId };
+
+  if (seenVersions == null) {
+    const result = await prisma.application.updateMany({ where: { vacancyId, meritStatus: 'Proposed' }, data });
+    return { approvedCount: result.count, primaryCount: proposed.filter((a) => a.meritListStatus === 'Primary').length };
+  }
+
+  if (typeof seenVersions !== 'object' || Array.isArray(seenVersions)) {
+    throw new AppError('applicationRankVersions must map application ids to their rankVersion', 400);
+  }
+  const seenIds = Object.keys(seenVersions).map(Number);
+  const sameList = seenIds.length === proposed.length
+    && proposed.every((a) => Number.isInteger(seenVersions[a.id]) && seenVersions[a.id] === a.rankVersion);
+  if (!sameList) throw meritListChanged();
+  await prisma.$transaction(async (tx) => {
+    for (const a of proposed) {
+      const row = await tx.application.updateMany({
+        where: { id: a.id, vacancyId, meritStatus: 'Proposed', rankVersion: seenVersions[a.id] }, data
+      });
+      if (row.count === 0) throw meritListChanged();
+    }
+  }, { timeout: 15000, maxWait: 5000 });
+  return { approvedCount: proposed.length, primaryCount: proposed.filter((a) => a.meritListStatus === 'Primary').length };
 }
 
 // Approvals Center: one row per vacancy with a merit list awaiting approval.

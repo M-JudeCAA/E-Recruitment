@@ -10,6 +10,11 @@ module.exports = {
   // Any account already using this phone number (utils/phoneKey.js).
   findByPhoneKey: (phoneKey) => prisma.candidate.findFirst({ where: { phoneKey }, select: { id: true } }),
   findById: (id, include) => prisma.candidate.findUnique({ where: { id }, include }),
+  // What every candidate request re-checks (middleware/auth.js requireCandidate).
+  findAuthState: (id) => prisma.candidate.findUnique({
+    where: { id },
+    select: { id: true, candidateType: true, purgedAt: true }
+  }),
   create: (data) => prisma.candidate.create({ data }),
   update: (id, data) => prisma.candidate.update({ where: { id }, data }),
   // internalProfile is included alongside education/workExperience so this

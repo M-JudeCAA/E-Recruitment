@@ -560,9 +560,11 @@ describe('recordResults', () => {
   }
   const call = async (body, { round = detailedRound({ scheduledDate: held }), file = sheet(), application } = {}) => {
     prisma.interviewRound.findUnique.mockResolvedValue(round);
-    prisma.application.findUnique.mockResolvedValue(application || { id: 1, status: 'InterviewScheduled', meritStatus: null, offer: null });
+    prisma.application.findUnique.mockResolvedValue(application || {
+      id: 1, candidateId: 5, status: 'InterviewScheduled', meritStatus: null, offer: null, vacancy: { title: 'Air Traffic Controller' }
+    });
     prisma.interviewRound.updateMany.mockResolvedValue({ count: 1 });
-    prisma.application.update.mockResolvedValue({ id: 1, candidateId: 5, vacancy: { title: 'Air Traffic Controller' } });
+    prisma.application.updateMany.mockResolvedValue({ count: 1 });
     const res = mockRes();
     await interviewController.recordResults({ params: { interviewId: '1' }, body, file, user: { id: 9, type: 'staff' } }, res);
     return { res, file };
@@ -582,7 +584,9 @@ describe('recordResults', () => {
         status: 'Completed', scoreSheetUrl: `/api/files/${file.filename}`, scoreSheetName: 'Panel score sheet - Jane Doe.pdf'
       })
     });
-    expect(prisma.application.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 1 }, data: { status: 'Interviewed' } }));
+    expect(prisma.application.updateMany).toHaveBeenCalledWith({
+      where: { id: 1, status: { in: ['InterviewScheduled', 'Interviewed'] } }, data: { status: 'Interviewed' }
+    });
     expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ action: 'Interview results recorded' }) });
     expect(res.status).not.toHaveBeenCalled();
     expect(fs.existsSync(file.path)).toBe(true);
@@ -591,13 +595,52 @@ describe('recordResults', () => {
 
   test('a "Reject" verdict rejects the application and tells the candidate', async () => {
     const { file } = await call({ score: '41', recommendation: 'Reject' });
-    expect(prisma.application.update).toHaveBeenCalledWith(expect.objectContaining({
+    expect(prisma.application.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: 'Rejected', rejectedById: 9, rank: null, meritStatus: null })
     }));
     expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ candidateId: 5, type: 'ApplicationRejected' })
+      data: expect.objectContaining({ candidateId: 5, type: 'ApplicationRejected', message: expect.stringContaining('Air Traffic Controller') })
     }));
     fs.rmSync(file.path, { force: true });
+  });
+
+  test('an application changed meanwhile (say, rejected by HR) is not overwritten - the entry is refused', async () => {
+    prisma.application.updateMany.mockResolvedValue({ count: 0 });
+    prisma.interviewRound.findUnique.mockResolvedValue(detailedRound({ scheduledDate: held }));
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, status: 'InterviewScheduled', meritStatus: null, offer: null, vacancy: {} });
+    prisma.interviewRound.updateMany.mockResolvedValue({ count: 1 });
+    const file = sheet();
+    const res = mockRes();
+    await interviewController.recordResults({ params: { interviewId: '1' }, body: { score: '41', recommendation: 'Reject' }, file, user: { id: 9 } }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(prisma.candidateNotification.create).not.toHaveBeenCalled();
+    expect(await gone(file.path)).toBe(true);
+  });
+
+  test('a late result for an earlier round is kept on that round, but the later round decides', async () => {
+    prisma.interviewRound.findFirst.mockResolvedValueOnce({ roundNumber: 2 });
+    const { res, file } = await call({ score: '30', recommendation: 'Reject' }, {
+      application: { id: 1, candidateId: 5, status: 'Rejected', meritStatus: null, offer: null, vacancy: { title: 'ATC' } }
+    });
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(prisma.interviewRound.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 1, status: 'Scheduled' } }));
+    expect(prisma.application.updateMany).not.toHaveBeenCalled();
+    expect(prisma.candidateNotification.create).not.toHaveBeenCalled();
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ action: expect.stringMatching(/round 2 decides/) }) });
+    fs.rmSync(file.path, { force: true });
+  });
+
+  test('a corrected score sheet replaces the old file', async () => {
+    const old = sheet();
+    process.env.UPLOAD_DIR = path.dirname(old.path);
+    const round = detailedRound({ scheduledDate: held, status: 'Completed', score: 60, recommendation: 'Hold', scoreSheetUrl: `/api/files/${old.filename}` });
+    const { res, file } = await call({ score: '65', recommendation: 'Shortlist' }, { round });
+    expect(res.status).not.toHaveBeenCalled();
+    expect(await gone(old.path)).toBe(true);
+    expect(fs.existsSync(file.path)).toBe(true);
+    fs.rmSync(file.path, { force: true });
+    delete process.env.UPLOAD_DIR;
   });
 
   test.each([

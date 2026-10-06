@@ -4,9 +4,11 @@ jest.mock('../src/models/delegationModel', () => ({
 }));
 
 jest.mock('../src/models/staffModel', () => ({ findAuthState: jest.fn() }));
+jest.mock('../src/models/candidateModel', () => ({ findAuthState: jest.fn() }));
 
 const delegationModel = require('../src/models/delegationModel');
 const staffModel = require('../src/models/staffModel');
+const candidateModel = require('../src/models/candidateModel');
 const { requireStaffRole, requireSystemAdmin, requireCandidate, ROLE_RANK } = require('../src/middleware/auth');
 
 // A staff session whose account, as stored now, has this role.
@@ -246,24 +248,49 @@ describe('requireSystemAdmin', () => {
 });
 
 describe('requireCandidate', () => {
-  test('rejects staff users', () => {
+  test('rejects staff users', async () => {
     const req = { user: { type: 'staff' } };
     const res = mockRes();
     const next = jest.fn();
 
-    requireCandidate(req, res, next);
+    await requireCandidate(req, res, next);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
   });
 
-  test('allows candidate users', () => {
-    const req = { user: { type: 'candidate' } };
+  test('allows candidate users, with their candidate type as stored now', async () => {
+    candidateModel.findAuthState.mockResolvedValue({ id: 7, candidateType: 'Internal', purgedAt: null });
+    const req = { user: { type: 'candidate', id: 7, candidateType: 'External' } };
     const res = mockRes();
     const next = jest.fn();
 
-    requireCandidate(req, res, next);
+    await requireCandidate(req, res, next);
 
     expect(next).toHaveBeenCalled();
+    expect(req.user.candidateType).toBe('Internal');
+  });
+
+  test('ends the session of a candidate whose data has been erased', async () => {
+    candidateModel.findAuthState.mockResolvedValue({ id: 7, candidateType: 'External', purgedAt: new Date() });
+    const res = mockRes();
+    const next = jest.fn();
+
+    await requireCandidate({ user: { type: 'candidate', id: 7 } }, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({ error: 'This account has been closed' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('ends the session of an account that no longer exists', async () => {
+    candidateModel.findAuthState.mockResolvedValue(null);
+    const res = mockRes();
+    const next = jest.fn();
+
+    await requireCandidate({ user: { type: 'candidate', id: 7 } }, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
   });
 });

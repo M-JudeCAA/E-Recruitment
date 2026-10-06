@@ -224,6 +224,41 @@ describe('internal candidate Microsoft sign-in', () => {
     expect(res.status).toHaveBeenCalledWith(409);
   });
 
+  describe('an older password account on a UCAA address', () => {
+    const legacy = { id: 41, email: 'jane@caa.co.ug', candidateType: 'External', entraObjectId: null, passwordHash: 'hash', lastLoginAt: new Date() };
+
+    test('is not switched to Internal while it has External applications in flight', async () => {
+      prisma.candidate.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(legacy);
+      prisma.application.count.mockResolvedValue(1);
+      const res = mockRes();
+
+      await candidateAuth.entraLogin({ body: { idToken: 'x' } }, res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'EXTERNAL_APPLICATIONS_IN_PROGRESS' }));
+      expect(prisma.candidate.update).not.toHaveBeenCalled();
+      // In flight: drafts and the pipeline, open offers, accepted ones not yet hired.
+      const { where } = prisma.application.count.mock.calls[0][0];
+      expect(where).toEqual(expect.objectContaining({ candidateId: 41, vacancy: { postingType: 'External' } }));
+      expect(where.OR).toContainEqual({ status: 'Offered', offer: { status: 'Accepted', hire: { is: null } } });
+    });
+
+    test('is switched once nothing is in flight', async () => {
+      prisma.candidate.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(legacy);
+      prisma.application.count.mockResolvedValue(0);
+      prisma.candidate.update.mockResolvedValue({ ...legacy, candidateType: 'Internal', entraObjectId: 'oid-123', passwordHash: null });
+      prisma.internalProfile.findUnique.mockResolvedValue({ candidateId: 41 });
+      const res = mockRes();
+
+      await candidateAuth.entraLogin({ body: { idToken: 'x' } }, res);
+
+      expect(prisma.candidate.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 41 }, data: expect.objectContaining({ candidateType: 'Internal', passwordHash: null })
+      }));
+      expect(res.status).not.toHaveBeenCalledWith(409);
+    });
+  });
+
   test('a UCAA address cannot open a password account - internal status comes only from Microsoft sign-in', async () => {
     const res = mockRes();
 

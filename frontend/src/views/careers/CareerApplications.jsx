@@ -81,7 +81,8 @@ export default function CareerApplications() {
 
   const withdraw = async (app) => {
     const draft = app.status === 'Draft';
-    if (!(await confirm(draft ? 'Delete this draft? You can start a new application for this vacancy afterwards.' : 'Withdraw this application? You can’t apply for this vacancy again.',
+    if (!(await confirm(draft ? 'Delete this draft? You can start a new application for this vacancy afterwards.'
+      : `Withdraw this application? You can’t apply for this vacancy again.${app.status === 'InterviewScheduled' ? ' Your booked interview will be cancelled.' : ''}`,
       { title: draft ? 'Delete draft' : 'Withdraw application', confirmLabel: draft ? 'Delete draft' : 'Withdraw', danger: true }))) return;
     try {
       await client.patch(`/api/applications/${app.id}/withdraw`);
@@ -112,7 +113,7 @@ export default function CareerApplications() {
               <Button variant="ghost" style={{ color: 'var(--color-danger)' }} onClick={() => withdraw(open)}>Delete draft</Button>
               {(left == null || left >= 0) && <Button onClick={() => navigate(SITE.apply(open.vacancyId))}>Continue</Button>}
             </>
-          ) : ['Submitted', 'UnderReview', 'Shortlisted', 'InterviewScheduled', 'Interviewed'].includes(open.status) && !open.offer ? (
+          ) : ['Submitted', 'UnderReview', 'ShortlistProposed', 'Shortlisted', 'InterviewScheduled', 'Interviewed'].includes(open.status) && !open.offer ? (
             <Button variant="ghost" style={{ color: 'var(--color-danger)' }} onClick={() => withdraw(open)}>Withdraw application</Button>
           ) : null}>
           <div>

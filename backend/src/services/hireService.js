@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
-const path = require('path');
 const prisma = require('../config/db');
+const { uploadPath } = require('../utils/uploadFiles');
 const { refYear } = require('../utils/jobRefGenerator');
 const { AppError } = require('../utils/errorResponse');
 
@@ -16,13 +16,6 @@ const { AppError } = require('../utils/errorResponse');
 
 const ONB = 'ONB';
 const formatCaseRef = (n, year) => `UCAA/ONB/${String(n).padStart(3, '0')}/${year}`;
-
-function uploadPath(url) {
-  if (!url) return null;
-  const dir = path.resolve(process.env.UPLOAD_DIR || './uploads');
-  const file = path.join(dir, path.basename(String(url)));
-  return file.startsWith(dir + path.sep) ? file : null;
-}
 
 async function sha256Of(url) {
   const file = uploadPath(url);

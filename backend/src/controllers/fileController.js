@@ -57,14 +57,33 @@ async function serve(req, res) {
   sendUploadedFile(res, filename);
 }
 
+// Types a browser may show in the tab. Anything else - Word files, and any
+// file stored under another extension before uploads were named by their
+// type - is only ever downloaded, never rendered: a file a candidate
+// uploaded must not run as a page on this site, where staff sessions live.
+const INLINE_TYPES = {
+  '.pdf': 'application/pdf',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp'
+};
+
 // Streams one uploaded file once the caller's access has been checked -
 // shared with the shortlisting committee's link (shortlistPanelController).
 function sendUploadedFile(res, filename) {
   const filePath = path.join(uploadDir, filename);
-  if (!filePath.startsWith(uploadDir) || !fs.existsSync(filePath)) {
+  if (path.basename(filename) !== filename || !filePath.startsWith(uploadDir + path.sep) || !fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'File not found' });
   }
-  return res.sendFile(filePath);
+  const inlineType = INLINE_TYPES[path.extname(filename).toLowerCase()];
+  res.set('X-Content-Type-Options', 'nosniff');
+  if (inlineType) {
+    res.type(inlineType);
+    return res.sendFile(filePath);
+  }
+  res.set('Content-Type', 'application/octet-stream');
+  return res.download(filePath, filename);
 }
 
 module.exports = { authenticateFromHeaderOrQuery, serve, sendUploadedFile };

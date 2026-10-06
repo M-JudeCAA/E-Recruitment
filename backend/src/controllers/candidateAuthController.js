@@ -1,6 +1,7 @@
 const { sendError } = require('../utils/errorResponse');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const prisma = require('../config/db');
 const candidateModel = require('../models/candidateModel');
 const internalProfileModel = require('../models/internalProfileModel');
 const pendingRegistrationModel = require('../models/pendingRegistrationModel');
@@ -211,6 +212,22 @@ async function login(req, res) {
 // confirmed - Entra has proven the address. After that the oid alone
 // matches. The internal profile (supervisor etc.) is still self-declared
 // and HR-verified, as Entra holds none of it.
+// Applications on External vacancies not yet finished: a draft, anything in
+// the pipeline, or an offer still open - or accepted, until they are hired.
+function externalApplicationsInFlight(candidateId) {
+  return prisma.application.count({
+    where: {
+      candidateId,
+      vacancy: { postingType: 'External' },
+      OR: [
+        { status: { in: ['Draft', 'Submitted', 'UnderReview', 'ShortlistProposed', 'Shortlisted', 'InterviewScheduled', 'Interviewed'] } },
+        { status: 'Offered', offer: { status: { in: ['Recommended', 'Returned', 'Approved', 'Extended'] } } },
+        { status: 'Offered', offer: { status: 'Accepted', hire: { is: null } } }
+      ]
+    }
+  });
+}
+
 async function entraLogin(req, res) {
   let identity;
   try {
@@ -228,6 +245,16 @@ async function entraLogin(req, res) {
         // The address now belongs to a different Microsoft identity - a
         // reused mailbox, not the person who opened this account.
         return res.status(409).json({ error: 'This email is linked to a different Microsoft account. Contact UCAA HR.' });
+      }
+      // An older password account on a UCAA address becomes Internal here -
+      // but not while it has something in flight on an External vacancy,
+      // which an Internal account can neither submit nor be shortlisted for.
+      if (byEmail.candidateType !== 'Internal' && (await externalApplicationsInFlight(byEmail.id)) > 0) {
+        return res.status(409).json({
+          error: 'Your account has applications for external vacancies still in progress. Keep signing in with your email and password '
+            + 'until they are finished; you can switch to your UCAA Microsoft account after that.',
+          code: 'EXTERNAL_APPLICATIONS_IN_PROGRESS'
+        });
       }
       candidate = await candidateModel.update(byEmail.id, {
         entraObjectId: identity.oid, candidateType: 'Internal', emailConfirmed: true, passwordHash: null

@@ -71,7 +71,8 @@ const MULTER_MESSAGES = {
  */
 function classifyError(err, fallbackStatus = 500) {
   if (err && err.isAppError) {
-    return { status: err.status || 400, message: err.message };
+    // A code set on an AppError is part of the answer (e.g. START_DATE_PASSED).
+    return { status: err.status || 400, message: err.message, ...(typeof err.code === 'string' ? { code: err.code } : {}) };
   }
   if (isDatabaseUnavailable(err)) {
     return { status: 503, message: UNAVAILABLE_MESSAGE, code: 'SERVICE_UNAVAILABLE' };

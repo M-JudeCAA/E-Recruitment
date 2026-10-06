@@ -85,7 +85,7 @@ export default function ReviewPanel({ item, staffRole, onClose, onDone }) {
       <>
         <Button variant="ghost" style={{ color: 'var(--color-danger)' }} disabled={busy} onClick={() => setAsking('reject')}>Reject</Button>
         <Button variant="secondary" disabled={busy} onClick={() => setAsking('return')}>Return for changes</Button>
-        <Button loading={busy} loadingText="Approving..." onClick={() => run(async () => Boolean(await approveVacancy(v.id, confirm)), 'Vacancy approved and advertised. Its creator has been told.')}>Approve</Button>
+        <Button loading={busy} loadingText="Approving..." onClick={() => run(async () => Boolean(await approveVacancy(v, confirm)), 'Vacancy approved and advertised. Its creator has been told.')}>Approve</Button>
       </>
     );
     if (asking) {

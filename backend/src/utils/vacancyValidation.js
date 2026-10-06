@@ -1,4 +1,20 @@
 const crypto = require('crypto');
+const { dayBounds } = require('./interviewFormat');
+
+// The deadline as stored. The forms send a plain day ("2026-10-10"), which
+// means the whole of that day in APP_TIMEZONE - so it is kept as the last
+// millisecond of the day there. Read as `new Date(day)` it would be UTC
+// midnight, closing applications at 03:00 Kampala time on the deadline day.
+// A full timestamp is kept as sent. Returns null for no deadline, and an
+// Invalid Date for something that isn't a date.
+const PLAIN_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+function parseDeadline(value) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value === 'string' && PLAIN_DAY_RE.test(value.trim())) {
+    return new Date(dayBounds(value.trim()).end.getTime() - 1);
+  }
+  return new Date(value);
+}
 
 const VALID_POSTING_TYPES = ['Internal', 'External']; // 'Open' REMOVED - a vacancy is always exactly one or the other now
 const VALID_EMPLOYMENT_CATEGORIES = ['FullTime', 'Contract', 'FixedTermContract'];
@@ -171,10 +187,10 @@ function validateVacancyEditableFields(data, { partial = false } = {}) {
   // non-empty string is accepted here rather than rejected.
 
   if (deadline !== undefined && deadline !== null) {
-    const d = new Date(deadline);
-    if (isNaN(d.getTime())) {
+    const d = parseDeadline(deadline);
+    if (!d || isNaN(d.getTime())) {
       errors.push('Deadline is not a valid date');
-    } else if (d < new Date(new Date().toDateString())) {
+    } else if (d < new Date()) {
       errors.push('Deadline cannot be in the past');
     }
   }
@@ -220,7 +236,7 @@ function screeningQuestionCountError(desirable, disqualifying, previousCount = 0
 
 module.exports = {
   MAX_SCREENING_QUESTIONS, screeningQuestionCountError,
-  validateVacancyEditableFields, VALID_POSTING_TYPES, VALID_EMPLOYMENT_CATEGORIES, VALID_LOCATIONS,
+  validateVacancyEditableFields, parseDeadline, VALID_POSTING_TYPES, VALID_EMPLOYMENT_CATEGORIES, VALID_LOCATIONS,
   VALID_SECONDARY_LEVELS, O_LEVEL_GRADES, A_LEVEL_GRADES,
   normalizeStringList, normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades
 };

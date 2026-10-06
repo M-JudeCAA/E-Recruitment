@@ -183,10 +183,20 @@ async function acceptOfferTransactionally(offerId, vacancyId) {
  * acceptOfferTransactionally: the offer only closes if it is still in one of
  * fromStatuses, so two racing actions can't both apply.
  */
-async function closeOffer(offerId, fromStatuses, data) {
+// `where` narrows the guard further (an Accepted offer closes only while
+// nobody has marked the candidate hired).
+async function closeOffer(offerId, fromStatuses, data, where = {}) {
+  // Like acceptOfferTransactionally, the vacancy row is locked as the first
+  // statement, so a release and an acceptance on the same vacancy run one
+  // after the other: the accepted count below then sees an acceptance that
+  // just filled the last post, and no reserve is promoted onto a filled
+  // vacancy. Hence the vacancy is looked up before the transaction.
+  const target = await prisma.offer.findUnique({ where: { id: offerId }, select: { application: { select: { vacancyId: true } } } });
+  if (!target) return { conflict: true };
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM Vacancy WHERE id = ${target.application.vacancyId} FOR UPDATE`;
     const result = await tx.offer.updateMany({
-      where: { id: offerId, status: fromStatuses.length === 1 ? fromStatuses[0] : { in: fromStatuses } },
+      where: { id: offerId, status: fromStatuses.length === 1 ? fromStatuses[0] : { in: fromStatuses }, ...where },
       data
     });
     if (result.count === 0) return { conflict: true };
@@ -230,6 +240,62 @@ async function promoteNextReserve(tx, vacancyId) {
     });
   }
   return nextReserve || null;
+}
+
+// Primaries on the approved merit list still holding a post: no offer yet,
+// or one that hasn't ended without a hire.
+const POST_HOLDING_OFFER = ['Recommended', 'Returned', 'Approved', 'Extended', 'Accepted'];
+
+/**
+ * After positionsRequired changes on a published vacancy: its status is
+ * recomputed (Filled/PartiallyFilled/Open), and on a vacancy with an
+ * approved merit list, reserves move up until as many Primaries hold a post
+ * as there are positions - raising the number fills the new posts from the
+ * list, like a decline does. Lowering it takes nobody off Primary (they may
+ * already hold an offer). Returns the applications promoted.
+ */
+async function rebalancePositions(vacancyId) {
+  return prisma.$transaction(async (tx) => {
+    // Same lock-first rule as acceptOfferTransactionally.
+    const rows = await tx.$queryRaw`SELECT positionsRequired, status FROM Vacancy WHERE id = ${vacancyId} FOR UPDATE`;
+    const vacancy = rows && rows[0];
+    if (!vacancy || !['Open', 'PartiallyFilled', 'Filled'].includes(vacancy.status)) return { promoted: [] };
+
+    const promoted = [];
+    const hasMeritList = (await tx.application.count({ where: { vacancyId, meritStatus: 'Approved' } })) > 0;
+    if (hasMeritList) {
+      const holding = await tx.application.count({
+        where: {
+          vacancyId, meritStatus: 'Approved', meritListStatus: 'Primary',
+          OR: [{ offer: null }, { offer: { status: { in: POST_HOLDING_OFFER } } }]
+        }
+      });
+      for (let open = Number(vacancy.positionsRequired) - holding; open > 0; open -= 1) {
+        const next = await promoteNextReserve(tx, vacancyId);
+        if (!next) break;
+        promoted.push(next);
+      }
+    }
+    await recomputeVacancyStatus(vacancyId, tx);
+    return { promoted };
+  }, { timeout: 15000, maxWait: 5000 });
+}
+
+/**
+ * A Primary on the approved merit list left before any offer (they withdrew
+ * their application): their post goes to the next reserve, as when an offer
+ * is declined - unless every position is already filled. Vacancy row locked
+ * first, as everywhere offers and posts are counted. Returns the promoted
+ * application, or null.
+ */
+async function releasePrimary(vacancyId) {
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw`SELECT positionsRequired FROM Vacancy WHERE id = ${vacancyId} FOR UPDATE`;
+    if (!rows || !rows[0]) return null;
+    const accepted = await tx.offer.count({ where: { status: 'Accepted', application: { vacancyId } } });
+    if (accepted >= Number(rows[0].positionsRequired)) return null;
+    return promoteNextReserve(tx, vacancyId);
+  }, { timeout: 15000, maxWait: 5000 });
 }
 
 // The candidate declined their issued offer.
@@ -331,6 +397,8 @@ module.exports = {
   acceptOfferTransactionally,
   handleOfferDeclined,
   closeOffer,
+  rebalancePositions,
+  releasePrimary,
   captureSnapshot,
   notifySupervisor,
   logVacancyPostingTypeTransition

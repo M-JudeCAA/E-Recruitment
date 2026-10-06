@@ -25,4 +25,15 @@ async function notifyAllWithRole(role, taskType, taskId, message) {
   await Promise.all(recipients.map((r) => notify(r.id, taskType, taskId, message)));
 }
 
-module.exports = { notify, notifyAllWithRole };
+// Everyone in HR: active staff holding an HR role (an accounts-only system
+// administrator has none), except exceptIds.
+async function notifyAllHrStaff(taskType, taskId, message, { exceptIds = [] } = {}) {
+  const prisma = require('../config/db');
+  const recipients = await prisma.staffUser.findMany({
+    where: { role: { not: null }, active: true, ...(exceptIds.length ? { id: { notIn: exceptIds } } : {}) },
+    select: { id: true }
+  });
+  await Promise.all(recipients.map((r) => notify(r.id, taskType, taskId, message)));
+}
+
+module.exports = { notify, notifyAllWithRole, notifyAllHrStaff };

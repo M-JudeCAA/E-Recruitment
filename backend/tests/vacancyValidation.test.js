@@ -1,7 +1,8 @@
 const {
-  validateVacancyEditableFields, VALID_POSTING_TYPES, VALID_EMPLOYMENT_CATEGORIES, VALID_LOCATIONS,
+  validateVacancyEditableFields, parseDeadline, VALID_POSTING_TYPES, VALID_EMPLOYMENT_CATEGORIES, VALID_LOCATIONS,
   normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades
 } = require('../src/utils/vacancyValidation');
+const { localDay } = require('../src/utils/interviewFormat');
 
 // Title and department are no longer free-text here - since the Position
 // table, they're derived from the selected Position and validated via
@@ -91,6 +92,39 @@ describe('validateVacancyEditableFields - deadline', () => {
   test('accepts null as "no deadline"', () => {
     const errors = validateVacancyEditableFields({ deadline: null });
     expect(errors).toEqual([]);
+  });
+
+  test('accepts today, which runs to the end of the day in Kampala', () => {
+    const today = localDay(new Date());
+    expect(validateVacancyEditableFields({ deadline: today })).toEqual([]);
+  });
+});
+
+describe('parseDeadline', () => {
+  const original = process.env.APP_TIMEZONE;
+  afterEach(() => {
+    if (original === undefined) delete process.env.APP_TIMEZONE;
+    else process.env.APP_TIMEZONE = original;
+  });
+
+  test('reads a plain day as the last moment of that day in Kampala', () => {
+    process.env.APP_TIMEZONE = 'Africa/Kampala';
+    expect(parseDeadline('2026-10-10').toISOString()).toBe('2026-10-10T20:59:59.999Z');
+  });
+
+  test('keeps the same calendar day as the form sent it', () => {
+    expect(parseDeadline('2026-12-31').toISOString().slice(0, 10)).toBe('2026-12-31');
+  });
+
+  test('keeps a full timestamp as sent', () => {
+    expect(parseDeadline('2026-10-10T12:00:00.000Z').toISOString()).toBe('2026-10-10T12:00:00.000Z');
+  });
+
+  test('is null for no deadline, and an invalid date for nonsense', () => {
+    expect(parseDeadline(null)).toBeNull();
+    expect(parseDeadline('')).toBeNull();
+    expect(parseDeadline(undefined)).toBeNull();
+    expect(Number.isNaN(parseDeadline('not-a-date').getTime())).toBe(true);
   });
 });
 
