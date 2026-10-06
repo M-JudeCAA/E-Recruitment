@@ -16,5 +16,8 @@ function Get-GitExe {
 # whoever set it up, and git otherwise refuses to work in it as SYSTEM.
 function Invoke-Git {
   param([Parameter(ValueFromRemainingArguments)] $GitArgs)
+  # Judge git by its exit code: with output redirected, Windows PowerShell
+  # would turn anything git writes to stderr into a terminating error.
+  $ErrorActionPreference = 'Continue'
   & (Get-GitExe) -c safe.directory=* -C $script:root @GitArgs
 }

@@ -21,7 +21,11 @@ $pidFile = Join-Path $logs 'pids.txt'
 
 function Invoke-Step($what, [scriptblock]$block) {
   Write-Host "== $what" -ForegroundColor Cyan
-  & $block
+  # npm and git write warnings to stderr. When this script's output is
+  # redirected (the deploy task), Windows PowerShell turns each such line
+  # into an error, so judge by the exit code instead.
+  $ErrorActionPreference = 'Continue'
+  & $block 2>&1 | ForEach-Object { "$_" }
   if ($LASTEXITCODE) { throw "$what failed (exit $LASTEXITCODE)." }
 }
 
