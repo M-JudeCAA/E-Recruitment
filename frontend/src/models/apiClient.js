@@ -61,12 +61,15 @@ client.interceptors.response.use(
         detail: { kind: error.config.asStaff ? 'staff' : 'candidate', message: error.response.data?.error }
       }));
     }
-    if (status === 502 || status === 503 || status === 504) {
+    // A gateway status from the proxy means the API is unreachable, but the
+    // API itself also answers 502 with a code when a service it relies on
+    // (Microsoft Graph) refused or failed - that message says what to do.
+    if ((status === 502 || status === 503 || status === 504) && !error.response.data?.code) {
       return overrideError(error, status, OFFLINE_MESSAGE);
     }
     // 501 is deliberate too: a feature not set up on this server yet (e.g.
     // Microsoft sign-in with no Entra settings) - its message says which.
-    if (status >= 500 && status !== 501) {
+    if (status >= 500 && status !== 501 && status !== 502) {
       return overrideError(error, status, SERVER_ERROR_MESSAGE);
     }
     return Promise.reject(error);
