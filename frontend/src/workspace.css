@@ -12,7 +12,7 @@
   --color-border-strong: #C5D0DB;
 }
 
-.ws-page { display: grid; gap: 20px; min-width: 0; }
+.ws-page { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; min-width: 0; }
 .ws-crumb { font-size: 13px; color: var(--color-text-muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .ws-crumb a { color: var(--color-text-muted); text-decoration: none; }
 .ws-crumb a:hover { text-decoration: underline; }
@@ -142,3 +142,74 @@ dl.ws-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
   .ws-search { visibility: hidden; } /* keeps the right-hand icons pushed right */
 }
 .ws-page > .ui-card { margin-bottom: 0 !important; }
+
+/* ------------------------------------------------------------------ */
+/* Internal Careers (views/internal/*): the sign-in page, step rails for */
+/* the setup and application wizards, requirement checks, and an        */
+/* application's progress track.                                        */
+/* ------------------------------------------------------------------ */
+.ws-gate { min-height: calc(100vh - var(--navbar-height)); display: grid; place-items: center; padding: 32px 16px; background: var(--color-canvas, var(--color-bg-subtle)); }
+.ws-gate-card { width: min(460px, 100%); background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 28px; display: grid; gap: 16px; }
+.ws-gate-card .page-title { text-wrap: balance; }
+.ws-gate-facts { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--color-text-muted); }
+.ws-gate-facts li { display: flex; gap: 8px; align-items: flex-start; }
+.ws-gate-facts svg { color: var(--color-accent); flex: none; margin-top: 2px; }
+.ws-gate-foot { border-top: 1px solid var(--color-border); padding-top: 14px; font-size: 13px; color: var(--color-text-muted); }
+
+.ws-wizard { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; align-items: start; }
+.ws-wizard > * { min-width: 0; }
+.ws-wsteps { list-style: none; margin: 0; padding: 8px; display: grid; gap: 2px; }
+.ws-wsteps li { display: flex; gap: 10px; align-items: center; padding: 9px 10px; border-radius: var(--radius-sm); color: var(--color-text-muted); font-size: 13.5px; }
+.ws-wsteps li.go { cursor: pointer; }
+.ws-wsteps li.go:hover { background: var(--color-hover); }
+.ws-wsteps .ic { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 600; border: 1.5px solid var(--color-border-strong); flex: none; }
+.ws-wsteps li.done { color: var(--color-text); }
+.ws-wsteps li.done .ic { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+.ws-wsteps li.now { background: var(--color-primary-light); color: var(--color-primary-dark); font-weight: 600; }
+.ws-wsteps li.now .ic { border-color: var(--color-primary); color: var(--color-primary); }
+.ws-wsteps small { display: block; font-weight: 400; font-size: 12px; color: var(--color-text-muted); }
+.ws-wfoot { display: flex; justify-content: space-between; gap: 8px; padding: 14px 16px; border-top: 1px solid var(--color-border); background: var(--color-bg-subtle); border-radius: 0 0 var(--radius) var(--radius); flex-wrap: wrap; align-items: center; }
+.ws-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.ws-from-ms { font-size: 12px; color: var(--color-text-muted); margin: -8px 0 12px; }
+
+.ws-check { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--color-border); }
+.ws-check:last-child { border-bottom: 0; }
+.ws-check .mark { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; flex: none; }
+.ws-check .mark.ok { background: color-mix(in srgb, var(--color-accent) 14%, #fff); color: var(--color-accent); }
+.ws-check .mark.miss { background: var(--color-warning-light); color: var(--color-warning); }
+.ws-check .mark.bad { background: color-mix(in srgb, var(--color-danger) 12%, #fff); color: var(--color-danger); }
+.ws-check b { font-weight: 500; }
+.ws-check .d { font-size: 12.5px; color: var(--color-text-muted); }
+
+.ws-track { list-style: none; margin: 0; padding: 0; display: grid; }
+.ws-track li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 12px; padding-bottom: 16px; position: relative; }
+.ws-track li::after { content: ""; position: absolute; left: 9px; top: 20px; bottom: 0; width: 2px; background: var(--color-border); }
+.ws-track li:last-child::after { display: none; }
+.ws-track .dot { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--color-border-strong); background: var(--color-bg); display: grid; place-items: center; font-size: 11px; font-weight: 700; z-index: 1; }
+.ws-track li.done .dot { background: var(--color-accent); border-color: var(--color-accent); color: #fff; }
+.ws-track li.now .dot { border-color: var(--color-primary); color: var(--color-primary); }
+.ws-track li.wait .dot { border-color: var(--color-warning); color: var(--color-warning); }
+.ws-track li.bad .dot { border-color: var(--color-danger); color: var(--color-danger); }
+.ws-track li.todo { color: var(--color-text-faint); }
+.ws-track .when { font-size: 12.5px; color: var(--color-text-muted); }
+.ws-advert h2 { font-size: 15px; font-weight: 600; margin: 18px 0 6px; }
+.ws-advert ul, .ws-advert ol { margin: 0; padding-left: 18px; display: grid; gap: 3px; }
+.ws-sticky { position: sticky; top: calc(var(--navbar-height) + 16px); display: grid; gap: 16px; }
+
+@media (max-width: 860px) {
+  .ws-wizard { grid-template-columns: 1fr; }
+  .ws-wsteps { display: flex; overflow-x: auto; }
+  .ws-wsteps li { white-space: nowrap; }
+  .ws-wsteps small { display: none; }
+  .ws-form-grid { grid-template-columns: 1fr; }
+  .ws-sticky { position: static; }
+}
+
+/* DirectoryPersonField: suggestions from the UCAA directory under a name field. */
+.ws-suggest { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30; display: block; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12); overflow: hidden; }
+.ws-suggest ul { list-style: none; margin: 0; padding: 4px 0; max-height: 280px; overflow-y: auto; }
+.ws-suggest li { padding: 8px 12px; cursor: pointer; font-size: 14px; color: var(--color-text); }
+.ws-suggest li span { color: var(--color-text-muted); }
+.ws-suggest li small { display: block; font-size: 12px; color: var(--color-text-muted); margin-top: 1px; }
+.ws-suggest li.on { background: var(--color-primary-light); }
+.ws-suggest .msg { display: block; padding: 10px 12px; font-size: 13px; color: var(--color-text-muted); }

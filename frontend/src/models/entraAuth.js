@@ -85,30 +85,37 @@ export async function clearMicrosoftSession(kind) {
 // department, enabled accounts only), then User.ReadBasic.All. Resolves to
 // [{ entraObjectId, name, email, jobTitle, department }]; throws if Graph
 // can't be used here (not set up, consent missing, popup blocked).
+//
+// kind 'candidate': an employee on Internal Careers picking their supervisor,
+// with their own session on the candidate app - User.ReadBasic.All only (no
+// admin consent needed per user, though an admin can grant it for everyone)
+// and silently only: it runs as they type, where a popup would be blocked.
 const GRAPH_USERS = 'https://graph.microsoft.com/v1.0/users';
 
-async function graphToken(scope) {
-  const app = await appFor('staff');
+async function graphToken(scope, kind = 'staff') {
+  const app = await appFor(kind);
   const account = app.getActiveAccount() || app.getAllAccounts()[0];
   const request = { scopes: [scope], ...(account ? { account } : {}) };
   try {
     if (!account) throw new Error('no account');
     return (await app.acquireTokenSilent(request)).accessToken;
-  } catch {
+  } catch (err) {
+    if (kind !== 'staff') throw err;
     const result = await app.acquireTokenPopup(request);
     app.setActiveAccount(result.account);
     return result.accessToken;
   }
 }
 
-export async function searchStaffDirectory(query) {
-  if (!isEntraConfigured('staff')) throw new Error('Microsoft sign-in is not set up for this site.');
+export async function searchStaffDirectory(query, kind = 'staff') {
+  if (!isEntraConfigured(kind)) throw new Error('Microsoft sign-in is not set up for this site.');
   const q = String(query || '').replace(/["\\]/g, ' ').trim().slice(0, 60);
   if (q.length < 2) return [];
   let lastError;
-  for (const [scope, full] of [['User.Read.All', true], ['User.ReadBasic.All', false]]) {
+  const scopes = kind === 'staff' ? [['User.Read.All', true], ['User.ReadBasic.All', false]] : [['User.ReadBasic.All', false]];
+  for (const [scope, full] of scopes) {
     try {
-      const token = await graphToken(scope);
+      const token = await graphToken(scope, kind);
       const params = new URLSearchParams({
         $search: `"displayName:${q}" OR "mail:${q}"`,
         $select: full ? 'id,displayName,mail,userPrincipalName,jobTitle,department' : 'id,displayName,mail,userPrincipalName',
@@ -132,4 +139,34 @@ export async function searchStaffDirectory(query) {
     }
   }
   throw lastError || new Error('The staff directory could not be searched.');
+}
+
+// The signed-in UCAA employee's own directory entry (Graph /me with the
+// User.Read permission every app has), for filling in their employment
+// details on Internal Careers. Silent only - never opens a window - and
+// resolves to {} when Graph can't be reached or holds nothing, so the
+// person simply types the details in. Resolves to
+// { jobTitle, department, employeeId, managerName, managerEmail }.
+export async function myDirectoryProfile() {
+  if (!isEntraConfigured('candidate')) return {};
+  try {
+    const app = await appFor('candidate');
+    const account = app.getActiveAccount() || app.getAllAccounts()[0];
+    if (!account) return {};
+    const { accessToken } = await app.acquireTokenSilent({ scopes: ['User.Read'], account });
+    const headers = { Authorization: `Bearer ${accessToken}` };
+    const me = await fetch('https://graph.microsoft.com/v1.0/me?$select=jobTitle,department,employeeId', { headers })
+      .then((r) => (r.ok ? r.json() : {}));
+    const manager = await fetch('https://graph.microsoft.com/v1.0/me/manager?$select=displayName,mail,userPrincipalName', { headers })
+      .then((r) => (r.ok ? r.json() : {})).catch(() => ({}));
+    return {
+      jobTitle: me.jobTitle || null,
+      department: me.department || null,
+      employeeId: me.employeeId || null,
+      managerName: manager.displayName || null,
+      managerEmail: (manager.mail || manager.userPrincipalName || '').toLowerCase() || null
+    };
+  } catch {
+    return {};
+  }
 }

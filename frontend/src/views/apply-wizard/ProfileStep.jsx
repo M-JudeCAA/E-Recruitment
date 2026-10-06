@@ -13,7 +13,9 @@ import client from '../../models/apiClient';
 // only the frontend was missing. Entries are candidate-level, not
 // application-level - they persist across every application this
 // candidate ever submits.
-export default function ProfileStep({ profile, onProfileChange, profileDetails, setProfileDetail }) {
+// showPersonalDetails={false} leaves out the personal details block - Internal
+// Careers asks for those in its own short form and uses this for the entries.
+export default function ProfileStep({ profile, onProfileChange, profileDetails, setProfileDetail, showPersonalDetails = true }) {
   const confirm = useConfirm();
   const [newEdu, setNewEdu] = useState({ institution: '', qualificationLevel: '', fieldOfStudy: '', yearCompleted: '', cgpa: '' });
   const [newExp, setNewExp] = useState({ employer: '', jobTitle: '', startDate: '', endDate: '', duties: [] });
@@ -191,6 +193,7 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
 
   return (
     <div>
+      {showPersonalDetails && (<>
       <h3 style={{ fontSize: 15, marginBottom: 8 }}>Personal details</h3>
       <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 12 }}>
         Name, email, and phone come from your account. The rest is used for this and future applications.
@@ -218,7 +221,9 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
           value={profileDetails.flyingHours} onChange={setProfileDetail('flyingHours')} />
       </div>
 
-      <h3 style={{ fontSize: 15, marginBottom: 8, marginTop: 24 }}>
+      </>)}
+
+      <h3 style={{ fontSize: 15, marginBottom: 8, marginTop: showPersonalDetails ? 24 : 0 }}>
         Education<span style={{ color: 'var(--color-primary)', marginLeft: 4 }}>*</span>
       </h3>
       {(profile?.education || []).length === 0 && (

@@ -8,6 +8,7 @@ import { candidateFileSrc } from "../utils/fileSrc";
 import { staffHome } from "./ProtectedRoute";
 import { OPEN_SIDEBAR_EVENT } from "./Sidebar";
 import { isStaffPort } from "../staffPort";
+import { isInternalPort } from "../internalPort";
 import { Menu } from "lucide-react";
 import GlobalSearch from "./workspace/GlobalSearch";
 import ucaaLogo from "../assets/ucaa-logo.png";
@@ -38,6 +39,9 @@ export default function Navbar() {
   // title, the solid navy bar (theme.css .staff-ui .site-navbar), and on
   // phones a menu button that opens the HR sidebar (Sidebar.jsx rail).
   const staffSide = Boolean(staff) || isStaffPort();
+  // Internal Careers (internalPort.js): its own name, and the same rail sidebar.
+  const internal = isInternalPort();
+  const signedInInternal = internal && candidate?.candidateType === 'Internal';
 
   return (
     <nav
@@ -78,14 +82,14 @@ export default function Navbar() {
             signed-in candidate (the guest landing page's "Create an
             account"/"Sign in" CTAs don't make sense once already signed
             in), or the guest landing page otherwise. */}
-        {staff && (
+        {(staff || signedInInternal) && (
           <button type="button" className="navbar-menu-btn" aria-label="Open menu"
             onClick={() => window.dispatchEvent(new Event(OPEN_SIDEBAR_EVENT))}>
             <Menu size={20} />
           </button>
         )}
         <Link
-          to={staff ? staffHome(staff) : candidate ? "/dashboard" : "/"}
+          to={staff ? staffHome(staff) : internal ? "/careers" : candidate ? "/dashboard" : "/"}
           style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}
         >
           <span
@@ -106,14 +110,14 @@ export default function Navbar() {
           </span>
           {/* Phones get a short app-style title instead of the full name. */}
           <span className="mobile-only" style={{ ...linkStyle, fontWeight: 700, fontSize: 16 }}>
-            {staffSide ? "e-Recruitment" : "UCAA Careers"}
+            {internal ? "Internal Careers" : staffSide ? "e-Recruitment" : "UCAA Careers"}
           </span>
           <span className="desktop-only navbar-title" style={{ flexDirection: "column", lineHeight: 1.15 }}>
             <span style={{ ...linkStyle, fontWeight: 700, fontSize: 14.5 }}>
-              {staffSide ? "UCAA e-Recruitment" : "Uganda Civil Aviation Authority"}
+              {internal ? "UCAA Internal Careers" : staffSide ? "UCAA e-Recruitment" : "Uganda Civil Aviation Authority"}
             </span>
             <span style={{ ...linkStyle, fontWeight: 400, fontSize: 11.5, opacity: 0.85 }}>
-              {staffSide ? "Staff workspace" : "e-Recruitment"}
+              {internal ? "For UCAA staff only" : staffSide ? "Staff workspace" : "e-Recruitment"}
             </span>
           </span>
         </Link>
@@ -122,9 +126,11 @@ export default function Navbar() {
         {candidate && (
           <>
             {/* The phone tab bar already carries this. */}
-            <Link to="/dashboard" className="desktop-only" style={linkStyle}>
-              My dashboard
-            </Link>
+            {!internal && (
+              <Link to="/dashboard" className="desktop-only" style={linkStyle}>
+                My dashboard
+              </Link>
+            )}
             <CandidateNotificationBell />
 
             {/* Account panel - click the avatar for a card with name/type/

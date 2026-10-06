@@ -10,6 +10,7 @@ const { educationKey, workExperienceKey, certificateKey, examGradeKey } = requir
 const { normalizeStringList } = require('../utils/vacancyValidation');
 const { toPublicVacancy } = require('../utils/publicVacancy');
 const { toCandidateOffer } = require('../services/offerService');
+const { internalDomains } = require('../services/entraAuthService');
 const { toCandidateInterview } = require('../utils/candidateInterview');
 
 // Candidate rows carry passwordHash - fine for the internal auth-check
@@ -313,16 +314,38 @@ async function removePhoto(req, res) {
   res.json(omitPasswordHash(candidate));
 }
 
+const dayOf = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+const textOf = (v) => String(v ?? '').trim().toLowerCase();
+function internalDetailsChanged(current, next) {
+  return ['employeeId', 'department', 'position', 'supervisorName', 'supervisorEmail'].some((k) => next[k] !== undefined && textOf(current[k]) !== textOf(next[k]))
+    || dayOf(current.dateJoined) !== dayOf(next.dateJoined);
+}
+
 async function updateInternalProfile(req, res) {
   if (req.user.candidateType !== 'Internal') {
     return res.status(403).json({ error: 'Only internal candidates have an internal profile' });
   }
-  const { employeeId, department, position, dateJoined, supervisorName, supervisorEmail } = req.body;
-  const profile = await internalProfileModel.updateByCandidateId(req.user.id, {
+  const { employeeId, department, position, dateJoined, supervisorName } = req.body;
+  const supervisorEmail = req.body.supervisorEmail == null ? req.body.supervisorEmail : String(req.body.supervisorEmail).trim().toLowerCase();
+  // The supervisor is told about each application at this address, so it has
+  // to be a UCAA mailbox (Internal Careers picks it from the UCAA directory).
+  const domains = internalDomains();
+  if (supervisorEmail && domains.length && !domains.includes(supervisorEmail.split('@')[1])) {
+    return res.status(400).json({ error: "Your supervisor's email must be a UCAA address.", code: 'SUPERVISOR_NOT_UCAA' });
+  }
+  const data = {
     employeeId, department, position,
     dateJoined: dateJoined ? new Date(dateJoined) : null,
     supervisorName, supervisorEmail
-  });
+  };
+  // HR verified the details as they were. Changing any of them sends the
+  // profile back to Pending, so HR checks the new details before shortlisting
+  // (workflowService.assertCanShortlist) - the earlier evidence stays on file.
+  const current = await internalProfileModel.findByCandidateId(req.user.id);
+  if (current && current.verificationStatus !== 'Pending' && internalDetailsChanged(current, data)) {
+    Object.assign(data, { verificationStatus: 'Pending', verifiedById: null, verifiedDate: null });
+  }
+  const profile = await internalProfileModel.updateByCandidateId(req.user.id, data);
   await checkAndFireCompletionEvent(req.user.id);
   res.json(profile);
 }

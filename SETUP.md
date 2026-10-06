@@ -57,7 +57,7 @@ Every other field in `.env.example` needs a real value too:
 | `DEV_PASSWORD_LOGIN` | Optional, local development only: `true` lets the seeded demo staff accounts sign in with their password at `/staff/login?password`. Ignored when `NODE_ENV=production` |
 | `BREAK_GLASS_LOGIN` | Optional, production emergencies only: `true` lets a system administrator with a break-glass password sign in at `/staff/login?password` while Microsoft sign-in is down. Leave unset otherwise |
 | `PORT` | Leave as `4000` |
-| `FRONTEND_URL` | Comma-separated list of allowed CORS origins. Leave as `http://localhost:5173,http://localhost:4174` (guest dev server + staff preview, see [below](#staff-access-on-a-separate-port)) |
+| `FRONTEND_URL` | Comma-separated list of allowed CORS origins. Leave as `http://localhost:5173,http://localhost:4174,http://localhost:4175` (guest dev server, staff preview, Internal Careers preview - see [below](#staff-access-on-a-separate-port)) |
 | `SMTP_*` | See [Email](#email-gmail-smtp) below |
 | `UPLOAD_DIR` | Leave as `./uploads` |
 | `ACCESS_LOG_RETENTION_DAYS` | Optional. How long the record of who viewed candidate data is kept before the scheduled job deletes it (default `730`, minimum `90`). Once set on the Settings & data page (`/hr/settings`), the page's value wins |
@@ -130,7 +130,7 @@ admin centre → App registrations → New registration (single tenant):
 |---|---|---|
 | Name | UCAA e-Recruitment (staff) | UCAA e-Recruitment (candidates) |
 | Platform | Single-page application | Single-page application |
-| Redirect URI | `https://<staff host>/entra-redirect.html` (and `http://localhost:4174/entra-redirect.html` for dev) | `https://<candidate host>/entra-redirect.html` (and `http://localhost:5173/entra-redirect.html`) |
+| Redirect URI | `https://<staff host>/entra-redirect.html` (and `http://localhost:4174/entra-redirect.html` for dev) | `https://<Internal Careers host>/entra-redirect.html` (and `http://localhost:4175/entra-redirect.html` for dev) - employees sign in on Internal Careers only |
 | API permissions | Microsoft Graph `openid`, `profile`, `email` (delegated; the defaults) | same |
 | Token configuration (optional claims, ID token) | `email`, `acct` | `email`, `acct` |
 | Enterprise application → Properties → Assignment required | **Yes**, then assign a security group (e.g. "e-Recruitment Staff") — optional extra layer, the staff account list is still what decides | No — every employee may apply |
@@ -236,6 +236,51 @@ backend also uses the second entry (`staffFrontendUrl` in
 (the new-account email). Getting the
 order wrong doesn't break CORS, but it does send staff an email link to a
 port that immediately redirects them away.
+
+## Internal Careers on its own port
+
+UCAA employees apply on **Internal Careers** - the same build served on its
+own port (`4175` by default, `VITE_INTERNAL_PORT` to change it;
+`frontend/src/internalPort.js`). There, sign-in is Microsoft only (no
+password, registration or forgotten password), only Internal vacancies are
+listed, and the pages live under `/careers`. Every other path on that port
+goes to `/careers`, and `/careers` pages on any other port go to `/`. The
+public careers site keeps email and password for external applicants and
+links UCAA staff to Internal Careers instead of offering Microsoft sign-in.
+
+```bash
+cd frontend
+npm run build
+npm run preview:internal   # vite preview, http://localhost:4175
+```
+
+Before it works:
+
+- **Entra:** add `https://<Internal Careers host>/entra-redirect.html` (and
+  `http://localhost:4175/entra-redirect.html` for dev) to the **candidate** app
+  registration's redirect URIs. Without it Microsoft refuses the sign-in.
+- **API:** add the Internal Careers origin to `FRONTEND_URL` (third entry is
+  fine - the first two keep their meaning).
+- **Links between the sites:** when they have their own host names, set
+  `VITE_INTERNAL_SITE_URL` (where the public site sends UCAA staff) and
+  `VITE_PUBLIC_SITE_URL` (where Internal Careers sends non-employees) at
+  build time. Without them the same host is assumed (the public site on
+  `5173` when running locally).
+- **Directory details (optional):** on first sign-in the employment form is
+  filled from the employee's Microsoft profile (`/me` and `/me/manager` with
+  the default `User.Read` permission) where the directory has job title,
+  department, employee ID or manager. Nothing is needed for this; where the
+  directory is empty the employee types the details in.
+- **Picking the supervisor:** the Supervisor field suggests UCAA staff from
+  the directory as the employee types, and picking one fills the name and the
+  email (the email can't be typed while the directory works, and the API
+  refuses a supervisor email outside `INTERNAL_EMAIL_DOMAIN`). The browser
+  searches with the employee's own session: give the **candidate** app
+  registration the delegated Microsoft Graph permission **User.ReadBasic.All**
+  and grant admin consent for the organisation (the search never opens a
+  consent window). Failing that it uses the API's directory connection
+  (`ENTRA_DIRECTORY_CLIENT_SECRET`, above). With neither, the employee types
+  the name and UCAA email.
 
 ## Scheduled maintenance
 

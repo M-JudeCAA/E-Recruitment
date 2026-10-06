@@ -2,6 +2,7 @@ import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../models/AuthContext';
 import { isStaffPort } from '../staffPort';
+import { isInternalPort } from '../internalPort';
 
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 
@@ -32,7 +33,28 @@ export function RequireStaffPort({ children }) {
 // it at once rather than repeating this on every single one.
 export function GuestPortGate() {
   if (isStaffPort()) return <Navigate to="/staff/login" replace />;
+  // Internal Careers has no public pages: every guest URL lands on its home.
+  if (isInternalPort()) return <Navigate to="/careers" replace />;
   return <Outlet />;
+}
+
+// Internal Careers (internalPort.js): its pages render only on its own port;
+// anywhere else they go to the public site's home.
+export function InternalPortGate() {
+  if (!isInternalPort()) return <Navigate to="/" replace />;
+  return <Outlet />;
+}
+
+// An Internal candidate's session (Microsoft sign-in), else the sign-in page,
+// remembering where they were going.
+export function RequireInternalCandidate({ children }) {
+  const { candidate } = useAuth();
+  const location = useLocation();
+  if (!candidate || candidate.candidateType !== 'Internal') {
+    const back = location.pathname === '/careers' ? '' : `?returnTo=${encodeURIComponent(location.pathname)}`;
+    return <Navigate to={`/careers/sign-in${back}`} replace />;
+  }
+  return children;
 }
 
 export function RequireStaff({ minRole = 'HR_Officer', children }) {

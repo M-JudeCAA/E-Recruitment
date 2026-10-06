@@ -23,14 +23,15 @@ export default function VacancyAdvert({
   jobPurpose, essentialRequirements,
   minimumEducationLevel, minimumExperienceYears, preferredFieldOfStudy,
   minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
-  desirableRequirements, desirableQualifications, generalKnowledge, specialSkills,
-  readvertised
+  desirableQualifications, generalKnowledge, specialSkills,
+  readvertised, hideTitle = false, howToApply
 }) {
-  // The requisition's own desirable items, then HR's Qualifying questions.
-  const desirableItems = [
-    ...(desirableQualifications || []).map((text, i) => ({ key: `q${i}`, text })),
-    ...(desirableRequirements || []).map((r, i) => ({ key: r.id || `r${i}`, text: r.text }))
-  ];
+  // The requisition's own desirable items. HR's Qualifying questions
+  // (desirableRequirements) are questions asked on the application, not
+  // advert text - listed here they read as "Do you hold...?" bullets.
+  // hideTitle: the page already shows it; howToApply replaces the public
+  // site's "How to Apply" wording (Internal Careers has its own).
+  const desirableItems = (desirableQualifications || []).map((text, i) => ({ key: `q${i}`, text }));
   const facts = [
     ['Job Ref', jobRef || 'Assigned automatically when created'],
     ['Position', title],
@@ -40,7 +41,7 @@ export default function VacancyAdvert({
     ['Employment Category', EMPLOYMENT_CATEGORY_LABELS[employmentCategory]],
     ['Salary Scale', salaryScale],
     ['Vacancies', positionsRequired],
-    ['Application Deadline', deadline ? new Date(deadline).toLocaleDateString() : null],
+    ['Application Deadline', deadline ? new Date(deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : null],
   ].filter(([, value]) => value);
 
   const ageRequirementText = [minimumAge ? `${minimumAge}+` : null, maximumAge ? `${maximumAge} or under` : null].filter(Boolean).join(', ');
@@ -53,10 +54,10 @@ export default function VacancyAdvert({
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+      {!hideTitle && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
         <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-primary-dark)' }}>{title || 'Untitled position'}</div>
         {readvertised && <StatusBadge status="Readvertised" />}
-      </div>
+      </div>}
 
       <table style={{ width: '100%', borderCollapse: 'collapse', margin: '12px 0 20px' }}>
         <tbody>
@@ -132,7 +133,7 @@ export default function VacancyAdvert({
         </div>
       )}
 
-      <HowToApplyBlock deadline={deadline} />
+      {howToApply || <HowToApplyBlock deadline={deadline} />}
     </div>
   );
 }

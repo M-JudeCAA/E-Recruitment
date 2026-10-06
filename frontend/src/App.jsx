@@ -7,6 +7,15 @@ import BreadcrumbNav from "./components/BreadcrumbNav";
 import MobileTabBar from "./components/MobileTabBar";
 import { useAuth } from "./models/AuthContext";
 import { isStaffPort } from "./staffPort";
+import { isInternalPort } from "./internalPort";
+import InternalSignIn from "./views/internal/InternalSignIn";
+import InternalWelcome from "./views/internal/InternalWelcome";
+import InternalHome from "./views/internal/InternalHome";
+import InternalVacancies from "./views/internal/InternalVacancies";
+import InternalVacancy from "./views/internal/InternalVacancy";
+import InternalApply from "./views/internal/InternalApply";
+import InternalApplications from "./views/internal/InternalApplications";
+import InternalProfile from "./views/internal/InternalProfile";
 
 import Home from "./views/Home";
 import Register from "./views/Register";
@@ -38,7 +47,7 @@ import CreateVacancyListing from "./views/CreateVacancyListing";
 import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
 import InterviewHub from "./views/InterviewHub";
 import PrivacyNotice from "./views/PrivacyNotice";
-import { RequireCandidate, RequireStaff, RequireSystemAdmin, RequireSystemAdminOrRole, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
+import { RequireCandidate, RequireStaff, RequireSystemAdmin, RequireSystemAdminOrRole, RequireStaffPort, GuestPortGate, InternalPortGate, RequireInternalCandidate } from "./components/ProtectedRoute";
 
 // Padding lives here, not on the app shell - Navbar/Footer render outside
 // this entirely, full width with no inset. Only routes nested under this
@@ -72,10 +81,12 @@ export default function App() {
   useEffect(() => { rememberSourceFromUrl(search); }, [search]);
   // Phones only (theme.css hides it above 767px). The guest/candidate site
   // gets the bottom tab bar; staff screens keep their sidebar drawer.
-  const showTabBar = !staff && !isStaffPort() && !NO_TABBAR_PATHS.some((re) => re.test(pathname));
+  // Internal Careers (internalPort.js) uses the sidebar, like staff.
+  const showTabBar = !staff && !isStaffPort() && !isInternalPort() && !NO_TABBAR_PATHS.some((re) => re.test(pathname));
   // The quieter staff workspace look (theme.css .staff-ui): on <html> so
   // modals and anything else outside the app shell pick it up as well.
-  const staffUi = Boolean(staff) || isStaffPort();
+  // Internal Careers wears it too: UCAA employees get the same corporate look.
+  const staffUi = Boolean(staff) || isStaffPort() || isInternalPort();
   // Before paint, so a staff page never flashes the candidate look.
   useLayoutEffect(() => {
     document.documentElement.classList.toggle("staff-ui", staffUi);
@@ -235,6 +246,21 @@ export default function App() {
               the guest origin (see backend/src/config/frontendUrl.js) anyway. */}
           <Route path="/shortlist-panel/:token" element={<ShortlistPanelAccess />} />
         </Route>
+        {/* Internal Careers - UCAA employees, on its own port only
+            (InternalPortGate; internalPort.js). Microsoft sign-in is the
+            only way in; every other page needs an Internal candidate. */}
+        <Route element={<InternalPortGate />}>
+          <Route path="/careers/sign-in" element={<InternalSignIn />} />
+          <Route element={<PaddedLayout />}>
+            <Route path="/careers" element={<RequireInternalCandidate><InternalHome /></RequireInternalCandidate>} />
+            <Route path="/careers/welcome" element={<RequireInternalCandidate><InternalWelcome /></RequireInternalCandidate>} />
+            <Route path="/careers/vacancies" element={<RequireInternalCandidate><InternalVacancies /></RequireInternalCandidate>} />
+            <Route path="/careers/vacancies/:id" element={<RequireInternalCandidate><InternalVacancy /></RequireInternalCandidate>} />
+            <Route path="/careers/apply/:vacancyId" element={<RequireInternalCandidate><InternalApply /></RequireInternalCandidate>} />
+            <Route path="/careers/applications" element={<RequireInternalCandidate><InternalApplications /></RequireInternalCandidate>} />
+            <Route path="/careers/profile" element={<RequireInternalCandidate><InternalProfile /></RequireInternalCandidate>} />
+          </Route>
+        </Route>
         <Route
           path="/staff/login"
           element={
@@ -315,6 +341,9 @@ export default function App() {
             }
           />
         </Route>
+
+        {/* Internal Careers: an unknown address goes to its home rather than a blank page. */}
+        {isInternalPort() && <Route path="*" element={<Navigate to="/careers" replace />} />}
       </Routes>
       </div>
 
