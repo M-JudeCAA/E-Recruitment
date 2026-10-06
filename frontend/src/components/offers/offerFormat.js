@@ -38,8 +38,21 @@ export function formatContract(offer) {
 }
 
 export function formatDate(value) {
-  return value ? new Date(value).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
+  return value ? new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
 }
+
+// The offer's status as the candidate should see it: an issued offer whose
+// answer deadline has passed has lapsed, even before scripts/expireOffers.js
+// (hourly) marks it Expired - the API already refuses an answer by then.
+export function candidateOfferStatus(offer, now = new Date()) {
+  if (!offer) return null;
+  const issued = offer.status === 'Approved' || offer.status === 'Extended';
+  if (issued && offer.responseDeadline && new Date(offer.responseDeadline) <= now) return 'Expired';
+  return issued ? 'Approved' : offer.status;
+}
+
+/** An issued offer the candidate can still accept or decline. */
+export const offerAwaitingAnswer = (offer) => candidateOfferStatus(offer) === 'Approved';
 
 // "3 days left", "5 hours left", "expired" - and how urgent that is.
 export function deadlineInfo(deadline, now = new Date()) {

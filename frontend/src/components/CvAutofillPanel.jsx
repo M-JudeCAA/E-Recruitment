@@ -9,8 +9,10 @@ import Alert from './Alert';
 // best-effort on the server (no AI, plain text-extraction + heuristics)
 // - hence the persistent accuracy warning the moment that mode is picked.
 // The uploaded file itself is never stored (see backend's parse-cv route).
-export default function CvAutofillPanel({ onLinkedinSuggested, onEducationSuggested, onWorkExperienceSuggested, onCertificateSuggested }) {
-  const [mode, setMode] = useState('manual');
+// uploadOnly: just the upload, without the manual/upload switch (a page that
+// opens this on purpose, e.g. My profile's "Fill in from your CV").
+export default function CvAutofillPanel({ onLinkedinSuggested, onEducationSuggested, onWorkExperienceSuggested, onCertificateSuggested, uploadOnly = false }) {
+  const [mode, setMode] = useState(uploadOnly ? 'upload' : 'manual');
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
@@ -42,14 +44,14 @@ export default function CvAutofillPanel({ onLinkedinSuggested, onEducationSugges
 
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 24 }}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: mode === 'upload' ? 12 : 0 }}>
+      {!uploadOnly && <div style={{ display: 'flex', gap: 8, marginBottom: mode === 'upload' ? 12 : 0 }}>
         <Button type="button" variant={mode === 'manual' ? 'primary' : 'ghost'} onClick={() => setMode('manual')}>
           Fill in manually
         </Button>
         <Button type="button" variant={mode === 'upload' ? 'primary' : 'ghost'} onClick={() => setMode('upload')}>
           Upload a CV to autofill
         </Button>
-      </div>
+      </div>}
 
       {mode === 'upload' && (
         <div>

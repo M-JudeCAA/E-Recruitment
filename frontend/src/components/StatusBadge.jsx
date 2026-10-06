@@ -48,16 +48,30 @@ export const STATUS_COLORS = {
   Readvertised: 'var(--color-accent)'
 };
 
+// Words people read for a status enum - "PendingApproval" shows as
+// "Pending approval", "HR_Verified" as "HR verified". Exported for charts
+// and legends that name statuses outside a badge.
+const STATUS_LABELS = {
+  NoShow: 'No-show', HR_Verified: 'HR verified', NotQualified: 'Not qualified',
+  ShortlistProposed: 'Shortlist proposed', RescheduleRequested: 'New time requested'
+};
+export function statusLabel(status) {
+  if (status == null) return '';
+  const key = String(status);
+  if (STATUS_LABELS[key]) return STATUS_LABELS[key];
+  const words = key.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').split(' ');
+  return words.map((w, i) => (i === 0 || /^[A-Z]{2,}$/.test(w) ? w : w.toLowerCase())).join(' ');
+}
+
 // label optionally overrides the displayed text (e.g. "No-show" for
-// NoShow) without changing how the status is colored.
+// NoShow) without changing how the status is colored. The look lives in
+// theme.css (.status-badge): a solid pill on the candidate site, a soft
+// tint on the staff workspace.
 export default function StatusBadge({ status, label }) {
   const color = STATUS_COLORS[status] || 'var(--color-text-muted)';
   return (
-    <span style={{
-      display: 'inline-block', padding: '2px 10px', borderRadius: 999,
-      fontSize: 12, fontWeight: 600, color: '#fff', background: color
-    }}>
-      {label || String(status).replace(/_/g, ' ')}
+    <span className="status-badge" style={{ '--badge-color': color }}>
+      {label || statusLabel(status)}
     </span>
   );
 }

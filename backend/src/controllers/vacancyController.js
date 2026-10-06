@@ -16,6 +16,7 @@ const duplicateApplicants = require('../services/duplicateApplicantService');
 const accessLog = require('../services/accessLogService');
 const { sendRequisitionError } = require('./requisitionController');
 const headcount = require('../services/headcountService');
+const vacancyProgress = require('../services/vacancyProgressService');
 const { ROLE_RANK } = require('../middleware/auth');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { toPublicVacancy } = require('../utils/publicVacancy');
@@ -777,7 +778,22 @@ async function listForAdmin(req, res) {
   const vacancies = await vacancyModel.findManyForAdmin({});
   // A vacancy the viewer applied for isn't theirs to run (conflictOfInterestService).
   const conflicted = await conflictOfInterest.conflictedVacancyIds(req);
-  res.json(conflicted.length ? vacancies.filter((v) => !conflicted.includes(v.id)) : vacancies);
+  const visible = conflicted.length ? vacancies.filter((v) => !conflicted.includes(v.id)) : vacancies;
+  // Each with where it is in the process and who it is waiting on
+  // (vacancyProgressService) - the Stage and Waiting on columns.
+  const progress = await vacancyProgress.progressFor(visible);
+  res.json(visible.map((v) => ({ ...v, progress: progress.get(v.id) || null })));
+}
+
+// GET /api/vacancies/:id/progress - the step bar and Next step box on a
+// vacancy's page (guardVacancy has already refused a conflicted viewer).
+async function progress(req, res) {
+  const vacancyId = Number(req.params.id);
+  if (!Number.isInteger(vacancyId)) return res.status(404).json({ error: 'Not found' });
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (!vacancy) return res.status(404).json({ error: 'Not found' });
+  const map = await vacancyProgress.progressFor([vacancy]);
+  res.json(map.get(vacancy.id));
 }
 
 // Shared by staff (VacancyDetail.jsx, ApplicationManagement.jsx - via
@@ -920,4 +936,4 @@ async function saveRanking(req, res) {
   res.json(results);
 }
 
-module.exports = { create, update, close, approve, returnForRevision, reject, resubmit, transitionPostingType, readvertise, listPublic, listForAdmin, getOne, listApplications, saveRanking };
+module.exports = { create, update, close, approve, returnForRevision, reject, resubmit, transitionPostingType, readvertise, listPublic, listForAdmin, progress, getOne, listApplications, saveRanking };

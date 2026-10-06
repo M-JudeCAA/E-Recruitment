@@ -34,7 +34,18 @@ import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react';
 // Center) that don't belong to any functional group.
 // `mobileTrigger={false}` drops the phone menu button - for the candidate
 // side, where MobileTabBar already carries the same four stops.
-export default function Sidebar({ items, active, storageKey, width = 250, title, mobileTrigger = true }) {
+//
+// `variant="rail"` (the staff workspace, HRSidebar) draws the sidebar flush
+// with the left edge and full height under the app bar (theme.css .app-rail)
+// instead of as a card inside the page, and leaves an in-flow spacer where
+// the card used to sit so the views' own flex rows need no change. The
+// spacer is the rail's width less the 20px page gutter and plus the 24px
+// gap the views already leave, so content starts 32px clear of the rail.
+// On phones the rail opens from the Navbar's menu button
+// (OPEN_SIDEBAR_EVENT) rather than a floating button.
+export const OPEN_SIDEBAR_EVENT = 'app:open-sidebar';
+
+export default function Sidebar({ items, active, storageKey, width = 250, title, mobileTrigger = true, variant = 'panel', footer = null }) {
   const [collapsed, setCollapsed] = React.useState(() => {
     try {
       return localStorage.getItem(storageKey) === '1';
@@ -43,6 +54,14 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
     }
   });
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const rail = variant === 'rail';
+
+  React.useEffect(() => {
+    if (!rail) return undefined;
+    const open = () => setMobileOpen(true);
+    window.addEventListener(OPEN_SIDEBAR_EVENT, open);
+    return () => window.removeEventListener(OPEN_SIDEBAR_EVENT, open);
+  }, [rail]);
 
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
@@ -127,7 +146,7 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
     const iconOnly = collapsed && !forceExpanded;
     const nodes = [];
     let prevSection;
-    items.forEach(({ key, label, icon: Icon, to, badge, section }) => {
+    items.forEach(({ key, label, icon: Icon, to, badge, badgeTone = 'alert', section }) => {
       if (section && section !== prevSection) {
         nodes.push(
           iconOnly ? (
@@ -216,8 +235,9 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
               style={{
                 flexShrink: 0, minWidth: 18, padding: '0 5px', borderRadius: 999, textAlign: 'center',
                 fontSize: 11, fontWeight: 700, lineHeight: '17px',
-                background: 'var(--color-danger)',
-                color: '#FFFFFF',
+                // 'count' is a plain number (the Inbox when nothing is overdue); 'alert' is red.
+                background: badgeTone === 'count' ? 'var(--color-bg-subtle)' : 'var(--color-danger)',
+                color: badgeTone === 'count' ? 'var(--color-text-muted)' : '#FFFFFF',
               }}
             >
               {badge}
@@ -229,9 +249,35 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
     return nodes;
   }
 
+  const railWidth = collapsed ? 64 : width;
+
   return (
     <>
-      {/* Desktop/tablet - sticky, foldable */}
+      {rail ? (
+        <>
+          <div className="app-rail-spacer" aria-hidden="true" style={{ width: railWidth - 12, flexShrink: 0 }} />
+          <aside className="app-rail" aria-label="Main" style={{ width: railWidth }}>
+            {renderNav()}
+            {!collapsed && footer}
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className="sidebar-link"
+              style={{
+                marginTop: 'auto', display: 'flex', alignItems: 'center', gap: 10,
+                justifyContent: collapsed ? 'center' : 'flex-start', width: '100%',
+                padding: collapsed ? '10px 0' : '9px 12px', border: 'none', borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer', color: 'var(--color-text-muted)', fontSize: 13, fontFamily: 'inherit',
+              }}
+            >
+              {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} /> Collapse</>}
+            </button>
+          </aside>
+        </>
+      ) : (
+      /* Desktop/tablet - sticky, foldable */
       <aside
         className="hidden md:block"
         style={{
@@ -256,6 +302,7 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
         {renderHeader()}
         {renderNav()}
       </aside>
+      )}
 
       {/* Mobile - floating trigger; the inline aside above is hidden below
           md, not squeezed, so this is the only way to reach it there. */}
@@ -328,6 +375,7 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
               </button>
             </div>
             {renderNav(() => setMobileOpen(false), true)}
+            {footer}
           </aside>
         </div>
       )}

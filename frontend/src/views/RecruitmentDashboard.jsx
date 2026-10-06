@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp, Info, Printer } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import HRSidebar from '../components/HRSidebar';
-import PageHeader from '../components/PageHeader';
+import AnalyticsTrends from './Analytics';
+import { PageTop } from '../components/workspace/ui';
 import Card from '../components/Card';
 import Alert from '../components/Alert';
 import Button from '../components/Button';
@@ -119,10 +120,13 @@ export default function RecruitmentDashboard() {
 
   return (
     <div style={{ display: 'flex', gap: 'var(--spacing-lg)', alignItems: 'flex-start' }}>
-      <HRSidebar active="analytics" />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <PageHeader title="Recruitment dashboard" subtitle="Time to hire, source of hire, pipeline health and more - click a figure for how it is worked out and the records behind it" />
-        <p style={{ marginTop: -12 }}><Link to="/hr/analytics">&larr; Analytics</Link></p>
+      <HRSidebar active="dashboard" />
+      <div className="ws-page" style={{ flex: 1 }}>
+        <PageTop title="Recruitment dashboard" subtitle="Time to hire, source of hire, pipeline health and more. Click a figure for how it is worked out and the records behind it."
+          actions={<>
+            <CsvDownloadButton url={`/api/analytics/recruitment/export${query ? `?${query}` : ''}`} label="Export" fallbackName="recruitment-dashboard.csv" />
+            <Button variant="ghost" style={{ padding: '6px 12px', fontSize: 13 }} onClick={print} disabled={!report}><Printer size={14} /> Print or save as PDF</Button>
+          </>} />
         <Alert type="error" message={error} />
 
         <Card>
@@ -154,8 +158,6 @@ export default function RecruitmentDashboard() {
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <Button variant="ghost" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => setParams(new URLSearchParams(), { replace: true })}>Clear filters</Button>
-            <CsvDownloadButton url={`/api/analytics/recruitment/export${query ? `?${query}` : ''}`} label="Export (Excel / CSV)" fallbackName="recruitment-dashboard.csv" />
-            <Button variant="ghost" style={{ padding: '6px 12px', fontSize: 13 }} onClick={print} disabled={!report}><Printer size={14} /> Print or save as PDF</Button>
             {report && <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{report.vacancies} vacancy(ies) raised in this range</span>}
           </div>
         </Card>
@@ -168,6 +170,7 @@ export default function RecruitmentDashboard() {
             ))}
           </div>
         )}
+        <AnalyticsTrends />
       </div>
     </div>
   );

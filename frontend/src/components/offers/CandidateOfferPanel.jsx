@@ -6,7 +6,7 @@ import Button from '../Button';
 import Modal from '../Modal';
 import TextArea from '../TextArea';
 import StatusBadge from '../StatusBadge';
-import { formatSalary, formatContract, formatDate, deadlineInfo } from './offerFormat';
+import { formatSalary, formatContract, formatDate, deadlineInfo, candidateOfferStatus } from './offerFormat';
 
 // The candidate's own offer, once issued (the backend hides it before that -
 // offerService.toCandidateOffer). Reads like the offer itself: the terms,
@@ -29,7 +29,8 @@ export default function CandidateOfferPanel({ offer, jobTitle, busy, onRespond }
   const [modal, setModal] = useState(null); // 'accept' | 'decline'
   const [reason, setReason] = useState('');
   const deadline = deadlineInfo(offer.responseDeadline);
-  const open = offer.status === 'Approved' && !deadline?.passed;
+  const status = candidateOfferStatus(offer);
+  const open = status === 'Approved';
   const [letterError, setLetterError] = useState('');
   const letter = async () => {
     setLetterError('');
@@ -57,7 +58,7 @@ export default function CandidateOfferPanel({ offer, jobTitle, busy, onRespond }
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600 }}>
             <Clock size={14} /> Answer by {formatDate(offer.responseDeadline)} · {deadline.label}
           </span>
-        ) : <StatusBadge status={offer.status} label={CANDIDATE_LABELS[offer.status] || offer.status} />}
+        ) : <StatusBadge status={status} label={CANDIDATE_LABELS[status] || status} />}
       </div>
 
       <div style={{ padding: '10px 12px', background: 'var(--color-bg)' }}>
@@ -84,7 +85,7 @@ export default function CandidateOfferPanel({ offer, jobTitle, busy, onRespond }
         {offer.status === 'Declined' && (
           <p style={{ margin: '8px 0 0', fontSize: 14, color: 'var(--color-text-muted)' }}>You declined this offer on {formatDate(offer.decidedAt)}.</p>
         )}
-        {(offer.status === 'Expired' || (offer.status === 'Approved' && deadline?.passed)) && (
+        {status === 'Expired' && (
           <p style={{ margin: '8px 0 0', fontSize: 14, color: 'var(--color-text-muted)' }}>
             The deadline to respond passed on {formatDate(offer.responseDeadline)}, so this offer has lapsed. Please contact HR if you believe this is a mistake.
           </p>

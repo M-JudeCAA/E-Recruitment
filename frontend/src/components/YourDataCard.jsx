@@ -11,7 +11,8 @@ import StatusBadge from './StatusBadge';
 // The candidate's rights over their data (FR-ATS-079/080): a copy of
 // everything held about them, and a request to erase it, which an HR
 // Manager deals with (backend dataProtectionController).
-export default function YourDataCard() {
+// `bare` drops the card frame and heading, for a page that puts it in its own panel.
+export default function YourDataCard({ bare = false }) {
   const [requests, setRequests] = useState([]);
   const [modal, setModal] = useState(false);
   const [reason, setReason] = useState('');
@@ -54,8 +55,8 @@ export default function YourDataCard() {
   };
 
   return (
-    <Card style={{ marginTop: 'var(--spacing-md)' }}>
-      <h3 style={{ margin: '0 0 6px', fontSize: 16 }}>Your data</h3>
+    <Frame bare={bare}>
+      {!bare && <h3 style={{ margin: '0 0 6px', fontSize: 16 }}>Your data</h3>}
       <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '0 0 12px' }}>
         Download a copy of everything we hold about you, or ask for it to be erased. Erasing closes your account; an application still in
         progress has to be finished or withdrawn first. See the <a href="/privacy" target="_blank" rel="noreferrer">privacy notice</a>.
@@ -90,6 +91,10 @@ export default function YourDataCard() {
           <TextArea label="Anything you'd like us to know (optional)" value={reason} onChange={(e) => setReason(e.target.value)} />
         </Modal>
       )}
-    </Card>
+    </Frame>
   );
+}
+
+function Frame({ bare, children }) {
+  return bare ? <div>{children}</div> : <Card style={{ marginTop: 'var(--spacing-md)' }}>{children}</Card>;
 }

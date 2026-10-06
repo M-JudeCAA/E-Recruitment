@@ -45,7 +45,7 @@ describe('getPendingTasks', () => {
 
     expect(tasks).toEqual([{
       id: 9, since: new Date('2026-01-02T00:00:00Z'),
-      label: 'Dan Doe — Analyst', to: '/hr/applications?vacancyId=3'
+      label: 'Dan Doe — Analyst', to: '/hr/vacancy/3?tab=merit'
     }]);
   });
 

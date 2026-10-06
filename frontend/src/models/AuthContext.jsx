@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { clearMicrosoftSession } from './entraAuth';
 import { SESSION_ENDED_EVENT } from './apiClient';
+import { clearInbox } from './useInbox';
 
 const SESSION_ENDED_KEY = 'sessionEndedMessage';
 
@@ -83,6 +84,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('staffEmail');
     localStorage.removeItem('staffIsSystemAdmin');
     clearMicrosoftSession('staff');
+    clearInbox();
     setStaff(null);
   }
 

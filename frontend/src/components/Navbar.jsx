@@ -1,11 +1,16 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "../models/AuthContext";
 import NotificationBell from "./NotificationBell";
 import CandidateNotificationBell from "./CandidateNotificationBell";
 import ProfileMenu from "./ProfileMenu";
 import { candidateFileSrc } from "../utils/fileSrc";
 import { staffHome } from "./ProtectedRoute";
+import { OPEN_SIDEBAR_EVENT } from "./Sidebar";
+import { isStaffPort } from "../staffPort";
+import { isInternalPort } from "../internalPort";
+import { Menu } from "lucide-react";
+import GlobalSearch from "./workspace/GlobalSearch";
 import ucaaLogo from "../assets/ucaa-logo.png";
 
 // CHANGED - was a separate, hardcoded palette disconnected from
@@ -30,9 +35,20 @@ export default function Navbar() {
   const { candidate, staff, logoutCandidate, logoutStaff } = useAuth();
   // Manager/Director land on the reimagined Executive Overview instead of
   // the HR Officer's operational Home - see HRSidebar.jsx/ExecutiveDashboard.jsx.
+  // Staff screens are a work tool rather than the careers site: a plain app
+  // title, the solid navy bar (theme.css .staff-ui .site-navbar), and on
+  // phones a menu button that opens the HR sidebar (Sidebar.jsx rail).
+  const staffSide = Boolean(staff) || isStaffPort();
+  // Internal Careers (internalPort.js): its own name, and the same rail sidebar.
+  const internal = isInternalPort();
+  const signedInInternal = internal && candidate?.candidateType === 'Internal';
+  // Already in their own area (the sidebar is there), no "My dashboard" link.
+  const { pathname } = useLocation();
+  const inCandidateArea = /^\/(dashboard|jobs|apply)(\/|$)/.test(pathname);
 
   return (
     <nav
+      className="site-navbar"
       style={{
         position: "fixed",
         top: 0,
@@ -69,8 +85,14 @@ export default function Navbar() {
             signed-in candidate (the guest landing page's "Create an
             account"/"Sign in" CTAs don't make sense once already signed
             in), or the guest landing page otherwise. */}
+        {(staff || signedInInternal) && (
+          <button type="button" className="navbar-menu-btn" aria-label="Open menu"
+            onClick={() => window.dispatchEvent(new Event(OPEN_SIDEBAR_EVENT))}>
+            <Menu size={20} />
+          </button>
+        )}
         <Link
-          to={staff ? staffHome(staff) : candidate ? "/dashboard" : "/"}
+          to={staff ? staffHome(staff) : internal ? "/careers" : candidate ? "/dashboard" : "/"}
           style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}
         >
           <span
@@ -91,24 +113,27 @@ export default function Navbar() {
           </span>
           {/* Phones get a short app-style title instead of the full name. */}
           <span className="mobile-only" style={{ ...linkStyle, fontWeight: 700, fontSize: 16 }}>
-            UCAA Careers
+            {internal ? "Internal Careers" : staffSide ? "e-Recruitment" : "UCAA Careers"}
           </span>
           <span className="desktop-only navbar-title" style={{ flexDirection: "column", lineHeight: 1.15 }}>
             <span style={{ ...linkStyle, fontWeight: 700, fontSize: 14.5 }}>
-              Uganda Civil Aviation Authority
+              {internal ? "UCAA Internal Careers" : staffSide ? "UCAA e-Recruitment" : "Uganda Civil Aviation Authority"}
             </span>
             <span style={{ ...linkStyle, fontWeight: 400, fontSize: 11.5, opacity: 0.85 }}>
-              e-Recruitment
+              {internal ? "For UCAA staff only" : staffSide ? "Staff workspace" : "e-Recruitment"}
             </span>
           </span>
         </Link>
-        <span style={{ flex: 1 }} />
+        {/* Staff with an HR role search vacancies and candidates from here. */}
+        {staff?.role ? <GlobalSearch /> : <span style={{ flex: 1 }} />}
         {candidate && (
           <>
             {/* The phone tab bar already carries this. */}
-            <Link to="/dashboard" className="desktop-only" style={linkStyle}>
-              My dashboard
-            </Link>
+            {!internal && !inCandidateArea && (
+              <Link to="/dashboard" className="desktop-only" style={linkStyle}>
+                My dashboard
+              </Link>
+            )}
             <CandidateNotificationBell />
 
             {/* Account panel - click the avatar for a card with name/type/

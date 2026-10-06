@@ -1,33 +1,37 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Mail, Search } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { Mail } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
 import HRSidebar from '../components/HRSidebar';
-import PageHeader from '../components/PageHeader';
-import Card from '../components/Card';
 import Alert from '../components/Alert';
 import Button from '../components/Button';
-import TextField from '../components/TextField';
-import Select from '../components/Select';
+import Skeleton from '../components/Skeleton';
 import StatusBadge from '../components/StatusBadge';
 import PageControls from '../components/PageControls';
-import LoadingState from '../components/LoadingState';
-import TagEditor from '../components/TagEditor';
+import TagEditor, { TagChips } from '../components/TagEditor';
 import BulkEmailComposer from '../components/BulkEmailComposer';
+import ApplicationQueue from '../components/workspace/ApplicationQueue';
+import { PageTop, Panel, Table, SidePanel, KeyValues, rankOf, ROLE_RANK } from '../components/workspace/ui';
 
-// The candidate database (backend talentController; FR-ATS-051/052): search
-// everyone who has applied - past applicants too - by keyword and by HR's
-// tags, tag them, and email a selection. Only candidates who submitted an
-// application are here, never erased ones; each search is access-logged.
-
-const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
+// Candidates (/hr/candidates), two views:
+//   Candidates   the candidate database (backend talentController;
+//                FR-ATS-051/052) - everyone who has applied, past applicants
+//                too, searched by keyword and HR's tags; tag them, email a
+//                selection. Never erased candidates; each search is access-logged.
+//   Applications every application across vacancies, filtered (ApplicationQueue).
+// A row opens the person (or the application) in a side panel.
+// ?q= pre-fills the search (the app bar's search sends people here).
 
 export default function CandidateSearch() {
   const { staff } = useAuth();
-  const canEmail = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
-  const [input, setInput] = useState('');
-  const [q, setQ] = useState('');
+  const [params, setParams] = useSearchParams();
+  const view = params.get('view') === 'applications' ? 'applications' : 'candidates';
+  const setView = (v) => { const next = new URLSearchParams(params); if (v === 'candidates') next.delete('view'); else next.set('view', v); setParams(next, { replace: true }); };
+  const canEmail = rankOf(staff?.role) >= ROLE_RANK.Senior_HR_Officer;
+
+  const [input, setInput] = useState(params.get('q') || '');
+  const [q, setQ] = useState(params.get('q') || '');
   const [tagFilter, setTagFilter] = useState([]);
   const [type, setType] = useState('');
   const [page, setPage] = useState(1);
@@ -37,103 +41,134 @@ export default function CandidateSearch() {
   const [selected, setSelected] = useState([]);
   const [composing, setComposing] = useState(false);
   const [notice, setNotice] = useState('');
+  const [openId, setOpenId] = useState(null);
 
+  useEffect(() => { const fromUrl = params.get('q') || ''; setInput(fromUrl); setQ(fromUrl); }, [params.get('q')]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadTags = () => staffClient.get('/api/talent/tags').then((r) => setTags(r.data)).catch(() => {});
   useEffect(() => { loadTags(); }, []);
   useEffect(() => {
     const t = setTimeout(() => { setQ(input.trim()); setPage(1); }, 400);
     return () => clearTimeout(t);
   }, [input]);
+  const search = () => staffClient.get('/api/talent/candidates', { params: { q: q || undefined, tags: tagFilter.join(',') || undefined, candidateType: type || undefined, page } })
+    .then((r) => setResult(r.data))
+    .catch((err) => setError(err.response?.data?.error || 'Could not search'));
   useEffect(() => {
+    if (view !== 'candidates') return;
     setResult(null); setError('');
-    staffClient.get('/api/talent/candidates', { params: { q: q || undefined, tags: tagFilter.join(',') || undefined, candidateType: type || undefined, page } })
-      .then((r) => setResult(r.data))
-      .catch((err) => setError(err.response?.data?.error || 'Could not search'));
-  }, [q, tagFilter, type, page]);
+    search();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, tagFilter, type, page, view]);
 
   const toggle = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   const toggleTag = (id) => { setTagFilter((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id])); setPage(1); };
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.limit)) : 1;
+  const open = result?.data.find((c) => c.id === openId);
+  const background = (c) => [
+    ...c.education.map((e) => `${e.qualificationLevelText}${e.fieldOfStudy ? ` in ${e.fieldOfStudy}` : ''}`),
+    ...c.workExperience.map((w) => `${w.jobTitle}, ${w.employer}`)
+  ];
 
   return (
     <div style={{ display: 'flex', gap: 'var(--spacing-lg)', alignItems: 'flex-start' }}>
       <HRSidebar active="candidates" />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <PageHeader title="Candidates" subtitle="Search everyone who has applied, past applicants included, by keyword and tag" />
-        <Alert type="error" message={error} />
-        <Alert type="success" message={notice} />
-        <Card>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <div style={{ flex: '3 1 280px' }}>
-              <TextField label="Keywords" placeholder="Name, email, phone, school, course, employer, job title, certificate..." value={input} onChange={(e) => setInput(e.target.value)} />
-            </div>
-            <div style={{ flex: '1 1 150px' }}>
-              <Select label="Candidate type" value={type} onChange={(e) => { setType(e.target.value); setPage(1); }}>
-                <option value="">All</option>
+      <div className="ws-page" style={{ flex: 1 }}>
+        <PageTop title="Candidates" subtitle="Everyone who has applied, including past applicants"
+          actions={view === 'candidates' && canEmail && (
+            <Button variant="secondary" disabled={!selected.length} onClick={() => setComposing(true)}><Mail size={14} /> Email selected{selected.length ? ` (${selected.length})` : ''}</Button>
+          )} />
+
+        <div className="ws-tabs" role="tablist">
+          {[['candidates', 'Candidates'], ['applications', 'Applications']].map(([k, l]) => (
+            <button key={k} type="button" role="tab" aria-selected={view === k} className={`ws-tab${view === k ? ' on' : ''}`} onClick={() => setView(k)}>{l}</button>
+          ))}
+        </div>
+
+        {view === 'applications' ? <ApplicationQueue staffRole={staff?.role} /> : (
+          <>
+            <Alert type="error" message={error} />
+            <Alert type="success" message={notice} />
+            <div className="ws-toolbar">
+              <input className="ws-field grow" style={{ maxWidth: 420 }} placeholder="Name, email, phone, school, course, employer, certificate" aria-label="Search candidates"
+                value={input} onChange={(e) => setInput(e.target.value)} />
+              <select className="ws-field" aria-label="Candidate type" value={type} onChange={(e) => { setType(e.target.value); setPage(1); }}>
+                <option value="">Internal and external</option>
                 <option value="Internal">Internal</option>
                 <option value="External">External</option>
-              </Select>
-            </div>
-          </div>
-          {tags.length > 0 && (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', fontSize: 13 }}>
-              <span style={{ color: 'var(--color-text-muted)' }}>Tagged:</span>
-              {tags.map((t) => (
-                <button key={t.id} type="button" onClick={() => toggleTag(t.id)} aria-pressed={tagFilter.includes(t.id)}
-                  style={{ fontSize: 12, padding: '3px 10px', borderRadius: 999, cursor: 'pointer', border: '1px solid var(--color-border)',
-                    background: tagFilter.includes(t.id) ? 'var(--color-primary)' : 'transparent', color: tagFilter.includes(t.id) ? '#fff' : 'inherit' }}>
-                  {t.name} ({t.candidates})
-                </button>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {canEmail && selected.length > 0 && (
-          <Card style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <strong>{selected.length} selected</strong>
-            <Button onClick={() => setComposing(true)}><Mail size={14} /> Email selected</Button>
-            <Button variant="ghost" onClick={() => setSelected([])}>Clear</Button>
-          </Card>
-        )}
-
-        {!result && !error && <LoadingState label="Searching..." />}
-        {result && (
-          <>
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}><Search size={13} /> {result.total} candidate(s)</p>
-            {result.data.map((c) => (
-              <Card key={c.id} style={{ marginBottom: 'var(--spacing-sm)' }}>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                  {canEmail && <input type="checkbox" aria-label={`Select ${c.fullName}`} checked={selected.includes(c.id)} onChange={() => toggle(c.id)} style={{ marginTop: 4 }} />}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
-                      <strong>{c.fullName}</strong>
-                      <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{c.candidateType} &middot; {c.email}{c.phone ? ` · ${c.phone}` : ''}{c.location ? ` · ${c.location}` : ''}</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '4px 0' }}>
-                      {[...c.education.map((e) => `${e.qualificationLevelText}${e.fieldOfStudy ? ` in ${e.fieldOfStudy}` : ''}`), ...c.workExperience.map((w) => `${w.jobTitle}, ${w.employer}`)].join(' · ')}
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 12, marginBottom: 6 }}>
-                      {c.applications.map((a) => (
-                        <Link key={a.id} to={`/hr/applications?vacancyId=${a.vacancy.id}`} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                          {a.vacancy.jobRef} <StatusBadge status={a.offer?.status === 'Accepted' ? 'Accepted' : a.status} />
-                        </Link>
-                      ))}
-                    </div>
-                    <TagEditor candidateId={c.id} tags={c.tags} onChange={loadTags} />
-                  </div>
+              </select>
+              {tags.length > 0 && (
+                <div className="ws-chips" role="group" aria-label="Tags">
+                  {tags.map((t) => (
+                    <button key={t.id} type="button" className={`ws-chip${tagFilter.includes(t.id) ? ' on' : ''}`} aria-pressed={tagFilter.includes(t.id)} onClick={() => toggleTag(t.id)}>
+                      {t.name}<b>{t.candidates}</b>
+                    </button>
+                  ))}
                 </div>
-              </Card>
-            ))}
-            <PageControls page={page} totalPages={totalPages} onPrev={() => setPage((p) => p - 1)} onNext={() => setPage((p) => p + 1)} />
+              )}
+            </div>
+            <Panel padded={false}>
+              {!result && !error ? <div className="ws-panel-b">{[0, 1, 2].map((i) => <Skeleton key={i} height={14} width={`${70 - i * 10}%`} style={{ marginBottom: 12 }} />)}</div> : (
+                <Table rows={result?.data || []} getRowKey={(c) => c.id} onRowClick={(c) => setOpenId(c.id)}
+                  emptyText={q || tagFilter.length ? 'Nobody matches this search.' : 'Nobody has applied yet.'}
+                  columns={[
+                    ...(canEmail ? [{
+                      key: 'pick', label: '', width: 36,
+                      render: (c) => <input type="checkbox" aria-label={`Select ${c.fullName}`} checked={selected.includes(c.id)} onClick={(e) => e.stopPropagation()} onChange={() => toggle(c.id)} />
+                    }] : []),
+                    { key: 'name', label: 'Candidate', render: (c) => <><span className="t">{c.fullName}</span><div className="s">{c.email}</div></> },
+                    {
+                      key: 'latest', label: 'Latest application', render: (c) => {
+                        const a = c.applications[0];
+                        return a ? <>{a.vacancy.title}<div className="s ws-mono">{a.vacancy.jobRef}</div></> : <span className="s">—</span>;
+                      }
+                    },
+                    { key: 'stage', label: 'Status', render: (c) => (c.applications[0] ? <StatusBadge status={c.applications[0].offer?.status === 'Accepted' ? 'Accepted' : c.applications[0].status} /> : null) },
+                    { key: 'bg', label: 'Background', render: (c) => <span className="s">{background(c).slice(0, 2).join(' · ') || '—'}</span> },
+                    { key: 'tags', label: 'Tags', render: (c) => <TagChips tags={(c.tags || []).map((t) => t.tag || t)} /> }
+                  ]} />
+              )}
+            </Panel>
+            {result && <div className="ws-note">{result.total} candidate{result.total === 1 ? '' : 's'}</div>}
+            {result && result.total > result.limit && (
+              <PageControls page={page} totalPages={totalPages} onPrev={() => setPage((p) => p - 1)} onNext={() => setPage((p) => p + 1)} />
+            )}
           </>
         )}
-
-        {composing && (
-          <BulkEmailComposer candidateIds={selected} count={selected.length} onClose={() => setComposing(false)}
-            onSent={(r) => { setComposing(false); setSelected([]); setNotice(`Email sent to ${r.sent}${r.failed ? `; ${r.failed} could not be sent (${r.failedTo.join(', ')})` : ''}.`); }} />
-        )}
       </div>
+
+      {open && (
+        <SidePanel title={open.fullName} eyebrow={open.candidateType} onClose={() => setOpenId(null)}
+          footer={canEmail && <Button onClick={() => { setSelected([open.id]); setComposing(true); }}><Mail size={14} /> Email</Button>}>
+          <div>
+            <h3>Contact</h3>
+            <KeyValues rows={[['Email', open.email], ['Phone', open.phone || null], ['Lives in', open.location || null]]} />
+          </div>
+          <div>
+            <h3>Background</h3>
+            {background(open).length ? <ul style={{ margin: 0, paddingLeft: 18 }}>{background(open).map((b) => <li key={b}>{b}</li>)}</ul> : <span className="ws-note">Nothing recorded.</span>}
+          </div>
+          <div>
+            <h3>Applications</h3>
+            <table className="ws-table"><tbody>
+              {open.applications.map((a) => (
+                <tr key={a.id}>
+                  <td><Link to={`/hr/vacancy/${a.vacancy.id}?tab=applicants`}>{a.vacancy.title}</Link><div className="s ws-mono">{a.vacancy.jobRef}</div></td>
+                  <td className="r"><StatusBadge status={a.offer?.status === 'Accepted' ? 'Accepted' : a.status} /></td>
+                </tr>
+              ))}
+            </tbody></table>
+          </div>
+          <div>
+            <h3>Tags</h3>
+            <TagEditor candidateId={open.id} tags={open.tags} onChange={() => { loadTags(); search(); }} />
+          </div>
+        </SidePanel>
+      )}
+
+      {composing && (
+        <BulkEmailComposer candidateIds={selected} count={selected.length} onClose={() => setComposing(false)}
+          onSent={(r) => { setComposing(false); setSelected([]); setNotice(`Email sent to ${r.sent}${r.failed ? `; ${r.failed} could not be sent (${r.failedTo.join(', ')})` : ''}.`); }} />
+      )}
     </div>
   );
 }

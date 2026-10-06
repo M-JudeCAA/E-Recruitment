@@ -29,7 +29,9 @@ describe('buildStatus', () => {
     expect(status.jobs.every((j) => j.status === 'never')).toBe(true);
     expect(status.warnings).toHaveLength(1);
     expect(status.warnings[0]).toMatch(/Scheduled maintenance has not run/);
-    expect(status.warnings[0]).toMatch(/npm run jobs/);
+    // Worded for HR: no server commands, and who to tell.
+    expect(status.warnings[0]).not.toMatch(/npm run jobs/);
+    expect(status.warnings[0]).toMatch(/system administrator/);
     expect(status.mail.status).toBe('unknown');
   });
 
@@ -40,7 +42,7 @@ describe('buildStatus', () => {
 
     expect(status.jobs[0].status).toBe('stale');
     expect(status.jobs.slice(1).every((j) => j.status === 'ok')).toBe(true);
-    expect(status.warnings[0]).toMatch(/SLA escalation check/);
+    expect(status.warnings[0]).toMatch(/Scheduled maintenance has not run/);
   });
 
   test('reports a job whose latest run failed as failing, separately from stale jobs', () => {

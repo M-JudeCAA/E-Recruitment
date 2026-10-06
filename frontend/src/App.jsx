@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { Routes, Route, Outlet, useLocation } from "react-router-dom";
+import React, { useEffect, useLayoutEffect } from "react";
+import { Routes, Route, Outlet, Navigate, useLocation } from "react-router-dom";
 import { rememberSourceFromUrl } from "./utils/applicationSources";
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
@@ -7,6 +7,15 @@ import BreadcrumbNav from "./components/BreadcrumbNav";
 import MobileTabBar from "./components/MobileTabBar";
 import { useAuth } from "./models/AuthContext";
 import { isStaffPort } from "./staffPort";
+import { isInternalPort } from "./internalPort";
+import InternalSignIn from "./views/careers/InternalSignIn";
+import InternalWelcome from "./views/careers/InternalWelcome";
+import CareerHome from "./views/careers/CareerHome";
+import CareerJobs from "./views/careers/CareerJobs";
+import CareerJob from "./views/careers/CareerJob";
+import CareerApply from "./views/careers/CareerApply";
+import CareerApplications from "./views/careers/CareerApplications";
+import CareerProfile from "./views/careers/CareerProfile";
 
 import Home from "./views/Home";
 import Register from "./views/Register";
@@ -15,18 +24,11 @@ import CandidateLogin from "./views/CandidateLogin";
 import ForgotPassword from "./views/ForgotPassword";
 import ResetPassword from "./views/ResetPassword";
 import ProfileCompletePage from "./views/ProfileCompletePage";
-import CandidateHome from "./views/CandidateHome";
-import CandidateJobs from "./views/CandidateJobs";
-import CandidateProfile from "./views/CandidateProfile";
-import CandidateApplications from "./views/CandidateApplications";
-import ApplyForm from "./views/ApplyForm";
 import JobDetails from "./views/JobDetails";
 import StaffLogin from "./views/StaffLogin";
-import HRHome from "./views/HRHome";
-import ExecutiveDashboard from "./views/ExecutiveDashboard";
-import ApprovalsCenter from "./views/ApprovalsCenter";
-import Analytics from "./views/Analytics";
+import Inbox from "./views/Inbox";
 import RecruitmentDashboard from "./views/RecruitmentDashboard";
+import OffersAndHires from "./views/OffersAndHires";
 import CandidateSearch from "./views/CandidateSearch";
 import HRDashboard from "./views/HRDashboard";
 import ApplicationManagement from "./views/ApplicationManagement";
@@ -35,12 +37,12 @@ import StaffManagement from "./views/StaffManagement";
 import StaffAccounts from "./views/StaffAccounts";
 import DocumentTemplates from "./views/DocumentTemplates";
 import SettingsAndData from "./views/SettingsAndData";
-import VacancyDetail from "./views/VacancyDetail";
+import VacancyWorkspace from "./views/VacancyWorkspace";
 import CreateVacancyListing from "./views/CreateVacancyListing";
 import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
 import InterviewHub from "./views/InterviewHub";
 import PrivacyNotice from "./views/PrivacyNotice";
-import { RequireCandidate, RequireStaff, RequireSystemAdmin, RequireSystemAdminOrRole, RequireStaffPort, GuestPortGate } from "./components/ProtectedRoute";
+import { RequireCandidate, RequireStaff, RequireSystemAdmin, RequireSystemAdminOrRole, RequireStaffPort, GuestPortGate, InternalPortGate, RequireInternalCandidate } from "./components/ProtectedRoute";
 
 // Padding lives here, not on the app shell - Navbar/Footer render outside
 // this entirely, full width with no inset. Only routes nested under this
@@ -67,6 +69,18 @@ function PaddedLayout() {
 // completion, and a shortlisting committee member's private link.
 const NO_TABBAR_PATHS = [/^\/apply\//, /^\/profile\/complete/, /^\/shortlist-panel\//];
 
+// The public site's signed-in candidate area (views/careers, the same pages
+// as Internal Careers) wears .careers-ui (theme.css): the site's own colours
+// with the sidebar layout, and no breadcrumb strip or footer.
+const CAREER_PATHS = [/^\/dashboard(\/|$)/, /^\/jobs\//, /^\/apply\//];
+
+// A job advert: a signed-in applicant gets it in their own area, with "Your
+// fit" and Apply; a guest gets the public page.
+function JobPage() {
+  const { candidate } = useAuth();
+  return candidate ? <CareerJob /> : <JobDetails />;
+}
+
 export default function App() {
   const { candidate, staff } = useAuth();
   const { pathname, search } = useLocation();
@@ -74,7 +88,18 @@ export default function App() {
   useEffect(() => { rememberSourceFromUrl(search); }, [search]);
   // Phones only (theme.css hides it above 767px). The guest/candidate site
   // gets the bottom tab bar; staff screens keep their sidebar drawer.
-  const showTabBar = !staff && !isStaffPort() && !NO_TABBAR_PATHS.some((re) => re.test(pathname));
+  // Internal Careers (internalPort.js) uses the sidebar, like staff.
+  const showTabBar = !staff && !isStaffPort() && !isInternalPort() && !NO_TABBAR_PATHS.some((re) => re.test(pathname));
+  // The quieter staff workspace look (theme.css .staff-ui): on <html> so
+  // modals and anything else outside the app shell pick it up as well.
+  // Internal Careers wears it too: UCAA employees get the same corporate look.
+  const staffUi = Boolean(staff) || isStaffPort() || isInternalPort();
+  const careersUi = !staffUi && Boolean(candidate) && CAREER_PATHS.some((re) => re.test(pathname));
+  // Before paint, so a staff page never flashes the candidate look.
+  useLayoutEffect(() => {
+    document.documentElement.classList.toggle("staff-ui", staffUi);
+    document.documentElement.classList.toggle("careers-ui", careersUi);
+  }, [staffUi, careersUi]);
 
   return (
     // app-shell / with-tabbar drive the phone-only layout in theme.css
@@ -96,11 +121,24 @@ export default function App() {
         <Route element={<PaddedLayout />}>
           {/* Public - candidates consent to it when applying (FR-ATS-038). */}
           <Route path="/privacy" element={<PrivacyNotice />} />
+          {/* The staff workspace: every role lands on the Inbox; the old
+              home, executive overview and approvals pages lead there. */}
           <Route
-            path="/hr/home"
+            path="/hr/inbox"
             element={
               <RequireStaff minRole="HR_Officer">
-                <HRHome />
+                <Inbox />
+              </RequireStaff>
+            }
+          />
+          <Route path="/hr/home" element={<Navigate to="/hr/inbox" replace />} />
+          <Route path="/hr/executive" element={<Navigate to="/hr/inbox" replace />} />
+          <Route path="/hr/approvals" element={<Navigate to="/hr/inbox" replace />} />
+          <Route
+            path="/hr/offers"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <OffersAndHires />
               </RequireStaff>
             }
           />
@@ -130,32 +168,9 @@ export default function App() {
               </RequireStaff>
             }
           />
-          {/* Manager/Director-only - the reimagined executive landing and
-              the unified Approvals Center, see HRSidebar.jsx. */}
-          <Route
-            path="/hr/executive"
-            element={
-              <RequireStaff minRole="Manager">
-                <ExecutiveDashboard />
-              </RequireStaff>
-            }
-          />
-          <Route
-            path="/hr/approvals"
-            element={
-              <RequireStaff minRole="Manager">
-                <ApprovalsCenter />
-              </RequireStaff>
-            }
-          />
-          <Route
-            path="/hr/analytics"
-            element={
-              <RequireStaff minRole="Manager">
-                <Analytics />
-              </RequireStaff>
-            }
-          />
+          {/* Analytics and the recruitment dashboard are one page now. */}
+          <Route path="/hr/analytics" element={<Navigate to="/hr/dashboard" replace />} />
+          <Route path="/hr/analytics/recruitment" element={<Navigate to="/hr/dashboard" replace />} />
           <Route
             path="/hr/candidates"
             element={
@@ -165,7 +180,7 @@ export default function App() {
             }
           />
           <Route
-            path="/hr/analytics/recruitment"
+            path="/hr/dashboard"
             element={
               <RequireStaff minRole="Manager">
                 <RecruitmentDashboard />
@@ -231,7 +246,7 @@ export default function App() {
             path="/hr/vacancy/:id"
             element={
               <RequireStaff minRole="HR_Officer">
-                <VacancyDetail />
+                <VacancyWorkspace />
               </RequireStaff>
             }
           />
@@ -239,6 +254,21 @@ export default function App() {
               login, and not gated by port since that link always points at
               the guest origin (see backend/src/config/frontendUrl.js) anyway. */}
           <Route path="/shortlist-panel/:token" element={<ShortlistPanelAccess />} />
+        </Route>
+        {/* Internal Careers - UCAA employees, on its own port only
+            (InternalPortGate; internalPort.js). Microsoft sign-in is the
+            only way in; every other page needs an Internal candidate. */}
+        <Route element={<InternalPortGate />}>
+          <Route path="/careers/sign-in" element={<InternalSignIn />} />
+          <Route element={<PaddedLayout />}>
+            <Route path="/careers" element={<RequireInternalCandidate><CareerHome /></RequireInternalCandidate>} />
+            <Route path="/careers/welcome" element={<RequireInternalCandidate><InternalWelcome /></RequireInternalCandidate>} />
+            <Route path="/careers/vacancies" element={<RequireInternalCandidate><CareerJobs /></RequireInternalCandidate>} />
+            <Route path="/careers/vacancies/:id" element={<RequireInternalCandidate><CareerJob /></RequireInternalCandidate>} />
+            <Route path="/careers/apply/:vacancyId" element={<RequireInternalCandidate><CareerApply /></RequireInternalCandidate>} />
+            <Route path="/careers/applications" element={<RequireInternalCandidate><CareerApplications /></RequireInternalCandidate>} />
+            <Route path="/careers/profile" element={<RequireInternalCandidate><CareerProfile /></RequireInternalCandidate>} />
+          </Route>
         </Route>
         <Route
           path="/staff/login"
@@ -257,7 +287,7 @@ export default function App() {
             {/* Public - no RequireCandidate. Reached from Home.jsx's "View
                 details" link and directly shareable, since a guest should
                 be able to read a full advert before creating an account. */}
-            <Route path="/jobs/:id" element={<JobDetails />} />
+            <Route path="/jobs/:id" element={<JobPage />} />
             <Route path="/confirm-email" element={<ConfirmEmail />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
@@ -265,7 +295,7 @@ export default function App() {
               path="/dashboard"
               element={
                 <RequireCandidate>
-                  <CandidateHome />
+                  <CareerHome />
                 </RequireCandidate>
               }
             />
@@ -273,7 +303,7 @@ export default function App() {
               path="/dashboard/jobs"
               element={
                 <RequireCandidate>
-                  <CandidateJobs />
+                  <CareerJobs />
                 </RequireCandidate>
               }
             />
@@ -281,7 +311,7 @@ export default function App() {
               path="/dashboard/applications"
               element={
                 <RequireCandidate>
-                  <CandidateApplications />
+                  <CareerApplications />
                 </RequireCandidate>
               }
             />
@@ -289,7 +319,15 @@ export default function App() {
               path="/dashboard/profile"
               element={
                 <RequireCandidate>
-                  <CandidateProfile />
+                  <CareerProfile />
+                </RequireCandidate>
+              }
+            />
+            <Route
+              path="/apply/:vacancyId"
+              element={
+                <RequireCandidate>
+                  <CareerApply />
                 </RequireCandidate>
               }
             />
@@ -311,15 +349,10 @@ export default function App() {
               </RequireCandidate>
             }
           />
-          <Route
-            path="/apply/:vacancyId"
-            element={
-              <RequireCandidate>
-                <ApplyForm />
-              </RequireCandidate>
-            }
-          />
         </Route>
+
+        {/* Internal Careers: an unknown address goes to its home rather than a blank page. */}
+        {isInternalPort() && <Route path="*" element={<Navigate to="/careers" replace />} />}
       </Routes>
       </div>
 

@@ -14,15 +14,15 @@ export function resultsDue(round) {
 
 export function formatDateTime(value) {
   if (!value) return 'Date to be confirmed';
-  return new Date(value).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return new Date(value).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 export function formatTime(value) {
-  return value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--';
+  return value ? new Date(value).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '--:--';
 }
 
 export function formatDay(value) {
-  return new Date(value).toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
+  return new Date(value).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
 export function endOf(round) {

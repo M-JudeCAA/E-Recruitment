@@ -10,6 +10,7 @@ const asyncHandler = require('../utils/asyncHandler');
 
 const documentController = require('../controllers/documentController');
 const dataProtectionController = require('../controllers/dataProtectionController');
+const directoryController = require('../controllers/directoryController');
 const router = express.Router();
 
 // asyncHandler wraps every action here so a rejected promise (e.g. a
@@ -33,6 +34,8 @@ router.post('/me/exam-grades', authenticate, requireCandidate, asyncHandler(cont
 router.put('/me/exam-grades/:id', authenticate, requireCandidate, asyncHandler(controller.updateExamGrade));
 router.delete('/me/exam-grades/:id', authenticate, requireCandidate, asyncHandler(controller.deleteExamGrade));
 router.put('/me/internal-profile', authenticate, requireCandidate, asyncHandler(controller.updateInternalProfile));
+// Internal Careers: picking a supervisor from the UCAA directory.
+router.get('/me/directory/people', authenticate, requireCandidate, asyncHandler(directoryController.searchColleagues));
 router.put('/me/photo', authenticate, requireCandidate, uploadPhoto.single('photo'), asyncHandler(controller.updatePhoto));
 router.delete('/me/photo', authenticate, requireCandidate, asyncHandler(controller.removePhoto));
 router.get('/me/applications', authenticate, requireCandidate, asyncHandler(controller.myApplications));
