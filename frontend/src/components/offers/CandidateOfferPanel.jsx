@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Award, Clock, CheckCircle2 } from 'lucide-react';
+import { Award, Clock, CheckCircle2, Download } from 'lucide-react';
+import client from '../../models/apiClient';
+import { printFromApi } from '../../utils/printDocument';
 import Button from '../Button';
 import Modal from '../Modal';
 import TextArea from '../TextArea';
@@ -28,6 +30,12 @@ export default function CandidateOfferPanel({ offer, jobTitle, busy, onRespond }
   const [reason, setReason] = useState('');
   const deadline = deadlineInfo(offer.responseDeadline);
   const open = offer.status === 'Approved' && !deadline?.passed;
+  const [letterError, setLetterError] = useState('');
+  const letter = async () => {
+    setLetterError('');
+    const problem = await printFromApi(client, `/api/candidates/me/offers/${offer.id}/letter`);
+    if (problem) setLetterError(problem);
+  };
   const respond = async (action) => {
     await onRespond(action, action === 'decline' ? reason : undefined);
     setModal(null);
@@ -87,6 +95,12 @@ export default function CandidateOfferPanel({ offer, jobTitle, busy, onRespond }
           </p>
         )}
 
+        {offer.status !== 'Withdrawn' && (
+          <div style={{ marginTop: 8 }}>
+            <Button variant="ghost" style={{ padding: '4px 10px', fontSize: 13 }} onClick={letter}><Download size={14} /> Offer letter (print or save as PDF)</Button>
+            {letterError && <div style={{ color: 'var(--color-danger)', fontSize: 12 }}>{letterError}</div>}
+          </div>
+        )}
         {open && (
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             <Button loading={busy === 'accept'} onClick={() => setModal('accept')}>Accept offer</Button>

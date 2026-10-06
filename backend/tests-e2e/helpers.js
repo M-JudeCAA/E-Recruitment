@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const request = require('supertest');
 const prisma = require('../src/config/db');
 const app = require('../src/app');
-const { buildRequisitionDocx } = require('../scripts/lib/requisitionDocument');
+const { buildRequisitionDocx, buildScannedPdf } = require('../scripts/lib/requisitionDocument');
 
 const PASSWORD = 'ChangeMe123!';
 let passwordHash;
@@ -76,6 +76,7 @@ function api(token) {
     get: (url) => withAuth(request(app).get(url)),
     post: (url, body) => withAuth(request(app).post(url)).send(body || {}),
     patch: (url, body) => withAuth(request(app).patch(url)).send(body || {}),
+    put: (url, body) => withAuth(request(app).put(url)).send(body || {}),
     delete: (url) => withAuth(request(app).delete(url))
   };
 }
@@ -109,12 +110,44 @@ async function uploadRequisition(token, spec = {}) {
   return expectStatus(res, 200).body;
 }
 
+// Uploads the scan of the requisition as EXCO signed it (an image-only PDF)
+// and returns the stored upload to send as requisitionSignedCopy.
+async function uploadSignedCopy(token) {
+  const res = await request(app).post('/api/vacancies/requisition/signed-copy')
+    .set('Authorization', `Bearer ${token}`)
+    .attach('document', buildScannedPdf(1), { filename: 'Signed requisition.pdf', contentType: 'application/pdf' });
+  return expectStatus(res, 200).body;
+}
+
 // Creates a vacancy the only way the API allows - from an uploaded
-// requisition - with `body` as the reviewed form. Returns the raw response.
+// requisition and its signed scan - with `body` as the reviewed form.
+// Returns the raw response.
 async function createVacancyFromRequisition(token, body, spec = {}) {
   const requisition = await uploadRequisition(token, spec);
+  const signedCopy = await uploadSignedCopy(token);
   return request(app).post('/api/vacancies').set('Authorization', `Bearer ${token}`)
-    .send({ ...body, requisitionDocument: requisition.document, requisitionConfirmed: true });
+    .send({ ...body, requisitionDocument: requisition.document, requisitionSignedCopy: signedCopy, requisitionConfirmed: true });
+}
+
+// Records a panel's results the way the HR Officer does after the interview:
+// score, verdict and the signed score sheet (a small PDF). The round must
+// already be in the past - pass `backdate` to move it there first.
+async function recordInterviewResults(token, roundId, { score = 82, recommendation = 'Shortlist', notes, backdate = true, sheet = true } = {}) {
+  if (backdate) await prisma.interviewRound.update({ where: { id: roundId }, data: { scheduledDate: new Date(Date.now() - 3600000) } });
+  let req = request(app).patch(`/api/interviews/${roundId}/results`).set('Authorization', `Bearer ${token}`)
+    .field('score', String(score)).field('recommendation', recommendation);
+  if (notes) req = req.field('notes', notes);
+  if (sheet) req = req.attach('scoreSheet', Buffer.from('%PDF-1.4 signed score sheet'), { filename: 'Score sheet.pdf', contentType: 'application/pdf' });
+  return req;
+}
+
+// Attaches EXCO's signed approval of the interview shortlist (approved in
+// the system, then printed and signed outside it). struckOff: application
+// ids EXCO did not approve. Returns the raw response.
+async function attachExcoApproval(token, vacancyId, { struckOff = [], excoReference = 'EXCO MIN 12/2026' } = {}) {
+  return request(app).post(`/api/vacancies/${vacancyId}/exco-shortlist`).set('Authorization', `Bearer ${token}`)
+    .field('excoReference', excoReference).field('struckOff', JSON.stringify(struckOff))
+    .attach('document', buildScannedPdf(1), { filename: 'Signed shortlist.pdf', contentType: 'application/pdf' });
 }
 
 function expectStatus(res, status) {
@@ -126,5 +159,5 @@ function expectStatus(res, status) {
 
 module.exports = {
   prisma, app, PASSWORD, resetDatabase, createStaff, createOrg, createCandidate, staffToken, candidateToken, api, REFEREES,
-  expectStatus, attachAcademicDocument, uploadRequisition, createVacancyFromRequisition
+  expectStatus, attachAcademicDocument, uploadRequisition, uploadSignedCopy, createVacancyFromRequisition, recordInterviewResults, attachExcoApproval
 };

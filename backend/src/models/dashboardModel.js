@@ -20,6 +20,7 @@ module.exports = {
     APPLICATION_STATUSES.map((status) => prisma.application.count({ where: { status } }).then((count) => [status, count]))
   ),
   countPendingDepartments: () => prisma.department.count({ where: { status: 'Pending' } }),
+  countCommitteesPendingApproval: () => prisma.shortlistExercise.count({ where: { nominationStatus: 'Submitted' } }),
   countOffersPendingApproval: () => prisma.offer.count({ where: { status: 'Recommended' } }),
   // Offer outcomes by status - the Trend/Funnel panels' "Accepted" figure
   // isn't reachable from applicationsByStatus (Application.status never
@@ -152,15 +153,13 @@ module.exports = {
     }
   }),
 
-  // Every scored panel member row - grouped by name (not staffUserId,
-  // which is optional/absent for the common case of an external panelist
-  // with no system account, see the schema comment on PanelMember) in the
-  // controller to build the workload/average-score table.
-  scoredPanelMembers: () => prisma.panelMember.findMany({
-    // A panelist who stood down (recusedAt) didn't count towards the round,
-    // so they don't count here either.
-    where: { score: { not: null }, recusedAt: null },
-    select: { name: true, score: true }
+  // Every panelist on an interview that was held (its results recorded) -
+  // grouped by name (not staffUserId, which is optional/absent for the
+  // common case of an external panelist with no system account) in the
+  // controller, for the panel workload table.
+  heldPanelMembers: () => prisma.panelMember.findMany({
+    where: { interviewRound: { status: 'Completed' } },
+    select: { name: true, isChair: true }
   }),
 
   // Interview rounds scheduled within a window - HRHome's "Upcoming

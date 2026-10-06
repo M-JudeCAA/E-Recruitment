@@ -4,10 +4,12 @@
 //
 // Retention for the access log (FR-ATS-079/081): DataAccessLog rows record
 // who viewed candidate data (services/accessLogService.js). They are kept
-// for ACCESS_LOG_RETENTION_DAYS (default two years) and then deleted - the
+// for the "accessLogRetentionDays" setting (Settings page; falls back to
+// ACCESS_LOG_RETENTION_DAYS, default two years) and then deleted - the
 // record of a view is personal data too, and isn't kept for ever.
 require('dotenv').config();
 const prisma = require('../src/config/db');
+const settings = require('../src/services/settingsService');
 
 const DEFAULT_RETENTION_DAYS = 730;
 // A mistyped setting (say "3" meant as years) must not wipe the log.
@@ -25,7 +27,9 @@ function retentionDays(env = process.env) {
 }
 
 async function run(now = new Date()) {
-  const days = retentionDays();
+  // The setting wins once someone has set it; until then the environment.
+  const set = await prisma.setting.findUnique({ where: { key: 'accessLogRetentionDays' } });
+  const days = set ? await settings.get('accessLogRetentionDays') : retentionDays();
   const cutoff = new Date(now.getTime() - days * DAY_MS);
   const { count } = await prisma.dataAccessLog.deleteMany({ where: { at: { lt: cutoff } } });
   return `Access log purge complete. ${count} record(s) older than ${days} days removed.`;

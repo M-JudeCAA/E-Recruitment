@@ -1,4 +1,6 @@
+const prisma = require('../config/db');
 const conflictOfInterest = require('../services/conflictOfInterestService');
+const hiringManagers = require('../services/hiringManagerService');
 const meritList = require('../services/meritListService');
 const audit = require('../services/auditService');
 const { notifyAllWithRole } = require('../services/notificationService');
@@ -68,6 +70,18 @@ async function propose(req, res) {
   res.json({ message: 'Merit list proposed', vacancyId, primaryCount: result.primaryCount, reserveCount: result.reserveCount });
 }
 
+// Who the approved list recommends, for the hiring manager's update.
+async function notifyHiringManager(vacancyId) {
+  const entries = await prisma.application.findMany({
+    where: { vacancyId, meritStatus: 'Approved' }, orderBy: { meritRank: 'asc' },
+    select: { meritListStatus: true, candidate: { select: { fullName: true } } }
+  });
+  await hiringManagers.notify(vacancyId, 'meritListApproved', {
+    primary: entries.filter((e) => e.meritListStatus === 'Primary').map((e) => e.candidate.fullName),
+    reserve: entries.filter((e) => e.meritListStatus === 'Reserve').map((e) => e.candidate.fullName)
+  });
+}
+
 async function approve(req, res) {
   const vacancyId = parseVacancyId(req, res);
   if (!vacancyId) return;
@@ -76,6 +90,7 @@ async function approve(req, res) {
     await audit.record({
       entityType: 'Vacancy', entityId: vacancyId, action: 'Merit list approved', actor: audit.actorFrom(req), details: result
     });
+    await notifyHiringManager(vacancyId);
     broadcastDashboardEvent('MeritListApproved', { vacancyId });
     res.json({ message: 'Merit list approved', vacancyId, ...result });
   } catch (err) {

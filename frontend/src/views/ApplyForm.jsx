@@ -20,6 +20,7 @@ import InternalProfileStep from './apply-wizard/InternalProfileStep';
 import ReviewStep from './apply-wizard/ReviewStep';
 import SubmitStep from './apply-wizard/SubmitStep';
 import { failedDisqualifyingRequirements } from '../utils/screeningQuestions';
+import { evidenceRequirements, missingEvidence } from '../utils/screeningEvidence';
 import { validateNationalId } from '../utils/validators';
 
 // A requirement's answerType (see ScreeningQuestionsEditor.jsx) decides how
@@ -104,6 +105,9 @@ export default function ApplyForm() {
   // DocumentsStep uploads/removes each one immediately, so this mirrors the
   // server rather than holding files for the next save.
   const [documents, setDocuments] = useState([]);
+  // The evidence this role asks for given the answers so far (the National
+  // ID for an age limit, a licence for a Yes...) - utils/screeningEvidence.js.
+  const evidence = evidenceRequirements(vacancy, { ...desirableAnswers, ...disqualifyingAnswers });
   // Screening at the point of application (GET
   // /api/applications/eligibility/:vacancyId): whether the candidate's
   // profile, and the eligibility answers saved on their draft, let them
@@ -143,6 +147,12 @@ export default function ApplyForm() {
   // is still in flight (which would otherwise briefly block a candidate
   // who actually already has a Draft/Submitted application here).
   const [applicationsChecked, setApplicationsChecked] = useState(false);
+
+  // After the Profile step adds, edits or deletes an education, work,
+  // certificate or exam-grade entry: refresh those lists only. loadProfile
+  // would also refill the personal details and internal-profile fields from
+  // the server, wiping anything typed there but not yet saved.
+  const refreshProfileEntries = () => client.get('/api/candidates/me').then((res) => setProfile(res.data));
 
   const loadProfile = () => client.get('/api/candidates/me').then((res) => {
     setProfile(res.data);
@@ -281,8 +291,10 @@ export default function ApplyForm() {
         }
         return missing;
       }
-      case 'documents':
-        return documents.some((d) => d.category === 'Academic') ? [] : ['At least one academic document'];
+      case 'documents': {
+        const missing = documents.some((d) => d.category === 'Academic') ? [] : ['At least one academic document'];
+        return [...missing, ...missingEvidence(evidence, documents).map((e) => e.label)];
+      }
       case 'questions': {
         const missing = [];
         if (!questionsForm.openToRelocate) missing.push('Open to relocating?');
@@ -491,7 +503,7 @@ export default function ApplyForm() {
     <div style={{ background: 'var(--color-primary-light)', minHeight: '100%', width: '100%' }}>
       {showProfileModal && (
         <Modal title="Complete your profile" onClose={() => setShowProfileModal(false)} maxWidth={720}>
-          <ProfileCompletionForm onComplete={() => setShowProfileModal(false)} />
+          <ProfileCompletionForm onComplete={() => { setShowProfileModal(false); loadProfile(); }} />
         </Modal>
       )}
       <div className="p-4 md:p-8">
@@ -520,13 +532,13 @@ export default function ApplyForm() {
               )}
               {steps[stepIndex].key === 'jobDetails' && <JobDetailsStep vacancy={vacancy} />}
               {steps[stepIndex].key === 'profile' && (
-                <ProfileStep profile={profile} onProfileChange={loadProfile}
+                <ProfileStep profile={profile} onProfileChange={refreshProfileEntries}
                   profileDetails={profileDetailsForm}
                   setProfileDetail={(key) => (e) => { setDirty(true); setProfileDetailsForm({ ...profileDetailsForm, [key]: e.target.value }); }} />
               )}
               {steps[stepIndex].key === 'documents' && (
                 <DocumentsStep coverLetter={coverLetter} setCoverLetter={(file) => { setDirty(true); setCoverLetter(file); }}
-                  applicationId={application?.id} documents={documents} onDocumentsChange={setDocuments}
+                  applicationId={application?.id} documents={documents} onDocumentsChange={setDocuments} evidence={evidence}
                   portfolioUrl={profileDetailsForm.portfolioUrl}
                   setPortfolioUrl={(e) => { setDirty(true); setProfileDetailsForm({ ...profileDetailsForm, portfolioUrl: e.target.value }); }} />
               )}
@@ -550,7 +562,7 @@ export default function ApplyForm() {
                   set={(key) => (e) => { setDirty(true); setInternalProfileForm({ ...internalProfileForm, [key]: e.target.value }); }} />
               )}
               {steps[stepIndex].key === 'review' && (
-                <ReviewStep profile={profile} coverLetter={coverLetter} documents={documents} referees={refereesForm} vacancy={vacancy}
+                <ReviewStep profile={profile} coverLetter={coverLetter} documents={documents} referees={refereesForm} vacancy={vacancy} evidence={evidence}
                   profileDetails={profileDetailsForm} questions={questionsForm} internalProfile={internalProfileForm}
                   candidateType={candidate?.candidateType} goTo={goTo} stepIndexes={stepIndexes}
                   desirableRequirements={vacancy.desirableRequirements} desirableAnswers={desirableAnswers}

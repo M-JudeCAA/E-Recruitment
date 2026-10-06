@@ -8,7 +8,8 @@ function sendRequisitionError(res, err) {
     return res.status(err.status).json({
       error: err.message,
       ...(err.code ? { code: err.code } : {}),
-      ...(err.existing ? { existingVacancy: err.existing } : {})
+      ...(err.existing ? { existingVacancy: err.existing } : {}),
+      ...(err.details ? { headcount: err.details } : {})
     });
   }
   return sendError(res, err);
@@ -26,4 +27,15 @@ async function read(req, res) {
   }
 }
 
-module.exports = { read, sendRequisitionError };
+// POST /api/vacancies/requisition/signed-copy - the scan of the requisition
+// as EXCO signed it, kept with the vacancy next to the readable document.
+async function uploadSignedCopy(req, res) {
+  if (!req.file) return res.status(400).json({ error: 'Choose the scan of the signed requisition to upload', code: 'SIGNED_COPY_REQUIRED' });
+  try {
+    res.json(await requisitionService.storeSignedCopy(req.file));
+  } catch (err) {
+    sendRequisitionError(res, err);
+  }
+}
+
+module.exports = { read, uploadSignedCopy, sendRequisitionError };

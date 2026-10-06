@@ -61,11 +61,13 @@ function AttachmentField({ label, hint, required, name, file, onChange, onClear 
 // each file is uploaded the moment it's picked (POST
 // /api/applications/:id/documents) rather than held until the next draft
 // save, so the list shown is always what's actually on the application.
-function SupportingDocumentsSection({ title, description, category, required, labelPlaceholder, applicationId, documents, onDocumentsChange }) {
+// With an evidenceKey, the section collects the evidence for one screening
+// requirement (category Evidence) - labelled by the server, no description.
+function SupportingDocumentsSection({ title, description, category, required, labelPlaceholder, applicationId, documents, onDocumentsChange, evidenceKey }) {
   const [label, setLabel] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const mine = documents.filter((d) => d.category === category);
+  const mine = documents.filter((d) => d.category === category && (!evidenceKey || d.evidenceKey === evidenceKey));
 
   const handleFile = async (e) => {
     const selected = e.target.files[0];
@@ -78,7 +80,8 @@ function SupportingDocumentsSection({ title, description, category, required, la
     try {
       const formData = new FormData();
       formData.append('category', category);
-      formData.append('label', label);
+      if (evidenceKey) formData.append('evidenceKey', evidenceKey);
+      else formData.append('label', label);
       formData.append('file', selected);
       const res = await client.post(`/api/applications/${applicationId}/documents`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
       onDocumentsChange((current) => [...current, res.data]);
@@ -121,8 +124,8 @@ function SupportingDocumentsSection({ title, description, category, required, la
             style={{ background: 'none', border: 'none', cursor: busy ? 'default' : 'pointer', flexShrink: 0 }}><X size={14} /></button>
         </div>
       ))}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ alignItems: 'end' }}>
-        <TextField label="Description" hint="Optional" placeholder={labelPlaceholder} value={label} onChange={(e) => setLabel(e.target.value)} />
+      <div className={evidenceKey ? '' : 'grid grid-cols-1 md:grid-cols-2 gap-x-4'} style={{ alignItems: 'end' }}>
+        {!evidenceKey && <TextField label="Description" hint="Optional" placeholder={labelPlaceholder} value={label} onChange={(e) => setLabel(e.target.value)} />}
         <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 11, marginBottom: 20, border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-muted)', cursor: busy ? 'default' : 'pointer' }}>
           <Paperclip size={14} /> {busy ? 'Uploading...' : 'Attach a file'}
           <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={handleFile} disabled={busy} style={{ display: 'none' }} />
@@ -141,7 +144,7 @@ function SupportingDocumentsSection({ title, description, category, required, la
 // useGeneratedCvDownload.jsx. Academic documents are required (submit
 // refuses an application without one); other documents are optional.
 export default function DocumentsStep({
-  coverLetter, setCoverLetter, portfolioUrl, setPortfolioUrl, applicationId, documents, onDocumentsChange
+  coverLetter, setCoverLetter, portfolioUrl, setPortfolioUrl, applicationId, documents, onDocumentsChange, evidence = []
 }) {
   return (
     <div>
@@ -153,6 +156,18 @@ export default function DocumentsStep({
       <SupportingDocumentsSection title="Academic documents" category="Academic" required
         description="Certificates, transcripts and result slips for the qualifications on your profile - at least one is required."
         labelPlaceholder="e.g. BSc transcript" applicationId={applicationId} documents={documents} onDocumentsChange={onDocumentsChange} />
+      {evidence.length > 0 && (
+        <div style={{ marginBottom: 8, maxWidth: 640 }}>
+          <span style={{ display: 'block', fontSize: 16, fontWeight: 700, color: 'var(--color-text)', marginBottom: 4 }}>Evidence for this role</span>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 14 }}>
+            This role's requirements, and the questions you answered Yes to, need proof. Attach a copy of each - your application can't be sent without them.
+          </p>
+          {evidence.map((item) => (
+            <SupportingDocumentsSection key={item.key} title={item.label} description={item.hint} category="Evidence" evidenceKey={item.key} required
+              applicationId={applicationId} documents={documents} onDocumentsChange={onDocumentsChange} />
+          ))}
+        </div>
+      )}
       <SupportingDocumentsSection title="Other relevant documents" category="Other"
         description="Optional - professional certificates, licences, testimonials or anything else that supports your application."
         labelPlaceholder="e.g. ATC licence" applicationId={applicationId} documents={documents} onDocumentsChange={onDocumentsChange} />

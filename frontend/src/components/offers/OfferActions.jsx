@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Undo2, Pencil, XCircle } from 'lucide-react';
+import { CheckCircle2, Undo2, Pencil, XCircle, Printer } from 'lucide-react';
 import staffClient from '../../models/staffApiClient';
 import Button from '../Button';
 import Modal from '../Modal';
@@ -7,6 +7,8 @@ import TextArea from '../TextArea';
 import OfferComposer from './OfferComposer';
 import { errorMessage } from '../../utils/interviews';
 import { OPEN_OFFER_STATUSES } from './offerFormat';
+import { printFromApi } from '../../utils/printDocument';
+import HireSection from './HireSection';
 
 // Whatever the viewer's rank lets them do to an offer next, in one place for
 // every screen that shows one (merit list, review card, Approvals Center,
@@ -31,7 +33,8 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
   const canRevise = rank >= ROLE_RANK.Principal_HR_Officer && ['Recommended', 'Returned'].includes(offer.status);
   const canDecide = rank >= ROLE_RANK.Manager && offer.status === 'Recommended';
   const canWithdraw = rank >= ROLE_RANK.Principal_HR_Officer && OPEN_OFFER_STATUSES.includes(offer.status);
-  if (!canRevise && !canDecide && !canWithdraw) return null;
+  const hasLetters = offer.salaryAmount != null && offer.status !== 'Withdrawn';
+  if (!canRevise && !canDecide && !canWithdraw && !hasLetters && offer.status !== 'Accepted') return null;
 
   const act = async (key, fn, done) => {
     setBusy(key); setError(''); setNotice('');
@@ -48,9 +51,26 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
   };
   const open = (which) => { setReason(''); setError(''); setModal(which); };
 
+  // The letters, from the document templates (backend documentService).
+  const print = async (kind) => {
+    setError('');
+    const problem = await printFromApi(staffClient, `/api/documents/offers/${offer.id}/${kind}`);
+    if (problem) setError(problem);
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        {offer.salaryAmount != null && offer.status !== 'Withdrawn' && (
+          <Button variant="ghost" style={small} onClick={() => print('offer-letter')} title="Print or save the offer letter as PDF">
+            <Printer size={13} /> Offer letter
+          </Button>
+        )}
+        {offer.status === 'Accepted' && (
+          <Button variant="ghost" style={small} onClick={() => print('appointment')} title="Print or save the appointing instrument as PDF">
+            <Printer size={13} /> Appointing instrument
+          </Button>
+        )}
         {canDecide && (
           <>
             <Button style={small} loading={busy === 'approve'} loadingText="Issuing..." disabled={!!busy}
@@ -73,6 +93,7 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
           </Button>
         )}
       </div>
+      <HireSection offer={offer} staffRole={staffRole} onChanged={onChanged} />
       {error && !modal && <div style={{ color: 'var(--color-danger)', fontSize: 12, marginTop: 4 }}>{error}</div>}
       {notice && <div style={{ color: 'var(--color-success)', fontSize: 12, marginTop: 4 }}>{notice}</div>}
 

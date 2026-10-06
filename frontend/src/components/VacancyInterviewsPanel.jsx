@@ -7,13 +7,14 @@ import Avatar from './Avatar';
 import StatusBadge from './StatusBadge';
 import InterviewScheduler from './interviews/InterviewScheduler';
 import InterviewRoundPanel from './interviews/InterviewRoundPanel';
+import ExcoShortlistPanel from './ExcoShortlistPanel';
 import { ROUND_LABELS, hintText } from './interviews/formStyles';
-import { formatDateTime, venueLabel } from '../utils/interviews';
+import { formatDateTime, venueLabel, resultsDue } from '../utils/interviews';
 
 // Step two of selection, for one vacancy: everyone on the approved interview
-// shortlist and where their interview stands - not booked, booked, awaiting
-// scores, or decided - with scheduling and each round's workspace one click
-// away. The Interview Hub remains the cross-vacancy view.
+// shortlist and where their interview stands - not booked, booked, results
+// to record, or decided - with scheduling and each round's workspace one
+// click away. The Interview Hub remains the cross-vacancy view.
 
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 const IN_SCOPE = ['Shortlisted', 'InterviewScheduled', 'Interviewed'];
@@ -27,12 +28,8 @@ function stageOf(app) {
   const round = latestHeld(app.interviewRounds);
   if (!round) return { key: 'unscheduled', label: 'Not scheduled', color: 'Pending' };
   if (round.recommendation) return { key: 'decided', label: round.recommendation, color: round.recommendation, round };
-  const active = (round.panelMembers || []).filter((p) => !p.recusedAt);
-  const scored = active.filter((p) => p.score != null).length;
-  const started = round.scheduledDate && new Date(round.scheduledDate) <= new Date();
-  if (!started) return { key: 'booked', label: 'Booked', color: 'Scheduled', round };
-  if (active.length > 0 && scored === active.length) return { key: 'ready', label: 'Ready to finalize', color: 'Completed', round };
-  return { key: 'scoring', label: `Scores ${scored}/${active.length}`, color: 'Pending', round };
+  if (resultsDue(round)) return { key: 'results', label: 'Results to record', color: 'Pending', round };
+  return { key: 'booked', label: 'Booked', color: 'Scheduled', round };
 }
 
 export default function VacancyInterviewsPanel({ vacancy, applications, staffRole, onUpdated, onGoToMeritList }) {
@@ -55,13 +52,13 @@ export default function VacancyInterviewsPanel({ vacancy, applications, staffRol
           <div>
             <strong style={{ fontSize: 16 }}>Interviews</strong>
             <div style={{ ...hintText, marginTop: 4 }}>
-              {apps.length} on the interview shortlist · {counts.unscheduled || 0} not scheduled · {(counts.booked || 0) + (counts.scoring || 0) + (counts.ready || 0)} in progress · {decided} decided
+              {apps.length} on the interview shortlist · {counts.unscheduled || 0} not scheduled · {(counts.booked || 0) + (counts.results || 0)} in progress · {decided} decided
               {rejectedAtInterview > 0 && ` · ${rejectedAtInterview} not recommended`}
             </div>
             {apps.length > 0 && (
               <div style={{ display: 'flex', height: 6, borderRadius: 999, overflow: 'hidden', background: 'var(--color-bg-subtle)', marginTop: 8, maxWidth: 360 }}>
                 <div style={{ width: `${(decided / apps.length) * 100}%`, background: 'var(--color-accent)' }} />
-                <div style={{ width: `${(((counts.booked || 0) + (counts.scoring || 0) + (counts.ready || 0)) / apps.length) * 100}%`, background: 'var(--color-primary)' }} />
+                <div style={{ width: `${(((counts.booked || 0) + (counts.results || 0)) / apps.length) * 100}%`, background: 'var(--color-primary)' }} />
               </div>
             )}
           </div>
@@ -75,6 +72,8 @@ export default function VacancyInterviewsPanel({ vacancy, applications, staffRol
           </div>
         </div>
       </Card>
+
+      <ExcoShortlistPanel vacancyId={vacancy.id} staffRole={staffRole} onChanged={onUpdated} />
 
       {decided > 0 && (
         <Card accent="var(--color-accent)">

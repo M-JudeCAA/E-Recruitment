@@ -41,6 +41,20 @@ test('removes old requisition uploads nothing refers to, and keeps the rest', as
   expect(message).toMatch(/1 unused upload\(s\) removed, 3 kept/);
 });
 
+test('treats the scanned signed copies the same way', async () => {
+  const old = GRACE_MS + 60000;
+  const signed = (n, ext) => `requisition-signed-00000000-0000-0000-0000-${String(n).padStart(12, '0')}.${ext}`;
+  prisma.vacancy.findMany.mockResolvedValue([{ requisitionDocumentUrl: `/api/files/${name(1)}`, requisitionSignedCopyUrl: `/api/files/${signed(1, 'pdf')}` }]);
+  prisma.vacancyDraft.findMany.mockResolvedValue([{ requisitionFilename: name(2), signedCopyFilename: signed(2, 'png') }]);
+  file(signed(1, 'pdf'), old); // a vacancy's signed copy
+  file(signed(2, 'png'), old); // a draft's signed copy
+  file(signed(3, 'jpg'), old); // abandoned
+
+  await run(NOW);
+
+  expect(fs.readdirSync(dir).sort()).toEqual([signed(1, 'pdf'), signed(2, 'png')].sort());
+});
+
 test('copes with no upload folder yet', async () => {
   process.env.UPLOAD_DIR = path.join(dir, 'missing');
   await expect(run(NOW)).resolves.toMatch(/No upload folder/);

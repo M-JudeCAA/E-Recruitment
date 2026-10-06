@@ -4,9 +4,10 @@
 // screened at the point of application (ineligible candidates are left as
 // refused drafts); the shortlisting committee (setup, blind rating,
 // moderation with chair and acting-chair rulings, closing, proposing from
-// the ranking); the Interview Hub (sessions run on the day, candidates called
-// in, rubrics, panel scoring, recusal, no-shows, reschedules, cancellations,
-// and a session booked for today to run live); the post-interview merit list;
+// the ranking); the Interview Hub (sessions with calendar invitations, results
+// recorded from the panels' signed score sheets, results still to enter,
+// no-shows, reschedules, cancellations, and a session booked for today);
+// the post-interview merit list;
 // and the full offer lifecycle (returned/revised, issued, accepted, declined,
 // expired, withdrawn, with reserve promotion) - leaving real actions for each
 // staff tier, committee member, panelist and candidate to perform live.
@@ -48,6 +49,10 @@ let BASE;
 // ---------------------------------------------------------------------------
 // Plumbing
 // ---------------------------------------------------------------------------
+
+// Where demo applicants say they saw the advert (Source of Hire).
+const DEMO_SOURCES = ['UcaaWebsite', 'LinkedIn', 'Newspaper', 'HrPulse', 'LinkedIn', 'Referral', 'UcaaWebsite', 'SocialMedia'];
+let demoSourceIndex = 0;
 
 async function api(method, path, { token, json, form, ip } = {}) {
   const headers = {};
@@ -182,6 +187,21 @@ async function attachDocuments(c, applicationId) {
   }
 }
 
+// The evidence the vacancy asks for given the candidate's answers (the
+// National ID for an age limit, a licence for a "Yes", ...) - one scan each,
+// as the wizard's Documents step would collect.
+async function attachEvidence(c, applicationId, vacancyId) {
+  const { evidence = [] } = await api('GET', `/api/applications/eligibility/${vacancyId}`, { token: c.token });
+  for (const item of evidence.filter((e) => !e.provided)) {
+    const form = new FormData();
+    form.append('category', 'Evidence');
+    form.append('evidenceKey', item.key);
+    form.append('file', new Blob([pdfDocument(item.label, [`Submitted by ${c.name}`, item.hint || ''])], { type: 'application/pdf' }),
+      `${item.key.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pdf`);
+    await api('POST', `/api/applications/${applicationId}/documents`, { token: c.token, form });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Candidates
 // ---------------------------------------------------------------------------
@@ -223,13 +243,23 @@ async function makeCandidate(spec) {
   const nid = nationalId(spec.sex, spec.dob, n);
   const phone = `07${70 + (n % 9)} ${String(100 + n * 37).slice(-3)} ${String(200 + n * 53).slice(-3)}`;
 
+  // A UCAA address can only sign in with Microsoft, which the seeder can't
+  // do: an internal candidate registers under a placeholder address and the
+  // account is then made the internal one a first Microsoft sign-in creates,
+  // keeping the demo password so the seeder (and testers) can act as them.
+  const registerAs = spec.internal ? `demo.${slug(spec.name)}@internal.example.com` : email;
   await api('POST', '/api/candidates/auth/register', {
-    ip, json: { fullName: spec.name, email, password: PASSWORD, phone, nationalId: nid }
+    ip, json: { fullName: spec.name, email: registerAs, password: PASSWORD, phone, nationalId: nid }
   });
   const t = await prisma.verificationToken.findFirst({
-    where: { type: 'EmailConfirmation', pendingRegistration: { email } }, orderBy: { createdAt: 'desc' }
+    where: { type: 'EmailConfirmation', pendingRegistration: { email: registerAs } }, orderBy: { createdAt: 'desc' }
   });
   await api('GET', `/api/candidates/auth/confirm-email?token=${encodeURIComponent(t.token)}`, { ip });
+  if (spec.internal) {
+    await prisma.candidate.update({
+      where: { email: registerAs }, data: { email, candidateType: 'Internal', internalProfile: { create: {} } }
+    });
+  }
   const { token } = await api('POST', '/api/candidates/auth/login', { ip, json: { email, password: PASSWORD } });
 
   await api('PUT', '/api/candidates/me', {
@@ -278,9 +308,10 @@ async function apply(c, vacancy, { submit = true, strong = true, desirable = {},
   form.append('referees', referees(c));
   const draft = await api('POST', '/api/applications', { token: c.token, form });
   await attachDocuments(c, draft.id);
+  await attachEvidence(c, draft.id, vacancy.id);
   if (!submit) return draft;
   try {
-    const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: c.token, json: { consent: true } });
+    const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: c.token, json: { consent: true, source: DEMO_SOURCES[demoSourceIndex++ % DEMO_SOURCES.length] } });
     if (submit === 'refused') throw new Error(`${c.name} was expected to be refused at submission for ${vacancy.title}, but was accepted`);
     return submitted;
   } catch (err) {
@@ -312,7 +343,27 @@ async function createVacancy(body, approver = 'manager') {
 
 const beginReview = (vacancyId) => api('PATCH', `/api/vacancies/${vacancyId}/begin-review`, { token: T.shro });
 const reject = (applicationId, reason) => api('PATCH', `/api/applications/${applicationId}/reject`, { token: T.shro, json: { reason } });
-const approveShortlist = (vacancyId) => api('POST', `/api/applications/vacancies/${vacancyId}/approve-shortlist`, { token: T.phro });
+// Approved here, then printed and signed by EXCO outside the system - the
+// signed copy is attached before anyone can be interviewed.
+async function approveShortlist(vacancyId, { struckOff = [] } = {}) {
+  await api('POST', `/api/applications/vacancies/${vacancyId}/approve-shortlist`, { token: T.phro });
+  const form = new FormData();
+  form.append('excoReference', `EXCO MIN ${40 + vacancyId}/2026`);
+  form.append('struckOff', JSON.stringify(struckOff));
+  form.append('document', new Blob([pdfDocument('Interview shortlist - approved by EXCO', [
+    `Vacancy ${vacancyId}`, 'Approved for interview as listed.', 'Signed: ____________________  Chairperson, EXCO'
+  ])], { type: 'application/pdf' }), 'Interview shortlist - signed by EXCO.pdf');
+  return api('POST', `/api/vacancies/${vacancyId}/exco-shortlist`, { token: T.shro, form });
+}
+
+// Mark as Hired, with the appointing instrument as signed.
+async function markHired(offerId, name) {
+  const form = new FormData();
+  form.append('signedInstrument', new Blob([pdfDocument('Appointing instrument - signed', [
+    `Appointment of ${name}`, 'Accepted and signed by the appointee.', 'Signed: ____________________  Director Human Resource & Administration'
+  ])], { type: 'application/pdf' }), 'Appointing instrument - signed.pdf');
+  return api('POST', `/api/applications/offers/${offerId}/hire`, { token: T.phro, form });
+}
 
 async function verifyInternal(candidateId, decision, comments) {
   const form = new FormData();
@@ -355,7 +406,12 @@ function ratingsFor(criteria, { profile = 'good', notMet = null, dispute = null 
   });
 }
 
-const committeeMember = (name, role, isChair) => ({ name, role, email: `${slug(name)}@example.com`, isChair: !!isChair });
+// UCAA staff (HR included may sit on a committee); someone from outside
+// only as a special case, with the reason.
+const committeeMember = (name, role, isChair, externalReason) => ({
+  name, role, isChair: !!isChair, externalReason,
+  email: externalReason ? `${slug(name)}@example.com` : `${slug(name)}@caa.co.ug`
+});
 
 // Runs the committee for a vacancy up to `stopAt` (Setup | Rating | Moderation
 // | Closed | Proposed). profiles: { applicationId: { profile, notMet, dispute } }.
@@ -368,8 +424,11 @@ async function runCommittee(vacancy, members, {
   const base = `/api/shortlist-committee/vacancies/${vacancy.id}`;
   await api('POST', base, { token: T.shro });
   if (ratersPerApplicant) await api('PATCH', base, { token: T.shro, json: { ratersPerApplicant } });
-  for (const m of members) await api('POST', `${base}/members`, { token: T.shro, json: { name: m.name, email: m.email, isChair: m.isChair } });
+  for (const m of members) await api('POST', `${base}/members`, { token: T.shro, json: { name: m.name, email: m.email, isChair: m.isChair, externalReason: m.externalReason } });
+  // HR submits the nomination; the DHRA approves it (left waiting at Setup).
+  await api('POST', `${base}/nomination/submit`, { token: T.shro });
   if (stopAt === 'Setup') return null;
+  await api('POST', `${base}/nomination/approve`, { token: T.dhra });
 
   await closeApplications(vacancy.id);
   await api('POST', `${base}/open`, { token: T.shro });
@@ -457,90 +516,43 @@ const scheduleOne = (applicationId, opts) => api('POST', `/api/interviews/applic
 
 // Moves rounds back in time: they were booked in the future (so candidates
 // could confirm them), and this turns them into interviews that took place.
-// The panelists' day links move to the new day with them.
-async function shiftRounds(vacancyId, rounds, days) {
-  const moved = new Map();
+async function shiftRounds(rounds, days) {
   for (const round of rounds) {
-    const from = new Date(round.scheduledDate);
-    const to = new Date(from.getTime() - days * DAY);
-    moved.set(klaDate(from), klaDate(to));
+    const to = new Date(new Date(round.scheduledDate).getTime() - days * DAY);
     await prisma.interviewRound.update({ where: { id: round.id }, data: { scheduledDate: to } });
-  }
-  for (const [from, to] of moved) {
-    await prisma.panelDayLink.updateMany({ where: { vacancyId, day: from }, data: { day: to } });
-  }
-}
-
-// Every past interview day of a vacancy as HR ran it: the session started
-// just before the first interview and ended after the last, with each
-// candidate who attended called in.
-async function recordHeldDays(vacancyId) {
-  const rounds = await prisma.interviewRound.findMany({
-    where: { application: { vacancyId }, scheduledDate: { lt: new Date(NOW) }, status: { not: 'Cancelled' } },
-    orderBy: { scheduledDate: 'asc' }
-  });
-  const byDay = new Map();
-  for (const r of rounds) {
-    const day = klaDate(r.scheduledDate);
-    if (!byDay.has(day)) byDay.set(day, []);
-    byDay.get(day).push(r);
-  }
-  for (const [day, list] of byDay) {
-    const first = new Date(list[0].scheduledDate).getTime();
-    const last = Math.max(...list.map((r) => new Date(r.scheduledDate).getTime() + (r.durationMinutes || 60) * MINUTE));
-    await prisma.interviewDay.upsert({
-      where: { vacancyId_day: { vacancyId, day } },
-      update: {},
-      create: {
-        vacancyId, day,
-        startedAt: new Date(first - 15 * MINUTE), startedById: STAFF_ID.shro,
-        endedAt: new Date(last + 10 * MINUTE), endedById: STAFF_ID.shro, closesAt: new Date(last + 25 * MINUTE),
-        createdAt: new Date(first - 15 * MINUTE)
-      }
-    });
-    for (const r of list.filter((x) => x.status !== 'NoShow')) {
-      await prisma.interviewRound.update({
-        where: { id: r.id }, data: { calledInAt: new Date(new Date(r.scheduledDate).getTime() - 2 * MINUTE), calledInById: STAFF_ID.shro }
-      });
-    }
+    round.scheduledDate = to.toISOString();
   }
 }
 
 const respond = (c, round, response, note) => api('PATCH', `/api/candidates/me/interviews/${round.id}/respond`, { token: c.token, json: { response, note } });
 
-// Ratings (1-5) per rubric criterion that land near a 0-100 target.
-function rubricRatings(criteria, target, salt) {
-  const wobble = [0, 0.4, -0.4, 0.2, -0.2];
-  return Object.fromEntries(criteria.map((c, i) => [c.id, Math.min(5, Math.max(1, Math.round(target / 20 + wobble[(i + salt) % wobble.length])))]));
-}
-
-const COMMENTS = {
-  high: ['Excellent command of the subject; answered the scenario questions with confidence.', 'Strong, structured answers and clear safety awareness.', 'Very well prepared - the best technical depth on the day.'],
-  mid: ['Solid fundamentals, some hesitation on the regulatory questions.', 'Good communicator; technical answers adequate but not deep.', 'Capable candidate who would benefit from more hands-on exposure.'],
-  low: ['Struggled with the core technical questions.', 'Answers were generic and lacked practical examples.', 'Limited understanding of what the role requires.']
+const NOTES = {
+  high: 'Excellent command of the subject; answered the scenario questions with confidence.',
+  mid: 'Solid fundamentals, some hesitation on the regulatory questions.',
+  low: 'Struggled with the core technical questions.'
 };
 
-// Scores recorded by HR on the panelists' behalf: { panelIndex: target 0-100 }.
-async function score(round, targets) {
-  for (const [idx, target] of Object.entries(targets)) {
-    const m = round.panelMembers[idx];
-    const salt = Number(idx) + round.id;
-    const band = target >= 75 ? 'high' : target >= 55 ? 'mid' : 'low';
-    await api('PATCH', `/api/interviews/panel-members/${m.id}/score`, {
-      token: T.shro,
-      json: round.criteria
-        ? { criterionScores: rubricRatings(round.criteria, target, salt), comments: COMMENTS[band][salt % 3] }
-        : { score: target, comments: COMMENTS[band][salt % 3] }
-    });
-  }
-}
-
-const finalize = (round, recommendation, notes) => api('PATCH', `/api/interviews/${round.id}/finalize`, { token: T.shro, json: { recommendation, notes } });
-
-// Every panelist scores, then HR finalizes the panel's verdict.
-async function hold(round, targets, recommendation, notes) {
-  await score(round, Object.fromEntries(targets.map((t, i) => [i, t])));
-  await finalize(round, recommendation, notes);
+// The panel scored on paper; the HR Officer records the overall score (the
+// average of the panelists' totals), the panel's verdict and the signed score
+// sheet, as they would from the sheets handed over after the interview.
+async function hold(round, totals, recommendation, notes) {
+  const score = Math.round((totals.reduce((a, b) => a + b, 0) / totals.length) * 10) / 10;
+  const band = score >= 75 ? 'high' : score >= 55 ? 'mid' : 'low';
+  const candidate = (await prisma.application.findUnique({
+    where: { id: round.applicationId }, select: { candidate: { select: { fullName: true } } }
+  })).candidate.fullName;
+  const form = new FormData();
+  form.append('score', String(score));
+  form.append('recommendation', recommendation);
+  form.append('notes', notes || NOTES[band]);
+  form.append('scoreSheet', new Blob([pdfDocument('Interview score sheet', [
+    `Candidate: ${candidate}`,
+    `Interview: round ${round.roundNumber}, ${klaDate(round.scheduledDate)}`,
+    ...round.panelMembers.map((m, i) => `${m.name}${m.isChair ? ' (Chair)' : ''}: ${totals[i] ?? '-'} / 100    Signed: ____________`),
+    `Overall score: ${score} / 100`,
+    `Panel verdict: ${recommendation}`
+  ])], { type: 'application/pdf' }), `score-sheet-${slug(candidate)}.pdf`);
+  return api('PATCH', `/api/interviews/${round.id}/results`, { token: T.hro, form });
 }
 
 // ---------------------------------------------------------------------------
@@ -628,14 +640,10 @@ async function retime(vacancyId, t) {
       const rd = { createdAt: ago(createdDaysAgo) };
       if (r.candidateRespondedAt) rd.candidateRespondedAt = ago(createdDaysAgo - 0.8);
       if (r.completedAt) rd.completedAt = new Date(when + DAY);
+      if (r.resultsRecordedAt) rd.resultsRecordedAt = new Date(when + DAY);
       await prisma.interviewRound.update({ where: { id: r.id }, data: rd });
-      await prisma.panelMember.updateMany({
-        where: { interviewRoundId: r.id, submittedAt: { not: null } },
-        data: { submittedAt: new Date(when + 3 * HOUR) }
-      });
     }
   }
-  await prisma.panelDayLink.updateMany({ where: { vacancyId }, data: { createdAt: ago(t.slApproved != null ? t.slApproved - 0.3 : 0.1) } });
 }
 
 // ---------------------------------------------------------------------------
@@ -706,7 +714,8 @@ const LIVE = [];
 
 const COMMITTEES = {
   finance: [committeeMember('Christine Namutebi', 'Manager Finance', true), committeeMember('Joel Byamugisha', 'Principal Accountant'), committeeMember('Sarah Achola', 'Manager Internal Audit')],
-  fire: [committeeMember('Samuel Wandera', 'Chief Fire Officer', true), committeeMember('Isaac Ochieng', 'Station Officer, ARFFS'), committeeMember('Peter Kalule', 'Aerodrome Safety Manager')],
+  fire: [committeeMember('Samuel Wandera', 'Chief Fire Officer', true), committeeMember('Isaac Ochieng', 'Station Officer, ARFFS'), committeeMember('Peter Kalule', 'Fire Safety Consultant (external)', false,
+    'An independent fire-safety expert - UCAA has no other officer at this grade outside the station being recruited for.')],
   atc: [committeeMember('Stephen Tumwine', 'Director Air Navigation Services', true), committeeMember('Josephine Nabwire', 'Manager Air Traffic Management'), committeeMember('Richard Opio', 'Senior Air Traffic Control Officer')],
   it: [committeeMember('Patrick Mugisha', 'Manager Information Technology', true), committeeMember('Brian Tumwesigye', 'Senior Systems Administrator'), committeeMember('Irene Kobusingye', 'Principal Systems Analyst')],
   avsec: [committeeMember('Ronald Ssemwogerere', 'Manager Aviation Security', true), committeeMember('Moses Okiror', 'Principal AVSEC Officer'), committeeMember('Harriet Namaganda', 'Airport Manager, Entebbe')]
@@ -748,14 +757,12 @@ async function scenarioFilled() {
   const rounds = await scheduleSession(v.id, [ax.id, ay.id, az.id], {
     startsAt: at(workday(2), '09:00'), mode: 'In-person', location: 'Board Room, UCAA Head Office — Entebbe',
     instructions: 'Please bring the originals of your academic and professional certificates.',
-    panelMembers: panel([['Christine Namutebi', 'Manager Finance', true], ['Florence Akello', 'Human Resource Representative'], ['Joel Byamugisha', 'Principal Accountant']]),
-    criteria: [{ name: 'Technical accounting (IFRS, PFMA)', weight: 3 }, { name: 'Analysis and problem solving', weight: 2 }, { name: 'Communication', weight: 2 }, { name: 'Leadership and integrity', weight: 2 }]
+    panelMembers: panel([['Christine Namutebi', 'Manager Finance', true], ['Florence Akello', 'Human Resource Representative'], ['Joel Byamugisha', 'Principal Accountant']])
   });
-  await shiftRounds(v.id, Object.values(rounds), 21);
+  await shiftRounds(Object.values(rounds), 21);
   await hold(rounds[ax.id], [86, 82, 88], 'Shortlist');
   await hold(rounds[ay.id], [78, 80, 74], 'Shortlist');
   await hold(rounds[az.id], [52, 48, 56], 'Reject', 'Did not show the IFRS knowledge expected at senior level.');
-  await recordHeldDays(v.id);
   const S = daysAgoOf(rounds[ax.id].scheduledDate) + 21;
 
   await proposeMerit(v.id, [ax.id, ay.id]);
@@ -768,6 +775,7 @@ async function scenarioFilled() {
   const oy = await recommendOffer(ay.id, { ...terms, salaryAmount: 4800000 });
   await approveOffer(oy.id, 'dhra');
   await api('PATCH', `/api/applications/offers/${oy.id}/accept`, { token: y.token });
+  await markHired(oy.id, y.name);
 
   await retime(v.id, { created: S + 18, deadline: S + 9, review: S + 8.5, slProposed: S + 3.5, slApproved: S + 3, meritProposed: S - 2, meritApproved: S - 2.5 });
   await retimeCommittee(v.id, { created: S + 8.4, opened: S + 8, moderation: S + 4.5, closed: S + 4 });
@@ -822,17 +830,15 @@ async function scenarioDeclineExpire() {
   const rounds = await scheduleSession(v.id, ids, {
     startsAt: at(workday(1), '09:00'), mode: 'In-person', location: 'ARFFS Main Fire Station, Entebbe', durationMinutes: 60,
     instructions: 'Wear sports attire - the interview includes a 20-minute practical rescue drill.',
-    panelMembers: panel([['Samuel Wandera', 'Chief Fire Officer', true], ['Agnes Nakiwala', 'Human Resource Representative'], ['Isaac Ochieng', 'Station Officer, ARFFS']]),
-    criteria: [{ name: 'Incident command', weight: 3 }, { name: 'Practical drill', weight: 3 }, { name: 'ARFF regulations (ICAO Annex 14)', weight: 2 }, { name: 'Communication', weight: 1 }]
+    panelMembers: panel([['Samuel Wandera', 'Chief Fire Officer', true], ['Agnes Nakiwala', 'Human Resource Representative'], ['Isaac Ochieng', 'Station Officer, ARFFS']])
   });
-  await shiftRounds(v.id, Object.values(rounds), 21);
+  await shiftRounds(Object.values(rounds), 21);
   const R = (c) => rounds[apps[c.name].id];
   await hold(R(g), [88, 85, 90], 'Shortlist');
   await hold(R(i), [84, 80, 82], 'Shortlist');
   await hold(R(h), [76, 78, 72], 'Shortlist');
   await hold(R(k), [72, 70, 74], 'Shortlist');
   await hold(R(j), [64, 60, 66], 'Hold', 'Good potential; limited crew-leading experience.');
-  await recordHeldDays(v.id);
   const S = daysAgoOf(R(g).scheduledDate) + 21;
 
   await proposeMerit(v.id, ids);
@@ -911,10 +917,9 @@ async function scenarioOffers() {
     startsAt: at(workday(1), '08:30'), mode: 'In-person', location: 'ATC Training Room, Old Control Tower, Entebbe', durationMinutes: 40, gapMinutes: 10,
     instructions: 'Report to the Old Control Tower reception 20 minutes early with your national ID.',
     internalNotes: 'Tower simulator booked for the practical part - confirm with the ATS Training Unit.',
-    panelMembers: panel([['Josephine Nabwire', 'Manager Air Traffic Management', true], ['Richard Opio', 'Senior Air Traffic Control Officer'], ['Diana Kyeyune', 'Human Resource Representative']]),
-    criteria: [{ name: 'Aviation technical knowledge', weight: 3 }, { name: 'Spatial reasoning (simulator)', weight: 3 }, { name: 'Communication and phraseology', weight: 2 }, { name: 'Decision making under pressure', weight: 2 }]
+    panelMembers: panel([['Josephine Nabwire', 'Manager Air Traffic Management', true], ['Richard Opio', 'Senior Air Traffic Control Officer'], ['Diana Kyeyune', 'Human Resource Representative']])
   });
-  await shiftRounds(v.id, Object.values(rounds), 14);
+  await shiftRounds(Object.values(rounds), 14);
   const R = (cand) => rounds[apps[cand.name].id];
   await hold(R(a), [90, 88, 86], 'Shortlist');
   await hold(R(b), [86, 84, 88], 'Shortlist');
@@ -923,7 +928,6 @@ async function scenarioOffers() {
   await hold(R(e), [74, 72, 76], 'Shortlist');
   await hold(R(f), [66, 64, 62], 'Hold', 'Borderline on the simulator; keep in reserve.');
   await hold(R(x), [44, 50, 46], 'Reject', 'Weak spatial reasoning on the simulator exercise.');
-  await recordHeldDays(v.id);
   const S = daysAgoOf(R(a).scheduledDate) + 14;
 
   await proposeMerit(v.id, [a, b, c, d, e, f].map((cand) => apps[cand.name].id));
@@ -1002,16 +1006,14 @@ async function scenarioMeritProposed() {
   const rounds = await scheduleSession(v.id, ids, {
     startsAt: at(workday(2), '10:00'), mode: 'Virtual', meetingLink: 'https://meet.example.com/ucaa-sysadmin-panel',
     instructions: 'Join from a quiet place with a working camera. The panel will share a short troubleshooting scenario on screen.',
-    panelMembers: panel([['Patrick Mugisha', 'Manager Information Technology', true], ['Florence Akello', 'Human Resource Representative'], ['Brian Tumwesigye', 'Senior Systems Administrator']]),
-    criteria: [{ name: 'Linux and Windows administration', weight: 3 }, { name: 'Networking and security', weight: 2 }, { name: 'Troubleshooting scenario', weight: 3 }, { name: 'Communication', weight: 1 }]
+    panelMembers: panel([['Patrick Mugisha', 'Manager Information Technology', true], ['Florence Akello', 'Human Resource Representative'], ['Brian Tumwesigye', 'Senior Systems Administrator']])
   });
-  await shiftRounds(v.id, Object.values(rounds), 14);
+  await shiftRounds(Object.values(rounds), 14);
   const R = (cand) => rounds[apps[cand.name].id];
   await hold(R(s1), [86, 82, 84], 'Shortlist');
   await hold(R(s2), [80, 78, 76], 'Shortlist');
   await hold(R(h1), [66, 62, 68], 'Hold');
   await hold(R(r1), [48, 52, 46], 'Reject', 'Limited server administration depth for this level.');
-  await recordHeldDays(v.id);
   const S = daysAgoOf(R(s1).scheduledDate) + 14;
   await proposeMerit(v.id, [s1, s2, h1].map((cand) => apps[cand.name].id));
   await retime(v.id, { created: S + 18, deadline: S + 9, review: S + 8.5, slProposed: S + 3.5, slApproved: S + 3, meritProposed: 1 });
@@ -1091,7 +1093,6 @@ async function scenarioInterviews() {
   await approveShortlist(v.id);
 
   const avsecPanel = panel([['Ronald Ssemwogerere', 'Manager Aviation Security', true], ['Diana Kyeyune', 'Human Resource Representative'], ['Moses Okiror', 'Principal AVSEC Officer']]);
-  const rubric = [{ name: 'Security awareness and procedures', weight: 3 }, { name: 'Situational judgement', weight: 3 }, { name: 'Communication and customer care', weight: 2 }, { name: 'Integrity and conduct', weight: 2 }];
   const venue = { mode: 'In-person', location: 'AVSEC Training Centre, Entebbe International Airport', instructions: 'Bring your national ID and the original of your highest academic certificate. Dress code: smart casual.' };
 
   // Session A - took place last week.
@@ -1099,30 +1100,27 @@ async function scenarioInterviews() {
   const held = await scheduleSession(v.id, heldNames.map(A), {
     startsAt: at(workday(1), '09:00'), ...venue,
     internalNotes: 'X-ray image interpretation test booked for 30 minutes after each interview.',
-    panelMembers: avsecPanel, criteria: rubric
+    panelMembers: avsecPanel
   });
   for (const first of heldNames) await respond(who[first], held[A(first)], 'Confirmed');
-  await shiftRounds(v.id, Object.values(held), 7);
+  await shiftRounds(Object.values(held), 7);
   const H = (first) => held[A(first)];
-  // A panelist declared a conflict of interest for Frank before scoring.
-  await api('PATCH', `/api/interviews/panel-members/${H('Frank').panelMembers[2].id}/recuse`, {
-    token: T.shro, json: { reason: 'Declared a conflict of interest - the candidate is a relative.' }
-  });
-  await score(H('Frank'), { 0: 88, 1: 84 });
-  await finalize(H('Frank'), 'Shortlist', 'Two-member panel after a recusal; both scored strongly.');
+  // A panelist declared a conflict of interest for Frank and was taken off his panel.
+  const franksPanelist = H('Frank').panelMembers[2];
+  await api('DELETE', `/api/interviews/panel-members/${franksPanelist.id}?notify=false`, { token: T.shro });
+  H('Frank').panelMembers = H('Frank').panelMembers.filter((m) => m.id !== franksPanelist.id);
+  await hold(H('Frank'), [88, 84], 'Shortlist', 'Two-member panel - Moses Okiror stood down (conflict of interest). Both scored strongly.');
   await hold(H('Grace'), [82, 80, 86], 'Shortlist');
   await hold(H('Hassan'), [70, 66, 68], 'Hold', 'Adequate; keep in view if the top candidates decline.');
   await hold(H('Janet'), [44, 50, 42], 'Reject', 'Could not explain basic screening procedures.');
-  await score(H('Moses'), { 0: 78, 1: 74, 2: 80 }); // all scores in - ready to finalize
-  await score(H('Winnie'), { 0: 72 }); // two panelists never scored before the day closed
+  // Moses and Winnie: the score sheets haven't reached HR yet.
   await api('PATCH', `/api/interviews/${H('Ronald').id}/no-show`, { token: T.shro, json: { notes: 'Did not arrive; phone unreachable on the day.' } });
-  await recordHeldDays(v.id);
   const S = daysAgoOf(H('Frank').scheduledDate) + 7;
 
   // Session B - today (or the next working day if the day is nearly over).
   const { when: sessionB, today } = todaysSessionStart();
   const upcoming = await scheduleSession(v.id, ['Lydia', 'Samuel', 'Christine'].map(A), {
-    startsAt: sessionB, ...venue, panelMembers: avsecPanel, criteria: rubric
+    startsAt: sessionB, ...venue, panelMembers: avsecPanel
   });
   await respond(who.Lydia, upcoming[A('Lydia')], 'Confirmed');
   await respond(who.Samuel, upcoming[A('Samuel')], 'RescheduleRequested', 'My final diploma exam was moved to this morning - any time from Thursday would work.');
@@ -1131,12 +1129,12 @@ async function scenarioInterviews() {
   const second = await scheduleOne(A('Ronald'), {
     scheduledDate: at(workday(4), '11:00'), mode: 'Virtual', meetingLink: 'https://meet.example.com/ucaa-avsec-panel',
     instructions: 'A second opportunity after the missed session - please join 5 minutes early.',
-    panelMembers: avsecPanel.slice(0, 2), criteria: rubric
+    panelMembers: avsecPanel.slice(0, 2)
   });
   await respond(who.Ronald, second, 'Confirmed');
 
   // Paul: booked, then moved by HR.
-  const paulRound = await scheduleOne(A('Paul'), { scheduledDate: at(workday(2), '14:00'), ...venue, panelMembers: avsecPanel, criteria: rubric });
+  const paulRound = await scheduleOne(A('Paul'), { scheduledDate: at(workday(2), '14:00'), ...venue, panelMembers: avsecPanel });
   await api('PATCH', `/api/interviews/${paulRound.id}/reschedule`, {
     token: T.shro, json: { scheduledDate: at(workday(5), '14:00'), reason: 'The panel chair is travelling for an ICAO audit that day.', allowConflicts: true }
   });
@@ -1151,11 +1149,11 @@ async function scenarioInterviews() {
   await retimeCommittee(v.id, { created: S + 8.4, opened: S + 8, moderation: S + 4.5, closed: S + 4 });
 
   const sessionDay = klaDate(sessionB);
-  const links = await prisma.panelDayLink.findMany({ where: { vacancyId: v.id, day: sessionDay, revokedAt: null }, orderBy: { id: 'asc' } });
-  log(`  ${v.jobRef}: Bosco refused at submission (over the age limit); committee ruled on Janet; last week - Frank + Grace Shortlist, Hassan Hold, Janet Reject, Moses ready to finalize, Winnie missing 2 scores, Ronald no-show`);
+  log(`  ${v.jobRef}: Bosco refused at submission (over the age limit); committee ruled on Janet; last week - Frank + Grace Shortlist, Hassan Hold, Janet Reject, Moses + Winnie results not yet entered, Ronald no-show`);
   log(`  ${today ? 'today' : sessionDay} - session for Lydia (confirmed), Samuel (asked to reschedule), Christine (no answer); Ronald round 2 and Paul (moved by HR) later; Agnes cancelled, awaiting a new slot\n`);
-  LIVE.push(`${v.jobRef} AVSEC Officer - ${today ? 'run TODAY\'s' : `run the ${sessionDay}`} interview session in the Interview Hub (start it, call candidates in); finalize Moses Kyeyune; handle Samuel Okiror's reschedule request; re-book Agnes Nakato [Senior HR Officer]`);
-  for (const l of links) LIVE.push(`    panelist day link - ${l.panelistName}: ${frontendUrl}/panel-day/${l.token}`);
+  LIVE.push(`${v.jobRef} AVSEC Officer - record Moses Kyeyune's and Winnie Atuhaire's interview results with their signed score sheets [HR Officer]`);
+  LIVE.push(`${v.jobRef} AVSEC Officer - handle Samuel Okiror's reschedule request; re-book Agnes Nakato [Senior HR Officer]`);
+  if (today) LIVE.push(`${v.jobRef} AVSEC Officer - after today's interviews, record Lydia's and Christine's results [HR Officer]`);
 }
 
 // Senior ATC Officer (Internal) - verification states, a committee with a
@@ -1208,7 +1206,7 @@ async function scenarioInternalShortlist() {
   await retime(v.id, { created: 22, deadline: 11, review: 10.5, slProposed: 2 });
   await retimeCommittee(v.id, { created: 10.4, opened: 10, moderation: 3, closed: 2.5 });
   log(`  ${v.jobRef}: committee (Josephine stood down for Esther) ranked David, Esther, Quinn; Rachel not qualified; David + Esther proposed; Quinn Pending verification, Rachel Discrepancy_Flagged\n`);
-  LIVE.push(`${v.jobRef} Senior ATC Officer (Internal) - approve the committee's proposed shortlist [Principal HR Officer]; verify Quinn Ateenyi [Senior HR Officer]`);
+  LIVE.push(`${v.jobRef} Senior ATC Officer (Internal) - approve the committee's proposed shortlist [Principal HR Officer], then print it for EXCO and attach the signed copy on the Interviews step; verify Quinn Ateenyi [Senior HR Officer]`);
 }
 
 // Senior Aviation Security Officer - committee at moderation: the chair has
@@ -1447,15 +1445,16 @@ async function finish() {
     });
   }
 
-  log('=== Maintenance jobs (SLA escalations, deadline notices, interview reminders, sessions, offer expiry) ===');
-  for (const name of ['checkSlaEscalations', 'checkVacancyDeadlines', 'sendInterviewReminders', 'expireOffers', 'cleanupPendingRegistrations', 'cleanupVerificationTokens', 'checkInterviewSessions']) {
+  log('=== Maintenance jobs (SLA escalations, deadline notices, interview reminders, offer expiry) ===');
+  // Every job the health banner watches, so a fresh demo DB shows none as never run.
+  for (const { name } of require('../src/services/systemHealthService').JOBS) {
     const mod = require(`./${name}`);
     await runJob(name, () => mod.run());
   }
 
   // Staff inboxes: routine notices read, anything that asks for action unread.
   const ACTIONABLE = ['VacancyApproval', 'DepartmentApproval', 'OfferApproval', 'MeritListProposed', 'OfferReturned',
-    'InterviewRescheduleRequested', 'InterviewReadyToFinalize', 'InterviewScoresOverdue', 'InterviewSessionNotStarted',
+    'InterviewRescheduleRequested', 'InterviewResultsOverdue',
     'OfferDeclined', 'OfferExpired', 'VacancyDeadlinePassed'];
   await prisma.notification.updateMany({ where: { taskType: { notIn: ACTIONABLE } }, data: { readAt: new Date() } });
 }

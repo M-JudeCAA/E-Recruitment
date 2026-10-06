@@ -263,23 +263,9 @@ async function approveShortlist(req, res) {
     before: application, after: { status: 'Shortlisted' }, fields: ['status']
   })));
 
-  const vacancy = await vacancyModel.findById(vacancyId);
-  // The approval itself already committed above - a notification failure
-  // for one candidate must not block the others or turn an otherwise-
-  // successful approval into a 500 (same reasoning as reject()/shortlist()
-  // elsewhere in this file).
-  for (const application of proposed) {
-    try {
-      await notifyCandidate(
-        application.candidateId, 'ApplicationShortlisted',
-        `Good news - you've been shortlisted for "${vacancy.title}". We'll be in touch about next steps.`
-      );
-    } catch (err) {
-      console.error(`Failed to notify candidate ${application.candidateId} of shortlisting for application ${application.id}:`, err);
-    }
-  }
-
-  res.json({ message: 'Shortlist approved', vacancyId, approvedCount: proposed.length });
+  // Candidates aren't told yet: the shortlist still goes to EXCO, and they
+  // hear once the signed approval is attached (excoShortlistController).
+  res.json({ message: 'Shortlist approved - print it for EXCO and attach the signed copy before scheduling interviews', vacancyId, approvedCount: proposed.length });
 }
 
 // Offers (recommend, approve, return, accept, decline, withdraw) live in

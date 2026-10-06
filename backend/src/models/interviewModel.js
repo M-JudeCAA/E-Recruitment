@@ -29,7 +29,6 @@ const CLASH_SELECT = {
     }
   },
   panelMembers: {
-    where: { recusedAt: null },
     select: { name: true, email: true, staffUserId: true }
   }
 };
@@ -96,19 +95,12 @@ module.exports = {
     where: { id: { in: ids } }, include: ROUND_INCLUDE, orderBy: { scheduledDate: 'asc' }
   }),
   update: (id, data) => prisma.interviewRound.update({ where: { id }, data }),
-  // Atomic conditional update - scoping the write to recommendation: null
-  // means a second finalize call on the same round (double-click, or two
-  // HR officers racing) can't silently overwrite an already-finalized
-  // recommendation; the caller sees count 0 and reports a conflict instead.
-  updateIfNoRecommendation: (id, data) => prisma.interviewRound.updateMany({ where: { id, recommendation: null }, data }),
-  // Same guard idea for cancel/no-show/reschedule: only a round that is
-  // still Scheduled can move, so two people acting at once can't both win.
+  // Same guard for cancel/no-show/reschedule/recording results: only a round
+  // that is still Scheduled can move, so two people acting at once can't both
+  // win (the loser sees count 0 and reports a conflict).
   updateIfScheduled: (id, data) => prisma.interviewRound.updateMany({ where: { id, status: 'Scheduled' }, data }),
-  // HR calling a candidate in during a running session - only once, and
-  // only while the round is still Scheduled.
-  callIn: (id, staffId, at) => prisma.interviewRound.updateMany({
-    where: { id, status: 'Scheduled', calledInAt: null }, data: { calledInAt: at, calledInById: staffId }
-  }),
+  // Correcting recorded results - only on a round whose results are in.
+  updateIfCompleted: (id, data) => prisma.interviewRound.updateMany({ where: { id, status: 'Completed' }, data }),
   countByApplication: (applicationId) => prisma.interviewRound.count({ where: { applicationId } }),
   findByApplication: (applicationId) => prisma.interviewRound.findMany({ where: { applicationId } }),
 
@@ -149,19 +141,12 @@ module.exports = {
   }),
 
   // Every round of a vacancy that falls in [start, end) - one interview day,
-  // for a panelist's day link (panelDayLinkService).
+  // for the panelists' calendar invitation for that day
+  // (interviewInvitationService).
   findForVacancyDay: (vacancyId, start, end) => prisma.interviewRound.findMany({
     where: { application: { vacancyId }, scheduledDate: { gte: start, lt: end } },
     include: ROUND_INCLUDE,
     orderBy: [{ scheduledDate: 'asc' }, { id: 'asc' }]
-  }),
-
-  // scripts/checkInterviewSessions.js - interviews still to hold whose time
-  // fell in [from, to].
-  scheduledDue: (from, to) => prisma.interviewRound.findMany({
-    where: { status: 'Scheduled', scheduledDate: { gte: from, lte: to } },
-    include: ROUND_INCLUDE,
-    orderBy: { scheduledDate: 'asc' }
   }),
 
   // scripts/sendInterviewReminders.js
@@ -169,8 +154,9 @@ module.exports = {
     where: { status: 'Scheduled', reminderSentAt: null, scheduledDate: { gte: from, lte: to } },
     include: ROUND_INCLUDE
   }),
-  overdueForScores: (before) => prisma.interviewRound.findMany({
-    where: { status: 'Scheduled', recommendation: null, scoreNudgeSentAt: null, scheduledDate: { lt: before } },
+  // Held (its time has passed) but no results recorded yet.
+  overdueForResults: (before) => prisma.interviewRound.findMany({
+    where: { status: 'Scheduled', resultsReminderSentAt: null, scheduledDate: { lt: before } },
     include: ROUND_INCLUDE
   })
 };

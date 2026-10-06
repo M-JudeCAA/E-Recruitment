@@ -21,7 +21,8 @@ const JOBS = [
   { name: 'cleanupVerificationTokens', label: 'cleanup of old confirmation and reset links' },
   { name: 'cleanupRequisitionUploads', label: 'cleanup of unused requisition uploads' },
   { name: 'purgeAccessLog', label: 'removal of access log records past their retention period' },
-  { name: 'checkInterviewSessions', label: 'alerts for interview sessions not started' }
+  { name: 'purgeCandidateData', label: 'erasure of candidates\' data past its retention period' },
+  { name: 'retryHrisHandoffs', label: 'sending hires to the HRIS' }
 ];
 const STALE_AFTER_HOURS = 3;
 // A single failed email shows on the banner straight away (it is the
@@ -60,8 +61,10 @@ function buildStatus(rows, now = new Date()) {
   const failing = jobs.filter((j) => j.status === 'failing');
   if (notRunning.length) {
     warnings.push(
-      `Scheduled maintenance has not run in the last ${STALE_AFTER_HOURS} hours (${notRunning.map((j) => j.label).join(', ')}). `
-      + 'SLA escalations and deadline notices are not being sent. Start the scheduler worker (npm run jobs) - see SETUP.md.'
+      // Read by HR, not by whoever runs the server - which jobs and how to
+      // restart them are in GET /api/dashboard/system-health's `jobs` and SETUP.md.
+      `Scheduled maintenance has not run in the last ${STALE_AFTER_HOURS} hours, so reminders, SLA escalations `
+      + 'and deadline notices are not being sent. Please let your system administrator know.'
     );
   }
   if (failing.length) {

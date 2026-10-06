@@ -1,79 +1,65 @@
-import React, { useEffect, useState } from 'react';
-import { Home, Briefcase, FileText, Building2, CalendarClock, Award, LayoutDashboard, ClipboardCheck, Users, BarChart3, Share2 } from 'lucide-react';
+import React from 'react';
+import { Inbox, Briefcase, Users, CalendarClock, Award, BarChart3, Network, FileSignature, Share2, Settings, UserCog } from 'lucide-react';
 import Sidebar from './Sidebar';
 import { useAuth } from '../models/AuthContext';
-import staffClient from '../models/staffApiClient';
+import { useInbox } from '../models/useInbox';
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 
-// Manager/Director get a reimagined landing (Executive Overview, replacing
-// the HR Officer's plainer Home) plus a dedicated Approvals Center that
-// unifies every queue only they can clear - vacancy approvals, offer
-// approvals, department approvals - instead of hunting across the
-// operational tabs below for a PendingApproval badge. The badge count is
-// fetched here (not passed down) so it shows up on every /hr/* screen a
-// Manager/Director visits, not just the two new pages themselves.
+// The staff workspace's one navigation, the same shape for every role:
+//   My work     - the Inbox: what is waiting for this person (inboxService)
+//   Recruitment - vacancies (each with its own workspace), candidates,
+//                 interviews, offers & hires
+//   Reports     - the recruitment dashboard (Manager+, as its API is)
+//   Setup       - organisation, templates, delegations, settings, accounts
+// Items a role can't use are left out rather than shown and refused. An
+// accounts-only system administrator (no HR role) sees only Setup.
+//
+// `active` is the key of the current page; the old keys some pages still
+// pass map onto the new items.
+const ACTIVE_ALIASES = {
+  home: 'inbox', executive: 'inbox', approvals: 'inbox',
+  applications: 'candidates', analytics: 'dashboard', departments: 'organisation', 'staff-management': 'delegations'
+};
+
 export default function HRSidebar({ active }) {
   const { staff } = useAuth();
-  const isExecutive = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Manager;
-  // Staff Management (accounts + delegations, StaffManagement.jsx) is
-  // Senior HR Officer+ - the lower of the two tiers its two sections used
-  // to be gated at separately as standalone Navbar-linked pages. An HR
-  // Officer has nothing to do there (can't create accounts, has nobody to
-  // delegate to), so the item is hidden rather than shown and 403'd.
-  const canManageTeam = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
-  // Staff account administration is a system administrator's, not any HR
-  // role's (StaffAccounts.jsx).
-  const accountsItem = { key: 'staff-accounts', label: 'Staff accounts', icon: Users, to: '/hr/staff-accounts', section: 'Administration' };
-  const [pendingApprovals, setPendingApprovals] = useState(null);
+  const rank = ROLE_RANK[staff?.role] || 0;
+  const inbox = useInbox({ enabled: Boolean(staff?.role) });
+  const items = inbox?.items || [];
+  const actionable = items.filter((i) => !i.info);
+  const overdue = actionable.some((i) => i.overdue);
 
-  useEffect(() => {
-    if (!isExecutive) return;
-    staffClient.get('/api/dashboard/summary')
-      .then((res) => {
-        const s = res.data;
-        setPendingApprovals((s.vacanciesByStatus?.PendingApproval || 0) + s.offersPendingApproval + s.pendingDepartments);
-      })
-      .catch(() => {}); // sidebar badge is a nice-to-have, never worth surfacing an error banner for
-  }, [isExecutive]);
+  const setup = [
+    staff?.role && { key: 'organisation', label: 'Organisation', icon: Network, to: '/hr/departments', section: 'Setup' },
+    staff?.role && { key: 'templates', label: 'Document templates', icon: FileSignature, to: '/hr/templates', section: 'Setup' },
+    rank >= ROLE_RANK.Senior_HR_Officer && { key: 'delegations', label: 'Delegations', icon: Share2, to: '/hr/staff-management', section: 'Setup' },
+    (staff?.isSystemAdmin || rank >= ROLE_RANK.Manager) && { key: 'settings', label: 'Settings & data', icon: Settings, to: '/hr/settings', section: 'Setup' },
+    staff?.isSystemAdmin && { key: 'staff-accounts', label: 'Staff accounts', icon: UserCog, to: '/hr/staff-accounts', section: 'Setup' }
+  ].filter(Boolean);
 
-  // Grouped into the actual recruitment funnel order (Vacancies ->
-  // Applications -> Interviews -> Offers) under one "Recruitment" section,
-  // rather than the old flat list that interleaved Departments in the
-  // middle of that pipeline. "Management"/"Center" suffixes dropped from
-  // labels now that the section header already supplies that context.
-  // Departments/Staff & Delegations have their own existing screens with
-  // their own routes, so they link out directly instead of duplicating
-  // page content here. Shared by every staff role that qualifies - a
-  // Manager/Director still does everything an HR Officer (and
-  // Senior/Principal HR Officer) does, on top of approving.
-  const operationalItems = [
+  const list = !staff?.role ? setup : [
+    { key: 'inbox', label: 'Inbox', icon: Inbox, to: '/hr/inbox', section: 'My work', badge: actionable.length, badgeTone: overdue ? 'alert' : 'count' },
     { key: 'vacancies', label: 'Vacancies', icon: Briefcase, to: '/hr', section: 'Recruitment' },
-    { key: 'applications', label: 'Applications', icon: FileText, to: '/hr/applications', section: 'Recruitment' },
+    { key: 'candidates', label: 'Candidates', icon: Users, to: '/hr/candidates', section: 'Recruitment' },
     { key: 'interviews', label: 'Interviews', icon: CalendarClock, to: '/hr/interviews', section: 'Recruitment' },
-    { key: 'offers', label: 'Offers', icon: Award, to: '/hr?tab=offers', section: 'Recruitment' },
-    { key: 'departments', label: 'Departments', icon: Building2, to: '/hr/departments', section: 'Organization' },
-    ...(canManageTeam
-      ? [{ key: 'staff-management', label: 'Delegations', icon: Share2, to: '/hr/staff-management', section: 'Organization' }]
-      : []),
-    ...(staff?.isSystemAdmin ? [accountsItem] : []),
+    { key: 'offers', label: 'Offers & hires', icon: Award, to: '/hr/offers', section: 'Recruitment' },
+    ...(rank >= ROLE_RANK.Manager ? [{ key: 'dashboard', label: 'Dashboard', icon: BarChart3, to: '/hr/dashboard', section: 'Reports' }] : []),
+    ...setup
   ];
 
-  // An accounts-only system administrator (no HR role) has nothing else here.
-  const items = !staff?.role
-    ? [accountsItem]
-    : isExecutive
-    ? [
-        { key: 'executive', label: 'Executive Overview', icon: LayoutDashboard, to: '/hr/executive' },
-        { key: 'approvals', label: 'Approvals Center', icon: ClipboardCheck, to: '/hr/approvals', badge: pendingApprovals },
-        { key: 'analytics', label: 'Analytics', icon: BarChart3, to: '/hr/analytics' },
-        ...operationalItems,
-      ]
-    : [
-        { key: 'home', label: 'Home', icon: Home, to: '/hr/home' },
-        ...operationalItems,
-      ];
+  const acting = inbox?.delegation?.actingFor;
+  const delegated = inbox?.delegation?.delegatedTo;
+  const until = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const footer = acting || delegated ? (
+    <div className="ws-acting">
+      <b>Delegation</b><br />
+      {acting && <>You act for {acting.name} until {until(acting.until)}.</>}
+      {acting && delegated && <br />}
+      {delegated && <>{delegated.name} acts for you until {until(delegated.until)}.</>}
+    </div>
+  ) : null;
 
-  return <Sidebar items={items} active={active} storageKey="hrSidebarCollapsed" width={250} title="HR Workspace" />;
+  return <Sidebar items={list} active={ACTIVE_ALIASES[active] || active} storageKey="hrSidebarCollapsed" width={236} title="Menu" variant="rail" mobileTrigger={false} footer={footer} />;
 }

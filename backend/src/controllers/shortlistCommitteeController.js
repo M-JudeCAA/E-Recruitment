@@ -8,9 +8,14 @@ const { computeExperienceYears } = require('../services/screeningService');
 const { sendMail } = require('../utils/mailer');
 const { frontendUrl } = require('../config/frontendUrl');
 const { validateEmail } = require('../utils/validators');
+const { internalDomains } = require('../services/entraAuthService');
 const { escapeHtml, formatWhen } = require('../utils/interviewFormat');
 const { classifyError, sendError } = require('../utils/errorResponse');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
+const { ROLE_RANK } = require('../middleware/auth');
+const delegationModel = require('../models/delegationModel');
+const { notify, notifyAllWithRole } = require('../services/notificationService');
+const conflictOfInterest = require('../services/conflictOfInterestService');
 
 // HR's side of the shortlisting committee (shortlistCommitteeService.js has
 // the ranking rules). HR builds the assessment sheet, invites the committee,
@@ -138,10 +143,50 @@ function memberProgress(exercise, assignments) {
     const mine = assignments.filter((a) => a.memberId === m.id);
     const done = mine.filter((a) => a.conflictAt || criterionIds.every((id) => a.ratings.some((r) => r.criterionId === id)));
     return {
-      id: m.id, name: m.name, email: m.email, isChair: m.isChair, submittedAt: m.submittedAt,
+      id: m.id, name: m.name, email: m.email, isChair: m.isChair, submittedAt: m.submittedAt, externalReason: m.externalReason,
       assigned: mine.length, completed: done.length, conflicts: mine.filter((a) => a.conflictAt).length
     };
   });
+}
+
+// --- The nomination (FR-ATS-046) ---
+// HR nominates the members and submits them; the DHRA - a Director, by own
+// role or an active delegation from one - approves, returns them with a
+// reason, or edits the list first (every DHRA change is audited). Rating
+// opens only once approved. An HR change to the members after approval puts
+// the nomination back to Draft, to be submitted again.
+
+async function isDhra(req) {
+  if ((ROLE_RANK[req.user.role] || 0) >= ROLE_RANK.Director) return true;
+  const delegation = await delegationModel.findActiveForDelegate(req.user.id, new Date());
+  if (delegation && (ROLE_RANK[delegation.delegator.role] || 0) >= ROLE_RANK.Director) {
+    await delegationModel.logUsage(delegation.id, `${req.method} ${req.originalUrl}`);
+    req.actingAsDelegateFor = delegation.delegatorId;
+    return true;
+  }
+  return false;
+}
+
+// Who is changing the members: 'dhra' while the nomination is with them,
+// else 'hr'. Answers 409 (and returns null) for HR while it is submitted.
+async function memberEditor(req, res, exercise) {
+  if (exercise.status !== 'Setup') return 'hr';
+  if (exercise.nominationStatus === 'Submitted') {
+    if (await isDhra(req)) return 'dhra';
+    res.status(409).json({ error: 'The nominations are with the DHRA for approval - only the DHRA can change the members now', code: 'NOMINATION_PENDING' });
+    return null;
+  }
+  return 'hr';
+}
+
+async function afterMemberChange(req, exercise, editor, action, details) {
+  if (exercise.status !== 'Setup') return;
+  if (editor === 'dhra') {
+    await audit(exercise.vacancyId, `DHRA ${action}`, req.user.id, { ...details, actingAsId: req.actingAsDelegateFor || null });
+  } else if (exercise.nominationStatus === 'Approved') {
+    await model.updateExercise(exercise.id, { nominationStatus: 'Draft', nominationDecidedAt: null, nominationDecidedById: null });
+    await audit(exercise.vacancyId, 'Committee nomination reopened by a change to the members', req.user.id, { action, ...details });
+  }
 }
 
 // GET - the exercise as HR sees it. Ratings stay out of view until rating
@@ -162,10 +207,14 @@ async function get(req, res) {
   const { assignments, rows } = exercise.status === 'Setup' ? { assignments: [], rows: [] } : await computeRanking(exercise);
   const showResults = ['Moderation', 'Closed'].includes(exercise.status);
   const { members, decisions, ...rest } = exercise;
+  const peopleIds = [exercise.nominationSubmittedById, exercise.nominationDecidedById].filter(Boolean);
+  const people = peopleIds.length ? await prisma.staffUser.findMany({ where: { id: { in: peopleIds } }, select: { id: true, name: true } }) : [];
   res.json({
     ...base,
     exercise: {
       ...rest,
+      nominationSubmittedBy: people.find((p) => p.id === exercise.nominationSubmittedById) || null,
+      nominationDecidedBy: people.find((p) => p.id === exercise.nominationDecidedById) || null,
       members: memberProgress(exercise, assignments),
       decisions,
       proposedCount: await model.countByStatus(vacancyId, ['ShortlistProposed']),
@@ -213,7 +262,7 @@ async function loadExercise(req, res, allowed) {
 
 // PATCH - the sheet and panel sizes (Setup), or the rating deadline (Setup/Rating).
 async function update(req, res) {
-  const exercise = await loadExercise(req, res, ['Setup', 'Rating']);
+  const exercise = await loadExercise(req, res, 'accessExpiresAt' in req.body ? ['Setup', 'Rating', 'Moderation'] : ['Setup', 'Rating']);
   if (!exercise) return;
   const data = {};
   try {
@@ -236,27 +285,66 @@ async function update(req, res) {
       if (d && Number.isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid rating deadline' });
       data.ratingDeadline = d;
     }
+    if ('accessExpiresAt' in req.body) {
+      const d = req.body.accessExpiresAt ? new Date(req.body.accessExpiresAt) : null;
+      if (d && Number.isNaN(d.getTime())) return res.status(400).json({ error: 'Invalid access end date' });
+      if (d && d <= new Date()) return res.status(400).json({ error: 'The access end must be in the future' });
+      data.accessExpiresAt = d;
+    }
   } catch (err) {
     return sendError(res, err, 400);
   }
   await model.updateExercise(exercise.id, data);
+  if ('accessExpiresAt' in data) {
+    await audit(exercise.vacancyId, 'Shortlisting committee access end set', req.user.id, { accessExpiresAt: data.accessExpiresAt });
+  }
   return get(req, res);
 }
 
-// POST members - HR staff can never sit on the committee.
+const MIN_EXTERNAL_REASON = 10;
+const isInternalEmail = (email) => internalDomains().includes(email.split('@')[1]);
+
+// Who may sit on the committee: anyone at UCAA, HR included; someone from
+// outside only as a special case, with the reason. Never an applicant for
+// the vacancy. Returns { error, status } or { externalReason }.
+async function memberRules(exercise, email, externalReasonInput) {
+  const applicant = await prisma.application.findFirst({
+    where: { vacancyId: exercise.vacancyId, status: { not: 'Draft' }, candidate: { email } }, select: { id: true }
+  });
+  if (applicant) return { status: 422, error: 'This person has applied for this vacancy, so they cannot sit on its committee' };
+  if (isInternalEmail(email)) return { externalReason: null };
+  const reason = typeof externalReasonInput === 'string' ? externalReasonInput.trim().slice(0, 2000) : '';
+  if (reason.length < MIN_EXTERNAL_REASON) {
+    return {
+      status: 422, code: 'EXTERNAL_REASON_REQUIRED',
+      error: 'This is not a UCAA address. A member from outside UCAA is a special case - give the reason they are needed.'
+    };
+  }
+  return { externalReason: reason };
+}
+
+// POST members - anyone at UCAA, HR included; an outsider with a reason.
 async function addMember(req, res) {
   const exercise = await loadExercise(req, res, ['Setup']);
   if (!exercise) return;
+  const editor = await memberEditor(req, res, exercise);
+  if (!editor) return;
   const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
   const email = typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
   if (name.length < 2) return res.status(400).json({ error: 'Enter the member\'s name' });
   if (!validateEmail(email)) return res.status(400).json({ error: 'Enter a valid email - the member\'s private link is sent there' });
-  const staff = await prisma.staffUser.findFirst({ where: { email } });
-  if (staff) return res.status(422).json({ error: 'HR staff cannot sit on the shortlisting committee' });
   if (exercise.members.some((m) => m.email.toLowerCase() === email)) return res.status(409).json({ error: 'This person is already on the committee' });
+  const rules = await memberRules(exercise, email, req.body.externalReason);
+  if (rules.error) return res.status(rules.status).json({ error: rules.error, ...(rules.code ? { code: rules.code } : {}) });
 
   if (req.body.isChair) await model.clearChair(exercise.id);
-  await model.createMember({ exerciseId: exercise.id, name, email, isChair: Boolean(req.body.isChair), token: newToken() });
+  await model.createMember({
+    exerciseId: exercise.id, name, email, isChair: Boolean(req.body.isChair), token: newToken(), externalReason: rules.externalReason
+  });
+  if (rules.externalReason) {
+    await audit(exercise.vacancyId, 'External shortlisting committee member added', req.user.id, { name, email, reason: rules.externalReason });
+  }
+  await afterMemberChange(req, exercise, editor, 'added a committee member', { name, email, isChair: Boolean(req.body.isChair) });
   return get(req, res);
 }
 
@@ -272,6 +360,8 @@ async function loadMember(req, res, allowed) {
 async function updateMember(req, res) {
   const { exercise, member } = await loadMember(req, res, ['Setup', 'Rating', 'Moderation']);
   if (!member) return;
+  const editor = await memberEditor(req, res, exercise);
+  if (!editor) return;
   const data = {};
   if ('name' in req.body || 'email' in req.body) {
     if (exercise.status !== 'Setup') return res.status(422).json({ error: 'Members can only be edited before rating opens' });
@@ -283,8 +373,13 @@ async function updateMember(req, res) {
     if ('email' in req.body) {
       const email = String(req.body.email || '').trim().toLowerCase();
       if (!validateEmail(email)) return res.status(400).json({ error: 'Enter a valid email' });
-      if (await prisma.staffUser.findFirst({ where: { email } })) return res.status(422).json({ error: 'HR staff cannot sit on the shortlisting committee' });
+      if (exercise.members.some((m) => m.id !== member.id && m.email.toLowerCase() === email)) {
+        return res.status(409).json({ error: 'This person is already on the committee' });
+      }
+      const rules = await memberRules(exercise, email, req.body.externalReason ?? member.externalReason);
+      if (rules.error) return res.status(rules.status).json({ error: rules.error, ...(rules.code ? { code: rules.code } : {}) });
       data.email = email;
+      data.externalReason = rules.externalReason;
     }
   }
   if (req.body.isChair === true) {
@@ -293,13 +388,20 @@ async function updateMember(req, res) {
   }
   await model.updateMember(member.id, data);
   if (data.isChair) await audit(exercise.vacancyId, 'Shortlisting committee chair changed', req.user.id, { memberId: member.id, name: member.name });
+  if (Object.keys(data).length) {
+    await afterMemberChange(req, exercise, editor, data.email || data.name ? 'replaced or edited a committee member' : 'changed the chair',
+      { memberId: member.id, before: { name: member.name, email: member.email }, after: { name: data.name ?? member.name, email: data.email ?? member.email } });
+  }
   return get(req, res);
 }
 
 async function removeMember(req, res) {
-  const { member } = await loadMember(req, res, ['Setup']);
+  const { exercise, member } = await loadMember(req, res, ['Setup']);
   if (!member) return;
+  const editor = await memberEditor(req, res, exercise);
+  if (!editor) return;
   await model.deleteMember(member.id);
+  await afterMemberChange(req, exercise, editor, 'removed a committee member', { memberId: member.id, name: member.name, email: member.email });
   return get(req, res);
 }
 
@@ -327,6 +429,9 @@ async function openRating(req, res) {
   }
   if (exercise.members.filter((m) => m.isChair).length !== 1) return res.status(422).json({ error: 'Choose a chair' });
   if (!exercise.criteria.some((c) => c.kind === 'Essential')) return res.status(422).json({ error: 'Add at least one Essential criterion' });
+  if (exercise.nominationStatus !== 'Approved') {
+    return res.status(422).json({ error: 'The DHRA must approve the committee before rating opens', code: 'NOMINATION_NOT_APPROVED' });
+  }
   if (await model.countByStatus(vacancy.id, ['ShortlistProposed', ...PAST_SHORTLIST])) {
     return res.status(409).json({ error: 'A shortlist has already been proposed for this vacancy by hand' });
   }
@@ -523,7 +628,84 @@ async function propose(req, res) {
   res.json({ proposed: ids.length, applicationIds: ids });
 }
 
+// POST nomination/submit - HR sends the members to the DHRA.
+async function submitNomination(req, res) {
+  const exercise = await loadExercise(req, res, ['Setup']);
+  if (!exercise) return;
+  if (!['Draft', 'Returned'].includes(exercise.nominationStatus)) {
+    return res.status(409).json({ error: exercise.nominationStatus === 'Approved' ? 'The DHRA has already approved this committee' : 'The nominations are already with the DHRA' });
+  }
+  if (exercise.members.length < committee.MIN_MEMBERS) return res.status(422).json({ error: `Nominate at least ${committee.MIN_MEMBERS} members` });
+  if (exercise.members.filter((m) => m.isChair).length !== 1) return res.status(422).json({ error: 'Choose a chair' });
+  const moved = await prisma.shortlistExercise.updateMany({
+    where: { id: exercise.id, nominationStatus: exercise.nominationStatus },
+    data: { nominationStatus: 'Submitted', nominationSubmittedAt: new Date(), nominationSubmittedById: req.user.id, nominationReturnReason: null, nominationDecidedAt: null, nominationDecidedById: null }
+  });
+  if (moved.count === 0) return res.status(409).json({ error: 'The nomination changed meanwhile - reload and try again' });
+  const vacancy = await vacancyModel.findById(exercise.vacancyId);
+  await audit(exercise.vacancyId, 'Committee nomination submitted to the DHRA', req.user.id, { members: exercise.members.map((m) => ({ name: m.name, email: m.email, isChair: m.isChair })) });
+  await notifyAllWithRole('Director', 'CommitteeNominationSubmitted', exercise.id,
+    `The shortlisting committee for ${vacancy.jobRef} ${vacancy.title} (${exercise.members.length} members) is waiting for your approval.`).catch(() => {});
+  broadcastDashboardEvent('ShortlistCommitteeUpdated', { vacancyId: exercise.vacancyId });
+  return get(req, res);
+}
+
+async function decideNomination(req, res, outcome) {
+  const exercise = await loadExercise(req, res, ['Setup']);
+  if (!exercise) return;
+  if (exercise.nominationStatus !== 'Submitted') return res.status(409).json({ error: 'There is no nomination waiting for approval' });
+  if (exercise.nominationSubmittedById === req.user.id) {
+    return res.status(403).json({ error: 'You submitted this nomination - another Director must decide it', code: 'SELF_APPROVAL' });
+  }
+  const reason = typeof req.body.reason === 'string' ? req.body.reason.trim().slice(0, 2000) : '';
+  if (outcome === 'Returned' && reason.length < 10) return res.status(400).json({ error: 'Say why the nomination is returned (10 characters or more)' });
+  if (outcome === 'Approved') {
+    if (exercise.members.length < committee.MIN_MEMBERS) return res.status(422).json({ error: `The committee needs at least ${committee.MIN_MEMBERS} members` });
+    if (exercise.members.filter((m) => m.isChair).length !== 1) return res.status(422).json({ error: 'Choose a chair' });
+  }
+  const moved = await prisma.shortlistExercise.updateMany({
+    where: { id: exercise.id, nominationStatus: 'Submitted' },
+    data: { nominationStatus: outcome, nominationDecidedAt: new Date(), nominationDecidedById: req.user.id, nominationReturnReason: outcome === 'Returned' ? reason : null }
+  });
+  if (moved.count === 0) return res.status(409).json({ error: 'Someone else has already decided this nomination' });
+  const vacancy = await vacancyModel.findById(exercise.vacancyId);
+  await audit(exercise.vacancyId, outcome === 'Approved' ? 'Committee nomination approved by the DHRA' : 'Committee nomination returned by the DHRA', req.user.id, {
+    reason: reason || undefined, actingAsId: req.actingAsDelegateFor || null,
+    members: exercise.members.map((m) => ({ name: m.name, email: m.email, isChair: m.isChair }))
+  });
+  if (exercise.nominationSubmittedById) {
+    await notify(exercise.nominationSubmittedById, 'CommitteeNominationDecided', exercise.id, outcome === 'Approved'
+      ? `The DHRA approved the shortlisting committee for ${vacancy.jobRef} ${vacancy.title}. You can open rating once the application deadline has passed.`
+      : `The DHRA returned the shortlisting committee for ${vacancy.jobRef} ${vacancy.title}: ${reason}`).catch(() => {});
+  }
+  broadcastDashboardEvent('ShortlistCommitteeUpdated', { vacancyId: exercise.vacancyId });
+  return get(req, res);
+}
+
+const approveNomination = (req, res) => decideNomination(req, res, 'Approved');
+const returnNomination = (req, res) => decideNomination(req, res, 'Returned');
+
+// GET nominations/pending - every committee waiting for the DHRA (the
+// Approvals Center), leaving out vacancies the requester applied for.
+async function pendingNominations(req, res) {
+  const excluded = await conflictOfInterest.conflictedVacancyIds(req);
+  const rows = await prisma.shortlistExercise.findMany({
+    where: { nominationStatus: 'Submitted', ...(excluded.length ? { vacancyId: { notIn: excluded } } : {}) },
+    include: {
+      vacancy: { select: { id: true, jobRef: true, title: true, department: { select: { name: true } } } },
+      members: { select: { id: true, name: true, email: true, isChair: true, externalReason: true }, orderBy: [{ isChair: 'desc' }, { id: 'asc' }] }
+    },
+    orderBy: { nominationSubmittedAt: 'asc' }
+  });
+  const submitters = await prisma.staffUser.findMany({ where: { id: { in: rows.map((r) => r.nominationSubmittedById).filter(Boolean) } }, select: { id: true, name: true } });
+  res.json(rows.map((r) => ({
+    exerciseId: r.id, vacancy: r.vacancy, members: r.members, submittedAt: r.nominationSubmittedAt,
+    submittedBy: submitters.find((p) => p.id === r.nominationSubmittedById) || null
+  })));
+}
+
 module.exports = {
+  submitNomination, approveNomination, returnNomination, pendingNominations,
   get, create, update, addMember, updateMember, removeMember, reissueLink, openRating, addAssignment,
   startModeration, close, propose, setActingChair, computeRanking, PAST_SHORTLIST
 };

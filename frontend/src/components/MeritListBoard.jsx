@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   GripVertical, ChevronUp, ChevronDown, X, Plus, RotateCcw, Trophy, Lock, CheckCircle2, Clock,
-  AlertTriangle, CalendarClock, Award
+  CalendarClock, Award, FileText
 } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import Card from './Card';
@@ -17,6 +17,7 @@ import CsvDownloadButton from './CsvDownloadButton';
 import OfferActions from './offers/OfferActions';
 import { hintText } from './interviews/formStyles';
 import { errorMessage } from '../utils/interviews';
+import { fileLink } from '../utils/fileLink';
 
 // ===========================================================================
 // Step three of selection: the post-interview merit list (backend
@@ -290,7 +291,7 @@ export default function MeritListBoard({ vacancy, staffRole, reloadKey, onChange
             {rows.length === 0 && (
               <p style={{ margin: 0, padding: 16, color: 'var(--color-text-muted)' }}>
                 {board.eligible.length === 0
-                  ? 'Nobody has a finalized interview verdict yet. Candidates appear here once the panel recommends them ("Shortlist" or "Hold").'
+                  ? 'Nobody has interview results yet. Candidates appear here once their results are recorded with a "Shortlist" or "Hold" verdict.'
                   : 'Add interviewed candidates from the right to build the list.'}
               </p>
             )}
@@ -331,14 +332,12 @@ export default function MeritListBoard({ vacancy, staffRole, reloadKey, onChange
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
                         <ScoreBar score={row.interviewScore} />
-                        {row.highSpread && (
-                          <span style={{ fontSize: 11, color: 'var(--color-warning)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                            <AlertTriangle size={11} /> panel split ({row.panelProgress?.spread})
-                          </span>
+                        {row.scoreSheetUrl && (
+                          <a href={fileLink(row.scoreSheetUrl)} target="_blank" rel="noreferrer"
+                            style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 3 }} title={row.scoreSheetName || 'Signed score sheet'}>
+                            <FileText size={12} /> Signed score sheet
+                          </a>
                         )}
-                        {(row.criterionAverages || []).slice(0, 4).map((c) => (
-                          <span key={c.id} style={{ ...hintText, whiteSpace: 'nowrap' }}>{c.name} <strong>{c.average ?? '—'}</strong></span>
-                        ))}
                       </div>
                       {/* The offer follows straight on from the list: its
                           status, deadline and terms, and what can be done next. */}
@@ -409,7 +408,7 @@ export default function MeritListBoard({ vacancy, staffRole, reloadKey, onChange
 
           <Card>
             <strong style={{ fontSize: 14, display: 'inline-flex', alignItems: 'center', gap: 6 }}><CalendarClock size={14} /> Still in interviews</strong>
-            <div style={{ ...hintText, marginBottom: 8 }}>They join the pool above once their round is scored and finalized.</div>
+            <div style={{ ...hintText, marginBottom: 8 }}>They join the pool above once their results are recorded.</div>
             {board.awaiting.length === 0 && <p style={{ ...hintText, margin: 0 }}>Nobody - every interview has a verdict.</p>}
             {board.awaiting.map((row) => (
               <div key={row.applicationId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderTop: '1px solid var(--color-border)' }}>
@@ -417,7 +416,7 @@ export default function MeritListBoard({ vacancy, staffRole, reloadKey, onChange
                 {row.roundId ? (
                   <button type="button" onClick={() => setOpenRoundId(row.roundId)}
                     style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit' }}>
-                    {row.panelProgress ? `${row.panelProgress.scored}/${row.panelProgress.total} scored` : 'Open'}
+                    Open
                   </button>
                 ) : <StatusBadge status={row.status} />}
               </div>

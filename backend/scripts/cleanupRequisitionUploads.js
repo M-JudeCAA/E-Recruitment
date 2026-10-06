@@ -3,7 +3,8 @@
 // 0 * * * * cd /path/to/backend && node scripts/cleanupRequisitionUploads.js
 //
 // Every requisition HR uploads on the New Listing page is stored straight
-// away (requisition-<uuid>.pdf|docx, see services/requisitionService.js) so
+// away (requisition-<uuid>.pdf|docx, and the signed scan as
+// requisition-signed-<uuid>.pdf|jpg|png, see services/requisitionService.js) so
 // it can be read and reviewed - but plenty are never used: the wrong file,
 // a replaced document, a draft deleted or a listing abandoned. This removes
 // any requisition upload that no vacancy and no saved draft refers to, once
@@ -16,7 +17,7 @@ const prisma = require('../src/config/db');
 // Long enough for anyone to finish (or auto-save) the listing they were
 // writing when they uploaded it.
 const GRACE_MS = 24 * 60 * 60 * 1000;
-const REQUISITION_FILE_RE = /^requisition-[0-9a-f-]{36}\.(pdf|docx)$/;
+const REQUISITION_FILE_RE = /^requisition-(signed-)?[0-9a-f-]{36}\.(pdf|docx|jpg|png)$/;
 
 function uploadDir() {
   return path.resolve(process.env.UPLOAD_DIR || './uploads');
@@ -24,12 +25,18 @@ function uploadDir() {
 
 async function referencedFilenames() {
   const [vacancies, drafts] = await Promise.all([
-    prisma.vacancy.findMany({ where: { requisitionDocumentUrl: { not: null } }, select: { requisitionDocumentUrl: true } }),
-    prisma.vacancyDraft.findMany({ where: { requisitionFilename: { not: null } }, select: { requisitionFilename: true } })
+    prisma.vacancy.findMany({
+      where: { OR: [{ requisitionDocumentUrl: { not: null } }, { requisitionSignedCopyUrl: { not: null } }] },
+      select: { requisitionDocumentUrl: true, requisitionSignedCopyUrl: true }
+    }),
+    prisma.vacancyDraft.findMany({
+      where: { OR: [{ requisitionFilename: { not: null } }, { signedCopyFilename: { not: null } }] },
+      select: { requisitionFilename: true, signedCopyFilename: true }
+    })
   ]);
   return new Set([
-    ...vacancies.map((v) => path.basename(v.requisitionDocumentUrl)),
-    ...drafts.map((d) => d.requisitionFilename)
+    ...vacancies.flatMap((v) => [v.requisitionDocumentUrl, v.requisitionSignedCopyUrl]).filter(Boolean).map((url) => path.basename(url)),
+    ...drafts.flatMap((d) => [d.requisitionFilename, d.signedCopyFilename]).filter(Boolean)
   ]);
 }
 

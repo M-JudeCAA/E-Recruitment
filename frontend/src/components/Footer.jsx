@@ -7,7 +7,7 @@ export default function Footer() {
   return (
     // Hidden on phones (theme.css) - MobileTabBar takes its place there.
     <footer
-      className="desktop-only"
+      className="site-footer desktop-only"
       style={{
         position: 'fixed',
         bottom: 0,

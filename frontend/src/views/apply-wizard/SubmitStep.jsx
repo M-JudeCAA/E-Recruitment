@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Check, Send } from 'lucide-react';
 import client from '../../models/apiClient';
+import { SOURCES, rememberedSource } from '../../utils/applicationSources';
 import { useConfirm } from '../../components/ConfirmDialog';
 
 // No fabricated reference number - applications don't have their own
@@ -41,6 +42,9 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
   const [refusal, setRefusal] = useState(null);
   const [busy, setBusy] = useState(false);
   const [consent, setConsent] = useState(false);
+  // Where they saw the advert - optional, for the Source of Hire report.
+  const [source, setSource] = useState(rememberedSource());
+  const [sourceDetail, setSourceDetail] = useState('');
 
   // applicationId should always be set by the time this step is reachable
   // (ApplyForm.jsx now auto-saves a draft when leaving Documents/Questions)
@@ -51,7 +55,7 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
     if (!consent) { setError('Please confirm your consent to the processing of your personal data before sending.'); return; }
     setError(''); setRefusal(null); setBusy(true);
     try {
-      await client.patch(`/api/applications/${applicationId}/submit`, { consent: true });
+      await client.patch(`/api/applications/${applicationId}/submit`, { consent: true, source: source || undefined, sourceDetail: sourceDetail || undefined });
       onSubmitted();
     } catch (err) {
       if (err.response?.data?.code === 'NOT_ELIGIBLE') setRefusal(err.response.data.reasons || []);
@@ -117,6 +121,8 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
   }
 
   const missingAcademic = eligibility && eligibility.academicDocuments === 0;
+  const missingEvidence = (eligibility?.evidence || []).filter((e) => !e.provided);
+  const blocked = missingAcademic || missingEvidence.length > 0;
 
   return (
     <div className="text-center py-6">
@@ -128,11 +134,34 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
             Go to Documents
           </button>
         </p>
+      ) : missingEvidence.length > 0 ? (
+        <div style={{ fontSize: 14, color: 'var(--color-danger)', maxWidth: 460, margin: '0 auto 24px', textAlign: 'left' }}>
+          Please attach the evidence for:
+          <ul style={{ margin: '6px 0' }}>{missingEvidence.map((e) => <li key={e.key}>{e.label}</li>)}</ul>
+          <button type="button" onClick={() => goToStep('documents')}
+            style={{ fontSize: 14, color: 'var(--color-primary)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}>
+            Go to Documents
+          </button>
+        </div>
       ) : (
         <p style={{ fontSize: 14, color: 'var(--color-text-muted)', marginBottom: 24, maxWidth: 420, margin: '0 auto 24px' }}>
           {eligibility?.eligible ? "You meet this role's requirements. " : ''}Once you send this, UCAA will confirm receipt by email.
         </p>
       )}
+      <div style={{ maxWidth: 460, margin: '0 auto 16px', textAlign: 'left' }}>
+        <label htmlFor="advert-source" style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6 }}>Where did you see this advert? (optional)</label>
+        <select id="advert-source" value={source} onChange={(e) => setSource(e.target.value)}
+          style={{ padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: 14, minWidth: 240 }}>
+          <option value="">Choose one</option>
+          {SOURCES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+        </select>
+        {['Referral', 'Other', 'JobBoard'].includes(source) && (
+          <input aria-label="Tell us where" placeholder={source === 'Referral' ? 'Who told you? (optional)' : 'Where? (optional)'} value={sourceDetail}
+            onChange={(e) => setSourceDetail(e.target.value)} maxLength={200}
+            style={{ display: 'block', marginTop: 8, padding: '8px 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)', fontSize: 14, width: '100%', maxWidth: 400 }} />
+        )}
+      </div>
+
       {/* FR-ATS-038 - explicit consent, never pre-ticked. */}
       <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', textAlign: 'left', fontSize: 13, maxWidth: 460, margin: '0 auto 20px', cursor: 'pointer' }}>
         <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} style={{ marginTop: 3, flexShrink: 0 }} />
@@ -142,9 +171,9 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
           <a href="/privacy" target="_blank" rel="noopener noreferrer">privacy notice</a>.
         </span>
       </label>
-      <button onClick={handleSubmit} disabled={busy || missingAcademic || !consent}
+      <button onClick={handleSubmit} disabled={busy || blocked || !consent}
         className="inline-flex items-center gap-2"
-        style={{ background: 'var(--color-primary)', color: '#fff', padding: '12px 28px', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, border: 'none', cursor: (busy || missingAcademic || !consent) ? 'not-allowed' : 'pointer', opacity: (busy || missingAcademic || !consent) ? 0.6 : 1 }}>
+        style={{ background: 'var(--color-primary)', color: '#fff', padding: '12px 28px', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, border: 'none', cursor: (busy || blocked || !consent) ? 'not-allowed' : 'pointer', opacity: (busy || blocked || !consent) ? 0.6 : 1 }}>
         <Send size={15} /> {busy ? 'Sending...' : 'Send application'}
       </button>
       {error && <p style={{ fontSize: 13, color: 'var(--color-danger)', marginTop: 16 }}>{error}</p>}

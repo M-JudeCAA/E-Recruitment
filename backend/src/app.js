@@ -20,12 +20,11 @@ const vacancyRoutes = require('./routes/vacancies');
 const interviewRoutes = require('./routes/interviews');
 const candidateRoutes = require('./routes/candidates');
 const fileRoutes = require('./routes/files');
-const panelAccessRoutes = require('./routes/panelAccess');
-const panelDayRoutes = require('./routes/panelDay');
 const shortlistCommitteeRoutes = require('./routes/shortlistCommittee');
 const shortlistPanelRoutes = require('./routes/shortlistPanel');
 const departmentRoutes = require('./routes/departments');
 const positionRoutes = require('./routes/positions');
+const orgImportRoutes = require('./routes/orgImport');
 const directorateRoutes = require('./routes/directorates');
 const staffUsersRoutes = require('./routes/staffUsers');
 const delegationRoutes = require('./routes/delegations');
@@ -34,6 +33,12 @@ const dashboardRoutes = require('./routes/dashboard');
 const analyticsRoutes = require('./routes/analytics');
 const auditRoutes = require('./routes/audit');
 const vacancyDraftRoutes = require('./routes/vacancyDrafts');
+const directoryRoutes = require('./routes/directory');
+const documentRoutes = require('./routes/documents');
+const settingsRoutes = require('./routes/settings');
+const dataProtectionRoutes = require('./routes/dataProtection');
+const talentRoutes = require('./routes/talent');
+const bulkEmailRoutes = require('./routes/bulkEmail');
 const { errorHandler } = require('./utils/errorResponse');
 
 const app = express();
@@ -73,15 +78,12 @@ app.use('/api/candidates', candidateRoutes);
 // Authenticated file access - replaces a plain express.static mount so
 // CVs, cover letters, and recommendation letters aren't publicly readable.
 app.use('/api/files', fileRoutes);
-// Public, unauthenticated - a panelist's scoped access link, not a JWT session.
-app.use('/api/panel-access', panelAccessRoutes);
-// Public - a panelist's day link covering every candidate they interview that day.
-app.use('/api/panel-day', panelDayRoutes);
 app.use('/api/shortlist-committee', shortlistCommitteeRoutes);
 // Public - a shortlisting committee member's private link.
 app.use('/api/shortlist-panel', shortlistPanelRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/positions', positionRoutes);
+app.use('/api/org-import', orgImportRoutes);
 app.use('/api/directorates', directorateRoutes);
 app.use('/api/staff-users', staffUsersRoutes);
 app.use('/api/delegations', delegationRoutes);
@@ -90,6 +92,12 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/vacancy-drafts', vacancyDraftRoutes);
+app.use('/api/directory', directoryRoutes);
+app.use('/api/documents', documentRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/data-protection', dataProtectionRoutes);
+app.use('/api/talent', talentRoutes);
+app.use('/api/bulk-email', bulkEmailRoutes);
 
 // Catch-all error handler - logs the full error server-side but only ever
 // sends the client a sanitized message (never Prisma query text, database

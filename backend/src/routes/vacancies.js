@@ -2,7 +2,8 @@ const express = require('express');
 const controller = require('../controllers/vacancyController');
 const exportController = require('../controllers/exportController');
 const requisitionController = require('../controllers/requisitionController');
-const { uploadRequisition } = require('../middleware/upload');
+const { uploadRequisition, uploadSignedRequisition, uploadSupportingDocument } = require('../middleware/upload');
+const excoShortlistController = require('../controllers/excoShortlistController');
 const batchController = require('../controllers/vacancyReviewBatchController');
 const { authenticate, optionalAuthenticate, requireStaffRole } = require('../middleware/auth');
 const { guardVacancy, vacancyFrom } = require('../middleware/applicantConflict');
@@ -12,6 +13,8 @@ const router = express.Router();
 // Step 1 of creating a vacancy: upload the EXCO-approved, signed requisition
 // and get the form pre-filled from it. create() refuses without one.
 router.post('/requisition', authenticate, requireStaffRole('HR_Officer'), uploadRequisition.single('document'), requisitionController.read);
+// ... and the scan of it as EXCO signed it, kept alongside (also required).
+router.post('/requisition/signed-copy', authenticate, requireStaffRole('HR_Officer'), uploadSignedRequisition.single('document'), requisitionController.uploadSignedCopy);
 router.post('/', authenticate, requireStaffRole('HR_Officer'), controller.create);
 router.patch('/:id', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.update);
 router.patch('/:id/close', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.close);
@@ -41,11 +44,17 @@ router.patch('/:id/transition-posting-type', authenticate, requireStaffRole('Man
 router.post('/:id/readvertise', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.readvertise);
 router.get('/', optionalAuthenticate, controller.listPublic);
 router.get('/admin', authenticate, requireStaffRole('HR_Officer'), controller.listForAdmin);
+router.get('/:id/progress', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.progress);
 // optionalAuthenticate (not plain, unauthenticated) so getOne can tell a
 // staff caller (staffApiClient always sends a Bearer token) from a
 // candidate/guest one and hide HR-only fields accordingly - see that
 // function's own comment.
 router.get('/:id', optionalAuthenticate, controller.getOne);
+// EXCO's approval of the interview shortlist: the sheet to print, and the
+// signed copy attached afterwards (required before a first interview).
+router.get('/:id/exco-shortlist', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), excoShortlistController.get);
+router.post('/:id/exco-shortlist', authenticate, requireStaffRole('Senior_HR_Officer'), guardVacancy(vacancyFrom.param('id')),
+  uploadSupportingDocument.single('document'), excoShortlistController.attach);
 router.get('/:id/applications', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.listApplications);
 // Spreadsheet of every applicant - the shortlisting report (FR-ATS-053).
 router.get('/:id/export/shortlisting-report', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), exportController.shortlistReport);

@@ -39,6 +39,15 @@ function normalizeAnswerType(row) {
   return row?.answerType === 'number' ? 'number' : 'yesno';
 }
 
+// A question HR marked as needing evidence: a candidate who answers Yes
+// (or a number above 0) must upload it (utils/screeningEvidence.js), as
+// described by evidenceLabel.
+function evidenceFields(row) {
+  if (!row?.evidenceRequired) return {};
+  const label = String(row.evidenceLabel ?? '').trim().slice(0, 150);
+  return { evidenceRequired: true, ...(label ? { evidenceLabel: label } : {}) };
+}
+
 // Number(null) and Number('') both coerce to 0, not "absent" - read the
 // raw value first so a row with no minValue actually set (as opposed to a
 // genuine 0.0 threshold) normalizes to NaN and gets dropped below, not
@@ -67,7 +76,8 @@ function normalizeDesirableRequirements(value) {
       return {
         id: row?.id ? String(row.id) : crypto.randomUUID(),
         text: String(row?.text ?? '').trim(),
-        ...(answerType === 'number' ? { answerType, minValue } : {})
+        ...(answerType === 'number' ? { answerType, minValue } : {}),
+        ...evidenceFields(row)
       };
     })
     .filter((row) => row.text && (row.answerType !== 'number' || Number.isFinite(row.minValue)));
@@ -93,7 +103,8 @@ function normalizeDisqualifyingRequirements(value) {
         id: row?.id ? String(row.id) : crypto.randomUUID(),
         text: String(row?.text ?? '').trim(),
         requiredAnswer: row?.requiredAnswer === 'No' ? 'No' : 'Yes',
-        ...(answerType === 'number' ? { answerType, minValue } : {})
+        ...(answerType === 'number' ? { answerType, minValue } : {}),
+        ...evidenceFields(row)
       };
     })
     .filter((row) => row.text && (row.answerType !== 'number' || Number.isFinite(row.minValue)));

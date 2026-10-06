@@ -23,6 +23,7 @@ router.get('/sla-policies', authenticate, requireStaffRole('Manager'), controlle
 // actions themselves stay Manager+/tier-gated.
 router.get('/trends', authenticate, requireStaffRole('HR_Officer'), controller.trends);
 router.get('/follow-ups', authenticate, requireStaffRole('HR_Officer'), controller.followUps);
+router.get('/inbox', authenticate, requireStaffRole('HR_Officer'), controller.inbox);
 router.get('/upcoming-interviews', authenticate, requireStaffRole('HR_Officer'), controller.upcomingInterviews);
 router.get('/screening-breakdown', authenticate, requireStaffRole('HR_Officer'), controller.screeningBreakdown);
 // Every staff tier sees the same system warnings - they affect everyone's work.

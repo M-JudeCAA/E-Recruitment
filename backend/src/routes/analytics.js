@@ -15,4 +15,9 @@ router.get('/time-to-fill', authenticate, requireStaffRole('Manager'), controlle
 router.get('/delegation-activity', authenticate, requireStaffRole('Manager'), controller.delegationActivity);
 router.get('/panel-workload', authenticate, requireStaffRole('Manager'), controller.panelWorkload);
 
+// The recruitment dashboard (FR-ATS-070 to 074), filterable and exportable.
+const recruitment = require('../controllers/recruitmentMetricsController');
+router.get('/recruitment', authenticate, requireStaffRole('Manager'), recruitment.get);
+router.get('/recruitment/export', authenticate, requireStaffRole('Manager'), recruitment.exportCsv);
+
 module.exports = router;

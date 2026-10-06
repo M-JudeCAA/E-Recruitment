@@ -1,6 +1,7 @@
 const request = require('supertest');
 const {
-  prisma, app, resetDatabase, createStaff, createOrg, staffToken, api, expectStatus, createVacancyFromRequisition, uploadRequisition
+  prisma, app, resetDatabase, createStaff, createOrg, staffToken, api, expectStatus, createVacancyFromRequisition, uploadRequisition,
+  uploadSignedCopy
 } = require('./helpers');
 
 // Vacancy-level rules from the September 2026 UCAA requirements: job
@@ -115,14 +116,20 @@ describe('creating a vacancy from the EXCO-approved requisition', () => {
     // "Reports to: Manager Human Resources" isn't on this test organogram.
     expect(read.warnings.join(' ')).toMatch(/Manager Human Resources.*not on the organogram/);
 
-    // HR confirms the EXCO approval, adds screening, and creates it.
+    // HR confirms the EXCO approval, adds the signed scan and screening, and creates it.
     const form = { ...read.prefill, deadline: new Date(Date.now() + 14 * 86400000).toISOString(), minimumEducationLevel: 'Bachelors' };
     const unconfirmed = await api(tokens.hro).post('/api/vacancies', { ...form, requisitionDocument: read.document });
     expect(unconfirmed.body.code).toBe('REQUISITION_NOT_CONFIRMED');
+    const unsigned = await api(tokens.hro).post('/api/vacancies', { ...form, requisitionDocument: read.document, requisitionConfirmed: true });
+    expect(unsigned.status).toBe(400);
+    expect(unsigned.body.code).toBe('SIGNED_COPY_REQUIRED');
+    const signedCopy = await uploadSignedCopy(tokens.hro);
+    expect(signedCopy).toEqual(expect.objectContaining({ originalName: 'Signed requisition.pdf', filename: expect.stringMatching(/^requisition-signed-.*\.pdf$/) }));
     const vacancy = expectStatus(await api(tokens.hro).post('/api/vacancies', {
-      ...form, requisitionDocument: read.document, requisitionConfirmed: true
+      ...form, requisitionDocument: read.document, requisitionSignedCopy: signedCopy, requisitionConfirmed: true
     }), 201).body;
     expect(vacancy).toEqual(expect.objectContaining({
+      requisitionSignedCopyUrl: signedCopy.url, requisitionSignedCopyName: 'Signed requisition.pdf',
       requisitionDocumentUrl: read.document.url, requisitionDocumentName: 'Job Opening Request - HR Analyst.docx',
       salaryScale: 'U5', positionsRequired: 2, minimumEducationLevel: 'Bachelors',
       desirableQualifications: ['Membership of the Human Resource Managers Association of Uganda.']
@@ -135,12 +142,14 @@ describe('creating a vacancy from the EXCO-approved requisition', () => {
     expect(again.status).toBe(409);
     expect(again.body).toEqual(expect.objectContaining({ code: 'DUPLICATE_REQUISITION', existingVacancy: expect.objectContaining({ id: vacancy.id }) }));
 
-    // Staff can open the document; candidates never see it or what was read from it.
+    // Staff can open the document and the scan; candidates never see either, or what was read.
     expectStatus(await api(tokens.hro).get(read.document.url), 200);
+    expectStatus(await api(tokens.hro).get(signedCopy.url), 200);
     expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
     const candidate = await createCandidate({ fullName: 'Grace Achieng', email: 'grace@example.com' });
     const cToken = await candidateToken(candidate.email);
     expect((await api(cToken).get(read.document.url)).status).toBe(403);
+    expect((await api(cToken).get(signedCopy.url)).status).toBe(403);
     const publicView = expectStatus(await api(cToken).get(`/api/vacancies/${vacancy.id}`), 200).body;
     expect(Object.keys(publicView).filter((k) => k.startsWith('requisition'))).toEqual([]);
     expect(publicView.desirableQualifications).toHaveLength(1);
@@ -151,6 +160,7 @@ describe('creating a vacancy from the EXCO-approved requisition', () => {
       postingType: 'External', positionsRequired: 2, deadline: new Date(Date.now() + 20 * 86400000).toISOString()
     }), 201).body;
     expect(re.requisitionDocumentUrl).toBe(read.document.url);
+    expect(re.requisitionSignedCopyUrl).toBe(signedCopy.url);
     expect(re.requisitionDocumentHash).toBeNull();
   });
 
@@ -163,6 +173,15 @@ describe('creating a vacancy from the EXCO-approved requisition', () => {
     expect(doc.status).toBe(422);
     const image = await upload(Buffer.from('jpeg'), 'photo.jpg', 'image/jpeg');
     expect(image.status).toBe(422);
+
+    // The signed copy is the other way round: a scan or photo, never a Word file.
+    const signedWord = await request(app).post('/api/vacancies/requisition/signed-copy').set('Authorization', `Bearer ${tokens.hro}`)
+      .attach('document', await buildRequisitionDocx(), { filename: 'req.docx', contentType: DOCX });
+    expect(signedWord.status).toBe(422);
+    const signedPhoto = await request(app).post('/api/vacancies/requisition/signed-copy').set('Authorization', `Bearer ${tokens.hro}`)
+      .attach('document', Buffer.from('\x89PNG fake image'), { filename: 'signed.png', contentType: 'image/png' });
+    expect(signedPhoto.status).toBe(200);
+    expect(signedPhoto.body.filename).toMatch(/\.png$/);
   });
 });
 
@@ -171,12 +190,13 @@ test('a vacancy being written is saved as a private draft, and creating it remov
   const otherToken = await staffToken(other.email);
   const read = await uploadRequisition(tokens.hro);
 
-  const draft = expectStatus(await api(tokens.hro).post('/api/vacancy-drafts', { form: read.prefill, requisition: read }), 201).body;
+  const signedCopy = await uploadSignedCopy(tokens.hro);
+  const draft = expectStatus(await api(tokens.hro).post('/api/vacancy-drafts', { form: read.prefill, requisition: read, signedCopy }), 201).body;
   expect(draft.title).toBe('HR Analyst');
 
   // Saved again over the version this window loaded...
   const saved = expectStatus(await request(app).put(`/api/vacancy-drafts/${draft.id}`).set('Authorization', `Bearer ${tokens.hro}`)
-    .send({ form: { ...read.prefill, salaryScale: 'U4' }, requisition: read, baseUpdatedAt: draft.updatedAt }), 200).body;
+    .send({ form: { ...read.prefill, salaryScale: 'U4' }, requisition: read, signedCopy, baseUpdatedAt: draft.updatedAt }), 200).body;
   // ...but a second window still holding the old version can't overwrite it.
   const stale = await request(app).put(`/api/vacancy-drafts/${draft.id}`).set('Authorization', `Bearer ${tokens.hro}`)
     .send({ form: read.prefill, requisition: read, baseUpdatedAt: draft.updatedAt });
@@ -188,16 +208,18 @@ test('a vacancy being written is saved as a private draft, and creating it remov
   expect((await api(otherToken).get(`/api/vacancy-drafts/${draft.id}`)).status).toBe(404);
   const loaded = expectStatus(await api(tokens.hro).get(`/api/vacancy-drafts/${draft.id}`), 200).body;
   expect(loaded.form.salaryScale).toBe('U4');
+  expect(loaded.signedCopy).toEqual(signedCopy);
   expect(new Date(loaded.updatedAt).toISOString()).toBe(new Date(saved.updatedAt).toISOString());
 
-  // The cleanup job keeps the draft's requisition.
+  // The cleanup job keeps the draft's requisition and its signed copy.
   const cleanup = require('../scripts/cleanupRequisitionUploads');
   await cleanup.run(new Date(Date.now() + cleanup.GRACE_MS + 60000));
   expectStatus(await api(tokens.hro).get(read.document.url), 200);
+  expectStatus(await api(tokens.hro).get(signedCopy.url), 200);
 
   expectStatus(await api(tokens.hro).post('/api/vacancies', {
     ...loaded.form, deadline: new Date(Date.now() + 14 * 86400000).toISOString(),
-    requisitionDocument: read.document, requisitionConfirmed: true, draftId: draft.id
+    requisitionDocument: read.document, requisitionSignedCopy: loaded.signedCopy, requisitionConfirmed: true, draftId: draft.id
   }), 201);
   expect(expectStatus(await api(tokens.hro).get('/api/vacancy-drafts'), 200).body).toEqual([]);
 });
@@ -209,4 +231,30 @@ test('the cleanup job removes requisition uploads nothing refers to', async () =
   expectStatus(await api(tokens.hro).get(unused.document.url), 200);
   await cleanup.run(new Date(Date.now() + cleanup.GRACE_MS + 60000));
   expect((await api(tokens.hro).get(unused.document.url)).status).toBe(404);
+});
+
+test('a vacancy names its hiring manager (a UCAA employee), never shown to candidates', async () => {
+  const outsider = await createVacancyFromRequisition(tokens.hro, {
+    positionId: org.position.id, postingType: 'External', deadline: new Date(Date.now() + 14 * 86400000).toISOString(),
+    hiringManager: { name: 'Pat Outside', email: 'pat@gmail.com' }
+  });
+  expect(outsider.status).toBe(400);
+
+  const created = expectStatus(await createVacancyFromRequisition(tokens.hro, {
+    positionId: org.position.id, postingType: 'External', deadline: new Date(Date.now() + 14 * 86400000).toISOString(),
+    hiringManager: { name: 'Stephen Tumwine', email: 'Stephen.Tumwine@caa.co.ug', jobTitle: 'Director ANS' }
+  }), 201).body;
+  expect(created).toEqual(expect.objectContaining({ hiringManagerName: 'Stephen Tumwine', hiringManagerEmail: 'stephen.tumwine@caa.co.ug' }));
+
+  // Changed later, and audited.
+  expectStatus(await api(tokens.hro).patch(`/api/vacancies/${created.id}`, { hiringManager: { name: 'Josephine Nabwire', email: 'josephine.nabwire@caa.co.ug' } }), 200);
+  expect((await prisma.vacancy.findUnique({ where: { id: created.id } })).hiringManagerName).toBe('Josephine Nabwire');
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${created.id}/approve`), 200);
+  const publicView = expectStatus(await api().get(`/api/vacancies/${created.id}`), 200).body;
+  expect(Object.keys(publicView).filter((k) => k.startsWith('hiringManager'))).toEqual([]);
+
+  // The directory isn't connected in the tests - the page falls back to typing.
+  const search = await api(tokens.hro).get('/api/directory/people?q=jo');
+  expect(search.status).toBe(501);
+  expect(search.body.code).toBe('DIRECTORY_NOT_CONFIGURED');
 });

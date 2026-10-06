@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Building2, CalendarClock, FileText, FileCheck2 } from 'lucide-react';
+import { Building2, CalendarClock, FileText, FileCheck2, UserCheck } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import HRSidebar from '../components/HRSidebar';
 import PageHeader from '../components/PageHeader';
@@ -14,10 +14,11 @@ import Modal from '../components/Modal';
 import VacancyAdvertFields from '../components/VacancyAdvertFields';
 import VacancyAdvert from '../components/VacancyAdvert';
 import RequisitionPanel from '../components/RequisitionPanel';
+import HiringManagerPicker from '../components/HiringManagerPicker';
 import useVacancyDraft from '../models/useVacancyDraft';
 
 const emptyForm = {
-  departmentId: '', positionId: '', reportsToPositionId: '',
+  departmentId: '', positionId: '', reportsToPositionId: '', hiringManager: null,
   positionsRequired: 1, postingType: '', deadline: '', // postingType is now required with no default, so this starts blank to force an explicit choice
   salaryScale: '',
   // Site/contract metadata, distinct from the org-structure fields above -
@@ -97,11 +98,17 @@ export default function CreateVacancyListing() {
   const [customLocation, setCustomLocation] = useState(false);
   const [creating, setCreating] = useState(false); // double-submission lock
   const [error, setError] = useState('');
+  // The position's approved headcount (FR-ATS-006) - more than are free
+  // needs a reason, which a Director authorises at approval.
+  const [headcountInfo, setHeadcountInfo] = useState(null);
   const [previewData, setPreviewData] = useState(null);
   // The EXCO-approved requisition this vacancy is created from - nothing
   // below it is shown until one has been read (see RequisitionPanel).
   const [requisition, setRequisition] = useState(null);
   const [requisitionConfirmed, setRequisitionConfirmed] = useState(false);
+  // The scan of the requisition as EXCO signed it - uploaded alongside the
+  // readable document, and required to create the vacancy.
+  const [signedCopy, setSignedCopy] = useState(null);
 
   // Drafts: the form (and what was read from the requisition) is saved as
   // HR works - automatically, or with "Save draft" - and reopened from the
@@ -114,7 +121,7 @@ export default function CreateVacancyListing() {
   const [draftMessage, setDraftMessage] = useState('');
   const onDraftCreated = useCallback((id) => setSearchParams({ draft: String(id) }, { replace: true }), [setSearchParams]);
   const draft = useVacancyDraft({
-    values: { form, requisition },
+    values: { form, requisition, signedCopy },
     enabled: !!requisition && !loadingDraft && !creatingPause,
     onCreated: onDraftCreated
   });
@@ -179,8 +186,9 @@ export default function CreateVacancyListing() {
         await loadOrganogramLists(loadedForm.departmentId, loadedForm.positionId).catch(() => {});
         setCustomLocation(!!(loadedForm.location && !LOCATIONS.includes(loadedForm.location)));
         setRequisition(data.requisition || null);
+        setSignedCopy(data.signedCopy || null);
         setForm(loadedForm);
-        draft.markLoaded(data, { form: loadedForm, requisition: data.requisition || null });
+        draft.markLoaded(data, { form: loadedForm, requisition: data.requisition || null, signedCopy: data.signedCopy || null });
       } catch (err) {
         setError(err.response?.status === 404 ? 'That draft no longer exists - it may have been used to create a vacancy, or deleted.' : (err.response?.data?.error || 'Could not open the draft'));
         setSearchParams({}, { replace: true });
@@ -215,8 +223,10 @@ export default function CreateVacancyListing() {
     setForm(next);
   };
 
+  // A different requisition needs its own signed scan.
   const replaceRequisition = () => {
     setRequisition(null);
+    setSignedCopy(null);
     setRequisitionConfirmed(false);
   };
 
@@ -245,18 +255,27 @@ export default function CreateVacancyListing() {
     });
   };
 
+  useEffect(() => {
+    if (!form.positionId) { setHeadcountInfo(null); return; }
+    staffClient.get(`/api/positions/${form.positionId}/headcount`).then((res) => setHeadcountInfo(res.data)).catch(() => setHeadcountInfo(null));
+  }, [form.positionId]);
+  const overHeadcount = headcountInfo?.headcount != null && Number(form.positionsRequired) > headcountInfo.available;
+
   const createVacancy = async (e) => {
     e.preventDefault();
     if (creating) return; // a double-click or slow-network retry must not create two vacancies
     if (!requisition) { setError('Upload the EXCO-approved requisition first.'); return; }
+    if (!signedCopy) { setError('Upload the scan of the requisition as EXCO signed it.'); return; }
     if (!requisitionConfirmed) { setError('Confirm that the requisition has been approved and signed by EXCO.'); return; }
+    // Not on the requisition, so HR always sets it here.
+    if (!form.deadline) { setError('Set the application deadline (under Listing details).'); return; }
     setError(''); setCreating(true);
     // No auto-save may land after the vacancy (and so the draft) is done.
     draft.cancelPending();
     setCreatingPause(true);
     try {
       const res = await staffClient.post('/api/vacancies', {
-        ...form, requisitionDocument: requisition.document, requisitionConfirmed: true,
+        ...form, requisitionDocument: requisition.document, requisitionSignedCopy: signedCopy, requisitionConfirmed: true,
         ...(draft.draftId ? { draftId: draft.draftId } : {})
       });
       navigate('/hr', { state: { vacancyCreatedMessage: `Vacancy created (Ref: ${res.data.jobRef}). It needs Manager or Director approval to open.` } });
@@ -282,7 +301,7 @@ export default function CreateVacancyListing() {
         <HRSidebar active="vacancies" />
 
         <div style={{ flex: 1, minWidth: 0 }}>
-      <PageHeader title="New Listing" subtitle="Create a vacancy from an EXCO-approved requisition" />
+      <PageHeader title="New vacancy" subtitle="Create a vacancy from an EXCO-approved requisition" />
       <p style={{ marginTop: -12, marginBottom: 'var(--spacing-md)' }}>
         <Link to="/hr">&larr; Back to vacancies</Link>
       </p>
@@ -303,6 +322,7 @@ export default function CreateVacancyListing() {
           {loadingDraft
             ? <p style={{ fontSize: 14, color: 'var(--color-text-muted)', margin: 0 }}>Opening your draft...</p>
             : <RequisitionPanel requisition={requisition} onRead={applyRequisition} onReplace={replaceRequisition}
+                signedCopy={signedCopy} onSignedCopyChange={setSignedCopy}
                 confirmed={requisitionConfirmed} onConfirmChange={setRequisitionConfirmed}
                 jdExceptionReason={form.jdExceptionReason}
                 onJdExceptionReasonChange={(jdExceptionReason) => setForm((prev) => ({ ...prev, jdExceptionReason }))} />}
@@ -353,8 +373,19 @@ export default function CreateVacancyListing() {
           </div>
 
           <div style={fieldGrid}>
-            <TextField label="Positions required" type="number" min="1" value={form.positionsRequired}
-              onChange={(e) => setForm({ ...form, positionsRequired: Number(e.target.value) })} />
+            <div>
+              <TextField label="Positions required" type="number" min="1" value={form.positionsRequired}
+                onChange={(e) => setForm({ ...form, positionsRequired: Number(e.target.value) })} />
+              {headcountInfo?.headcount != null && (
+                <div style={{ fontSize: 12, color: overHeadcount ? 'var(--color-danger)' : 'var(--color-text-muted)', marginTop: -8, marginBottom: 8 }}>
+                  Headcount: {headcountInfo.headcount} approved, {headcountInfo.occupied} filled, {headcountInfo.inRecruitment} being recruited - {headcountInfo.available} free.
+                </div>
+              )}
+              {overHeadcount && (
+                <TextArea label="Why more than the approved headcount? (a Director must authorise it)" required value={form.headcountExceptionReason || ''}
+                  onChange={(e) => setForm({ ...form, headcountExceptionReason: e.target.value })} />
+              )}
+            </div>
             <Select label="Posting type" required value={form.postingType} onChange={(e) => setForm({ ...form, postingType: e.target.value })}>
               <option value="">Select one</option>
               <option value="Internal">Internal only</option>
@@ -364,11 +395,17 @@ export default function CreateVacancyListing() {
         </Card>
 
         <Card style={{ padding: 'var(--spacing-lg)' }}>
+          <SectionHeader icon={UserCheck} title="Hiring manager"
+            description="Who this vacancy is being filled for - a UCAA employee. They get email updates as the recruitment moves on, and need no access to this system." />
+          <HiringManagerPicker value={form.hiringManager} onChange={(hiringManager) => setForm((prev) => ({ ...prev, hiringManager }))} />
+        </Card>
+
+        <Card style={{ padding: 'var(--spacing-lg)' }}>
           <SectionHeader icon={CalendarClock} title="Listing details"
             description="Timeline and compensation. The internal salary range and recruiter notes are never shown to candidates." />
 
           <div style={fieldGrid}>
-            <TextField label="Deadline" type="date" value={form.deadline}
+            <TextField label="Deadline" type="date" required value={form.deadline}
               onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
             <div>
               <Select label="Location" value={customLocation ? '__custom__' : form.location}
@@ -425,12 +462,18 @@ export default function CreateVacancyListing() {
               </span>
             )}
           </div>
+          {/* The same error as the alert at the top, which is a long scroll
+              away from this button. */}
+          {error && (
+            <div role="alert" style={{ flexBasis: '100%', order: -1, fontSize: 13, color: 'var(--color-danger)' }}>{error}</div>
+          )}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <Button type="button" variant="ghost" onClick={saveDraftNow}
               disabled={draft.status === 'saving' || draft.status === 'conflict'}>Save draft</Button>
             <Button type="button" variant="secondary" onClick={previewForm}>Preview advert</Button>
-            <Button type="submit" disabled={creating || !requisitionConfirmed}
-              title={requisitionConfirmed ? undefined : 'Confirm the EXCO approval above first'}>
+            <Button type="submit" disabled={creating || !requisitionConfirmed || !signedCopy}
+              title={!signedCopy ? 'Upload the signed copy of the requisition above first'
+                : requisitionConfirmed ? undefined : 'Confirm the EXCO approval above first'}>
               {creating ? 'Creating...' : 'Create listing'}
             </Button>
           </div>

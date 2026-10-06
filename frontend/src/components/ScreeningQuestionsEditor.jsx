@@ -58,7 +58,8 @@ export default function ScreeningQuestionsEditor({ desirableItems, disqualifying
         desirableRequirements: desirable.filter((r) => r.id !== row.id),
         disqualifyingRequirements: [...disqualifying, {
           id: row.id, text: row.text, requiredAnswer: 'Yes',
-          ...(row.answerType === 'number' ? { answerType: 'number', minValue: row.minValue } : {})
+          ...(row.answerType === 'number' ? { answerType: 'number', minValue: row.minValue } : {}),
+          ...evidenceOf(row)
         }]
       });
     } else {
@@ -66,11 +67,15 @@ export default function ScreeningQuestionsEditor({ desirableItems, disqualifying
         disqualifyingRequirements: disqualifying.filter((r) => r.id !== row.id),
         desirableRequirements: [...desirable, {
           id: row.id, text: row.text,
-          ...(row.answerType === 'number' ? { answerType: 'number', minValue: row.minValue } : {})
+          ...(row.answerType === 'number' ? { answerType: 'number', minValue: row.minValue } : {}),
+          ...evidenceOf(row)
         }]
       });
     }
   };
+  // "Needs evidence": a candidate who answers Yes (or a number above 0)
+  // must upload it (backend utils/screeningEvidence.js).
+  const evidenceOf = (row) => (row.evidenceRequired ? { evidenceRequired: true, evidenceLabel: row.evidenceLabel || '' } : {});
   const changeAnswerType = (row, answerType) => {
     if (answerType === row.answerType) return;
     updateRow(row, answerType === 'number' ? { answerType: 'number', minValue: '' } : { answerType: 'yesno', minValue: undefined });
@@ -122,6 +127,18 @@ export default function ScreeningQuestionsEditor({ desirableItems, disqualifying
             )}
             <button type="button" onClick={() => removeRow(row)}
               style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer', fontSize: 18, padding: '0 8px' }}>&times;</button>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+              <input type="checkbox" checked={!!row.evidenceRequired}
+                onChange={(e) => updateRow(row, e.target.checked ? { evidenceRequired: true, evidenceLabel: row.evidenceLabel || '' } : { evidenceRequired: undefined, evidenceLabel: undefined })} />
+              Needs evidence if answered Yes
+            </label>
+            {row.evidenceRequired && (
+              <input value={row.evidenceLabel || ''} maxLength={150} placeholder="What to upload, e.g. A copy of your ATC licence"
+                aria-label="Evidence to upload" onChange={(e) => updateRow(row, { evidenceLabel: e.target.value })}
+                style={{ ...rowInputStyle, flex: '1 1 260px' }} />
+            )}
           </div>
           {row.text.trim() && (row.answerType !== 'number' || row.minValue !== '') && (
             <div style={{ fontSize: 12, color: 'var(--color-primary-dark)', fontStyle: 'italic', marginTop: 4 }}>

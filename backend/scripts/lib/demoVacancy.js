@@ -1,12 +1,12 @@
 // Creating a vacancy in the demo-data seeders the way HR does: upload an
-// EXCO-approved requisition that states the job, then create the vacancy
-// from the reviewed form. The requisition is generated to match the
+// EXCO-approved requisition that states the job and the scan of it as
+// signed, then create the vacancy from the reviewed form. The requisition is generated to match the
 // vacancy the seeder wants (scripts/lib/requisitionDocument.js), and each
 // one is distinct - a document can only ever open one vacancy.
 //
 // `api` is the seeder's own fetch helper: api(method, path, { token, json, form }).
 const prisma = require('../../src/config/db');
-const { buildRequisitionDocx, DEFAULT_SPEC } = require('./requisitionDocument');
+const { buildRequisitionDocx, buildScannedPdf, DEFAULT_SPEC } = require('./requisitionDocument');
 
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const CONTRACT_WORDING = { FullTime: 'Permanent and Pensionable', Contract: 'Contract', FixedTermContract: 'Fixed Term Contract' };
@@ -54,9 +54,12 @@ async function createVacancyFromRequisition(api, token, body) {
   const form = new FormData();
   form.append('document', new Blob([docx], { type: DOCX }), `Job Opening Request - ${spec.jobTitle}.docx`);
   const requisition = await api('POST', '/api/vacancies/requisition', { token, form });
+  const scan = new FormData();
+  scan.append('document', new Blob([buildScannedPdf(1)], { type: 'application/pdf' }), `Signed requisition - ${spec.jobTitle}.pdf`);
+  const signedCopy = await api('POST', '/api/vacancies/requisition/signed-copy', { token, form: scan });
   return api('POST', '/api/vacancies', {
     token,
-    json: { ...body, requisitionDocument: requisition.document, requisitionConfirmed: true }
+    json: { ...body, requisitionDocument: requisition.document, requisitionSignedCopy: signedCopy, requisitionConfirmed: true }
   });
 }
 

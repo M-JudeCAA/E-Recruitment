@@ -1,5 +1,4 @@
 const prisma = require('../config/db');
-const interviewService = require('./interviewService');
 const { AppError } = require('../utils/errorResponse');
 
 // ===========================================================================
@@ -42,7 +41,7 @@ const CLEARED_MERIT = {
 };
 
 const CANDIDATE_SELECT = { id: true, fullName: true, candidateType: true };
-const ROUNDS_INCLUDE = { include: { panelMembers: true }, orderBy: { roundNumber: 'asc' } };
+const ROUNDS_INCLUDE = { orderBy: { roundNumber: 'asc' } };
 
 // The round that speaks for a candidate: the most recent one that actually
 // took place. Cancelled and no-show rounds never happened, so they neither
@@ -100,7 +99,6 @@ function assignListStatus(orderedVerdicts, positionsRequired) {
 function toRow(app) {
   const outcome = interviewOutcome(app);
   const round = outcome?.round || latestHeldRound(app.interviewRounds);
-  const progress = round ? interviewService.panelProgress(round.panelMembers || []) : null;
   return {
     applicationId: app.id,
     candidateId: app.candidate.id,
@@ -114,9 +112,10 @@ function toRow(app) {
     roundId: round?.id ?? null,
     roundNumber: round?.roundNumber ?? null,
     roundStatus: round?.status ?? null,
-    panelProgress: progress,
-    highSpread: progress?.spread != null && progress.spread >= interviewService.HIGH_SPREAD,
-    criterionAverages: round ? interviewService.criterionAverages(round, round.panelMembers || []) : null,
+    // The panel's signed score sheet, for the reviewer to check the score
+    // and verdict against before approving the list.
+    scoreSheetUrl: round?.scoreSheetUrl ?? null,
+    scoreSheetName: round?.scoreSheetName ?? null,
     meritRank: app.meritRank,
     meritListStatus: app.meritListStatus,
     meritStatus: app.meritStatus,

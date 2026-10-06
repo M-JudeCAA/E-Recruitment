@@ -174,11 +174,11 @@ describe('delegationActivity', () => {
 });
 
 describe('panelWorkload', () => {
-  test('groups scored rounds by panelist name and averages the score', async () => {
+  test('counts the interviews each panelist sat on, and how many they chaired', async () => {
     prisma.panelMember.findMany.mockResolvedValue([
-      { name: 'Dr. Okello', score: 80 },
-      { name: 'Dr. Okello', score: 90 },
-      { name: 'Ms. Akello', score: 70 }
+      { name: 'Ms. Akello', isChair: false },
+      { name: 'Dr. Okello', isChair: true },
+      { name: 'Dr. Okello', isChair: false }
     ]);
 
     const req = { query: {} };
@@ -186,8 +186,8 @@ describe('panelWorkload', () => {
     await analyticsController.panelWorkload(req, res);
 
     expect(res.json).toHaveBeenCalledWith([
-      { name: 'Dr. Okello', roundsScored: 2, avgScore: 85 },
-      { name: 'Ms. Akello', roundsScored: 1, avgScore: 70 }
+      { name: 'Dr. Okello', interviews: 2, chaired: 1 },
+      { name: 'Ms. Akello', interviews: 1, chaired: 0 }
     ]);
   });
 });

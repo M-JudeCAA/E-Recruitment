@@ -5,6 +5,7 @@ import { AuthProvider } from './models/AuthContext';
 import { ConfirmProvider } from './components/ConfirmDialog';
 import App from './App.jsx';
 import './theme.css';
+import './workspace.css';
 
 createRoot(document.getElementById('root')).render(
   <BrowserRouter>

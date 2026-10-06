@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
+import { printFromApi } from '../utils/printDocument';
 import Card from './Card';
 import Button from './Button';
 import StatusBadge from './StatusBadge';
 import Modal from './Modal';
 import AuditTrail from './AuditTrail';
 import AccessLog from './AccessLog';
+import TagEditor from './TagEditor';
 import TextArea from './TextArea';
 import { fileLink } from '../utils/fileLink';
 import { safeJsonParse } from '../utils/safeJsonParse';
@@ -32,7 +34,7 @@ const NOT_REJECTABLE = ['Draft', 'Offered', 'Rejected', 'Withdrawn'];
 
 // One application's full review card - screening detail, verification,
 // interviews (a summary of each round, opening the shared round workspace -
-// scheduling, panel, scores and finalizing live there and in the Interview
+// scheduling, panel and recording results live there and in the Interview
 // Hub), offer actions, and reject.
 // Extracted out of VacancyDetail.jsx so both the cross-vacancy "All
 // vacancies" queue and the single-vacancy view in ApplicationManagement.jsx
@@ -148,6 +150,10 @@ export default function ApplicationReviewCard({
               &#9888; Possible duplicate of {app.possibleDuplicates.map((d) => `${d.candidateName} (#${d.applicationId})`).join(', ')} - same phone number
             </span>
           )}
+          {/* HR's tags on the candidate - clicks here mustn't fold the card. */}
+          <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 4 }}>
+            <TagEditor candidateId={app.candidate.id} tags={(app.candidate.tags || []).map((t) => t.tag || t)} />
+          </div>
           {app.screeningPassed === false && (
             <span title={safeJsonParse(app.screeningReasons, []).join('; ')}
               style={{ color: 'var(--color-warning)', marginLeft: 8, fontSize: 13 }}>
@@ -177,7 +183,7 @@ export default function ApplicationReviewCard({
           Cover letter: {app.coverLetterUrl ? <a href={fileLink(app.coverLetterUrl)} target="_blank" rel="noreferrer">view</a> : 'none'}
         </span>
       </div>
-      {[['Academic', 'Academic documents'], ['Other', 'Other documents']].map(([category, heading]) => {
+      {[['Academic', 'Academic documents'], ['Evidence', 'Evidence for screening'], ['Other', 'Other documents']].map(([category, heading]) => {
         const docs = (app.documents || []).filter((d) => d.category === category);
         if (docs.length === 0) return null;
         return (
@@ -197,6 +203,11 @@ export default function ApplicationReviewCard({
         <div style={{ fontSize: 13, color: 'var(--color-danger)', margin: '6px 0' }}>
           Rejected{app.rejectedBy?.name ? ` by ${app.rejectedBy.name}` : ''}{app.rejectedAt ? ` on ${new Date(app.rejectedAt).toLocaleDateString()}` : ''}
           {app.rejectionReason ? `: "${app.rejectionReason}"` : ''}
+          {' '}
+          <button type="button" onClick={async () => { const problem = await printFromApi(staffClient, `/api/documents/applications/${app.id}/regret-letter`); if (problem) setError(problem); }}
+            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
+            Regret letter
+          </button>
         </div>
       )}
 
@@ -328,8 +339,7 @@ export default function ApplicationReviewCard({
           )}
 
           {app.interviewRounds.map((r) => {
-            const active = (r.panelMembers || []).filter((p) => !p.recusedAt);
-            const scored = active.filter((p) => p.score != null).length;
+            const due = r.status === 'Scheduled' && r.scheduledDate && new Date(r.scheduledDate) <= new Date();
             return (
               <Card key={r.id} accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 13, minWidth: 0 }}>
@@ -337,8 +347,9 @@ export default function ApplicationReviewCard({
                   {' · '}{formatDateTime(r.scheduledDate)}
                   {' · '}{venueLabel(r)}
                   <div style={{ color: 'var(--color-text-muted)', marginTop: 2 }}>
-                    Panel {scored}/{active.length} scored
-                    {r.score != null && <> &middot; average {r.score.toFixed(1)}</>}
+                    Panel of {(r.panelMembers || []).length}
+                    {r.score != null && <> &middot; score {r.score}/100</>}
+                    {due && <> &middot; <span style={{ color: 'var(--color-warning)' }}>results to record</span></>}
                     {r.status === 'Scheduled' && r.candidateResponse && <> &middot; candidate: {ROUND_LABELS[r.candidateResponse]}</>}
                   </div>
                 </div>

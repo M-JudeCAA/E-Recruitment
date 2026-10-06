@@ -33,6 +33,10 @@ const STAMP_2 = String(STAMP % 100).padStart(2, '0');
 const PASSWORD = 'DemoPass123!';
 const POSITION_ID = 18; // Air Traffic Management Officer - trainnee, dept 37 (ATM/DANS), already Approved
 
+// Where demo applicants say they saw the advert (Source of Hire).
+const DEMO_SOURCES = ['UcaaWebsite', 'LinkedIn', 'Newspaper', 'HrPulse', 'LinkedIn', 'Referral', 'UcaaWebsite', 'SocialMedia'];
+let demoSourceIndex = 0;
+
 async function api(method, path, { token, json, form } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -108,8 +112,22 @@ async function submitApplication(candidateToken, { vacancyId, desirableResponses
   draftForm.append('disqualifyingResponses', JSON.stringify(disqualifyingResponses));
   draftForm.append('referees', refereesForm());
   const draft = await api('POST', '/api/applications', { token: candidateToken, form: draftForm });
-  const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: candidateToken, json: { consent: true } });
+  // Submission needs an academic document, and the evidence the vacancy asks
+  // for (the National ID for an age limit, a transcript for a minimum CGPA...).
+  await attachFile(candidateToken, draft.id, { category: 'Academic', label: 'Degree certificate' });
+  const { evidence = [] } = await api('GET', `/api/applications/eligibility/${vacancyId}`, { token: candidateToken });
+  for (const item of evidence.filter((e) => !e.provided)) {
+    await attachFile(candidateToken, draft.id, { category: 'Evidence', evidenceKey: item.key });
+  }
+  const submitted = await api('PATCH', `/api/applications/${draft.id}/submit`, { token: candidateToken, json: { consent: true, source: DEMO_SOURCES[demoSourceIndex++ % DEMO_SOURCES.length] } });
   return submitted;
+}
+
+async function attachFile(candidateToken, applicationId, fields) {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) form.append(key, value);
+  form.append('file', new Blob([Buffer.from('%PDF-1.4 seeded demo document')], { type: 'application/pdf' }), 'document.pdf');
+  return api('POST', `/api/applications/${applicationId}/documents`, { token: candidateToken, form });
 }
 
 async function main() {

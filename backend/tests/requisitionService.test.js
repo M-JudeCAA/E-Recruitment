@@ -32,6 +32,15 @@ async function store(buffer, ext = 'docx') {
   return { filename, originalname: 'Job Opening Request - HR Analyst.docx' };
 }
 
+// The scan of the signed requisition, as stored by the upload route.
+let signedCount = 0;
+function storeSigned(content = '%PDF-1.4 scanned signatures', ext = 'pdf') {
+  signedCount += 1;
+  const filename = `requisition-signed-00000000-0000-0000-0000-${String(signedCount).padStart(12, '0')}.${ext}`;
+  fs.writeFileSync(path.join(uploadDir, filename), content);
+  return { filename, originalName: 'Signed requisition.pdf' };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   prisma.department.findMany.mockResolvedValue(DEPARTMENTS);
@@ -140,8 +149,10 @@ describe('forCreate (step 2: creating the vacancy)', () => {
 
   test('re-reads the document itself and records it, with the fields HR changed from it', async () => {
     const file = await store(await buildRequisitionDocx());
+    const signed = storeSigned();
     const body = {
       requisitionDocument: { filename: file.filename, originalName: 'Job Opening Request.docx' }, requisitionConfirmed: true,
+      requisitionSignedCopy: signed,
       // As read, except the salary scale and the number of vacancies.
       departmentId: '1', positionId: '100', positionsRequired: 3, postingType: 'External', salaryScale: 'U4',
       location: 'UCAA Head Office — Entebbe', employmentCategory: 'FullTime', maximumAge: '40'
@@ -151,10 +162,47 @@ describe('forCreate (step 2: creating the vacancy)', () => {
 
     expect(columns).toEqual(expect.objectContaining({
       requisitionDocumentUrl: `/api/files/${file.filename}`, requisitionDocumentName: 'Job Opening Request.docx',
-      requisitionDocumentHash: expect.stringMatching(/^[0-9a-f]{64}$/), requisitionUploadedById: 7
+      requisitionDocumentHash: expect.stringMatching(/^[0-9a-f]{64}$/), requisitionUploadedById: 7,
+      requisitionSignedCopyUrl: `/api/files/${signed.filename}`, requisitionSignedCopyName: 'Signed requisition.pdf'
     }));
+    expect(columns.requisitionDetails.signedCopy.hash).toMatch(/^[0-9a-f]{64}$/);
     expect(columns.requisitionDetails.fields.jobTitle.value).toBe('HR Analyst');
     expect(columns.requisitionDetails.editedFields).toEqual(['positionsRequired', 'salaryScale']);
+  });
+});
+
+describe('the signed copy', () => {
+  const withDocument = async (requisitionSignedCopy) => ({
+    requisitionDocument: { filename: (await store(await buildRequisitionDocx())).filename },
+    requisitionConfirmed: true, requisitionSignedCopy
+  });
+
+  test('is required next to the readable document', async () => {
+    await expect(requisitionService.forCreate(await withDocument(undefined), 1)).rejects.toMatchObject({ status: 400, code: 'SIGNED_COPY_REQUIRED' });
+  });
+
+  test('must be a stored signed-copy upload - not the requisition itself, another file or a path', async () => {
+    const doc = await store(await buildRequisitionDocx());
+    for (const filename of [doc.filename, '../secrets.pdf', 'some-cv.pdf', 'requisition-signed-x.pdf']) {
+      await expect(requisitionService.forCreate(await withDocument({ filename }), 1)).rejects.toMatchObject({ status: 400 });
+    }
+    await expect(requisitionService.forCreate(await withDocument({ filename: 'requisition-signed-99999999-9999-9999-9999-999999999999.png' }), 1))
+      .rejects.toMatchObject({ status: 404 });
+  });
+
+  test('a readvertisement carries it over', () => {
+    const carried = requisitionService.carriedOver({ requisitionSignedCopyUrl: '/api/files/s.pdf', requisitionSignedCopyName: 'Signed.pdf' });
+    expect(carried).toEqual(expect.objectContaining({ requisitionSignedCopyUrl: '/api/files/s.pdf', requisitionSignedCopyName: 'Signed.pdf' }));
+  });
+
+  test('an empty upload is refused and removed', async () => {
+    const filename = 'requisition-signed-11111111-1111-1111-1111-111111111111.pdf';
+    fs.writeFileSync(path.join(uploadDir, filename), '');
+    await expect(requisitionService.storeSignedCopy({ filename, originalname: 'scan.pdf', mimetype: 'application/pdf', size: 0 }))
+      .rejects.toMatchObject({ status: 422 });
+    expect(fs.existsSync(path.join(uploadDir, filename))).toBe(false);
+    const stored = await requisitionService.storeSignedCopy({ filename: 'requisition-signed-x.pdf', originalname: 'Signed EXCO copy.pdf', mimetype: 'application/pdf', size: 12 });
+    expect(stored).toEqual({ filename: 'requisition-signed-x.pdf', url: '/api/files/requisition-signed-x.pdf', originalName: 'Signed EXCO copy.pdf', contentType: 'application/pdf', size: 12 });
   });
 });
 
@@ -193,7 +241,7 @@ describe('job description status (FR-ATS-018)', () => {
 
   test('creating on an unapproved JD needs the reason for the exception, and records it', async () => {
     const file = await store(await buildRequisitionDocx({ jdStatus: 'Not Approved' }));
-    const body = { requisitionDocument: { filename: file.filename }, requisitionConfirmed: true };
+    const body = { requisitionDocument: { filename: file.filename }, requisitionConfirmed: true, requisitionSignedCopy: storeSigned() };
     await expect(requisitionService.forCreate(body, 7)).rejects.toMatchObject({ status: 422, code: 'JD_NOT_APPROVED' });
     await expect(requisitionService.forCreate({ ...body, jdExceptionReason: 'short' }, 7)).rejects.toMatchObject({ code: 'JD_NOT_APPROVED' });
 

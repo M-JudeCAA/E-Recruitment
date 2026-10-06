@@ -17,7 +17,10 @@ const { escapeHtml } = require('../utils/interviewFormat');
 //      with a text layer - scans are refused), reads the job details out of
 //      it, matches them to the organogram, and hands back a pre-filled
 //      vacancy form with a confidence for every field (read()).
-//   2. HR reviews and corrects the form, confirms the EXCO approval, adds
+//   2. HR uploads the scan of the requisition as EXCO signed it
+//      (storeSignedCopy) - the document above carries the text, the scan
+//      the signatures, and both are kept on the vacancy.
+//   3. HR reviews and corrects the form, confirms the EXCO approval, adds
 //      the screening criteria by hand as before, and creates the vacancy.
 //      create() re-reads the stored document itself (forCreate()) - never
 //      trusting what the browser sends back as "what the document said" -
@@ -30,6 +33,7 @@ const { escapeHtml } = require('../utils/interviewFormat');
 
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || './uploads');
 const FILENAME_RE = /^requisition-[0-9a-f-]{36}\.(pdf|docx)$/;
+const SIGNED_COPY_FILENAME_RE = /^requisition-signed-[0-9a-f-]{36}\.(pdf|jpg|png)$/;
 const MIME_FOR_EXT = { pdf: PDF_MIME, docx: DOCX_MIME };
 const MAX_NAME_LENGTH = 191;
 
@@ -38,6 +42,15 @@ function storedPath(filename) {
   const filePath = path.join(uploadDir, filename);
   if (!filePath.startsWith(uploadDir + path.sep) || !fs.existsSync(filePath)) {
     throw new AppError('The uploaded requisition could not be found - upload the document again.', 404);
+  }
+  return filePath;
+}
+
+function signedCopyPath(filename) {
+  if (!SIGNED_COPY_FILENAME_RE.test(filename || '')) throw new AppError('That signed copy upload is not valid - upload the scan again.', 400);
+  const filePath = path.join(uploadDir, filename);
+  if (!filePath.startsWith(uploadDir + path.sep) || !fs.existsSync(filePath)) {
+    throw new AppError('The uploaded signed copy could not be found - upload the scan again.', 404);
   }
   return filePath;
 }
@@ -239,8 +252,22 @@ function editedFields(prefill, body) {
   return COMPARED_FIELDS.filter((key) => key in body && comparable(key, prefill[key]) !== comparable(key, body[key]));
 }
 
+// The scan of the signed requisition, just uploaded (multer has stored it).
+// Nothing is read from it; an empty file is refused.
+async function storeSignedCopy(file) {
+  if (!file.size) {
+    await fs.promises.rm(path.join(uploadDir, file.filename), { force: true }).catch(() => {});
+    throw new AppError('The signed copy is empty - scan it again.', 422);
+  }
+  return {
+    filename: file.filename, url: `/api/files/${file.filename}`,
+    originalName: String(file.originalname || 'signed requisition').slice(0, MAX_NAME_LENGTH),
+    contentType: file.mimetype, size: file.size
+  };
+}
+
 /**
- * Step 2 - at vacancy creation. Re-reads the stored document and returns the
+ * At vacancy creation. Re-reads the stored document and returns the
  * Vacancy columns that record it. Throws AppError (400/404/409/422).
  */
 async function forCreate(body, createdById) {
@@ -258,6 +285,13 @@ async function forCreate(body, createdById) {
   const stored = await readStored(doc.filename);
   const existing = await findVacancyWithHash(stored.hash);
   if (existing) throw duplicateError(existing);
+  const signed = body.requisitionSignedCopy;
+  if (!signed?.filename) {
+    const err = new AppError('Upload the scan of the requisition as EXCO signed it - it is kept with the vacancy as evidence of the approval.', 400);
+    err.code = 'SIGNED_COPY_REQUIRED';
+    throw err;
+  }
+  const signedHash = hashOf(await fs.promises.readFile(signedCopyPath(signed.filename)));
 
   // A JD that isn't approved needs an exception, with a reason; the
   // vacancy's approver must then authorise it (vacancyController.approve).
@@ -280,8 +314,11 @@ async function forCreate(body, createdById) {
     requisitionDocumentHash: stored.hash,
     requisitionUploadedAt: new Date(),
     requisitionUploadedById: createdById,
+    requisitionSignedCopyUrl: `/api/files/${signed.filename}`,
+    requisitionSignedCopyName: String(signed.originalName || signed.filename).slice(0, MAX_NAME_LENGTH),
     requisitionDetails: {
       format: stored.format,
+      signedCopy: { hash: signedHash },
       fields: stored.parsed.fields,
       missing: stored.parsed.missing,
       warnings: stored.parsed.warnings,
@@ -299,6 +336,8 @@ function carriedOver(vacancy) {
     requisitionDocumentName: vacancy.requisitionDocumentName,
     requisitionUploadedAt: vacancy.requisitionUploadedAt,
     requisitionUploadedById: vacancy.requisitionUploadedById,
+    requisitionSignedCopyUrl: vacancy.requisitionSignedCopyUrl,
+    requisitionSignedCopyName: vacancy.requisitionSignedCopyName,
     // A JD exception must be authorised afresh by whoever approves the
     // readvertisement.
     requisitionDetails: vacancy.requisitionDetails?.jdException
@@ -309,4 +348,7 @@ function carriedOver(vacancy) {
   };
 }
 
-module.exports = { read, forCreate, carriedOver, jdApproval, matchOrganogram, prefillFrom, jobPurposeHtml, editedFields, FILENAME_RE };
+module.exports = {
+  read, storeSignedCopy, forCreate, carriedOver, jdApproval, matchOrganogram, prefillFrom, jobPurposeHtml, editedFields,
+  FILENAME_RE, SIGNED_COPY_FILENAME_RE
+};

@@ -34,10 +34,13 @@ async function serve(req, res) {
     // files that aren't an application's (a requisition, say) aren't
     // candidate data.
     const application = await applicationModel.findByFileUrl(relativeUrl);
-    if (application) {
+    const scoredFor = application ? null : await applicationModel.findByScoreSheetUrl(relativeUrl);
+    if (application || scoredFor) {
+      const a = application || scoredFor;
       await accessLog.record(req, {
-        action: 'Opened a document', vacancyId: application.vacancyId, applicationId: application.id,
-        candidateIds: [application.candidateId], detail: { document: filename }
+        action: application ? 'Opened a document' : 'Opened an interview score sheet',
+        vacancyId: a.vacancyId, applicationId: a.id,
+        candidateIds: [a.candidateId], detail: { document: filename }
       });
     }
   } else if (req.user.type === 'candidate') {

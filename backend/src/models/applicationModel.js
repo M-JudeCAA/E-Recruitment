@@ -12,7 +12,9 @@ const CANDIDATE_SELECT = {
   location: true, districtOfOrigin: true, linkedinUrl: true, portfolioUrl: true,
   nationalId: true, dateOfBirth: true, flyingHours: true,
   education: true, workExperience: true, examGrades: true, certificates: true,
-  internalProfile: true
+  internalProfile: true,
+  // HR's tags on the candidate (talentController).
+  tags: { select: { tag: { select: { id: true, name: true } } } }
 };
 
 // Interview rounds as HR lists show them - with the panel, so a review card
@@ -32,6 +34,7 @@ const HR_LIST_INCLUDE = {
   },
   interviewRounds: HR_ROUNDS_INCLUDE,
   offer: true,
+  hire: { select: { id: true, caseRef: true, hiredAt: true } },
   rejectedBy: { select: { name: true } },
   documents: { orderBy: { uploadedAt: 'asc' } }
 };
@@ -93,6 +96,7 @@ module.exports = {
       candidate: { select: CANDIDATE_SELECT },
       interviewRounds: HR_ROUNDS_INCLUDE,
       offer: true,
+      hire: { select: { id: true, caseRef: true, hiredAt: true } },
       rejectedBy: { select: { name: true } },
       documents: { orderBy: { uploadedAt: 'asc' } }
     },
@@ -123,6 +127,11 @@ module.exports = {
     where: { OR: [{ cvUrl: url }, { coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] },
     select: { id: true, vacancyId: true, candidateId: true }
   }),
+  // The application whose interview score sheet this is (staff-only file).
+  findByScoreSheetUrl: (url) => prisma.application.findFirst({
+    where: { interviewRounds: { some: { scoreSheetUrl: url } } },
+    select: { id: true, vacancyId: true, candidateId: true }
+  }),
   findOwnedByCandidate: (candidateId, url) => prisma.application.findFirst({
     where: { candidateId, OR: [{ cvUrl: url }, { coverLetterUrl: url }, { documents: { some: { fileUrl: url } } }] }
   }),
@@ -147,7 +156,7 @@ module.exports = {
   findSchedulable: (vacancyId, statuses) => prisma.application.findMany({
     where: { vacancyId, status: { in: statuses }, offer: null, meritStatus: null },
     select: {
-      id: true, status: true, rank: true, listStatus: true, shortlistScore: true,
+      id: true, status: true, rank: true, listStatus: true, shortlistScore: true, excoApprovalId: true,
       candidate: { select: { id: true, fullName: true, email: true, candidateType: true } },
       interviewRounds: {
         select: { id: true, roundNumber: true, status: true, scheduledDate: true, recommendation: true },
@@ -161,9 +170,10 @@ module.exports = {
   findForSession: (vacancyId, ids) => prisma.application.findMany({
     where: { vacancyId, id: { in: ids } },
     select: {
-      id: true, status: true, candidateId: true, meritStatus: true,
+      id: true, status: true, candidateId: true, meritStatus: true, excoApprovalId: true,
       candidate: { select: { id: true, fullName: true } },
-      offer: { select: { id: true } }
+      offer: { select: { id: true } },
+      _count: { select: { interviewRounds: true } }
     }
   }),
   // Shortlisted with nothing scheduled yet - the Hub's "waiting to be

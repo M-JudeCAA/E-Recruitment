@@ -9,14 +9,17 @@ import TextField from '../TextField';
 import TextArea from '../TextArea';
 import Spinner from '../Spinner';
 import PanelEditor, { cleanPanel, emptyPanelist } from './PanelEditor';
-import RubricEditor from './RubricEditor';
 import {
   MODES, DEFAULT_DURATION, toLocalInput, fromLocalInput, formatDateTime, formatTime, formatDay,
   isWeekend, outsideWorkingHours, sameDay, CONFLICT_LABELS, errorMessage
 } from '../../utils/interviews';
 import { inputStyle, sectionLabel, hintText, chipStyle } from './formStyles';
 
-const STEPS = ['Candidates', 'When & where', 'Panel & rubric', 'Review'];
+const STEPS = ['Candidates', 'When & where', 'Panel', 'Review'];
+
+// A first interview waits for EXCO's signed approval of the shortlist
+// (backend excoShortlistController) - shown, but can't be ticked.
+const awaitingExco = (a) => !a.excoApprovalId && a.interviewRounds.length === 0;
 const DURATIONS = [15, 20, 30, 45, 60, 75, 90, 120, 180];
 
 // A sensible default start: the next weekday at 09:00.
@@ -46,9 +49,10 @@ function Stepper({ step }) {
 
 // Books interviews - one candidate or a whole session - for one vacancy.
 // Candidates are laid out back to back (duration + changeover gap, optional
-// daily cap that rolls over to the next weekday), share one panel and one
-// scoring rubric, and every slot is checked for clashes (candidate, panelist,
-// room) before anything is booked. presetVacancyId/presetApplicationIds open
+// daily cap that rolls over to the next weekday) and share one panel, and
+// every slot is checked for clashes (candidate, panelist, room) before
+// anything is booked. Candidates and panelists get calendar invitations by
+// email; the panel scores on paper and HR records the results afterwards. presetVacancyId/presetApplicationIds open
 // it straight on a vacancy with those candidates ticked (the review card's
 // "Schedule interview").
 export default function InterviewScheduler({ onClose, onScheduled, presetVacancyId, presetApplicationIds }) {
@@ -73,7 +77,6 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
   const [internalNotes, setInternalNotes] = useState('');
 
   const [panel, setPanel] = useState([emptyPanelist()]);
-  const [criteria, setCriteria] = useState([]);
 
   const [plan, setPlan] = useState(null);
   const [planning, setPlanning] = useState(false);
@@ -99,10 +102,12 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
         setContext(ctx);
         // Preselect: what the caller asked for, otherwise every Shortlisted
         // candidate with nothing booked yet.
+        // Nobody still waiting for EXCO's approval of the shortlist.
         const preset = presetApplicationIds?.length ? presetApplicationIds : null;
+        const ready = ctx.applications.filter((a) => !awaitingExco(a));
         setSelected(preset
-          ? ctx.applications.filter((a) => preset.includes(a.id)).map((a) => a.id)
-          : ctx.applications.filter((a) => a.status === 'Shortlisted' && !a.interviewRounds.some((r) => r.status === 'Scheduled')).map((a) => a.id));
+          ? ready.filter((a) => preset.includes(a.id)).map((a) => a.id)
+          : ready.filter((a) => a.status === 'Shortlisted' && !a.interviewRounds.some((r) => r.status === 'Scheduled')).map((a) => a.id));
         if (ctx.lastLogistics) {
           if (ctx.lastLogistics.durationMinutes) setDurationMinutes(ctx.lastLogistics.durationMinutes);
           if (ctx.lastLogistics.mode) setMode(ctx.lastLogistics.mode);
@@ -138,8 +143,7 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
     meetingLink: mode === 'Virtual' ? meetingLink : null,
     instructions,
     internalNotes,
-    panelMembers: cleanPanel(panel),
-    criteria: criteria.filter((c) => c.name.trim()).map((c) => ({ name: c.name.trim(), weight: Number(c.weight) || 1, description: c.description || undefined }))
+    panelMembers: cleanPanel(panel)
   });
 
   const stepError = () => {
@@ -156,8 +160,6 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
       if (cleanPanel(panel).length === 0) return 'Add at least one panelist';
       const badEmail = cleanPanel(panel).find((p) => p.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email));
       if (badEmail) return `"${badEmail.email}" is not a valid email`;
-      const badWeight = criteria.find((c) => c.name.trim() && !(Number.isInteger(Number(c.weight)) && c.weight >= 1 && c.weight <= 10));
-      if (badWeight) return `Weight for "${badWeight.name}" must be 1-10`;
     }
     return null;
   };
@@ -220,26 +222,14 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
           <div>
             <p style={{ marginTop: 0 }}>
               {done.rounds.length} interview{done.rounds.length === 1 ? '' : 's'} booked for {context?.vacancy.title}.
-              Each candidate has been notified and asked to confirm.
+              Each candidate has been sent a calendar invitation and asked to confirm.
             </p>
             <p style={hintText}>
               {done.panelEmailed > 0
-                ? `${done.panelEmailed} panelist${done.panelEmailed === 1 ? '' : 's'} emailed a calendar invite covering their slots.`
-                : 'No panelist was emailed (none had an email, or you chose not to).'}
-              {' '}Each panelist has one scoring link per interview day, covering every candidate they see that day; it is in
-              their invitation, and can be sent again from the Interview Hub.
+                ? `${done.panelEmailed} calendar invitation${done.panelEmailed === 1 ? '' : 's'} sent to the panel - one per panelist per day, covering all their interviews.`
+                : 'No panelist was emailed (none had an email, or you chose not to) - give them the times yourself.'}
+              {' '}After each interview, record the panel's results from the signed score sheet in the Interview Hub.
             </p>
-            {done.panelLinks?.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <span style={{ ...hintText, display: 'block', marginBottom: 4 }}>These panelists have no email - share their links by hand:</span>
-                {done.panelLinks.map((l) => (
-                  <div key={l.url} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
-                    <span style={{ fontSize: 13, width: 160, flexShrink: 0 }}>{l.name} · {l.dayLabel}</span>
-                    <input readOnly value={l.url} onFocus={(e) => e.target.select()} style={{ ...inputStyle, flex: 1, fontSize: 12 }} aria-label={`Scoring link for ${l.name}`} />
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       </Modal>
@@ -289,9 +279,10 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
                     {context.applications.map((a) => {
                       const booked = a.interviewRounds.filter((r) => r.status === 'Scheduled');
                       const last = a.interviewRounds[a.interviewRounds.length - 1];
+                      const waiting = awaitingExco(a);
                       return (
-                        <label key={a.id} style={{ display: 'flex', gap: 10, padding: '8px 10px', borderBottom: '1px solid var(--color-border)', cursor: 'pointer', alignItems: 'flex-start' }}>
-                          <input type="checkbox" checked={selected.includes(a.id)} onChange={() => toggle(a.id)} style={{ marginTop: 3 }} />
+                        <label key={a.id} style={{ display: 'flex', gap: 10, padding: '8px 10px', borderBottom: '1px solid var(--color-border)', cursor: waiting ? 'not-allowed' : 'pointer', alignItems: 'flex-start', opacity: waiting ? 0.6 : 1 }}>
+                          <input type="checkbox" checked={selected.includes(a.id)} disabled={waiting} onChange={() => toggle(a.id)} style={{ marginTop: 3 }} />
                           <span style={{ flex: 1, minWidth: 0 }}>
                             <span style={{ fontWeight: 600 }}>{a.candidate.fullName}</span>
                             {a.rank && <span style={{ ...hintText, marginLeft: 6 }}>#{a.rank} on the interview shortlist</span>}
@@ -299,6 +290,7 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
                               {a.status.replace(/([A-Z])/g, ' $1').trim()}
                               {booked.length > 0 && ` · already booked ${formatDateTime(booked[0].scheduledDate)}`}
                               {!booked.length && last && ` · round ${last.roundNumber} ${last.recommendation || last.status}`}
+                              {waiting && ' · waiting for EXCO to approve the shortlist'}
                             </span>
                           </span>
                         </label>
@@ -368,7 +360,6 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
       {step === 2 && (
         <div style={{ display: 'grid', gap: 24 }}>
           <PanelEditor value={panel} onChange={setPanel} suggestions={context?.previousPanelists} />
-          <RubricEditor value={criteria} onChange={setCriteria} previous={context?.lastCriteria} />
         </div>
       )}
 
@@ -379,7 +370,6 @@ export default function InterviewScheduler({ onClose, onScheduled, presetVacancy
             <span>{formatDateTime(plan.startsAt)} → {sameDay(plan.startsAt, plan.endsAt) ? formatTime(plan.endsAt) : formatDateTime(plan.endsAt)}</span>
             <span>{mode}{mode === 'In-person' && location ? ` · ${location}` : ''}</span>
             <span>{cleanPanel(panel).length} panelist{cleanPanel(panel).length === 1 ? '' : 's'}</span>
-            <span>{criteria.filter((c) => c.name.trim()).length ? `${criteria.filter((c) => c.name.trim()).length}-criterion rubric` : 'Overall score'}</span>
           </div>
           {warnings.map((w) => <Alert key={w} type="warning" message={w} />)}
 

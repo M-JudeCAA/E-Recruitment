@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  ChevronLeft, ChevronRight, CalendarPlus, MapPin, Video, Phone, AlertTriangle, Crown, Search, Trophy, PlayCircle
+  ChevronLeft, ChevronRight, CalendarPlus, MapPin, Video, Phone, Crown, Search, Trophy, FileText
 } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
@@ -18,11 +18,11 @@ import StatusBadge from '../components/StatusBadge';
 import LoadingState from '../components/LoadingState';
 import InterviewScheduler from '../components/interviews/InterviewScheduler';
 import InterviewRoundPanel from '../components/interviews/InterviewRoundPanel';
-import InterviewDayPanel from '../components/interviews/InterviewDayPanel';
 import { ROUND_LABELS, hintText, inputStyle, chipStyle } from '../components/interviews/formStyles';
 import {
-  startOfWeek, addDays, sameDay, formatDay, timeRange, venueLabel, formatDateTime, errorMessage
+  startOfWeek, addDays, sameDay, formatDay, timeRange, venueLabel, formatDateTime, errorMessage, resultsDue
 } from '../utils/interviews';
+import { fileLink } from '../utils/fileLink';
 import { debounce } from '../utils/debounce';
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK.
@@ -36,21 +36,18 @@ function toDateParam(d) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-// Before the interview, what matters is whether the candidate is coming; once
-// it has started, whether the panel has scored and the verdict is in.
+// Before the interview, what matters is whether the candidate is coming;
+// once it has taken place, that the panel's results get recorded.
 function RoundBadge({ round }) {
   if (round.status !== 'Scheduled') return <StatusBadge status={round.status} label={ROUND_LABELS[round.status]} />;
-  const started = round.scheduledDate && new Date(round.scheduledDate) <= new Date();
-  if (!started) return <StatusBadge status={round.candidateResponse} label={ROUND_LABELS[round.candidateResponse]} />;
-  return round.progress.complete
-    ? <StatusBadge status="Completed" label="Ready to finalize" />
-    : <StatusBadge status="Pending" label="Scores due" />;
+  if (resultsDue(round)) return <StatusBadge status="Pending" label="Results to record" />;
+  return <StatusBadge status={round.candidateResponse} label={ROUND_LABELS[round.candidateResponse]} />;
 }
 
 // One interview as a row - shared by the agenda and every attention bucket.
 function RoundRow({ round, onOpen, showDate = false }) {
   const app = round.application;
-  const { progress } = round;
+  const chair = round.panelMembers.find((m) => m.isChair);
   return (
     <button
       type="button" onClick={() => onOpen(round.id)} className="list-row"
@@ -71,11 +68,10 @@ function RoundRow({ round, onOpen, showDate = false }) {
           <span>{app.vacancy.jobRef} · {app.vacancy.title}</span>
           <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><ModeIcon mode={round.mode} /> {venueLabel(round)}</span>
           <span>
-            Panel {progress.scored}/{progress.total}
-            {round.panelMembers.find((m) => m.isChair) && <> · <Crown size={11} /> {round.panelMembers.find((m) => m.isChair).name}</>}
+            Panel of {round.panelMembers.length}
+            {chair && <> · <Crown size={11} /> {chair.name}</>}
           </span>
-          {round.score != null && <span>Avg {round.score}</span>}
-          {round.highSpread && <span style={{ color: 'var(--color-warning)', display: 'inline-flex', gap: 3, alignItems: 'center' }}><AlertTriangle size={12} /> split panel</span>}
+          {round.score != null && <span>Score {round.score}</span>}
         </span>
       </span>
       <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -96,10 +92,8 @@ function RoundList({ rounds, onOpen, showDate, empty }) {
 }
 
 // The day's interviews, with rounds booked together as one session shown
-// under a single session heading. Each vacancy interviewing that day gets a
-// "Run session" button - the day is run as a session HR starts, calls
-// candidates in during, and ends (InterviewDayPanel).
-function DayBlock({ day, rounds, onOpen, onOpenDay }) {
+// under a single session heading.
+function DayBlock({ day, rounds, onOpen }) {
   const groups = [];
   for (const r of rounds) {
     const last = groups[groups.length - 1];
@@ -116,15 +110,6 @@ function DayBlock({ day, rounds, onOpen, onOpenDay }) {
         <span>{formatDay(day)}{today ? ' · Today' : ''}</span>
         <span style={hintText}>{rounds.length} interview{rounds.length === 1 ? '' : 's'}</span>
       </div>
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '6px 12px', borderTop: '1px solid var(--color-border)' }}>
-        <span style={hintText}>Run session:</span>
-        {[...new Map(rounds.map((r) => [r.application.vacancy.id, r.application.vacancy])).values()].map((v) => (
-          <button key={v.id} type="button" style={chipStyle(today)} onClick={() => onOpenDay(v.id, toDateParam(day))}
-            title={`Start, run and end the interview session for ${v.title} on this day`}>
-            <PlayCircle size={12} /> {v.jobRef}
-          </button>
-        ))}
-      </div>
       {groups.map((g, i) => (
         <div key={g.sessionKey || `single-${i}`} style={g.sessionKey && g.rounds.length > 1 ? { borderLeft: '3px solid var(--color-primary)' } : undefined}>
           {g.sessionKey && g.rounds.length > 1 && (
@@ -139,7 +124,7 @@ function DayBlock({ day, rounds, onOpen, onOpenDay }) {
   );
 }
 
-function Agenda({ vacancies, onOpen, onOpenDay, reloadKey }) {
+function Agenda({ vacancies, onOpen, reloadKey }) {
   const [params, setParams] = useSearchParams();
   const weekStart = useMemo(() => startOfWeek(params.get('week') ? new Date(`${params.get('week')}T00:00:00`) : new Date()), [params]);
   const vacancyId = params.get('vacancyId') || '';
@@ -204,17 +189,16 @@ function Agenda({ vacancies, onOpen, onOpenDay, reloadKey }) {
       {rounds && rounds.length === 0 && (
         <Card><p style={{ margin: 0, color: 'var(--color-text-muted)' }}>No interviews {statusFilter ? 'booked' : ''} this week{vacancyId ? ' for this vacancy' : ''}.</p></Card>
       )}
-      {rounds && byDay.filter((d) => d.rounds.length).map((d) => <DayBlock key={d.day.toISOString()} day={d.day} rounds={d.rounds} onOpen={onOpen} onOpenDay={onOpenDay} />)}
+      {rounds && byDay.filter((d) => d.rounds.length).map((d) => <DayBlock key={d.day.toISOString()} day={d.day} rounds={d.rounds} onOpen={onOpen} />)}
     </div>
   );
 }
 
 const BUCKETS = [
   { key: 'rescheduleRequests', title: 'Candidates asking for another time', hint: 'Open one to reschedule it - the candidate\'s note says what suits them.', empty: 'No requests.' },
-  { key: 'readyToFinalize', title: 'Ready to finalize', hint: 'Every panel score is in. Finalize the recommendation so offers can move.', empty: 'Nothing waiting.' },
-  { key: 'awaitingScores', title: 'Scores outstanding', hint: 'The interview has happened but not every panelist has scored. Send links or record scores.', empty: 'All caught up.' },
+  { key: 'awaitingResults', title: 'Results to record', hint: 'The interview has taken place. Record the score and verdict from the panel\'s signed score sheet, or a no-show.', empty: 'All caught up.' },
   { key: 'unconfirmed', title: 'Not yet confirmed by the candidate (next 72 hours)', hint: 'Consider a call to make sure they are coming.', empty: 'Everyone upcoming has replied.' },
-  { key: 'noPanel', title: 'No panel yet', hint: 'Add panelists so they get the invite in time.', empty: 'Every interview has a panel.' },
+  { key: 'noPanel', title: 'No panel yet', hint: 'Add panelists so they get the calendar invitation in time.', empty: 'Every interview has a panel.' },
   { key: 'noDate', title: 'Date to be confirmed', hint: 'Booked without a time - reschedule to set one.', empty: 'None.' }
 ];
 
@@ -265,12 +249,6 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
       .catch((err) => setError(errorMessage(err, 'Could not load the scorecard')));
   }, [vacancyId, reloadKey]);
 
-  const criteriaNames = useMemo(() => {
-    const names = [];
-    for (const r of rows || []) for (const c of r.latestRound.criterionAverages || []) if (!names.includes(c.name)) names.push(c.name);
-    return names;
-  }, [rows]);
-
   return (
     <div>
       <Select label="Vacancy" value={vacancyId} onChange={(e) => {
@@ -289,7 +267,7 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
               The scorecard compares candidates; the <strong>merit list</strong> is where they are ranked on these results and
               who is offered the job is decided and approved.
             </span>
-            <Link to={`/hr/applications?vacancyId=${vacancyId}&stage=merit`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600 }}>
+            <Link to={`/hr/vacancy/${vacancyId}?tab=merit`} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, fontWeight: 600 }}>
               <Trophy size={14} /> Open merit list
             </Link>
           </div>
@@ -302,7 +280,7 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
               <tr>
-                {['#', 'Candidate', 'Latest round', 'Score', ...criteriaNames, 'Panel', 'Verdict', 'Merit list', 'Offer'].map((h) => (
+                {['#', 'Candidate', 'Latest round', 'Score', 'Verdict', 'Score sheet', 'Merit list', 'Offer'].map((h) => (
                   <th key={h} style={{ textAlign: 'left', padding: '8px 12px', borderBottom: '2px solid var(--color-border)', color: 'var(--color-text-muted)', fontSize: 12, whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -329,15 +307,17 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
                           </div>
                           <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{lr.score}</strong>
                         </div>
-                      ) : '—'}
-                      {lr.highSpread && <div style={{ fontSize: 11, color: 'var(--color-warning)' }}>panel split ({lr.progress.spread})</div>}
+                      ) : lr.resultsDue ? <span style={{ fontSize: 12, color: 'var(--color-warning)' }}>To record</span> : '—'}
                     </td>
-                    {criteriaNames.map((name) => {
-                      const c = (lr.criterionAverages || []).find((x) => x.name === name);
-                      return <td key={name} style={{ padding: '8px 12px', fontVariantNumeric: 'tabular-nums' }}>{c?.average ?? '—'}</td>;
-                    })}
-                    <td style={{ padding: '8px 12px' }}>{lr.progress.scored}/{lr.progress.total}</td>
                     <td style={{ padding: '8px 12px' }}>{lr.recommendation ? <StatusBadge status={lr.recommendation} /> : '—'}</td>
+                    <td style={{ padding: '8px 12px' }}>
+                      {lr.scoreSheetUrl ? (
+                        <a href={fileLink(lr.scoreSheetUrl)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                          style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }} title={lr.scoreSheetName || 'Signed score sheet'}>
+                          <FileText size={13} /> Open
+                        </a>
+                      ) : '—'}
+                    </td>
                     <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
                       {r.meritListStatus
                         ? <StatusBadge status={r.meritListStatus} label={`#${r.meritRank} ${r.meritListStatus}${r.meritStatus === 'Proposed' ? ' (proposed)' : ''}`} />
@@ -349,7 +329,7 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
               })}
             </tbody>
           </table>
-          {criteriaNames.length > 0 && <p style={{ ...hintText, padding: '8px 12px', margin: 0 }}>Rubric columns are panel averages on the 1-5 scale.</p>}
+          <p style={{ ...hintText, padding: '8px 12px', margin: 0 }}>Scores and verdicts are as recorded from the panels' signed score sheets.</p>
         </Card>
       )}
     </div>
@@ -366,8 +346,6 @@ export default function InterviewHub() {
   const [params, setParams] = useSearchParams();
   const tab = TABS.some(([k]) => k === params.get('tab')) ? params.get('tab') : 'agenda';
   const openRoundId = Number(params.get('round')) || null;
-  // ?session=<vacancyId>_<YYYY-MM-DD> - the interview session panel.
-  const [sessionVacancyId, sessionDay] = (params.get('session') || '').split('_');
 
   const [attention, setAttention] = useState(null);
   const [vacancies, setVacancies] = useState([]);
@@ -404,8 +382,7 @@ export default function InterviewHub() {
     { label: 'today', value: attention.counts.today, color: 'var(--color-primary)' },
     { label: 'in the next 7 days', value: attention.counts.next7Days },
     { label: 'confirmed by candidates', value: attention.counts.confirmed, color: 'var(--color-accent)' },
-    { label: 'awaiting scores', value: attention.awaitingScores.length, color: attention.awaitingScores.length ? 'var(--color-warning)' : undefined },
-    { label: 'ready to finalize', value: attention.readyToFinalize.length, color: attention.readyToFinalize.length ? 'var(--color-accent)' : undefined },
+    { label: 'results to record', value: attention.awaitingResults.length, color: attention.awaitingResults.length ? 'var(--color-warning)' : undefined },
     { label: 'reschedule requests', value: attention.rescheduleRequests.length, color: attention.rescheduleRequests.length ? 'var(--color-danger)' : undefined }
   ] : [];
 
@@ -414,7 +391,7 @@ export default function InterviewHub() {
       <HRSidebar active="interviews" />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-          <PageHeader title="Interview Hub" subtitle="Schedule, run and decide interviews across every vacancy" />
+          <PageHeader title="Interviews" subtitle="Every vacancy's interviews: the agenda, what needs attention, and the panels' results" />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <LiveIndicator connected={connected} />
             {canEdit && <Button onClick={() => setScheduler({})}><CalendarPlus size={16} /> Schedule interviews</Button>}
@@ -438,7 +415,7 @@ export default function InterviewHub() {
           ))}
         </div>
 
-        {tab === 'agenda' && <Agenda vacancies={vacancies} onOpen={(id) => setParam('round', id)} onOpenDay={(vacancyId, day) => setParam('session', `${vacancyId}_${day}`)} reloadKey={reloadKey} />}
+        {tab === 'agenda' && <Agenda vacancies={vacancies} onOpen={(id) => setParam('round', id)} reloadKey={reloadKey} />}
         {tab === 'attention' && <Attention data={attention} onOpen={(id) => setParam('round', id)} onSchedule={(vacancyId) => setScheduler({ vacancyId })} canEdit={canEdit} />}
         {tab === 'scorecards' && <Scorecards vacancies={vacancies} onOpen={(id) => setParam('round', id)} reloadKey={reloadKey} />}
       </div>
@@ -449,10 +426,6 @@ export default function InterviewHub() {
           onClose={() => setScheduler(null)}
           onScheduled={refresh}
         />
-      )}
-      {sessionVacancyId && sessionDay && !openRoundId && (
-        <InterviewDayPanel vacancyId={Number(sessionVacancyId)} day={sessionDay} canEdit={canEdit} reloadKey={reloadKey}
-          onClose={() => setParam('session', null)} onOpenRound={(id) => setParam('round', id)} onChanged={refresh} />
       )}
       {openRoundId && (
         <InterviewRoundPanel roundId={openRoundId} onClose={() => setParam('round', null)} onChanged={refresh} />

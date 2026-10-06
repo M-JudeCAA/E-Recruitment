@@ -10,7 +10,8 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 // system administrator (no HR role) on Staff accounts.
 export function staffHome(staff) {
   if (!staff?.role) return staff?.isSystemAdmin ? '/hr/staff-accounts' : '/staff/login';
-  return (ROLE_RANK[staff.role] || 0) >= ROLE_RANK.Manager ? '/hr/executive' : '/hr/home';
+  // Every HR role lands on the Inbox - what is waiting for them.
+  return '/hr/inbox';
 }
 
 // Guards the unauthenticated staff entry points (login, forgot/reset
@@ -58,6 +59,15 @@ export function RequireSystemAdmin({ children }) {
   const { staff } = useAuth();
   if (!staff) return <Navigate to="/staff/login" replace />;
   if (!staff.isSystemAdmin) return <Navigate to={staffHome(staff)} replace />;
+  return children;
+}
+
+// Settings & data - a system administrator, or Manager+ (backend:
+// requireSystemAdminOrRole).
+export function RequireSystemAdminOrRole({ minRole, children }) {
+  const { staff } = useAuth();
+  if (!staff) return <Navigate to="/staff/login" replace />;
+  if (!staff.isSystemAdmin && (ROLE_RANK[staff.role] || 0) < (ROLE_RANK[minRole] || 0)) return <Navigate to={staffHome(staff)} replace />;
   return children;
 }
 

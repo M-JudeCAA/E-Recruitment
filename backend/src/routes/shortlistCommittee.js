@@ -12,6 +12,13 @@ const router = express.Router();
 const read = [authenticate, requireStaffRole('HR_Officer')];
 const write = [authenticate, requireStaffRole('Senior_HR_Officer')];
 
+// The nomination: HR submits it; the DHRA (a Director) approves or returns it.
+const dhra = [authenticate, requireStaffRole('Director')];
+router.get('/nominations/pending', ...dhra, controller.pendingNominations);
+router.post('/vacancies/:vacancyId/nomination/submit', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.submitNomination);
+router.post('/vacancies/:vacancyId/nomination/approve', ...dhra, guardVacancy(vacancyFrom.param('vacancyId')), controller.approveNomination);
+router.post('/vacancies/:vacancyId/nomination/return', ...dhra, guardVacancy(vacancyFrom.param('vacancyId')), controller.returnNomination);
+
 router.get('/vacancies/:vacancyId', ...read, guardVacancy(vacancyFrom.param('vacancyId')), controller.get);
 router.post('/vacancies/:vacancyId', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.create);
 router.patch('/vacancies/:vacancyId', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.update);

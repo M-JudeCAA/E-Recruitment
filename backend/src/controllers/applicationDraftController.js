@@ -1,4 +1,5 @@
 const conflictOfInterest = require('../services/conflictOfInterestService');
+const { parseSource } = require('../utils/applicationSources');
 const { sendError } = require('../utils/errorResponse');
 const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
@@ -6,6 +7,7 @@ const candidateModel = require('../models/candidateModel');
 const workflow = require('../services/workflowService');
 const audit = require('../services/auditService');
 const applicationDocumentModel = require('../models/applicationDocumentModel');
+const evidence = require('../utils/screeningEvidence');
 const {
   screenApplication, scoreApplication, evaluateEssentialCriteria, assessEligibility
 } = require('../services/screeningService');
@@ -251,7 +253,8 @@ async function submit(req, res) {
     return res.status(422).json({ error: 'Please complete your profile before submitting an application' });
   }
 
-  if (await applicationDocumentModel.countByApplication(applicationId, 'Academic') === 0) {
+  const documents = await applicationDocumentModel.findByApplication(applicationId);
+  if (!documents.some((d) => d.category === 'Academic')) {
     return res.status(400).json({ error: 'Please upload at least one academic document (certificate or transcript) before submitting' });
   }
 
@@ -272,6 +275,15 @@ async function submit(req, res) {
       code: 'NOT_ELIGIBLE', reasons: eligibility.reasons
     });
   }
+  // What screening relied on must be backed by evidence: the National ID
+  // for an age limit, a certificate or licence for a question answered Yes.
+  const missing = evidence.missingEvidence(evidence.evidenceRequirements(vacancy, evidence.answersOf(application)), documents);
+  if (missing.length > 0) {
+    return res.status(400).json({
+      error: `Please upload the evidence for: ${missing.map((m) => m.label).join('; ')}`,
+      code: 'EVIDENCE_REQUIRED', missing
+    });
+  }
 
   // Every submitted application carries its screening result from the
   // start. If HR has already opened this vacancy's review queue
@@ -284,6 +296,8 @@ async function submit(req, res) {
   const data = {
     status: vacancy.reviewStartedAt ? 'UnderReview' : 'Submitted', submittedDate: new Date(),
     consentGivenAt: new Date(), consentNoticeVersion: PRIVACY_NOTICE_VERSION,
+    // Where they saw the advert - optional, for the Source of Hire report.
+    ...parseSource(req.body),
     screeningPassed: screening.passed, screeningReasons: JSON.stringify(screening.reasons), screenedAt: new Date(),
     fieldOfStudyMatch: screening.fieldOfStudyMatch,
     shortlistScore: score.score, shortlistScoreReasons: JSON.stringify(score.reasons),
@@ -395,14 +409,19 @@ async function eligibility(req, res) {
     applicationModel.findFirst({ vacancyId, candidateId: req.user.id })
   ]);
   const result = assessEligibility(application, candidate, vacancy);
-  const academicDocuments = application
-    ? await applicationDocumentModel.countByApplication(application.id, 'Academic')
-    : 0;
-  res.json({ ...result, academicDocuments });
+  const documents = application ? await applicationDocumentModel.findByApplication(application.id) : [];
+  const requirements = evidence.evidenceRequirements(vacancy, evidence.answersOf(application));
+  const missing = new Set(evidence.missingEvidence(requirements, documents).map((r) => r.key));
+  res.json({
+    ...result,
+    academicDocuments: documents.filter((d) => d.category === 'Academic').length,
+    evidence: requirements.map((r) => ({ ...r, provided: !missing.has(r.key) }))
+  });
 }
 
-const DOCUMENT_CATEGORIES = ['Academic', 'Other'];
+const DOCUMENT_CATEGORIES = ['Academic', 'Other', 'Evidence'];
 const MAX_DOCUMENTS_PER_CATEGORY = 10;
+const MAX_DOCUMENTS_PER_EVIDENCE = 5;
 
 // Loads an application for a document change: must be the caller's own and
 // still a Draft - once submitted, what HR received is fixed.
@@ -429,12 +448,25 @@ async function addDocument(req, res) {
   if (!DOCUMENT_CATEGORIES.includes(category)) {
     return res.status(400).json({ error: `Document category must be one of: ${DOCUMENT_CATEGORIES.join(', ')}` });
   }
-  if (await applicationDocumentModel.countByApplication(application.id, category) >= MAX_DOCUMENTS_PER_CATEGORY) {
+  let evidenceKey = null;
+  let label = (req.body.label || '').trim().slice(0, 150) || null;
+  if (category === 'Evidence') {
+    // Filed under one of this vacancy's evidence requirements, labelled
+    // with it so HR sees what it is meant to prove.
+    evidenceKey = String(req.body.evidenceKey || '');
+    const vacancy = await vacancyModel.findById(application.vacancyId);
+    const requirement = evidence.KEY_RE.test(evidenceKey) ? evidence.requirementFor(vacancy, evidenceKey) : null;
+    if (!requirement) return res.status(400).json({ error: 'Say which requirement this document is evidence for' });
+    const mine = await applicationDocumentModel.findByApplication(application.id);
+    if (mine.filter((d) => d.evidenceKey === evidenceKey).length >= MAX_DOCUMENTS_PER_EVIDENCE) {
+      return res.status(422).json({ error: `You can attach at most ${MAX_DOCUMENTS_PER_EVIDENCE} documents for one requirement` });
+    }
+    label = requirement.label.slice(0, evidence.MAX_LABEL);
+  } else if (await applicationDocumentModel.countByApplication(application.id, category) >= MAX_DOCUMENTS_PER_CATEGORY) {
     return res.status(422).json({ error: `You can attach at most ${MAX_DOCUMENTS_PER_CATEGORY} documents of this kind` });
   }
-  const label = (req.body.label || '').trim().slice(0, 150) || null;
   const document = await applicationDocumentModel.create({
-    applicationId: application.id, category, label,
+    applicationId: application.id, category, label, evidenceKey,
     fileUrl: fileUrl(req.file), originalName: req.file.originalname.slice(0, 190)
   });
   res.status(201).json(document);

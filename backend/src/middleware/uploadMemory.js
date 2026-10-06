@@ -20,4 +20,19 @@ const uploadMemory = multer({
   limits: { fileSize: MAX_FILE_SIZE }
 });
 
-module.exports = { uploadMemory };
+// Org-structure import (orgImportService.js): an Excel workbook or CSV,
+// read in memory and never stored. Browsers report CSV under several types,
+// so it's checked by extension.
+const SPREADSHEET_MAX_SIZE = 2 * 1024 * 1024;
+const uploadSpreadsheet = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    if (!/\.(xlsx|csv)$/i.test(file.originalname || '')) {
+      return cb(new AppError('Upload an Excel workbook (.xlsx) or a CSV file (.csv)', 400));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: SPREADSHEET_MAX_SIZE }
+});
+
+module.exports = { uploadMemory, uploadSpreadsheet };

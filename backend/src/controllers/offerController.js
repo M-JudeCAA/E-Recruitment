@@ -5,6 +5,7 @@ const slaModel = require('../models/slaModel');
 const vacancyModel = require('../models/vacancyModel');
 const workflow = require('../services/workflowService');
 const offerService = require('../services/offerService');
+const hiringManagers = require('../services/hiringManagerService');
 const audit = require('../services/auditService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { notify, notifyAllWithRole } = require('../services/notificationService');
@@ -212,6 +213,21 @@ async function loadOwnIssuedOffer(req, res, verb) {
   return existing;
 }
 
+async function candidateName(candidateId) {
+  return (await prisma.candidate.findUnique({ where: { id: candidateId }, select: { fullName: true } }))?.fullName || 'the candidate';
+}
+
+// The hiring manager hears when an issued offer isn't taken up, and who
+// moves up from the reserve list.
+async function notifyHiringManagerOfRelease(offer, outcome, promoted) {
+  await safely(`hiring manager update for offer ${offer.id}`, async () => {
+    const promotedName = promoted ? await candidateName(promoted.candidateId) : null;
+    await hiringManagers.notify(offer.application.vacancy, 'offerNotTaken', {
+      candidateName: await candidateName(offer.application.candidateId), outcome, promotedName
+    });
+  });
+}
+
 async function accept(req, res) {
   const existing = await loadOwnIssuedOffer(req, res, 'accepted');
   if (!existing) return;
@@ -251,6 +267,13 @@ async function accept(req, res) {
       `${describeVacancy(vacancy)} is now filled, but ${openOffers.length} other offer${openOffers.length === 1 ? ' is' : 's are'} still open: ${names}. `
       + 'They can no longer be accepted. Withdraw them, or raise the number of positions if more hires are wanted.');
   });
+  await safely(`hiring manager update for offer ${offerId}`, async () => {
+    const vacancy = await vacancyModel.findById(offer.application.vacancyId);
+    await hiringManagers.notify(vacancy, 'offerAccepted', {
+      candidateName: await candidateName(offer.application.candidateId),
+      startDate: offer.startDate, filled: vacancy?.status === 'Filled'
+    });
+  });
   broadcastDashboardEvent('OfferAccepted', { offerId });
   // The candidate is the caller - candidate-safe shapes only.
   res.json({
@@ -275,6 +298,7 @@ async function decline(req, res) {
   });
   await offerService.notifyPositionReleased('OfferDeclined', existing.id, existing.application.vacancy, existing.applicationId,
     `was declined${reason ? ` (reason given: ${escapeHtml(reason)})` : ''}`, result.promoted);
+  await notifyHiringManagerOfRelease(existing, 'declined', result.promoted);
   broadcastDashboardEvent('OfferDeclined', { offerId: existing.id });
   // result.promoted is another applicant's row - never returned to this candidate.
   res.json({ message: 'Offer declined' });
@@ -314,6 +338,7 @@ async function withdraw(req, res) {
       + (reason ? ` Reason given: ${escapeHtml(reason)}` : '')
       + ' Please contact HR if you have any questions.'));
   }
+  if (existing.status === 'Approved') await notifyHiringManagerOfRelease(existing, 'withdrawn', result.promoted);
   broadcastDashboardEvent('OfferWithdrawn', { offerId });
   res.json({ ...(await offerModel.findById(offerId)), promotedApplicationId: result.promoted?.id || null });
 }

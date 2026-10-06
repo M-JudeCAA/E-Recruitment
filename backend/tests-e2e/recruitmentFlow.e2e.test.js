@@ -1,6 +1,8 @@
+const request = require('supertest');
 const {
-  prisma, resetDatabase, createStaff, createOrg, createCandidate,
-  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition
+  prisma, app, resetDatabase, createStaff, createOrg, createCandidate,
+  staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition, recordInterviewResults,
+  attachExcoApproval
 } = require('./helpers');
 
 // The whole recruitment lifecycle through the real API and a real database:
@@ -65,14 +67,13 @@ async function shortlistAndInterview(vacancyId, applicationIds, interviewIds = a
     .map((a) => [a.id, a.rankVersion]));
   expectStatus(await api(tokens.shro).post(`/api/vacancies/${vacancyId}/rank`, { applicationIds, applicationRankVersions: versions }), 200);
   expectStatus(await api(tokens.phro).post(`/api/applications/vacancies/${vacancyId}/approve-shortlist`), 200);
+  expectStatus(await attachExcoApproval(tokens.shro, vacancyId), 201);
 
   for (const applicationId of interviewIds) {
     const round = expectStatus(await api(tokens.shro).post(`/api/interviews/applications/${applicationId}/interviews`, {
       scheduledDate: inDays(3), mode: 'In person', panelMembers: [{ name: 'Panelist One', trade: 'HR', email: 'panel@caa.co.ug' }]
     }), 201).body;
-    const [panelMember] = await prisma.panelMember.findMany({ where: { interviewRoundId: round.id } });
-    expectStatus(await api(tokens.shro).patch(`/api/interviews/panel-members/${panelMember.id}/score`, { score: 82 }), 200);
-    expectStatus(await api(tokens.shro).patch(`/api/interviews/${round.id}/finalize`, { recommendation: 'Shortlist' }), 200);
+    expectStatus(await recordInterviewResults(tokens.hro, round.id, { score: 82, recommendation: 'Shortlist' }), 200);
   }
   if (merit) await proposeAndApproveMeritList(vacancyId, interviewIds);
 }
@@ -137,7 +138,29 @@ test('carries a vacancy from creation to an accepted hire', async () => {
   expect(mine[0].offer.recommendedById).toBeUndefined();
   expect(mine[0].meritListStatus).toBeUndefined();
 
+  // Seeing it was viewing it; the offer letter comes from the template.
+  expect((await prisma.offer.findUnique({ where: { id: offer.id } })).viewedAt).not.toBeNull();
+  const letter = expectStatus(await api(a.token).get(`/api/candidates/me/offers/${offer.id}/letter`), 200).body;
+  expect(letter.html).toContain('OFFER OF EMPLOYMENT AS');
+  expect(letter.html).toContain('Alice Nakato');
+  expect(letter.html).toContain('5,200,000');
+  expect((await api(b.token).get(`/api/candidates/me/offers/${offer.id}/letter`)).status).toBe(404); // not hers
+  expect((await api(tokens.hro).get(`/api/documents/offers/${offer.id}/appointment`)).status).toBe(422); // not accepted yet
+
   expectStatus(await api(a.token).patch(`/api/applications/offers/${offer.id}/accept`), 200);
+
+  // HR prints the appointing instrument, in HR's own wording once a Manager edits it.
+  expect((await api(tokens.hro).put('/api/documents/templates/appointmentInstrument', { body: '<p>x</p>' })).status).toBe(403);
+  const bad = await api(tokens.manager).put('/api/documents/templates/appointmentInstrument', { body: '<p>{{candidateNme}}</p>' });
+  expect(bad.body.code).toBe('UNKNOWN_PLACEHOLDERS');
+  expectStatus(await api(tokens.manager).put('/api/documents/templates/appointmentInstrument', {
+    body: '<p>We appoint {{candidateName}} as {{jobTitle}} from {{startDate}}.</p>'
+  }), 200);
+  const appointment = expectStatus(await api(tokens.hro).get(`/api/documents/offers/${offer.id}/appointment`), 200).body;
+  expect(appointment.html).toMatch(/^<p>We appoint Alice Nakato as .+ from \d{1,2} \w+ \d{4}\.<\/p>$/);
+  expect(await prisma.dataAccessLog.count({ where: { action: 'Printed an appointing instrument' } })).toBe(1);
+  expectStatus(await api(tokens.manager).delete('/api/documents/templates/appointmentInstrument'), 200);
+  expect(expectStatus(await api(tokens.hro).get(`/api/documents/offers/${offer.id}/appointment`), 200).body.html).toContain('RE: APPOINTMENT AS');
 
   const filled = await prisma.vacancy.findUnique({ where: { id: vacancy.id } });
   expect(filled.status).toBe('Filled');
@@ -307,4 +330,41 @@ test('a staff member who applies is shut out of that vacancy, and only that one'
   // The Principal HR Officers were told.
   const notices = await prisma.notification.findMany({ where: { taskType: 'StaffApplicantConflict', channel: 'InApp' } });
   expect(notices.map((n) => n.recipientId).sort()).toEqual([staff.phro.id, staff.phro2.id].sort());
+});
+
+test('a claim screening relies on needs its evidence before the application can be sent', async () => {
+  const created = expectStatus(await createVacancyFromRequisition(tokens.hro, {
+    positionId: org.position.id, postingType: 'External', deadline: inDays(30), positionsRequired: 1, minimumExperienceYears: 2,
+    disqualifyingRequirements: [{ text: 'Do you hold a valid HR practising certificate?', requiredAnswer: 'Yes', evidenceRequired: true, evidenceLabel: 'Your HR practising certificate' }]
+  }), 201).body;
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${created.id}/approve`), 200);
+  const question = created.disqualifyingRequirements[0];
+  expect(question).toEqual(expect.objectContaining({ evidenceRequired: true, evidenceLabel: 'Your HR practising certificate' }));
+
+  const candidate = await createCandidate({ fullName: 'Ivy Ikiriza', email: 'ivy@example.com' });
+  const token = await candidateToken(candidate.email);
+  const draft = expectStatus(await api(token).post('/api/applications', {
+    vacancyId: created.id, referees: REFEREES, disqualifyingResponses: JSON.stringify([{ id: question.id, answer: true }])
+  }), 201).body;
+  await attachAcademicDocument(token, draft.id);
+
+  const eligibility = expectStatus(await api(token).get(`/api/applications/eligibility/${created.id}`), 200).body;
+  expect(eligibility.evidence.map((e) => [e.key, e.provided])).toEqual([['experience', false], [`question:${question.id}`, false]]);
+  const refused = await api(token).patch(`/api/applications/${draft.id}/submit`, { consent: true });
+  expect(refused.status).toBe(400);
+  expect(refused.body.code).toBe('EVIDENCE_REQUIRED');
+
+  const attach = (evidenceKey) => request(app).post(`/api/applications/${draft.id}/documents`).set('Authorization', `Bearer ${token}`)
+    .field('category', 'Evidence').field('evidenceKey', evidenceKey)
+    .attach('file', Buffer.from('%PDF-1.4 evidence'), { filename: 'evidence.pdf', contentType: 'application/pdf' });
+  expect((await attach('nationalId')).status).toBe(400); // this vacancy has no age limit
+  expectStatus(await attach('experience'), 201);
+  const certificate = expectStatus(await attach(`question:${question.id}`), 201).body;
+  expect(certificate.label).toBe('Your HR practising certificate');
+
+  expectStatus(await api(token).patch(`/api/applications/${draft.id}/submit`, { consent: true }), 200);
+  // HR sees the evidence with the application.
+  const listed = expectStatus(await api(tokens.hro).get(`/api/vacancies/${created.id}/applications`), 200).body;
+  const mine = (Array.isArray(listed) ? listed : listed.data).find((a) => a.id === draft.id);
+  expect(mine.documents.filter((d) => d.category === 'Evidence').map((d) => d.evidenceKey).sort()).toEqual(['experience', `question:${question.id}`].sort());
 });

@@ -29,6 +29,9 @@ async function loadMember(req, res) {
   const { status } = member.exercise;
   if (status === 'Setup') { res.status(410).json({ error: 'Rating has not opened yet - HR will let you know' }); return null; }
   if (status === 'Closed') { res.status(410).json({ error: 'This shortlisting exercise has closed. Thank you.' }); return null; }
+  if (member.exercise.accessExpiresAt && new Date(member.exercise.accessExpiresAt) <= new Date()) {
+    res.status(410).json({ error: 'Access to this shortlisting exercise has ended. Please contact HR if you still need it.' }); return null;
+  }
   return member;
 }
 

@@ -7,6 +7,7 @@ import Card from '../components/Card';
 import Avatar from '../components/Avatar';
 import ProgressRing from '../components/ProgressRing';
 import ProfileCompletionForm from '../components/ProfileCompletionForm';
+import YourDataCard from '../components/YourDataCard';
 import Skeleton from '../components/Skeleton';
 import { getProfileCompletionPercent } from '../utils/profileCompleteness';
 import { candidateFileSrc } from '../utils/fileSrc';
@@ -77,6 +78,8 @@ export default function CandidateProfile() {
           <Card accent="var(--color-primary)">
             <ProfileCompletionForm />
           </Card>
+
+          <YourDataCard />
         </div>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Crown, Link2, Mail, CalendarClock, MapPin, Video, Phone, Download, AlertTriangle, UserMinus, Trash2, PenLine, Users
+  Crown, Mail, CalendarClock, MapPin, Video, Phone, Download, AlertTriangle, Trash2, PenLine, Users, FileText, ClipboardCheck, Printer
 } from 'lucide-react';
 import staffClient from '../../models/staffApiClient';
 import { useAuth } from '../../models/AuthContext';
@@ -12,28 +12,21 @@ import TextField from '../TextField';
 import TextArea from '../TextArea';
 import StatusBadge from '../StatusBadge';
 import Spinner from '../Spinner';
-import ScoreForm, { validateScore } from './ScoreForm';
-import RubricEditor from './RubricEditor';
 import {
-  MODES, formatDateTime, timeRange, formatDay, venueLabel, toLocalInput, fromLocalInput,
-  saveCalendarFile, CONFLICT_LABELS, errorMessage, HIGH_SPREAD
+  MODES, VERDICTS, formatDateTime, timeRange, formatDay, venueLabel, toLocalInput, fromLocalInput,
+  saveCalendarFile, CONFLICT_LABELS, errorMessage
 } from '../../utils/interviews';
-import { inputStyle, sectionLabel, hintText, chipStyle, ROUND_LABELS } from './formStyles';
+import { fileLink } from '../../utils/fileLink';
+import { validateSupportingDocumentFile } from '../../utils/fileValidation';
+import { printFromApi } from '../../utils/printDocument';
+import { sectionLabel, hintText, chipStyle, ROUND_LABELS } from './formStyles';
 
 // Matches backend/src/middleware/auth.js's ROLE_RANK - changing an interview
-// is Senior HR Officer+, reading it is any HR tier.
+// is Senior HR Officer+; reading it, and recording the panel's results, any
+// HR tier.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 
 const ModeIcon = ({ mode, size = 15 }) => (mode === 'Virtual' ? <Video size={size} /> : mode === 'Phone' ? <Phone size={size} /> : <MapPin size={size} />);
-
-function ProgressBar({ scored, total }) {
-  const pct = total ? Math.round((scored / total) * 100) : 0;
-  return (
-    <div aria-label={`${scored} of ${total} panel scores in`} style={{ height: 8, borderRadius: 999, background: 'var(--color-bg-subtle)', overflow: 'hidden', flex: 1, minWidth: 80 }}>
-      <div style={{ width: `${pct}%`, height: '100%', background: pct === 100 ? 'var(--color-accent)' : 'var(--color-primary)' }} />
-    </div>
-  );
-}
 
 function ConflictList({ conflicts }) {
   return (
@@ -49,6 +42,8 @@ function ConflictList({ conflicts }) {
 
 // One interview round, end to end. Opened from the Interview Hub, the review
 // card, or a ?round= link. onChanged lets the opener refresh its own list.
+// The panel scores on paper, outside the system; HR records the overall
+// score, the panel's verdict and the signed score sheet here afterwards.
 export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
   const { staff } = useAuth();
   const canEdit = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
@@ -59,7 +54,7 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(null);
   const [tab, setTab] = useState('panel');
-  // Sub-views that replace the main content: score | reschedule | cancel | noShow | finalize | recuse | addPanelist
+  // Sub-views that replace the main content: results | reschedule | cancel | noShow | addPanelist
   const [view, setView] = useState(null);
   const [target, setTarget] = useState(null);
 
@@ -98,9 +93,8 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
   };
 
   // --- form state for the sub-views ---
-  const [ratings, setRatings] = useState({});
   const [scoreValue, setScoreValue] = useState('');
-  const [comments, setComments] = useState('');
+  const [sheet, setSheet] = useState(null);
   const [newDate, setNewDate] = useState('');
   const [newDuration, setNewDuration] = useState('');
   const [reason, setReason] = useState('');
@@ -110,17 +104,15 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
   const [notes, setNotes] = useState('');
   const [newPanelist, setNewPanelist] = useState({ name: '', trade: '', email: '', isChair: false });
   const [details, setDetails] = useState(null);
-  const [linkResults, setLinkResults] = useState(null);
 
   const open = (v, t = null) => {
     setError(''); setNotice(''); setConflicts(null); setReason(''); setNotes(''); setTarget(t); setView(v);
-    if (v === 'score') {
-      setRatings(t?.criterionScores || {}); setScoreValue(t?.score ?? ''); setComments(t?.comments || '');
+    if (v === 'results') {
+      setScoreValue(round.score ?? ''); setRecommendation(round.recommendation || ''); setNotes(round.resultNotes || ''); setSheet(null);
     }
     if (v === 'reschedule') {
       setNewDate(toLocalInput(round.scheduledDate)); setNewDuration(round.durationMinutes || 60); setNotifyPanel(true);
     }
-    if (v === 'finalize') setRecommendation(round.score != null && round.score >= 60 ? 'Shortlist' : 'Hold');
     if (v === 'addPanelist') setNewPanelist({ name: '', trade: '', email: '', isChair: false });
   };
 
@@ -129,7 +121,7 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
       setDetails({
         durationMinutes: round.durationMinutes || 60, mode: round.mode || 'In-person', location: round.location || '',
         meetingLink: round.meetingLink || '', instructions: round.instructions || '', internalNotes: round.internalNotes || '',
-        criteria: round.criteria || [], notifyParticipants: true
+        notifyParticipants: true
       });
     }
   }, [round, tab]);
@@ -144,8 +136,15 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
   const app = round.application;
   const scheduled = round.status === 'Scheduled';
   const started = round.scheduledDate && new Date(round.scheduledDate) <= new Date();
-  const anyScored = round.panelMembers.some((m) => m.score != null);
-  const { progress } = round;
+  const canRecord = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.HR_Officer;
+  const hasResults = round.status === 'Completed';
+  // Matches recordResults on the backend: a rejection is final, and nothing
+  // changes under a merit list or an offer.
+  const correctionBlocker = !hasResults ? null
+    : round.recommendation === 'Reject' ? 'A rejection is final - the candidate has been told.'
+      : app.offer ? 'This candidate has an offer, so the results can no longer be corrected.'
+        : app.meritStatus ? 'This candidate is on the merit list - re-propose the list without them before correcting their results.'
+          : null;
 
   const downloadIcs = async () => {
     try {
@@ -156,12 +155,20 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
     }
   };
 
-  const submitScore = () => {
-    const problem = validateScore(round.criteria, ratings, scoreValue);
-    if (problem) { setError(problem); return; }
-    act('score', () => staffClient.patch(`/api/interviews/panel-members/${target.id}/score`, round.criteria
-      ? { criterionScores: ratings, comments }
-      : { score: Number(scoreValue), comments }), `Score recorded for ${target.name}.`);
+  const submitResults = async () => {
+    const score = Number(scoreValue);
+    if (scoreValue === '' || !Number.isFinite(score) || score < 0 || score > 100) { setError('Enter the overall score, from 0 to 100'); return; }
+    if (!recommendation) { setError('Choose the panel\'s verdict'); return; }
+    if (!hasResults && !sheet) { setError('Attach the signed score sheet'); return; }
+    const body = new FormData();
+    body.append('score', String(score));
+    body.append('recommendation', recommendation);
+    body.append('notes', notes);
+    if (sheet) body.append('scoreSheet', sheet);
+    await act('results', () => staffClient.patch(`/api/interviews/${round.id}/results`, body),
+      hasResults ? 'Results corrected.'
+        : recommendation === 'Reject' ? 'Results recorded. The application has been rejected and the candidate told.'
+          : `Results recorded: ${recommendation}. ${app.candidate.fullName} can now go on the merit list.`);
   };
 
   const submitReschedule = async (force = false) => {
@@ -180,25 +187,11 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
     }
   };
 
-  const sendLinks = () => act('links', async () => {
-    const res = await staffClient.post(`/api/interviews/${round.id}/access-links`);
-    setLinkResults(res.data.results);
-    return res.data.results;
-  }, (results) => `Scoring links sent to ${results.filter((r) => r.emailed).length} panelist(s) by email.`
-    + (results.some((r) => !r.emailed) ? ' Share the links below with the others.' : ''));
-
-  const sendOneLink = (m) => act(`link-${m.id}`, async () => {
-    const res = await staffClient.post(`/api/interviews/panel-members/${m.id}/access-link`);
-    setLinkResults(res.data.emailed ? null : [{ panelMemberId: m.id, name: m.name, emailed: false, url: res.data.url }]);
-    return res.data;
-  }, (data) => (data.emailed ? `A new scoring link for the day was emailed to ${m.name}. Their earlier link no longer works.` : `${m.name} has no email - share the link below.`));
-
   const saveDetails = () => act('details', () => staffClient.patch(`/api/interviews/${round.id}`, {
     durationMinutes: Number(details.durationMinutes), mode: details.mode,
     location: details.mode === 'In-person' ? details.location : null,
     meetingLink: details.mode === 'Virtual' ? details.meetingLink : null,
     instructions: details.instructions, internalNotes: details.internalNotes,
-    ...(anyScored ? {} : { criteria: details.criteria.filter((c) => c.name.trim()).map((c) => ({ id: c.id, name: c.name.trim(), weight: Number(c.weight) || 1, description: c.description || undefined })) }),
     notifyParticipants: details.notifyParticipants
   }), 'Details saved.');
 
@@ -222,11 +215,14 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
             : venueLabel(round)}
         </span>
         <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <Users size={15} /> {progress.total} panelist{progress.total === 1 ? '' : 's'}{round.scheduledBy ? ` · booked by ${round.scheduledBy.name}` : ''}
+          <Users size={15} /> {round.panelMembers.length} panelist{round.panelMembers.length === 1 ? '' : 's'}{round.scheduledBy ? ` · booked by ${round.scheduledBy.name}` : ''}
         </span>
       </div>
       {round.candidateResponse === 'RescheduleRequested' && round.candidateResponseNote && (
         <Alert type="warning" message={`The candidate asked to move this interview: "${round.candidateResponseNote}"`} />
+      )}
+      {round.resultsDue && (
+        <Alert type="warning" message="This interview has taken place. Record the panel's results from the signed score sheet, or record a no-show if the candidate didn't attend." />
       )}
       {round.status === 'Cancelled' && <Alert type="info" message={`Cancelled${round.cancelledBy ? ` by ${round.cancelledBy.name}` : ''}: ${round.cancellationReason || ''}`} />}
       {round.otherRounds?.length > 0 && (
@@ -242,17 +238,39 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
   let footer;
   const back = <Button variant="ghost" onClick={() => { setView(null); setError(''); }} disabled={!!busy}>Back</Button>;
 
-  if (view === 'score') {
+  if (view === 'results') {
+    const pickSheet = (e) => {
+      const file = e.target.files?.[0] || null;
+      const problem = validateSupportingDocumentFile(file);
+      if (problem) { setError(problem); setSheet(null); e.target.value = ''; return; }
+      setError(''); setSheet(file);
+    };
     body = (
       <>
-        <p style={{ ...hintText, marginTop: 0 }}>
-          Recording {target.name}'s scores on their behalf - no login needed for them. Any scoring link they hold stops working.
+        <p style={{ ...hintText, marginTop: 0, fontSize: 13 }}>
+          {hasResults
+            ? 'Correct what was entered from the score sheet. The change is kept in the audit trail.'
+            : <>Enter the results from the panel's signed score sheet for {app.candidate.fullName}. <em>Reject</em> rejects the application and tells the candidate; <em>Shortlist</em> and <em>Hold</em> make them eligible for the merit list.</>}
         </p>
-        <ScoreForm criteria={round.criteria} ratings={ratings} onRatingsChange={setRatings}
-          score={scoreValue} onScoreChange={setScoreValue} comments={comments} onCommentsChange={setComments} />
+        <TextField label="Overall score (out of 100)" type="number" min="0" max="100" step="0.1" required value={scoreValue}
+          onChange={(e) => setScoreValue(e.target.value)} hint="As on the score sheet - usually the average of the panelists' totals" />
+        <span style={sectionLabel}>Panel's verdict</span>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 16 }} role="radiogroup" aria-label="Panel's verdict">
+          {VERDICTS.filter((r) => !hasResults || r !== 'Reject').map((r) => (
+            <button key={r} type="button" role="radio" aria-checked={recommendation === r} onClick={() => setRecommendation(r)} style={chipStyle(recommendation === r)}>{r}</button>
+          ))}
+        </div>
+        <TextArea label="Panel's remarks (optional, HR only)" value={notes} onChange={(e) => setNotes(e.target.value)} />
+        <label style={sectionLabel} htmlFor="score-sheet">
+          Signed score sheet{hasResults ? ' (only to replace the one attached)' : ''}{!hasResults && <span style={{ color: 'var(--color-danger)' }}> *</span>}
+        </label>
+        <input id="score-sheet" type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={pickSheet} style={{ fontSize: 14, marginBottom: 4 }} />
+        <div style={hintText}>A scan or photo of the sheet the panel signed - PDF, Word, JPG or PNG, up to 10MB.{hasResults && round.scoreSheetName ? ` Attached now: ${round.scoreSheetName}.` : ''}</div>
       </>
     );
-    footer = <>{back}<Button onClick={submitScore} loading={busy === 'score'}>Save score</Button></>;
+    footer = <>{back}<Button onClick={submitResults} loading={busy === 'results'} variant={recommendation === 'Reject' ? 'danger' : 'primary'}>
+      {hasResults ? 'Save correction' : recommendation === 'Reject' ? 'Record results and reject' : 'Record results'}
+    </Button></>;
   } else if (view === 'reschedule') {
     body = (
       <>
@@ -277,7 +295,7 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
   } else if (view === 'cancel') {
     body = (
       <>
-        <p style={{ marginTop: 0 }}>The candidate goes back to where they were before this round, and every outstanding scoring link stops working.</p>
+        <p style={{ marginTop: 0 }}>The candidate goes back to where they were before this round. They and the panel get a calendar cancellation.</p>
         <TextArea label="Reason" required value={reason} onChange={(e) => setReason(e.target.value)} hint="Kept in the audit trail and shared with the candidate" />
       </>
     );
@@ -294,34 +312,6 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
     );
     footer = <>{back}<Button variant="danger" loading={busy === 'noShow'}
       onClick={() => act('noShow', () => staffClient.patch(`/api/interviews/${round.id}/no-show`, { notes }), 'Recorded as a no-show.')}>Record no-show</Button></>;
-  } else if (view === 'finalize') {
-    body = (
-      <>
-        {!progress.complete && <Alert type="warning" message={`Only ${progress.scored} of ${progress.total} panel scores are in. You can still finalize, but the average may change the picture.`} />}
-        {round.highSpread && <Alert type="warning" message={`The panel's scores are ${progress.spread} points apart - worth a word with the chair before deciding.`} />}
-        <p style={{ marginTop: 0 }}>
-          Panel average <strong>{round.score != null ? round.score : '—'}</strong>. The recommendation is your judgement informed by the panel, not an automatic cut-off.
-          {' '}<em>Reject</em> rejects the application and tells the candidate; <em>Shortlist</em> makes them eligible for an offer recommendation.
-        </p>
-        <div style={{ display: 'flex', gap: 6, marginBottom: 16 }} role="radiogroup" aria-label="Recommendation">
-          {['Shortlist', 'Hold', 'Reject'].map((r) => (
-            <button key={r} type="button" role="radio" aria-checked={recommendation === r} onClick={() => setRecommendation(r)} style={chipStyle(recommendation === r)}>{r}</button>
-          ))}
-        </div>
-        <TextArea label="Notes for the record (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </>
-    );
-    footer = <>{back}<Button loading={busy === 'finalize'} variant={recommendation === 'Reject' ? 'danger' : 'primary'}
-      onClick={() => act('finalize', () => staffClient.patch(`/api/interviews/${round.id}/finalize`, { recommendation, notes }), `Recommendation finalized: ${recommendation}.`)}>Finalize: {recommendation}</Button></>;
-  } else if (view === 'recuse') {
-    body = (
-      <>
-        <p style={{ marginTop: 0 }}>{target.name} stands down for this candidate (e.g. a declared conflict of interest). Their score, if any, stops counting and their link stops working.</p>
-        <TextArea label="Reason" required value={reason} onChange={(e) => setReason(e.target.value)} />
-      </>
-    );
-    footer = <>{back}<Button variant="danger" loading={busy === 'recuse'} disabled={!reason.trim()}
-      onClick={() => act('recuse', () => staffClient.patch(`/api/interviews/panel-members/${target.id}/recuse`, { reason }), `${target.name} has stood down.`)}>Stand down</Button></>;
   } else if (view === 'addPanelist') {
     body = (
       <>
@@ -350,117 +340,69 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
     footer = <>{back}<Button loading={busy === 'add'} disabled={!newPanelist.name.trim()} onClick={() => addPanelist(!!conflicts)}>{conflicts ? 'Add anyway' : 'Add panelist'}</Button></>;
   } else {
     // -------------------------------------------------------- main view
-    const panelTab = (
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 14 }}><strong>{progress.scored}</strong> of {progress.total} scores in</span>
-          <ProgressBar scored={progress.scored} total={progress.total} />
-          <span style={{ fontSize: 14 }}>Average <strong>{round.score != null ? round.score : '—'}</strong></span>
-          {round.highSpread && (
-            <span style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 12, color: 'var(--color-warning)' }}>
-              <AlertTriangle size={13} /> Panel disagrees ({progress.spread} pts apart, flag at {HIGH_SPREAD})
-            </span>
+    const resultsBlock = hasResults && (
+      <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '12px 14px', marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 22, fontWeight: 700 }}>{round.score ?? '—'}<span style={{ ...hintText, fontWeight: 400 }}> /100</span></span>
+          {round.recommendation && <StatusBadge status={round.recommendation} label={round.recommendation} />}
+          {round.scoreSheetUrl && (
+            <a href={fileLink(round.scoreSheetUrl)} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 14 }}>
+              <FileText size={14} /> Signed score sheet
+            </a>
           )}
         </div>
+        {round.resultNotes && <div style={{ fontSize: 14, marginTop: 8, fontStyle: 'italic' }}>"{round.resultNotes}"</div>}
+        <div style={{ ...hintText, marginTop: 6 }}>
+          Recorded{round.conductedBy ? ` by ${round.conductedBy.name}` : ''}{round.resultsRecordedAt ? ` · ${formatDateTime(round.resultsRecordedAt)}` : ''}
+        </div>
+        {canRecord && (
+          correctionBlocker
+            ? <div style={{ ...hintText, marginTop: 6 }}>{correctionBlocker}</div>
+            : <button type="button" style={{ ...chipStyle(false), marginTop: 8 }} onClick={() => open('results')}><PenLine size={12} /> Correct results</button>
+        )}
+      </div>
+    );
 
+    const panelTab = (
+      <div>
+        {resultsBlock}
+        <p style={{ ...hintText, marginTop: 0 }}>
+          Panelists with an email get a calendar invitation for their interviews that day, updated if anything changes. They score on the paper score sheet.
+        </p>
         {round.panelMembers.length === 0 && <p style={hintText}>No panel yet. Add who will sit on it.</p>}
-        {round.panelMembers.map((m) => {
-          const recused = !!m.recusedAt;
-          return (
-            <div key={m.id} style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: 8, opacity: recused ? 0.65 : 1 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, display: 'flex', gap: 6, alignItems: 'center' }}>
-                    {m.isChair && <Crown size={14} color="var(--color-gold-dark)" aria-label="Chair" />}
-                    {m.name}{m.trade && <span style={{ ...hintText, fontWeight: 400 }}>· {m.trade}</span>}
-                  </div>
-                  <div style={hintText}>
-                    {m.email || 'No email on file'}
-                    {!recused && m.score == null && m.activeLinkExpiresAt && <> · scoring link sent (works until {formatDateTime(m.activeLinkExpiresAt)})</>}
-                  </div>
+        {round.panelMembers.map((m) => (
+          <div key={m.id} style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', marginBottom: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 600, display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {m.isChair && <Crown size={14} color="var(--color-gold-dark)" aria-label="Chair" />}
+                  {m.name}{m.trade && <span style={{ ...hintText, fontWeight: 400 }}>· {m.trade}</span>}
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  {recused && <StatusBadge status="Cancelled" label="Stood down" />}
-                  {!recused && m.score != null && (
-                    <span style={{ fontSize: 18, fontWeight: 700 }}>{m.score}<span style={{ ...hintText, fontWeight: 400 }}> /100</span></span>
-                  )}
-                  {!recused && m.score == null && <StatusBadge status="Pending" label="Awaiting score" />}
+                <div style={{ ...hintText, display: 'flex', gap: 4, alignItems: 'center' }}>
+                  {m.email ? <><Mail size={11} /> {m.email}</> : 'No email - give them the details yourself'}
                 </div>
               </div>
-              {recused && <div style={{ ...hintText, marginTop: 4 }}>Reason: {m.recusalReason}</div>}
-              {!recused && m.score != null && (
-                <div style={{ fontSize: 13, marginTop: 6 }}>
-                  {round.criteria && m.criterionScores && (
-                    <div style={{ ...hintText, marginBottom: 4 }}>
-                      {round.criteria.map((c) => `${c.name}: ${m.criterionScores[c.id] ?? '—'}/5`).join(' · ')}
-                    </div>
-                  )}
-                  {m.comments && <div style={{ fontStyle: 'italic' }}>"{m.comments}"</div>}
-                  <div style={hintText}>{m.selfSubmitted ? 'Submitted by the panelist' : 'Recorded by HR'}{m.submittedAt ? ` · ${formatDateTime(m.submittedAt)}` : ''}</div>
-                </div>
-              )}
-              {canEdit && scheduled && !recused && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
-                  <button type="button" style={chipStyle(false)} onClick={() => open('score', m)}><PenLine size={12} /> {m.score == null ? 'Record score' : 'Correct score'}</button>
-                  {m.score == null && (
-                    <button type="button" style={chipStyle(false)} disabled={busy === `link-${m.id}`} onClick={() => sendOneLink(m)}>
-                      {m.email ? <Mail size={12} /> : <Link2 size={12} />} {busy === `link-${m.id}` ? 'Sending...' : m.activeLinkExpiresAt ? 'Resend link' : 'Send scoring link'}
-                    </button>
-                  )}
+              {canEdit && scheduled && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {!m.isChair && (
                     <button type="button" style={chipStyle(false)} onClick={() => act(`chair-${m.id}`, () => staffClient.patch(`/api/interviews/panel-members/${m.id}`, { isChair: true }), `${m.name} now chairs the panel.`)}>
                       <Crown size={12} /> Make chair
                     </button>
                   )}
-                  <button type="button" style={chipStyle(false)} onClick={() => open('recuse', m)}><UserMinus size={12} /> Stand down</button>
-                  {m.score == null && (
-                    <button type="button" style={{ ...chipStyle(false), color: 'var(--color-danger)' }}
-                      onClick={() => act(`remove-${m.id}`, () => staffClient.delete(`/api/interviews/panel-members/${m.id}`), `${m.name} removed from the panel.`)}>
-                      <Trash2 size={12} /> Remove
-                    </button>
-                  )}
+                  <button type="button" style={{ ...chipStyle(false), color: 'var(--color-danger)' }}
+                    onClick={() => act(`remove-${m.id}`, () => staffClient.delete(`/api/interviews/panel-members/${m.id}`),
+                      `${m.name} removed from the panel.${m.email ? ' Their calendar has been updated.' : ''}`)}>
+                    <Trash2 size={12} /> Remove
+                  </button>
                 </div>
               )}
             </div>
-          );
-        })}
-
-        {linkResults?.some((r) => !r.emailed) && (
-          <div style={{ background: 'var(--color-bg-subtle)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', marginBottom: 8 }}>
-            <span style={sectionLabel}>Links to share by hand - each covers every candidate that panelist interviews on this day, and works only on the day</span>
-            {linkResults.filter((r) => !r.emailed).map((r) => (
-              <div key={r.panelMemberId} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
-                <span style={{ fontSize: 13, width: 140, flexShrink: 0 }}>{r.name}</span>
-                <input readOnly value={r.url} onFocus={(e) => e.target.select()} style={{ ...inputStyle, flex: 1, fontSize: 12 }} aria-label={`Scoring link for ${r.name}`} />
-                <button type="button" style={chipStyle(false)} onClick={() => navigator.clipboard?.writeText(r.url)}>Copy</button>
-              </div>
-            ))}
           </div>
-        )}
-
-        {round.criterionAverages?.some((c) => c.average != null) && (
-          <div style={{ marginTop: 12 }}>
-            <span style={sectionLabel}>Rubric averages (1-5)</span>
-            {round.criterionAverages.map((c) => (
-              <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 4 }}>
-                <span style={{ width: 180, flexShrink: 0 }}>{c.name} <span style={hintText}>×{c.weight}</span></span>
-                <div style={{ flex: 1, height: 8, background: 'var(--color-bg-subtle)', borderRadius: 999 }}>
-                  <div style={{ width: `${((c.average || 0) / 5) * 100}%`, height: '100%', borderRadius: 999, background: 'var(--color-primary)' }} />
-                </div>
-                <span style={{ width: 32, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{c.average ?? '—'}</span>
-              </div>
-            ))}
-          </div>
-        )}
+        ))}
 
         {canEdit && scheduled && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
             <Button variant="secondary" onClick={() => open('addPanelist')}>Add panelist</Button>
-            {round.panelMembers.some((m) => m.score == null && !m.recusedAt) && (
-              <Button variant="secondary" onClick={sendLinks} loading={busy === 'links'}>
-                <Mail size={14} /> Send scoring links to everyone outstanding
-              </Button>
-            )}
           </div>
         )}
       </div>
@@ -481,7 +423,6 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
         {details.mode === 'Virtual' && <TextField label="Meeting link" value={details.meetingLink} disabled={!canEdit || !scheduled} onChange={(e) => setDetails({ ...details, meetingLink: e.target.value })} />}
         <TextArea label="Instructions for the candidate" value={details.instructions} disabled={!canEdit || !scheduled} onChange={(e) => setDetails({ ...details, instructions: e.target.value })} />
         <TextArea label="Internal notes (HR only)" value={details.internalNotes} disabled={!canEdit || !scheduled} onChange={(e) => setDetails({ ...details, internalNotes: e.target.value })} />
-        <RubricEditor value={details.criteria} onChange={(criteria) => setDetails({ ...details, criteria })} disabled={!canEdit || !scheduled || anyScored} />
         {canEdit && scheduled && (
           <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, marginTop: 12 }}>
             <input type="checkbox" checked={details.notifyParticipants} onChange={(e) => setDetails({ ...details, notifyParticipants: e.target.checked })} />
@@ -495,7 +436,7 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
       <>
         {header}
         <div role="tablist" style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--color-border)', marginBottom: 12 }}>
-          {[['panel', 'Panel & scores'], ['details', 'Details']].map(([key, label]) => (
+          {[['panel', hasResults ? 'Results & panel' : 'Panel'], ['details', 'Details']].map(([key, label]) => (
             <button key={key} role="tab" aria-selected={tab === key} type="button" onClick={() => setTab(key)} style={{
               background: 'none', border: 'none', padding: '8px 12px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14,
               borderBottom: `2px solid ${tab === key ? 'var(--color-primary)' : 'transparent'}`,
@@ -512,24 +453,32 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
         {round.scheduledDate && round.status !== 'NoShow' && (
           <Button variant="ghost" onClick={downloadIcs} title="Download a calendar file"><Download size={14} /> .ics</Button>
         )}
+        {round.scheduledDate && scheduled && (
+          <Button variant="ghost" title="Print a formal invitation letter for the candidate"
+            onClick={async () => { const problem = await printFromApi(staffClient, `/api/documents/interviews/${round.id}/invitation`); if (problem) setError(problem); }}>
+            <Printer size={14} /> Letter
+          </Button>
+        )}
         {canEdit && scheduled && tab === 'details' && <Button onClick={saveDetails} loading={busy === 'details'}>Save details</Button>}
         {canEdit && scheduled && tab === 'panel' && (
           <>
             <Button variant="ghost" onClick={() => open('cancel')}>Cancel</Button>
             {started && <Button variant="ghost" onClick={() => open('noShow')}>No-show</Button>}
             <Button variant="secondary" onClick={() => open('reschedule')}>Reschedule</Button>
-            <Button onClick={() => open('finalize')} disabled={progress.scored === 0} title={progress.scored === 0 ? 'Needs at least one panel score' : undefined}>
-              Finalize
-            </Button>
           </>
+        )}
+        {canRecord && scheduled && tab === 'panel' && (
+          <Button onClick={() => open('results')} disabled={!started} title={started ? undefined : 'Once the interview has taken place'}>
+            <ClipboardCheck size={14} /> Record results
+          </Button>
         )}
       </div>
     );
   }
 
   const titles = {
-    score: `Score — ${target?.name}`, reschedule: 'Reschedule interview', cancel: 'Cancel interview', noShow: 'Record a no-show',
-    finalize: 'Finalize the panel\'s recommendation', recuse: `Stand down — ${target?.name}`, addPanelist: 'Add a panelist'
+    results: hasResults ? 'Correct the interview results' : 'Record the interview results',
+    reschedule: 'Reschedule interview', cancel: 'Cancel interview', noShow: 'Record a no-show', addPanelist: 'Add a panelist'
   };
 
   return (

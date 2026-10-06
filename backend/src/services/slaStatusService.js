@@ -61,7 +61,7 @@ async function getPendingTasks(taskType) {
     return rows.map((o) => ({
       id: o.id, since: o.recommendedDate,
       label: `${o.application.candidate.fullName} — ${o.application.vacancy.title}`,
-      to: `/hr/applications?vacancyId=${o.application.vacancyId}`
+      to: `/hr/vacancy/${o.application.vacancyId}?tab=merit`
     }));
   }
   return [];

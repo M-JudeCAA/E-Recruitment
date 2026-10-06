@@ -9,6 +9,9 @@ module.exports = {
   // frontend can group by directorate then department without a second
   // round trip per position.
   findAllForDropdown: () => prisma.position.findMany({
+    // Only positions in approved departments: an imported position waits
+    // under its department until that department is approved.
+    where: { department: { status: 'Approved' } },
     include: { department: { include: { directorate: true } } },
     orderBy: [
       { department: { directorate: { name: 'asc' } } },

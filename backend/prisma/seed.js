@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { DEMO_STAFF } = require('../scripts/lib/demoStaff');
 
 // DEVELOPMENT DATA ONLY. Real staff sign in with their UCAA Microsoft
 // account and have no password; these demo accounts get one so they can be
@@ -15,18 +16,11 @@ async function main() {
   }
   const password = await bcrypt.hash('ChangeMe123!', 10);
 
-  // The DHRA HR team (department 'HR' for every one of them), plus an
-  // accounts-only system administrator. departmentId (the FK actually used
-  // for admin vacancy scoping) is backfilled onto these accounts by
+  // The DHRA HR team plus an accounts-only system administrator
+  // (scripts/lib/demoStaff.js). departmentId (the FK actually used for admin
+  // vacancy scoping) is backfilled onto these accounts by
   // scripts/seedDepartments.js, once the real Department rows exist.
-  const staff = [
-    { name: 'Alice HR', email: 'hro@caa.co.ug', role: 'HR_Officer', department: 'HR' },
-    { name: 'Sam Senior', email: 'shro@caa.co.ug', role: 'Senior_HR_Officer', department: 'HR' },
-    { name: 'Brian Principal', email: 'phro@caa.co.ug', role: 'Principal_HR_Officer', department: 'HR' },
-    { name: 'Mary Manager', email: 'manager@caa.co.ug', role: 'Manager', department: 'HR' },
-    { name: 'Carol Director', email: 'dhra@caa.co.ug', role: 'Director', department: 'HR' },
-    { name: 'Ivan Admin', email: 'admin@caa.co.ug', role: null, isSystemAdmin: true, department: 'ICT' }
-  ];
+  const staff = DEMO_STAFF;
 
   for (const s of staff) {
     await prisma.staffUser.upsert({
