@@ -58,6 +58,8 @@ No frontend test suite exists yet.
 
 `.github/workflows/ci.yml` runs on push/PR to `main`/`develop`: backend job does `npm install && npx prisma generate && npm test`; backend-e2e job runs `npm run test:e2e` against a MySQL 8 service container; frontend job does `npm install && npm run build`. All must pass.
 
+**CD**: a push to `main` that passes CI goes live on the test (UAT) server within ~5 minutes - pulled, not pushed: `deploy/lan/auto-deploy.ps1` (scheduled task, SYSTEM) asks GitHub's public API for the newest successful `ci.yml` run on `main` and runs `deploy/lan/update-uat.ps1 -Commit <sha>` (pause app, `npm ci`, `db:prepare`, build to `dist-next` and swap, resume); a failed deploy rolls back to the previous commit. No self-hosted runner (public repo). Merging to `main` is therefore a release to testers - new migrations included. See [deploy/lan/README.md](deploy/lan/README.md).
+
 ## Architecture
 
 ### MVC-ish split, backend and frontend use matching vocabulary

@@ -14,10 +14,16 @@ reachable from UCAA's network only:
 
 ## How it fits together
 
-- **Its own folder.** The test copy lives in its own folder (a git worktree,
-  e.g. `E:\eRecruitment-UAT`) with its own `backend\.env` and `frontend\.env`.
-  Development on the same machine doesn't change what testers see until
-  someone runs `update-uat.ps1` there.
+- **What's on `main` goes live.** Every push to `main` runs CI on GitHub
+  (unit tests, end-to-end tests, frontend build). Every 5 minutes the task
+  `UCAA e-Recruitment UAT deploy` runs `auto-deploy.ps1`, which asks GitHub
+  for the newest `main` commit whose CI passed and, if it isn't live yet,
+  deploys it with `update-uat.ps1`. A commit that fails CI is never deployed.
+  See [Automatic deployment](#automatic-deployment).
+- **Its own folder.** The test copy is its own clone (e.g.
+  `E:\eRecruitment-UAT`) with its own `backend\.env` and `frontend\.env`.
+  Development on the same machine never changes what testers see - only
+  what reaches `main` does.
 - **Its own database and uploads.** A database on the server's MySQL (not the
   shared development one), and uploaded files under
   `C:\ProgramData\UCAA-eRecruitment-UAT\uploads`.
@@ -36,14 +42,12 @@ reachable from UCAA's network only:
 
 ## Setting it up
 
-1. **Deployment folder**, from the development copy:
+1. **Deployment folder** - its own clone, not a worktree of a development
+   copy (the deploy task, running as SYSTEM, writes to its `.git`):
    ```powershell
-   git fetch
-   git worktree add -b uat --track E:\eRecruitment-UAT origin/main
+   git clone https://github.com/M-JudeCAA/E-Recruitment.git E:\eRecruitment-UAT
    ```
-   Its local branch `uat` follows `main`, so `update-uat.ps1` deploys
-   whatever has been merged there. (A worktree can't use a branch that's
-   checked out elsewhere, such as `main` in the development copy.)
+   Deployments check out the commit being deployed on a local branch `uat`.
 2. **Database.** On the server's MySQL, create an empty database and a user
    for it:
    ```sql
@@ -79,7 +83,7 @@ reachable from UCAA's network only:
    PREVIEW_TLS_PASSPHRASE=<printed by new-certificate.ps1>
    PREVIEW_ALLOWED_HOSTS=<host>
    ```
-6. **Build and create the schema:**
+6. **Install, build and create the schema:**
    ```powershell
    powershell -ExecutionPolicy Bypass -File deploy\lan\update-uat.ps1 -NoPull
    ```
@@ -95,7 +99,10 @@ reachable from UCAA's network only:
    *Single-page application* redirect URIs:
    - staff app: `https://<host>:4174/entra-redirect.html`
    - candidate app: `https://<host>:4175/entra-redirect.html`
-9. **Install** (administrator PowerShell, once):
+9. **Install** (administrator PowerShell, once). It opens the firewall and
+   registers the app and deploy tasks. Git must be installed for all users
+   (`winget install --id Git.Git --scope machine`) or under a user profile
+   it can find; the deploy task runs as SYSTEM:
    ```powershell
    powershell -ExecutionPolicy Bypass -File E:\eRecruitment-UAT\deploy\lan\install-uat.ps1 -Operator CAA\<your account>
    ```
@@ -116,11 +123,41 @@ reachable from UCAA's network only:
 Then the administrator creates the testers' staff accounts and someone adds
 positions - see "Before testers start" in [docs/database-reset.md](../../docs/database-reset.md).
 
+## Automatic deployment
+
+Merging a pull request into `main` (or pushing to it) is the release:
+
+1. GitHub Actions runs CI (`.github/workflows/ci.yml`) on the push.
+2. Within 5 minutes of CI passing, `auto-deploy.ps1` on the server sees it
+   (GitHub's public API, no token: the repository is public), fetches it and
+   runs `update-uat.ps1 -Commit <sha>`: the app is paused, packages installed,
+   the database schema updated (`npm run db:prepare` - new migrations), the
+   sites rebuilt beside the live ones and swapped in, and the app started
+   again. A few minutes' outage per release.
+3. If the deployment fails, it goes back to the previous commit and that
+   commit is not tried again; the next commit on `main` is. To retry the
+   same commit, delete `deploy\lan\logs\deployed.json`.
+
+It is pull-based on purpose: nothing on GitHub can reach or run code on this
+server. A self-hosted GitHub runner would let anyone who opens a pull request
+on the public repository run code here.
+
+| To | Do |
+|---|---|
+| See what was deployed | `deploy\lan\logs\deploy.log` (one line per decision), `deployed.json` (the last one) |
+| See why a deployment failed | `deploy\lan\logs\deploy-<date>.log` |
+| Pause automatic deployment | Create an empty file `deploy\lan\logs\no-auto-deploy`; delete it to resume |
+| Deploy now instead of waiting | `Start-ScheduledTask -TaskName 'UCAA e-Recruitment UAT deploy'` |
+| Roll back | Pause it, then `update-uat.ps1 -Commit <older sha>` |
+
+It never deploys a commit older than what's live, nor one without the
+`deploy\lan` setup.
+
 ## Day to day
 
 | To | Do |
 |---|---|
-| Deploy new code | In the deployment folder: `powershell -ExecutionPolicy Bypass -File deploy\lan\update-uat.ps1`. Pulls its branch, migrates, rebuilds, restarts; a few minutes' outage |
+| Deploy by hand | In the deployment folder: `powershell -ExecutionPolicy Bypass -File deploy\lan\update-uat.ps1` (latest `origin/main`) or `-Commit <sha>`. Migrates, rebuilds, restarts; a few minutes' outage |
 | Restart everything | Create an empty file `deploy\lan\logs\restart` |
 | Stop it for a while | Create `deploy\lan\logs\hold`; delete it to start again |
 | See what happened | `deploy\lan\logs\supervisor.log`, and `<process>-<date>.out.log` / `.err.log` for `api`, `jobs`, `external`, `staff`, `internal` |

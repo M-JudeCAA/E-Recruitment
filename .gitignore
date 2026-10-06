@@ -14,6 +14,8 @@ dist/
 build/
 */dist/
 */build/
+frontend/dist-next/
+frontend/dist-previous/
 
 # Uploaded files (CVs, cover letters, recommendation letters)
 uploads/
