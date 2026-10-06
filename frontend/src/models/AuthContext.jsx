@@ -96,7 +96,9 @@ export function AuthProvider({ children }) {
       const { kind, message } = e.detail || {};
       const reason = /no longer active/i.test(message || '')
         ? 'Your staff account has been deactivated. Contact the system administrator.'
-        : 'Your session has expired. Please sign in again.';
+        : /account has been closed/i.test(message || '')
+          ? 'This account has been closed and its personal data erased.'
+          : 'Your session has expired. Please sign in again.';
       if (kind === 'staff' && localStorage.getItem('staffToken')) {
         try { sessionStorage.setItem(SESSION_ENDED_KEY, reason); } catch { /* private mode */ }
         logoutStaff();

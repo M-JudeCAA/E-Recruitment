@@ -21,7 +21,10 @@ const HANDOFF_TEXT = {
   Failed: 'The HRIS could not be reached after several tries - retry, or pass the package on by hand.'
 };
 
-export default function HireSection({ offer, staffRole, onChanged }) {
+// onHire(hire | null) tells the parent once it is known whether the candidate
+// has been marked hired (OfferActions offers withdrawing an accepted offer
+// only until then).
+export default function HireSection({ offer, staffRole, onChanged, onHire }) {
   const canHire = (ROLE_RANK[staffRole] || 0) >= ROLE_RANK.Principal_HR_Officer;
   const [hire, setHire] = useState(undefined);
   const [modal, setModal] = useState(false);
@@ -33,6 +36,7 @@ export default function HireSection({ offer, staffRole, onChanged }) {
     .then((res) => setHire(res.data))
     .catch((err) => setHire(err.response?.status === 404 ? null : undefined)), [offer.id]);
   useEffect(() => { if (offer.status === 'Accepted') load(); }, [offer.status, load]);
+  useEffect(() => { if (hire !== undefined) onHire?.(hire); }, [hire, onHire]);
   if (offer.status !== 'Accepted' || hire === undefined) return null;
 
   const markHired = async () => {

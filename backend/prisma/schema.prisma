@@ -404,6 +404,10 @@ model Vacancy {
   createdById            Int
   createdBy              StaffUser               @relation("VacancyCreatedBy", fields: [createdById], references: [id])
   createdAt              DateTime                @default(now())
+  // Every write moves it on. The approver sends the value they reviewed
+  // (expectedUpdatedAt), so a vacancy edited after they looked at it is
+  // refused (409 VACANCY_CHANGED) instead of approved unseen.
+  updatedAt              DateTime                @default(now()) @updatedAt
   applications           Application[]
   hires                  Hire[]
   shortlistExercise      ShortlistExercise?
@@ -1461,6 +1465,10 @@ enum SlaTaskType {
   // Principal_HR_Officer, so someone else runs it; the applicant is shut
   // out of it (conflictOfInterestService). taskId is the vacancy id.
   StaffApplicantConflict
+  // A candidate withdrew a submitted application - to all HR staff except
+  // anyone who applied for the vacancy (applicationDraftController.withdraw).
+  // taskId is the application id.
+  ApplicationWithdrawn
 }
 
 model SlaPolicy {

@@ -5,6 +5,7 @@ const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
 const candidateModel = require('../models/candidateModel');
 const workflow = require('../services/workflowService');
+const withdrawal = require('../services/applicationWithdrawalService');
 const audit = require('../services/auditService');
 const applicationDocumentModel = require('../models/applicationDocumentModel');
 const evidence = require('../utils/screeningEvidence');
@@ -12,6 +13,7 @@ const {
   screenApplication, scoreApplication, evaluateEssentialCriteria, assessEligibility
 } = require('../services/screeningService');
 const { fileUrl } = require('../middleware/upload');
+const { removeUploads } = require('../utils/uploadFiles');
 const {
   assertPostingTypeEligible, assertVacancyAcceptingApplications, assertBeforeDeadline
 } = require('../utils/applicationEligibility');
@@ -19,8 +21,41 @@ const { isProfileComplete } = require('../utils/profileCompleteness');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { countCompleteReferees } = require('../utils/referees');
 const { notifyCandidate } = require('../services/candidateNotificationService');
-const { notify } = require('../services/notificationService');
+const { notify, notifyAllHrStaff } = require('../services/notificationService');
+const { escapeHtml } = require('../utils/interviewFormat');
 const { PRIVACY_NOTICE_VERSION } = require('../config/privacyNotice');
+
+// Answers to the vacancy's questions, as [{ id, answer }], snapshotted
+// against its questions as they stand now - server-side, never trusting the
+// `text`/`answerType`/`minValue` a client sent alongside each answer (see the
+// schema comments on Application.desirableResponses/disqualifyingResponses).
+// A 'yesno' question (or one with no answerType, from before 'number'
+// existed) takes a boolean, a 'number' one a finite number; unmatched or
+// malformed answers are dropped. Taken at every draft save and again at
+// submit, so the application is screened against the questions as they are
+// when it is submitted - a question HR changed or removed after the draft
+// was saved is never judged by its old wording or required answer.
+const answerMatchesType = (requirement, answer) =>
+  requirement.answerType === 'number' ? (typeof answer === 'number' && Number.isFinite(answer)) : typeof answer === 'boolean';
+
+function snapshotAnswers(answers, requirements, extra) {
+  const byId = new Map((requirements || []).map((r) => [r.id, r]));
+  return (answers || [])
+    .filter((r) => r && byId.has(r.id) && answerMatchesType(byId.get(r.id), r.answer))
+    .map((r) => {
+      const requirement = byId.get(r.id);
+      return {
+        id: r.id, text: requirement.text, ...extra(requirement), answer: r.answer,
+        ...(requirement.answerType === 'number' ? { answerType: 'number', minValue: requirement.minValue } : {})
+      };
+    });
+}
+
+const snapshotDesirable = (answers, vacancy) => snapshotAnswers(answers, vacancy.desirableRequirements, () => ({}));
+// Also freezes requiredAnswer - what screeningService reads to decide
+// pass/fail.
+const snapshotDisqualifying = (answers, vacancy) =>
+  snapshotAnswers(answers, vacancy.disqualifyingRequirements, (r) => ({ requiredAnswer: r.requiredAnswer }));
 
 // REPLACES the old single-step submit() entirely - having two parallel
 // "create an application" code paths (one direct-to-Submitted, one
@@ -41,9 +76,17 @@ const { PRIVACY_NOTICE_VERSION } = require('../config/privacyNotice');
 //    special-casing needed, it falls out of the existing unique
 //    constraint and this same branch.
 async function saveDraft(req, res) {
+  const coverLetterFile = req.files?.coverLetter?.[0];
+  // A request refused below keeps nothing it uploaded.
+  const refuse = async (status, body) => {
+    await removeUploads(fileUrl(coverLetterFile));
+    return res.status(status).json(body);
+  };
+
   const vacancyId = Number(req.body.vacancyId);
+  if (!Number.isInteger(vacancyId) || vacancyId < 1) return refuse(400, { error: 'Invalid vacancy id' });
   const vacancy = await vacancyModel.findById(vacancyId);
-  if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+  if (!vacancy) return refuse(404, { error: 'Vacancy not found' });
 
   try {
     assertPostingTypeEligible(vacancy, req.user.candidateType);
@@ -55,10 +98,9 @@ async function saveDraft(req, res) {
     // working "Continue draft" link once its vacancy has closed.
     assertBeforeDeadline(vacancy);
   } catch (err) {
+    await removeUploads(fileUrl(coverLetterFile));
     return sendError(res, err, 422);
   }
-
-  const coverLetterFile = req.files?.coverLetter?.[0];
 
   // The wizard's Questions step - application-level (unlike the
   // candidate-level profile fields on Candidate, these vary per
@@ -71,62 +113,22 @@ async function saveDraft(req, res) {
   if (openToRelocate !== undefined) questionsData.openToRelocate = openToRelocate || null;
   if (earliestStartDate !== undefined) questionsData.earliestStartDate = earliestStartDate ? new Date(earliestStartDate) : null;
   if (whyThisRole !== undefined) questionsData.whyThisRole = whyThisRole || null;
-  // Answers to the vacancy's Desirable Requirements questions - arrives as
-  // a JSON string (multipart form fields are always strings) of [{ id,
-  // answer }]. Re-derived and snapshotted against the vacancy's current
-  // desirableRequirements here, server-side, rather than trusting whatever
-  // `text`/`answerType`/`minValue` the client sent alongside each answer -
-  // matches the historical-snapshot principle (see the schema comment on
-  // Application.desirableResponses) while still not letting the client put
-  // words in the vacancy's mouth. A 'yesno' requirement (or one with no
-  // answerType, from before 'number' existed) expects a boolean answer; a
-  // 'number' one expects a finite number. Unmatched/malformed rows are
-  // dropped rather than rejected, same tolerance as the rest of this
-  // form-save endpoint.
-  const answerMatchesType = (requirement, answer) =>
-    requirement.answerType === 'number' ? (typeof answer === 'number' && Number.isFinite(answer)) : typeof answer === 'boolean';
-
+  // Answers to the vacancy's questions arrive as JSON strings (multipart
+  // form fields are always strings) of [{ id, answer }] - see
+  // snapshotAnswers.
+  const parseList = (json) => {
+    try {
+      const parsed = JSON.parse(json);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
   if (desirableResponses !== undefined) {
-    let parsed = [];
-    try {
-      parsed = JSON.parse(desirableResponses);
-    } catch {
-      parsed = [];
-    }
-    const requirementsById = new Map((vacancy.desirableRequirements || []).map((r) => [r.id, r]));
-    questionsData.desirableResponses = (Array.isArray(parsed) ? parsed : [])
-      .filter((r) => r && requirementsById.has(r.id) && answerMatchesType(requirementsById.get(r.id), r.answer))
-      .map((r) => {
-        const requirement = requirementsById.get(r.id);
-        return {
-          id: r.id, text: requirement.text, answer: r.answer,
-          ...(requirement.answerType === 'number' ? { answerType: 'number', minValue: requirement.minValue } : {})
-        };
-      });
+    questionsData.desirableResponses = snapshotDesirable(parseList(desirableResponses), vacancy);
   }
-  // Same snapshot pattern as desirableResponses above, but also freezing
-  // requiredAnswer (not just text) - see the schema comment on
-  // Application.disqualifyingResponses for why: this is what
-  // screeningService actually reads to decide pass/fail, so a later edit
-  // to the vacancy's required answer (or minValue) must never retroactively
-  // change an already-screened result.
   if (disqualifyingResponses !== undefined) {
-    let parsed = [];
-    try {
-      parsed = JSON.parse(disqualifyingResponses);
-    } catch {
-      parsed = [];
-    }
-    const requirementsById = new Map((vacancy.disqualifyingRequirements || []).map((r) => [r.id, r]));
-    questionsData.disqualifyingResponses = (Array.isArray(parsed) ? parsed : [])
-      .filter((r) => r && requirementsById.has(r.id) && answerMatchesType(requirementsById.get(r.id), r.answer))
-      .map((r) => {
-        const requirement = requirementsById.get(r.id);
-        return {
-          id: r.id, text: requirement.text, requiredAnswer: requirement.requiredAnswer, answer: r.answer,
-          ...(requirement.answerType === 'number' ? { answerType: 'number', minValue: requirement.minValue } : {})
-        };
-      });
+    questionsData.disqualifyingResponses = snapshotDisqualifying(parseList(disqualifyingResponses), vacancy);
   }
 
   // Three referees the candidate names for THIS application (see the
@@ -157,17 +159,25 @@ async function saveDraft(req, res) {
 
   const existing = await applicationModel.findFirst({ vacancyId, candidateId: req.user.id });
 
+  // Saves onto an existing Draft; a new cover letter replaces the old file.
+  const updateDraft = async (draft) => {
+    const data = { ...questionsData };
+    if (coverLetterFile) data.coverLetterUrl = fileUrl(coverLetterFile);
+    const updated = await applicationModel.update(draft.id, data);
+    if (coverLetterFile && draft.coverLetterUrl && draft.coverLetterUrl !== data.coverLetterUrl) {
+      await removeUploads(draft.coverLetterUrl);
+    }
+    return updated;
+  };
+
   if (existing) {
     if (existing.status !== 'Draft') {
       const message = existing.status === 'Withdrawn'
         ? 'You have already withdrawn from this vacancy and cannot re-apply'
         : 'You have already applied to this vacancy';
-      return res.status(409).json({ error: message });
+      return refuse(409, { error: message });
     }
-    const data = { ...questionsData };
-    if (coverLetterFile) data.coverLetterUrl = fileUrl(coverLetterFile);
-    const updated = await applicationModel.update(existing.id, data);
-    return res.json(updated);
+    return res.json(await updateDraft(existing));
   }
 
   try {
@@ -189,12 +199,7 @@ async function saveDraft(req, res) {
     // rather than surfacing a raw database error to the candidate.
     if (err.code === 'P2002') {
       const winner = await applicationModel.findFirst({ vacancyId, candidateId: req.user.id });
-      if (winner) {
-        const data = { ...questionsData };
-        if (coverLetterFile) data.coverLetterUrl = fileUrl(coverLetterFile);
-        const updated = await applicationModel.update(winner.id, data);
-        return res.json(updated);
-      }
+      if (winner) return res.json(await updateDraft(winner));
     }
     throw err;
   }
@@ -253,6 +258,14 @@ async function submit(req, res) {
     return res.status(422).json({ error: 'Please complete your profile before submitting an application' });
   }
 
+  // The answers re-snapshotted against the questions as they are now - what
+  // this application is screened on, and stored with it.
+  const answered = {
+    ...application,
+    desirableResponses: snapshotDesirable(application.desirableResponses, vacancy),
+    disqualifyingResponses: snapshotDisqualifying(application.disqualifyingResponses, vacancy)
+  };
+
   const documents = await applicationDocumentModel.findByApplication(applicationId);
   if (!documents.some((d) => d.category === 'Academic')) {
     return res.status(400).json({ error: 'Please upload at least one academic document (certificate or transcript) before submitting' });
@@ -263,7 +276,7 @@ async function submit(req, res) {
   // question the wrong way, never reaches the applicant pool. Their Draft
   // stays as it is, so a profile that was merely out of date can be fixed
   // and submitted again.
-  const eligibility = assessEligibility(application, candidate, vacancy);
+  const eligibility = assessEligibility(answered, candidate, vacancy);
   if (eligibility.unanswered.length > 0) {
     return res.status(400).json({
       error: 'Please answer every eligibility question before submitting', unanswered: eligibility.unanswered
@@ -277,7 +290,7 @@ async function submit(req, res) {
   }
   // What screening relied on must be backed by evidence: the National ID
   // for an age limit, a certificate or licence for a question answered Yes.
-  const missing = evidence.missingEvidence(evidence.evidenceRequirements(vacancy, evidence.answersOf(application)), documents);
+  const missing = evidence.missingEvidence(evidence.evidenceRequirements(vacancy, evidence.answersOf(answered)), documents);
   if (missing.length > 0) {
     return res.status(400).json({
       error: `Please upload the evidence for: ${missing.map((m) => m.label).join('; ')}`,
@@ -290,11 +303,12 @@ async function submit(req, res) {
   // (reviewStartedAt set), a late applicant also joins that queue
   // immediately rather than sitting at Submitted until someone re-runs
   // Begin Review.
-  const screening = screenApplication(application, candidate, vacancy);
-  const score = scoreApplication(application, candidate, vacancy);
+  const screening = screenApplication(answered, candidate, vacancy);
+  const score = scoreApplication(answered, candidate, vacancy);
   const essentialCriteria = evaluateEssentialCriteria(candidate, vacancy);
   const data = {
     status: vacancy.reviewStartedAt ? 'UnderReview' : 'Submitted', submittedDate: new Date(),
+    desirableResponses: answered.desirableResponses, disqualifyingResponses: answered.disqualifyingResponses,
     consentGivenAt: new Date(), consentNoticeVersion: PRIVACY_NOTICE_VERSION,
     // Where they saw the advert - optional, for the Source of Hire report.
     ...parseSource(req.body),
@@ -349,10 +363,44 @@ async function submit(req, res) {
   res.json(updated);
 }
 
-// Limited deliberately to Draft/Submitted - withdrawing from Shortlisted
-// or later has real cascade questions (does it free a Reserve slot? does
-// it need the same care as the offer-decline cascade?) that belong with
-// the shortlisting workflow, not here.
+// Where the application had got to, for HR's notice.
+const WITHDRAWN_AT = {
+  Submitted: 'after applying', UnderReview: 'while under review', ShortlistProposed: 'while proposed for the interview shortlist',
+  Shortlisted: 'after being shortlisted for interview', InterviewScheduled: 'with an interview booked', Interviewed: 'after being interviewed'
+};
+
+// All HR staff are told - except anyone who applied for this vacancy, who
+// has no business hearing about the other applicants. Never fails the
+// withdrawal, which has already happened.
+async function notifyHrOfWithdrawal(application, reason, result) {
+  try {
+    const [vacancy, candidate] = await Promise.all([
+      vacancyModel.findById(application.vacancyId),
+      candidateModel.findById(application.candidateId)
+    ]);
+    const parts = [
+      `${escapeHtml(candidate?.fullName || 'A candidate')} withdrew their application for "${escapeHtml(vacancy?.title || 'a vacancy')}"`
+        + ` (${escapeHtml(vacancy?.jobRef || '')}) ${WITHDRAWN_AT[application.status] || ''}.`,
+      reason ? `Reason given: ${escapeHtml(reason)}.` : null,
+      result.cancelledInterviewIds.length
+        ? `${result.cancelledInterviewIds.length === 1 ? 'Their interview has' : `${result.cancelledInterviewIds.length} interviews have`} been cancelled and the panel told.`
+        : null,
+      result.wasPrimary
+        ? (result.promoted
+          ? `They were Primary on the merit list: the next reserve (application #${result.promoted.id}) has moved up - recommend an offer when ready.`
+          : 'They were Primary on the merit list, and no reserve was available to move up.')
+        : null
+    ];
+    const exceptIds = await conflictOfInterest.staffIdsAppliedFor(application.vacancyId);
+    await notifyAllHrStaff('ApplicationWithdrawn', application.id, parts.filter(Boolean).join(' '), { exceptIds });
+  } catch (err) {
+    console.error(`Withdrawal notice for application ${application.id} failed:`, err);
+  }
+}
+
+// Any stage before an offer (applicationWithdrawalService: upcoming
+// interviews are cancelled, the merit list place is given up and a Primary's
+// post goes to the next reserve). Once offered, they decline the offer.
 //
 // Cancelling a Draft is NOT the same event as withdrawing a Submitted
 // application, and the two are deliberately handled differently:
@@ -372,24 +420,35 @@ async function withdraw(req, res) {
   if (application.candidateId !== req.user.id) {
     return res.status(403).json({ error: 'This is not your application' });
   }
-  if (!['Draft', 'Submitted'].includes(application.status)) {
-    return res.status(422).json({ error: 'This application can no longer be withdrawn' });
-  }
-
   if (application.status === 'Draft') {
+    // The draft's documents go with the row (onDelete: Cascade); their files too.
+    const documents = await applicationDocumentModel.findByApplication(applicationId);
     await applicationModel.remove(applicationId);
+    await removeUploads(application.cvUrl, application.coverLetterUrl, documents.map((d) => d.fileUrl));
     return res.json({ id: applicationId, vacancyId: application.vacancyId, cancelled: true });
   }
 
-  const { reason } = req.body; // optional - candidate's prerogative, useful for HR reporting when given
-  const updated = await applicationModel.update(applicationId, {
-    status: 'Withdrawn', withdrawalReason: reason || null
-  });
+  // Optional - the candidate's prerogative, useful for HR reporting when given.
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 1000) : '';
+  let result;
+  try {
+    result = await withdrawal.withdraw(application, reason);
+  } catch (err) {
+    return sendError(res, err);
+  }
+  const updated = await applicationModel.findById(applicationId);
   await audit.record({
     entityType: 'Application', entityId: applicationId, action: 'Application withdrawn by the candidate', actor: audit.actorFrom(req),
-    before: application, after: updated, fields: ['status'], comment: reason || null
+    before: application, after: updated, fields: ['status'], comment: reason || null,
+    details: {
+      ...(result.cancelledInterviewIds.length ? { cancelledInterviewIds: result.cancelledInterviewIds } : {}),
+      ...(result.wasPrimary ? { leftMeritListAsPrimary: true, promotedApplicationId: result.promoted?.id || null } : {})
+    }
   });
-  res.json(updated);
+  await notifyHrOfWithdrawal(application, reason, result);
+  broadcastDashboardEvent('ApplicationUpdated', { applicationId, vacancyId: application.vacancyId });
+  // Never another applicant's row (result.promoted) - the caller is the candidate.
+  res.json({ id: updated.id, vacancyId: updated.vacancyId, status: updated.status, withdrawalReason: updated.withdrawalReason });
 }
 
 // The apply wizard's early screening check: whether this candidate, as
@@ -441,12 +500,17 @@ async function loadOwnDraft(req, res) {
 // One academic or other supporting document, uploaded as soon as the
 // candidate picks it (not held until the next draft save).
 async function addDocument(req, res) {
+  // A refused upload isn't kept.
+  const refuse = async (status, body) => {
+    await removeUploads(fileUrl(req.file));
+    return res.status(status).json(body);
+  };
   const application = await loadOwnDraft(req, res);
-  if (!application) return;
+  if (!application) { await removeUploads(fileUrl(req.file)); return; }
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
   const category = req.body.category;
   if (!DOCUMENT_CATEGORIES.includes(category)) {
-    return res.status(400).json({ error: `Document category must be one of: ${DOCUMENT_CATEGORIES.join(', ')}` });
+    return refuse(400, { error: `Document category must be one of: ${DOCUMENT_CATEGORIES.join(', ')}` });
   }
   let evidenceKey = null;
   let label = (req.body.label || '').trim().slice(0, 150) || null;
@@ -456,14 +520,14 @@ async function addDocument(req, res) {
     evidenceKey = String(req.body.evidenceKey || '');
     const vacancy = await vacancyModel.findById(application.vacancyId);
     const requirement = evidence.KEY_RE.test(evidenceKey) ? evidence.requirementFor(vacancy, evidenceKey) : null;
-    if (!requirement) return res.status(400).json({ error: 'Say which requirement this document is evidence for' });
+    if (!requirement) return refuse(400, { error: 'Say which requirement this document is evidence for' });
     const mine = await applicationDocumentModel.findByApplication(application.id);
     if (mine.filter((d) => d.evidenceKey === evidenceKey).length >= MAX_DOCUMENTS_PER_EVIDENCE) {
-      return res.status(422).json({ error: `You can attach at most ${MAX_DOCUMENTS_PER_EVIDENCE} documents for one requirement` });
+      return refuse(422, { error: `You can attach at most ${MAX_DOCUMENTS_PER_EVIDENCE} documents for one requirement` });
     }
     label = requirement.label.slice(0, evidence.MAX_LABEL);
   } else if (await applicationDocumentModel.countByApplication(application.id, category) >= MAX_DOCUMENTS_PER_CATEGORY) {
-    return res.status(422).json({ error: `You can attach at most ${MAX_DOCUMENTS_PER_CATEGORY} documents of this kind` });
+    return refuse(422, { error: `You can attach at most ${MAX_DOCUMENTS_PER_CATEGORY} documents of this kind` });
   }
   const document = await applicationDocumentModel.create({
     applicationId: application.id, category, label, evidenceKey,
@@ -479,6 +543,7 @@ async function removeDocument(req, res) {
   const document = Number.isInteger(documentId) ? await applicationDocumentModel.findById(documentId) : null;
   if (!document || document.applicationId !== application.id) return res.status(404).json({ error: 'Document not found' });
   await applicationDocumentModel.remove(documentId);
+  await removeUploads(document.fileUrl);
   res.json({ id: documentId, removed: true });
 }
 

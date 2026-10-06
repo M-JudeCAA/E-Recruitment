@@ -78,4 +78,81 @@ async function searchPeople(q) {
     .slice(0, MAX_RESULTS);
 }
 
-module.exports = { isConfigured, searchPeople, cleanQuery };
+async function graphGet(pathOrUrl, token, headers = {}) {
+  const url = pathOrUrl.startsWith('http') ? pathOrUrl : `${GRAPH}${pathOrUrl}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, ...headers } });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(`Graph ${res.status}: ${body.error?.code || ''}`);
+    err.status = res.status;
+    throw err;
+  }
+  return body;
+}
+
+// Every page of a Graph collection.
+async function graphAll(path, token, headers) {
+  const out = [];
+  for (let next = path; next;) {
+    const body = await graphGet(next, token, headers);
+    out.push(...(body.value || []));
+    next = body['@odata.nextLink'] || null;
+  }
+  return out;
+}
+
+const PERSON_FIELDS = 'id,displayName,mail,userPrincipalName,jobTitle,department,accountEnabled';
+
+// A Graph user as a person HR can give an account to, or null when they
+// can't have one: disabled, a guest, or not on the UCAA email domain.
+function toPerson(u, domains) {
+  const email = String(u.mail || u.userPrincipalName || '').toLowerCase();
+  if (!u.displayName || u.accountEnabled === false || String(u.userPrincipalName || '').includes('#EXT#')) return null;
+  if (!domains.includes(email.split('@')[1])) return null;
+  return { entraObjectId: u.id, name: u.displayName, email, jobTitle: u.jobTitle || null, department: u.department || null };
+}
+
+/**
+ * The people assigned to the staff app registration (ENTRA_STAFF_CLIENT_ID)
+ * in Entra - under the enterprise application's "Users and groups", directly
+ * or as direct members of an assigned group. Each with when they were
+ * assigned (a group member: when the group was) and how:
+ * [{ entraObjectId, name, email, jobTitle, department, assignedAt, via }]
+ * where via is null for a direct assignment, else the group's name.
+ * Needs the Graph application permissions Application.Read.All (the
+ * assignments) and GroupMember.Read.All (group members) besides User.Read.All.
+ */
+async function staffAppAssignments() {
+  const appId = process.env.ENTRA_STAFF_CLIENT_ID;
+  if (!appId) throw Object.assign(new Error('ENTRA_STAFF_CLIENT_ID is not set'), { status: 501 });
+  const token = await accessToken();
+  const domains = internalDomains();
+  const app = await graphGet(`/servicePrincipals(appId='${encodeURIComponent(appId)}')?$select=id`, token);
+  const assignments = await graphAll(`/servicePrincipals/${app.id}/appRoleAssignedTo?$top=999`, token);
+
+  const people = new Map(); // entraObjectId -> person; the earliest assignment wins
+  const add = (person, assignedAt, via) => {
+    if (!person) return;
+    const seen = people.get(person.entraObjectId);
+    if (!seen || new Date(assignedAt) < new Date(seen.assignedAt)) people.set(person.entraObjectId, { ...person, assignedAt, via });
+  };
+
+  const userAssignments = assignments.filter((a) => a.principalType === 'User');
+  // Users by id, 15 to a request (Graph's limit for an `in` filter).
+  for (let i = 0; i < userAssignments.length; i += 15) {
+    const chunk = userAssignments.slice(i, i + 15);
+    const ids = chunk.map((a) => `'${a.principalId}'`).join(',');
+    const users = await graphAll(`/users?$filter=id in (${ids})&$select=${PERSON_FIELDS}`, token);
+    for (const u of users) add(toPerson(u, domains), chunk.find((a) => a.principalId === u.id).createdDateTime, null);
+  }
+  // Direct members only: Entra doesn't pass an app assignment on through a
+  // group nested in the assigned one, so its members couldn't sign in.
+  for (const group of assignments.filter((a) => a.principalType === 'Group')) {
+    const members = await graphAll(`/groups/${group.principalId}/members/microsoft.graph.user?$select=${PERSON_FIELDS}&$top=999`,
+      token, { ConsistencyLevel: 'eventual' });
+    for (const u of members) add(toPerson(u, domains), group.createdDateTime, group.principalDisplayName || 'a group');
+  }
+  return [...people.values()].sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
+}
+
+module.exports = { isConfigured, searchPeople, cleanQuery, staffAppAssignments };

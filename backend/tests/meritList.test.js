@@ -188,6 +188,42 @@ describe('approve', () => {
     prisma.application.findMany.mockResolvedValue([]);
     await expect(meritList.approve(3, 12)).rejects.toMatchObject({ status: 422 });
   });
+
+  describe('approves only the list the approver reviewed', () => {
+    const proposed = [
+      { id: 1, meritProposedById: 9, meritListStatus: 'Primary', rankVersion: 4 },
+      { id: 2, meritProposedById: 9, meritListStatus: 'Reserve', rankVersion: 2 }
+    ];
+
+    test.each([
+      ['re-proposed since (a version moved on)', { 1: 4, 2: 1 }],
+      ['someone added since', { 1: 4 }],
+      ['someone dropped since', { 1: 4, 2: 2, 3: 1 }]
+    ])('refuses a list %s', async (_, seen) => {
+      prisma.application.findMany.mockResolvedValue(proposed);
+      await expect(meritList.approve(3, 12, seen)).rejects.toMatchObject({ status: 409, code: 'MERIT_LIST_CHANGED' });
+      expect(prisma.application.updateMany).not.toHaveBeenCalled();
+    });
+
+    test('approves each entry at the version seen, in one transaction', async () => {
+      prisma.application.findMany.mockResolvedValue(proposed);
+      prisma.application.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await meritList.approve(3, 12, { 1: 4, 2: 2 });
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.application.updateMany).toHaveBeenCalledWith({
+        where: { id: 2, vacancyId: 3, meritStatus: 'Proposed', rankVersion: 2 }, data: expect.objectContaining({ meritStatus: 'Approved' })
+      });
+      expect(result).toEqual({ approvedCount: 2, primaryCount: 1 });
+    });
+
+    test('an entry changed between the check and the write fails the whole approval', async () => {
+      prisma.application.findMany.mockResolvedValue(proposed);
+      prisma.application.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+      await expect(meritList.approve(3, 12, { 1: 4, 2: 2 })).rejects.toMatchObject({ status: 409, code: 'MERIT_LIST_CHANGED' });
+    });
+  });
 });
 
 describe('meritListController', () => {

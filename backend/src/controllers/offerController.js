@@ -12,6 +12,7 @@ const { notify, notifyAllWithRole } = require('../services/notificationService')
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { toPublicVacancy } = require('../utils/publicVacancy');
 const { sendError } = require('../utils/errorResponse');
+const { hasRankOrDelegation } = require('../middleware/auth');
 const { formatWhen, escapeHtml } = require('../utils/interviewFormat');
 
 // Offer management - see offerService.js for the lifecycle. Everything
@@ -144,9 +145,14 @@ async function approve(req, res) {
     return sendError(res, err, 422);
   }
 
+  // The terms the approver reviewed (the offer's recommendedDate as they saw it).
+  const seenValue = req.body?.expectedRecommendedDate;
+  const seen = seenValue ? new Date(seenValue) : null;
+  if (seen && Number.isNaN(seen.getTime())) return res.status(400).json({ error: 'expectedRecommendedDate must be a date' });
+
   let deadline;
   try {
-    deadline = await offerService.approve(existing, req.user.id);
+    deadline = await offerService.approve(existing, req.user.id, new Date(), seen);
   } catch (err) {
     return sendError(res, err);
   }
@@ -308,19 +314,37 @@ async function decline(req, res) {
 // takes back an offer that is still open. Like a decline, it releases the
 // position to the next reserve (unless the vacancy is already filled). The
 // candidate is only told if the offer had been issued to them.
+//
+// An Accepted offer - the candidate then didn't take up the post - can be
+// withdrawn too, but only by a Manager+ (own role or delegation), with a
+// reason, and only until they are marked hired: after that it is an
+// employment matter, not a recruitment one.
+const MIN_ACCEPTED_WITHDRAWAL_REASON = 10;
 async function withdraw(req, res) {
   const offerId = parseId(req.params.offerId);
   if (!offerId) return res.status(400).json({ error: 'Invalid offer id' });
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim().slice(0, 1000) : '';
   const existing = await offerModel.findById(offerId);
   if (!existing) return res.status(404).json({ error: 'Offer not found' });
-  if (!offerService.OPEN_STATUSES.includes(existing.status)) {
+  const accepted = existing.status === 'Accepted';
+  if (!offerService.OPEN_STATUSES.includes(existing.status) && !accepted) {
     return res.status(422).json({ error: `An offer at status "${existing.status}" cannot be withdrawn` });
+  }
+  if (accepted) {
+    if (!(await hasRankOrDelegation(req, 'Manager'))) {
+      return res.status(403).json({ error: 'Only a Manager or Director can withdraw an offer the candidate has accepted', code: 'ACCEPTED_OFFER_NEEDS_MANAGER' });
+    }
+    if (await prisma.hire.findUnique({ where: { offerId }, select: { id: true } })) {
+      return res.status(409).json({ error: 'This candidate has been marked hired, so the offer can no longer be withdrawn', code: 'ALREADY_HIRED' });
+    }
+    if (reason.length < MIN_ACCEPTED_WITHDRAWAL_REASON) {
+      return res.status(400).json({ error: 'Say why an accepted offer is being withdrawn - the candidate is told' });
+    }
   }
 
   const result = await workflow.closeOffer(offerId, [existing.status], {
     status: 'Withdrawn', decidedAt: new Date(), withdrawnById: req.user.id, withdrawalReason: reason || null
-  });
+  }, accepted ? { hire: { is: null } } : {});
   if (result.conflict) {
     return res.status(409).json({ error: 'This offer was already updated - please refresh and try again' });
   }
@@ -332,13 +356,14 @@ async function withdraw(req, res) {
   });
   await slaModel.resolveEscalations('OfferApproval', offerId);
 
-  if (existing.status === 'Approved') {
+  // The candidate knows about an issued or accepted offer, so is told.
+  if (existing.status === 'Approved' || accepted) {
     await safely(`OfferWithdrawn notice for offer ${offerId}`, () => notifyCandidate(existing.application.candidateId, 'OfferWithdrawn',
       `Your offer for "${existing.application.vacancy.title}" has been withdrawn.`
       + (reason ? ` Reason given: ${escapeHtml(reason)}` : '')
       + ' Please contact HR if you have any questions.'));
+    await notifyHiringManagerOfRelease(existing, accepted ? 'withdrawn after it was accepted' : 'withdrawn', result.promoted);
   }
-  if (existing.status === 'Approved') await notifyHiringManagerOfRelease(existing, 'withdrawn', result.promoted);
   broadcastDashboardEvent('OfferWithdrawn', { offerId });
   res.json({ ...(await offerModel.findById(offerId)), promotedApplicationId: result.promoted?.id || null });
 }

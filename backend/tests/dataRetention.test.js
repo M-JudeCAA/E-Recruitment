@@ -36,11 +36,69 @@ describe('who can be erased', () => {
     expect(purge.blockerFor({ applications: [app('Rejected'), app('Withdrawn'), app('Draft')] })).toBeNull();
   });
 
+  test('an application left at Offered is finished once its offer ended without a hire', () => {
+    for (const status of ['Declined', 'Expired', 'Withdrawn']) {
+      expect(purge.blockerFor({ applications: [app('Offered', { status })] })).toBeNull();
+    }
+    for (const status of ['Recommended', 'Returned', 'Approved']) {
+      expect(purge.blockerFor({ applications: [app('Offered', { status })] })).toMatch(/in progress/);
+    }
+    expect(purge.blockerFor({ applications: [app('Offered')] })).toMatch(/in progress/);
+  });
+
+  test('the scheduled purge uses the same rule', async () => {
+    prisma.setting.findUnique.mockResolvedValue(null);
+    prisma.candidate.findMany.mockResolvedValue([]);
+    await purge.purgeExpired(new Date('2026-10-06'));
+    const none = prisma.candidate.findMany.mock.calls[0][0].where.applications.none;
+    expect(none.OR).toContainEqual({
+      OR: expect.arrayContaining([{ status: 'Offered', NOT: { offer: { status: { in: ['Declined', 'Expired', 'Withdrawn'] } } } }])
+    });
+    expect(none.OR[0].OR[0].status.in).not.toContain('Offered');
+  });
+
   test('the last activity is their latest sign-in or application event', () => {
     const last = purge.lastActivity({
       createdAt: new Date('2024-01-01'), lastLoginAt: new Date('2024-06-01'),
       applications: [{ createdAt: new Date('2024-03-01'), submittedDate: null, rejectedAt: new Date('2025-02-01'), offer: null }]
     });
     expect(last).toEqual(new Date('2025-02-01'));
+  });
+});
+
+describe('erasing a candidate', () => {
+  // Everything the erasure writes, inside its one transaction.
+  const many = () => ({ deleteMany: jest.fn().mockResolvedValue({ count: 0 }), updateMany: jest.fn().mockResolvedValue({ count: 0 }) });
+  let tx;
+  beforeEach(() => {
+    tx = {
+      workExperience: many(), education: many(), examGrade: many(), certificate: many(), internalProfile: many(),
+      verificationToken: many(), candidateNotification: many(), candidateTagging: many(), bulkEmailRecipient: many(),
+      applicationDocument: many(), application: many(), interviewRound: many(), shortlistRating: many(), auditLog: many(),
+      candidate: { update: jest.fn() }, dataPurgeLog: { create: jest.fn() }
+    };
+    prisma.$transaction.mockImplementation((fn) => fn(tx));
+    prisma.candidate.findUnique.mockResolvedValue({
+      id: 9, purgedAt: null, photoUrl: null, internalProfile: null,
+      applications: [{
+        id: 31, status: 'Rejected', cvUrl: null, coverLetterUrl: null, documents: [], offer: null,
+        interviewRounds: [{ scoreSheetUrl: '/api/files/sheet-1.pdf' }, { scoreSheetUrl: null }]
+      }]
+    });
+  });
+
+  test('removes the score sheets and empties the qualification snapshot taken when they applied', async () => {
+    const result = await purge.purgeCandidate(9, { reason: 'ErasureRequest' });
+
+    expect(result.purged).toBe(true);
+    expect(result.removed.files).toBe(1);
+    expect(tx.interviewRound.updateMany).toHaveBeenCalledWith({
+      where: { applicationId: { in: [31] } },
+      data: expect.objectContaining({ scoreSheetUrl: null, scoreSheetName: null })
+    });
+    expect(tx.auditLog.updateMany).toHaveBeenCalledWith({
+      where: { entityType: 'ApplicationSnapshot', entityId: { in: [31] } },
+      data: { payload: expect.objectContaining({ erased: true }) }
+    });
   });
 });

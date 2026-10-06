@@ -12,7 +12,7 @@ const STAFF_ONLY_VACANCY_FIELDS = [
   'internalSalaryRange', 'recruiterNotes',
   'createdById', 'approvedById', 'approvedByRole', 'rejectionReason',
   'postingTypeChangedById', 'postingTypeChangedByRole', 'postingTypePreviousValue',
-  'deadlineNotifiedAt', 'reviewStartedAt',
+  'deadlineNotifiedAt', 'reviewStartedAt', 'updatedAt',
   // Approval decisions and their comments (returned, rejected, closed).
   'rejectedAt', 'returnedAt', 'returnReason', 'approvalRequestedAt', 'closedAt', 'closeReason',
   // The EXCO requisition behind the vacancy, and what was read from it.

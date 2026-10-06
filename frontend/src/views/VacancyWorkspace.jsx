@@ -224,7 +224,7 @@ export default function VacancyWorkspace() {
     primary = (
       <Button loading={approving} loadingText="Approving..." onClick={async () => {
         setApproving(true); setError('');
-        try { if (await approveVacancy(v.id, confirm)) changed('Approved and advertised. Its creator has been told.'); }
+        try { if (await approveVacancy(v, confirm)) changed('Approved and advertised. Its creator has been told.'); }
         catch (err) { setError(err.response?.data?.error || 'Approval failed'); }
         finally { setApproving(false); }
       }}>Approve</Button>

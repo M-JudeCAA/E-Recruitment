@@ -20,6 +20,77 @@ beforeEach(() => {
   prisma.department.findFirst.mockResolvedValue({ id: 10, name: 'HR' });
 });
 
+describe('people waiting for a role (assigned to the staff app in Entra)', () => {
+  const directory = require('../src/services/directoryService');
+  afterEach(() => jest.restoreAllMocks());
+
+  test('lists only those with no staff account, matched by Microsoft id or email', async () => {
+    jest.spyOn(directory, 'isConfigured').mockReturnValue(true);
+    jest.spyOn(directory, 'staffAppAssignments').mockResolvedValue([
+      { entraObjectId: 'oid-new', name: 'New Person', email: 'new@caa.co.ug' },
+      { entraObjectId: 'oid-linked', name: 'Linked', email: 'linked@caa.co.ug' },
+      { entraObjectId: 'oid-unlinked', name: 'Not Linked Yet', email: 'unlinked@caa.co.ug' }
+    ]);
+    prisma.staffUser.findMany.mockResolvedValue([
+      { email: 'linked@caa.co.ug', entraObjectId: 'oid-linked' },
+      { email: 'Unlinked@caa.co.ug', entraObjectId: null }
+    ]);
+    const res = mockRes();
+
+    await staffUserController.entraAssignments({ user: ADMIN }, res);
+
+    expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ entraObjectId: 'oid-new' })]);
+  });
+
+  test('says so when the directory is not connected', async () => {
+    jest.spyOn(directory, 'isConfigured').mockReturnValue(false);
+    const res = mockRes();
+    await staffUserController.entraAssignments({ user: ADMIN }, res);
+    expect(res.status).toHaveBeenCalledWith(501);
+  });
+
+  test('says which permissions are missing when Entra refuses', async () => {
+    jest.spyOn(directory, 'isConfigured').mockReturnValue(true);
+    jest.spyOn(directory, 'staffAppAssignments').mockRejectedValue(Object.assign(new Error('Graph 403'), { status: 403 }));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = mockRes();
+
+    await staffUserController.entraAssignments({ user: ADMIN }, res);
+
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: expect.stringMatching(/Application\.Read\.All and GroupMember\.Read\.All/) }));
+  });
+});
+
+describe('creating an account for someone picked from the directory', () => {
+  const OID = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
+
+  test('is linked to their Microsoft account from the start', async () => {
+    prisma.staffUser.findUnique.mockResolvedValue(null);
+    prisma.staffUser.create.mockImplementation(({ data }) => Promise.resolve({ id: 9, active: true, ...data }));
+    const res = mockRes();
+
+    await staffUserController.create({ body: { name: 'Grace Namuli', email: 'grace@caa.co.ug', role: 'HR_Officer', entraObjectId: OID.toUpperCase() }, user: ADMIN }, res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(prisma.staffUser.create.mock.calls[0][0].data).toMatchObject({ entraObjectId: OID });
+  });
+
+  test('refuses something that is not a Microsoft object id', async () => {
+    const res = mockRes();
+    await staffUserController.create({ body: { name: 'Grace', email: 'grace@caa.co.ug', role: 'HR_Officer', entraObjectId: 'nope' }, user: ADMIN }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  test('refuses a Microsoft account that already has a staff account', async () => {
+    prisma.staffUser.findUnique.mockResolvedValueOnce({ id: 4, entraObjectId: OID });
+    const res = mockRes();
+    await staffUserController.create({ body: { name: 'Grace', email: 'grace2@caa.co.ug', role: 'HR_Officer', entraObjectId: OID }, user: ADMIN }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(prisma.staffUser.create).not.toHaveBeenCalled();
+  });
+});
+
 describe('create', () => {
   test.each(['HR_Officer', 'Senior_HR_Officer', 'Principal_HR_Officer', 'Manager', 'Director'])(
     'a system administrator can create a %s account', async (role) => {

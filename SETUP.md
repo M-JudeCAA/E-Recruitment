@@ -149,7 +149,20 @@ one-time Microsoft prompt. Optionally, the API can search with its own
 application permission instead (`User.Read.All`, application type, plus a
 client secret in `ENTRA_DIRECTORY_CLIENT_SECRET`, and
 `ENTRA_DIRECTORY_CLIENT_ID` if it isn't the staff app). If neither works, HR
-types the hiring manager's name and UCAA email.
+types the hiring manager's name and UCAA email. The Staff accounts screen
+uses the same search for the system administrator's "Full name" field.
+
+**Staff app users waiting for a role.** The Staff accounts screen lists the
+people assigned to the staff app in Entra (Enterprise applications > the
+staff app > Users and groups, directly or through a group) who have no staff
+account yet; the system administrator picks a role and the account is made.
+This is read by the API with the directory connection above
+(`ENTRA_DIRECTORY_CLIENT_SECRET`), and needs two more Microsoft Graph
+**application** permissions with admin consent: `Application.Read.All` (the
+app's assignments) and `GroupMember.Read.All` (members of an assigned group).
+Without them the list says so, and accounts are created by name as before.
+Assigning someone in Entra gives them no access by itself - only the role
+given here does.
 
 Create staff accounts with the person's **sign-in name** (UPN) — that is
 what Entra reports when the `email` claim is empty. The first sign-in links

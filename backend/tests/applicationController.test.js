@@ -58,6 +58,140 @@ describe('saveDraft', () => {
     expect(res.status).toHaveBeenCalledWith(422);
     expect(prisma.application.update).not.toHaveBeenCalled();
   });
+
+  test('a vacancy id that is not a number is a bad request', async () => {
+    const res = mockRes();
+    await applicationDraftController.saveDraft({ body: { vacancyId: 'abc' }, files: {}, user: { id: 5, candidateType: 'External' } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.vacancy.findUnique).not.toHaveBeenCalled();
+  });
+});
+
+describe('withdrawing a submitted application', () => {
+  test('all HR staff are told - except anyone who applied for the vacancy themselves', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, vacancyId: 10, status: 'InterviewScheduled' });
+    prisma.application.updateMany.mockResolvedValue({ count: 1 });
+    prisma.interviewRound.findMany.mockResolvedValue([]);
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 10, title: 'Air Traffic Controller', jobRef: 'UCAA/ADV/EXT/001/2026' });
+    prisma.candidate.findUnique.mockResolvedValue({ id: 5, fullName: 'Jane <b>Doe</b>' });
+    prisma.candidate.findMany.mockResolvedValue([{ email: 'okello@caa.co.ug', entraObjectId: 'oid-9' }]);
+    prisma.staffUser.findMany
+      .mockResolvedValueOnce([{ id: 3 }]) // staff who applied for the vacancy
+      .mockResolvedValueOnce([{ id: 1 }, { id: 2 }]); // everyone else in HR
+    const res = mockRes();
+
+    await applicationDraftController.withdraw({ params: { id: '1' }, body: { reason: 'Took another job' }, user: { id: 5 } }, res);
+
+    expect(prisma.staffUser.findMany).toHaveBeenLastCalledWith({
+      where: { role: { not: null }, active: true, id: { notIn: [3] } }, select: { id: true }
+    });
+    const notices = prisma.notification.create.mock.calls.map(([{ data }]) => data).filter((d) => d.channel === 'InApp');
+    expect(notices.map((d) => d.recipientId).sort()).toEqual([1, 2]);
+    expect(notices[0]).toEqual(expect.objectContaining({ taskType: 'ApplicationWithdrawn', taskId: 1 }));
+    expect(notices[0].message).toBe('Jane &lt;b&gt;Doe&lt;/b&gt; withdrew their application for "Air Traffic Controller" (UCAA/ADV/EXT/001/2026) '
+      + 'with an interview booked. Reason given: Took another job.');
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ id: 1 }));
+  });
+
+  test('a notice that fails does not undo the withdrawal', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, vacancyId: 10, status: 'Submitted' });
+    prisma.application.updateMany.mockResolvedValue({ count: 1 });
+    prisma.interviewRound.findMany.mockResolvedValue([]);
+    prisma.vacancy.findUnique.mockRejectedValueOnce(new Error('db hiccup'));
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = mockRes();
+
+    await applicationDraftController.withdraw({ params: { id: '1' }, body: {}, user: { id: 5 } }, res);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalled();
+    console.error.mockRestore();
+  });
+});
+
+// Uploads nothing refers to any more are deleted, not left on disk.
+describe('uploaded files no longer needed', () => {
+  const fs = require('fs');
+  const os = require('os');
+  const path = require('path');
+  let dir;
+  const upload = (name) => {
+    fs.writeFileSync(path.join(dir, name), 'x');
+    return { filename: name, originalname: name, path: path.join(dir, name) };
+  };
+  const exists = (name) => fs.existsSync(path.join(dir, name));
+  const openVacancy = { id: 10, postingType: 'External', status: 'Open', deadline: null, desirableRequirements: [] };
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'erec-drafts-'));
+    process.env.UPLOAD_DIR = dir;
+  });
+  afterEach(() => {
+    delete process.env.UPLOAD_DIR;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('a new cover letter replaces the old file', async () => {
+    upload('old.pdf');
+    const coverLetter = upload('new.pdf');
+    prisma.vacancy.findUnique.mockResolvedValue(openVacancy);
+    prisma.application.findFirst.mockResolvedValue({ id: 1, status: 'Draft', coverLetterUrl: '/api/files/old.pdf' });
+    prisma.application.update.mockResolvedValue({ id: 1 });
+
+    await applicationDraftController.saveDraft({ body: { vacancyId: '10' }, files: { coverLetter: [coverLetter] }, user: { id: 5, candidateType: 'External' } }, mockRes());
+
+    expect(prisma.application.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ coverLetterUrl: '/api/files/new.pdf' }) }));
+    expect(exists('old.pdf')).toBe(false);
+    expect(exists('new.pdf')).toBe(true);
+  });
+
+  test('a refused draft save keeps nothing it uploaded', async () => {
+    const coverLetter = upload('new.pdf');
+    prisma.vacancy.findUnique.mockResolvedValue({ ...openVacancy, deadline: new Date('2000-01-01') });
+    const res = mockRes();
+
+    await applicationDraftController.saveDraft({ body: { vacancyId: '10' }, files: { coverLetter: [coverLetter] }, user: { id: 5, candidateType: 'External' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(exists('new.pdf')).toBe(false);
+  });
+
+  test('cancelling a draft deletes its cover letter and documents', async () => {
+    upload('cover.pdf');
+    upload('transcript.pdf');
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, vacancyId: 10, status: 'Draft', coverLetterUrl: '/api/files/cover.pdf' });
+    prisma.applicationDocument.findMany.mockResolvedValue([{ id: 7, fileUrl: '/api/files/transcript.pdf' }]);
+    prisma.application.delete.mockResolvedValue({});
+    const res = mockRes();
+
+    await applicationDraftController.withdraw({ params: { id: '1' }, body: {}, user: { id: 5 } }, res);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ cancelled: true }));
+    expect(exists('cover.pdf')).toBe(false);
+    expect(exists('transcript.pdf')).toBe(false);
+  });
+
+  test('removing a document deletes its file', async () => {
+    upload('transcript.pdf');
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, status: 'Draft' });
+    prisma.applicationDocument.findUnique.mockResolvedValue({ id: 7, applicationId: 1, fileUrl: '/api/files/transcript.pdf' });
+    prisma.applicationDocument.delete.mockResolvedValue({});
+
+    await applicationDraftController.removeDocument({ params: { id: '1', documentId: '7' }, user: { id: 5 } }, mockRes());
+
+    expect(exists('transcript.pdf')).toBe(false);
+  });
+
+  test('a refused document upload is not kept', async () => {
+    const file = upload('extra.pdf');
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, status: 'Draft' });
+    const res = mockRes();
+
+    await applicationDraftController.addDocument({ params: { id: '1' }, user: { id: 5 }, file, body: { category: 'Nonsense' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(exists('extra.pdf')).toBe(false);
+  });
 });
 
 describe('submit', () => {
@@ -352,6 +486,38 @@ describe('submit', () => {
         where: { id: 1, status: 'Draft' },
         data: expect.objectContaining({ status: 'Submitted', screeningPassed: true, screenedAt: expect.any(Date) })
       });
+    });
+
+    test('screens against the questions as they are at submission, not as they were when the draft was saved', async () => {
+      // Saved while the question wanted "No"; HR has since changed it to "Yes".
+      arrange({
+        vacancy: { disqualifyingRequirements: [{ ...licenceQuestion, requiredAnswer: 'Yes', text: 'Do you hold a current ATC licence?' }] },
+        application: { disqualifyingResponses: [{ ...licenceQuestion, requiredAnswer: 'No', answer: true }] }
+      });
+      const res = mockRes();
+
+      await applicationDraftController.submit({ params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } }, res);
+
+      expect(prisma.application.updateMany).toHaveBeenCalledWith({
+        where: { id: 1, status: 'Draft' },
+        data: expect.objectContaining({
+          screeningPassed: true,
+          disqualifyingResponses: [{ id: 'q1', text: 'Do you hold a current ATC licence?', requiredAnswer: 'Yes', answer: true }]
+        })
+      });
+    });
+
+    test('an answer to a question HR has since removed is dropped, and a new question must be answered', async () => {
+      arrange({
+        vacancy: { disqualifyingRequirements: [{ id: 'q2', text: 'Are you willing to work shifts?', requiredAnswer: 'Yes' }] },
+        application: { disqualifyingResponses: [{ ...licenceQuestion, answer: true }] }
+      });
+      const res = mockRes();
+
+      await applicationDraftController.submit({ params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } }, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ unanswered: ['Are you willing to work shifts?'] }));
     });
 
     // FR-ATS-038

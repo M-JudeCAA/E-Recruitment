@@ -74,8 +74,12 @@ function VacancyForm({ vacancy, form, setForm, mode }) {
       <TextField label="Positions required" type="number" min="1" value={form.positionsRequired}
         onChange={(e) => setForm({ ...form, positionsRequired: Number(e.target.value) })} />
       {/* Posting type can only change here before approval; once a vacancy
-          is live it changes through the audited "Change to ..." action. */}
-      <Select label="Posting type" value={form.postingType} onChange={(e) => setForm({ ...form, postingType: e.target.value })} required>
+          is live it changes through the audited "Change to ..." action
+          (the API refuses it here, USE_POSTING_TYPE_TRANSITION). */}
+      <Select label="Posting type" value={form.postingType} onChange={(e) => setForm({ ...form, postingType: e.target.value })} required
+        disabled={mode === 'edit' && !['PendingApproval', 'Returned'].includes(vacancy.status)}
+        hint={mode === 'edit' && !['PendingApproval', 'Returned'].includes(vacancy.status)
+          ? 'Approved vacancies change posting type with "Change to ..." in the actions menu.' : undefined}>
         <option value="">Select one</option>
         <option value="Internal">Internal only</option>
         <option value="External">External only</option>
@@ -150,7 +154,7 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
     v.status === 'Returned' && { label: 'Resubmit for approval', onClick: () => run(() => staffClient.patch(`/api/vacancies/${v.id}/resubmit`), 'Resubmitted for approval.', 'Could not resubmit the vacancy') },
     v.status === 'PendingApproval' && isApprover && { label: 'Return for changes', onClick: () => setDialog('return') },
     v.status === 'PendingApproval' && isApprover && { label: 'Reject', danger: true, onClick: () => setDialog('reject') },
-    v.status === 'Closed' && isApprover && { label: 'Re-open', onClick: () => run(async () => Boolean(await approveVacancy(v.id, confirm)), 'Vacancy re-opened.', 'Could not re-open the vacancy') },
+    v.status === 'Closed' && isApprover && { label: 'Re-open', onClick: () => run(async () => Boolean(await approveVacancy(v, confirm)), 'Vacancy re-opened.', 'Could not re-open the vacancy') },
     v.status === 'Closed' && { label: 'Readvertise…', onClick: () => openForm('readvertise') },
     live && isApprover && (v.postingTypeLocked
       ? { label: 'Posting type locked', disabled: true, hint: 'The posting type was changed after the deadline had passed, so it is now fixed.', onClick: () => {} }

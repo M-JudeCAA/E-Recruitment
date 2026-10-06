@@ -7,7 +7,8 @@ module.exports = {
   update: (id, data) => prisma.vacancy.update({ where: { id }, data }),
   // Only if the vacancy is still at `status` - two approvers acting on the
   // same vacancy at once can't both succeed. { count } like updateMany.
-  updateIfStatus: (id, status, data) => prisma.vacancy.updateMany({ where: { id, status }, data }),
+  // `where` adds conditions (approve: unchanged since the approver looked).
+  updateIfStatus: (id, status, data, where = {}) => prisma.vacancy.updateMany({ where: { id, status, ...where }, data }),
 
   // Creates a vacancy with the next job reference for its posting type and
   // year (see utils/jobRefGenerator.js). The upsert takes the counter row's

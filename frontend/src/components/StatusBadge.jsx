@@ -34,6 +34,8 @@ export const STATUS_COLORS = {
   Confirmed: 'var(--color-accent)', RescheduleRequested: 'var(--color-warning)',
   // Staff account state (StaffAccounts.jsx)
   Active: 'var(--color-accent)', Deactivated: 'var(--color-text-muted)',
+  // Assigned to the staff app in Entra within the last week (StaffAccounts)
+  New: 'var(--color-primary)',
   // Verification
   Pending: 'var(--color-warning)', HR_Verified: 'var(--color-accent)',
   Discrepancy_Flagged: 'var(--color-danger)',

@@ -1,6 +1,5 @@
-const fs = require('fs');
-const path = require('path');
 const { Prisma } = require('@prisma/client');
+const { removeUploads } = require('../utils/uploadFiles');
 const prisma = require('../config/db');
 const settings = require('./settingsService');
 
@@ -15,8 +14,24 @@ const settings = require('./settingsService');
 // notifications about them, and their sign-in. Each purge is logged in
 // DataPurgeLog, without personal data.
 
-// An application still in play - its candidate's data is needed.
+// An application still in play - its candidate's data is needed. An
+// application stays Offered after its offer ends without a hire, so an
+// Offered one is finished once its offer is CLOSED_OFFER_STATUSES.
 const ACTIVE_STATUSES = ['Submitted', 'UnderReview', 'ShortlistProposed', 'Shortlisted', 'InterviewScheduled', 'Interviewed', 'Offered'];
+const CLOSED_OFFER_STATUSES = ['Declined', 'Expired', 'Withdrawn'];
+
+function isActive(application) {
+  if (application.status === 'Offered') return !CLOSED_OFFER_STATUSES.includes(application.offer?.status);
+  return ACTIVE_STATUSES.includes(application.status);
+}
+
+// The same rule as a Prisma filter on Application.
+const ACTIVE_APPLICATION_WHERE = {
+  OR: [
+    { status: { in: ACTIVE_STATUSES.filter((s) => s !== 'Offered') } },
+    { status: 'Offered', NOT: { offer: { status: { in: CLOSED_OFFER_STATUSES } } } }
+  ]
+};
 const MONTH_MS = 30.44 * 24 * 60 * 60 * 1000;
 
 // Every optional field on Candidate is personal data except these, which
@@ -44,13 +59,6 @@ function anonymisedCandidate(candidateId, now) {
   };
 }
 
-function uploadPath(url) {
-  if (!url) return null;
-  const dir = path.resolve(process.env.UPLOAD_DIR || './uploads');
-  const file = path.join(dir, path.basename(String(url)));
-  return file.startsWith(dir + path.sep) ? file : null;
-}
-
 /**
  * Erases one candidate's personal data. Refuses (returns { refused }) a
  * candidate with an application still in progress or who was hired, unless
@@ -61,7 +69,12 @@ async function purgeCandidate(candidateId, { reason, requestId = null, performed
     where: { id: candidateId },
     include: {
       internalProfile: true,
-      applications: { include: { documents: true, offer: { select: { status: true } } } }
+      applications: {
+        include: {
+          documents: true, offer: { select: { status: true } },
+          interviewRounds: { select: { scoreSheetUrl: true } }
+        }
+      }
     }
   });
   if (!candidate) return { refused: 'Candidate not found' };
@@ -72,7 +85,12 @@ async function purgeCandidate(candidateId, { reason, requestId = null, performed
   const applicationIds = candidate.applications.map((a) => a.id);
   const files = [
     candidate.photoUrl, candidate.internalProfile?.supportingDocumentUrl,
-    ...candidate.applications.flatMap((a) => [a.cvUrl, a.coverLetterUrl, ...a.documents.map((d) => d.fileUrl)])
+    ...candidate.applications.flatMap((a) => [
+      a.cvUrl, a.coverLetterUrl, ...a.documents.map((d) => d.fileUrl),
+      // The panel's signed score sheets name the candidate; the score and
+      // verdict on the round stay.
+      ...a.interviewRounds.map((r) => r.scoreSheetUrl)
+    ])
   ].filter(Boolean);
   const now = new Date();
   const removed = {
@@ -102,7 +120,17 @@ async function purgeCandidate(candidateId, { reason, requestId = null, performed
           ...Object.fromEntries(APPLICATION_JSON.map((k) => [k, Prisma.DbNull]))
         }
       });
-      await tx.interviewRound.updateMany({ where: { applicationId: { in: applicationIds } }, data: { resultNotes: null, candidateResponseNote: null } });
+      await tx.interviewRound.updateMany({
+        where: { applicationId: { in: applicationIds } },
+        data: { resultNotes: null, candidateResponseNote: null, scoreSheetUrl: null, scoreSheetName: null }
+      });
+      // The education and work history copied into the audit log when they
+      // applied (workflowService.captureSnapshot). The row stays, so the
+      // trail still shows a snapshot was taken.
+      await tx.auditLog.updateMany({
+        where: { entityType: 'ApplicationSnapshot', entityId: { in: applicationIds } },
+        data: { payload: { erased: true, erasedAt: now.toISOString() } }
+      });
       await tx.shortlistRating.updateMany({ where: { assignment: { applicationId: { in: applicationIds } } }, data: { comment: null } });
     }
     await tx.candidate.update({ where: { id: candidateId }, data: anonymisedCandidate(candidateId, now) });
@@ -111,10 +139,7 @@ async function purgeCandidate(candidateId, { reason, requestId = null, performed
 
   // After the commit: the files themselves. A file that can't be removed
   // is no longer referenced anywhere and goes with the next folder cleanup.
-  for (const url of files) {
-    const file = uploadPath(url);
-    if (file) await fs.promises.rm(file, { force: true }).catch(() => {});
-  }
+  await removeUploads(files);
   return { purged: true, removed };
 }
 
@@ -123,7 +148,7 @@ function blockerFor(candidate) {
   if (candidate.applications.some((a) => a.offer?.status === 'Accepted')) {
     return 'This candidate was hired - their records are now employment records and are kept';
   }
-  if (candidate.applications.some((a) => ACTIVE_STATUSES.includes(a.status))) {
+  if (candidate.applications.some(isActive)) {
     return 'This candidate has an application still in progress - it must be finished, withdrawn or rejected first';
   }
   return null;
@@ -146,7 +171,7 @@ async function purgeExpired(now = new Date()) {
       purgedAt: null,
       createdAt: { lt: cutoff },
       OR: [{ lastLoginAt: null }, { lastLoginAt: { lt: cutoff } }],
-      applications: { none: { OR: [{ status: { in: ACTIVE_STATUSES } }, { offer: { status: 'Accepted' } }] } }
+      applications: { none: { OR: [ACTIVE_APPLICATION_WHERE, { offer: { status: 'Accepted' } }] } }
     },
     include: { applications: { select: { createdAt: true, submittedDate: true, rejectedAt: true, offer: { select: { decidedAt: true } } } } }
   });
