@@ -1,0 +1,67 @@
+# Brings the test (UAT) deployment up to date and restarts it. Run from the
+# deployment folder - not your development copy:
+#   powershell -ExecutionPolicy Bypass -File deploy\lan\update-uat.ps1
+#   ... -NoPull    rebuild what is checked out without fetching new code
+#
+# It pauses the running app (the `hold` file run-uat.ps1 watches), pulls the
+# branch, installs packages, updates the database schema, rebuilds the
+# sites, and lets the app start again. Testers are cut off for a few minutes.
+param([switch]$NoPull)
+$ErrorActionPreference = 'Stop'
+$root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$backend = Join-Path $root 'backend'
+$frontend = Join-Path $root 'frontend'
+$logs = Join-Path $PSScriptRoot 'logs'
+New-Item -ItemType Directory -Force $logs | Out-Null
+$holdFile = Join-Path $logs 'hold'
+$pidFile = Join-Path $logs 'pids.txt'
+
+function Invoke-Step($what, [scriptblock]$block) {
+  Write-Host "== $what" -ForegroundColor Cyan
+  & $block
+  if ($LASTEXITCODE) { throw "$what failed (exit $LASTEXITCODE)." }
+}
+
+foreach ($f in @("$backend\.env", "$frontend\.env")) {
+  if (-not (Test-Path $f)) { throw "$f is missing - see deploy\lan\README.md." }
+}
+
+# Pause the app so nothing holds the Prisma engine or the build folder.
+New-Item -ItemType File -Force $holdFile | Out-Null
+Write-Host 'Waiting for the running app to stop...'
+for ($i = 0; $i -lt 30 -and (Test-Path $pidFile); $i++) { Start-Sleep -Seconds 2 }
+if (Test-Path $pidFile) {
+  Remove-Item $holdFile
+  throw 'The app did not stop within a minute. Is the supervisor (run-uat.ps1) stuck? See logs\supervisor.log.'
+}
+
+try {
+  if (-not $NoPull) {
+    Push-Location $root
+    try {
+      Invoke-Step 'Checking for local changes' { git diff --quiet HEAD }
+      Invoke-Step 'Pulling the latest code' { git pull --ff-only }
+    } finally { Pop-Location }
+  }
+
+  Push-Location $backend
+  try {
+    Invoke-Step 'Installing API packages' { npm.cmd ci --no-audit --no-fund }
+    Invoke-Step 'Generating the database client' { npx.cmd prisma generate }
+    Invoke-Step 'Updating the database schema' { node scripts/prepareDatabase.js }
+  } finally { Pop-Location }
+
+  Push-Location $frontend
+  try {
+    Invoke-Step 'Installing site packages' { npm.cmd ci --no-audit --no-fund }
+    Invoke-Step 'Building the sites' { npm.cmd run build }
+  } finally { Pop-Location }
+} finally {
+  # Let the app start again whatever happened - on a failure the previous
+  # build and schema are usually still in place.
+  Remove-Item $holdFile -ErrorAction SilentlyContinue
+}
+
+Write-Host ''
+Write-Host 'Done. The app starts again within a few seconds if the scheduled task is running;' -ForegroundColor Green
+Write-Host 'otherwise start it with deploy\lan\run-uat.ps1 (see README.md).' -ForegroundColor Green
