@@ -693,10 +693,12 @@ async function seedOrg() {
     ['hrOfficer', 'Human Resource Officer', 'HR/DHRA', 1],
     ['flightOps', 'Flight Operations Inspector', 'FSS/DSSER', 2]
   ];
+  // Added by a Principal HR Officer with "Approve now" (the default), so they
+  // can be used on vacancies at once - an HR Officer's would wait for approval.
   for (const [key, name, d, level] of positions) {
-    POS[key] = await api('POST', '/api/positions', { token: T.hro, json: { name, departmentId: dept[d], level } });
+    POS[key] = await api('POST', '/api/positions', { token: T.phro, json: { name, departmentId: dept[d], level } });
   }
-  log(`  ${positions.length} positions created`);
+  log(`  ${positions.length} positions created and approved`);
 
   await api('POST', '/api/delegations', {
     token: T.phro,

@@ -28,14 +28,14 @@ function mockRes() {
 // Two "CWG" positions in genuinely different department rows (same name,
 // different directorate/departmentId) - the exact ambiguity this whole
 // feature exists to get right.
-const cwgCorpDept = { id: 1, name: 'CWG', directorateId: 10, directorate: { id: 10, name: 'CORP' } };
-const cwgDansDept = { id: 2, name: 'CWG', directorateId: 20, directorate: { id: 20, name: 'DANS' } };
+const cwgCorpDept = { id: 1, name: 'CWG', status: 'Approved', directorateId: 10, directorate: { id: 10, name: 'CORP', status: 'Approved' } };
+const cwgDansDept = { id: 2, name: 'CWG', status: 'Approved', directorateId: 20, directorate: { id: 20, name: 'DANS', status: 'Approved' } };
 
-const officerCorp = { id: 100, name: 'CWG Officer', departmentId: 1, level: 1, department: cwgCorpDept };
-const seniorCorp = { id: 101, name: 'CWG Senior Officer', departmentId: 1, level: 2, department: cwgCorpDept };
-const equalCorp = { id: 102, name: 'CWG Officer II', departmentId: 1, level: 1, department: cwgCorpDept };
-const juniorCorp = { id: 103, name: 'CWG Assistant', departmentId: 1, level: 0, department: cwgCorpDept };
-const seniorDans = { id: 200, name: 'CWG Director', departmentId: 2, level: 5, department: cwgDansDept };
+const officerCorp = { id: 100, name: 'CWG Officer', status: 'Approved', departmentId: 1, level: 1, department: cwgCorpDept };
+const seniorCorp = { id: 101, name: 'CWG Senior Officer', status: 'Approved', departmentId: 1, level: 2, department: cwgCorpDept };
+const equalCorp = { id: 102, name: 'CWG Officer II', status: 'Approved', departmentId: 1, level: 1, department: cwgCorpDept };
+const juniorCorp = { id: 103, name: 'CWG Assistant', status: 'Approved', departmentId: 1, level: 0, department: cwgCorpDept };
+const seniorDans = { id: 200, name: 'CWG Director', status: 'Approved', departmentId: 2, level: 5, department: cwgDansDept };
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -232,6 +232,29 @@ describe('create', () => {
     const res = mockRes();
 
     await vacancyController.create(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.vacancy.create).not.toHaveBeenCalled();
+  });
+
+  test('refuses a position that is still awaiting approval', async () => {
+    prisma.position.findUnique.mockResolvedValue({ ...officerCorp, status: 'Pending' });
+    const res = mockRes();
+
+    await vacancyController.create({ body: { positionId: '100', postingType: 'External' }, user: { id: 1 } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json.mock.calls[0][0].error).toMatch(/not approved yet/);
+    expect(prisma.vacancy.create).not.toHaveBeenCalled();
+  });
+
+  test('refuses an approved position whose directorate is not approved', async () => {
+    prisma.position.findUnique.mockResolvedValue({
+      ...officerCorp, department: { ...cwgCorpDept, directorate: { ...cwgCorpDept.directorate, status: 'Pending' } }
+    });
+    const res = mockRes();
+
+    await vacancyController.create({ body: { positionId: '100', postingType: 'External' }, user: { id: 1 } }, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(prisma.vacancy.create).not.toHaveBeenCalled();

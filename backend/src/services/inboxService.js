@@ -4,6 +4,7 @@ const delegationModel = require('../models/delegationModel');
 const conflictOfInterest = require('./conflictOfInterestService');
 const vacancyProgress = require('./vacancyProgressService');
 const { computeStatus } = require('./slaStatusService');
+const { POSITION_LEVELS } = require('../utils/positionLevels');
 
 // The staff Inbox (GET /api/dashboard/inbox): everything waiting for the
 // person looking, in one list, oldest due first - the landing page for every
@@ -19,6 +20,7 @@ const { computeStatus } = require('./slaStatusService');
 // Vacancies the viewer (or their delegator) applied for are left out.
 
 const DAY = 24 * 60 * 60 * 1000;
+const LEVEL_NAMES = Object.fromEntries(POSITION_LEVELS.map((l) => [l.value, l.label]));
 
 const KIND_LABELS = {
   approveVacancy: 'Vacancy approval',
@@ -170,20 +172,60 @@ async function forStaff(req, now = new Date()) {
     }
   }
 
+  // Organisation approvals (orgApprovalService): each pending directorate,
+  // department and position, except the viewer's own - one item per import
+  // for what a spreadsheet import left pending.
   if (rank >= ROLE_RANK.Principal_HR_Officer && rank <= ROLE_RANK.Manager) {
-    const departments = await prisma.department.findMany({
-      where: { status: 'Pending' },
-      select: { id: true, name: true, createdAt: true, createdBy: { select: { name: true } }, directorate: { select: { name: true } } }
-    }) || [];
-    for (const d of departments) {
+    const pending = { where: { status: 'Pending', createdById: { not: me } } };
+    const importSelect = { select: { id: true, fileName: true, createdAt: true, createdBy: { select: { name: true } } } };
+    const [directorates, departments, positions] = await Promise.all([
+      prisma.directorate.findMany({ ...pending, select: { id: true, name: true, createdAt: true, importId: true, import: importSelect, createdBy: { select: { name: true } } } }),
+      prisma.department.findMany({ ...pending, select: { id: true, name: true, createdAt: true, importId: true, import: importSelect, createdBy: { select: { name: true } }, directorate: { select: { name: true } } } }),
+      prisma.position.findMany({ ...pending, select: { id: true, name: true, level: true, createdAt: true, importId: true, import: importSelect, createdBy: { select: { name: true } }, department: { select: { name: true, directorate: { select: { name: true } } } } } })
+    ]).then((lists) => lists.map((l) => l || []));
+
+    const imports = new Map();
+    const fromImport = (row, type) => {
+      const entry = imports.get(row.importId) || { ...row.import, counts: { directorate: 0, department: 0, position: 0 } };
+      entry.counts[type] += 1;
+      imports.set(row.importId, entry);
+    };
+    for (const d of directorates) {
+      if (d.importId) { fromImport(d, 'directorate'); continue; }
       items.push({
-        key: `department-${d.id}`,
-        kind: 'Department approval',
-        title: `${d.name} under ${d.directorate?.name || ''}`,
-        context: `Proposed by ${d.createdBy?.name || 'HR'}.`,
-        link: '/hr/departments',
-        review: { type: 'department', departmentId: d.id, name: d.name, directorate: d.directorate?.name },
+        key: `directorate-${d.id}`, kind: 'Directorate approval', title: d.name,
+        context: `Added by ${d.createdBy?.name || 'HR'}.`, link: '/hr/departments',
+        review: { type: 'org', entity: 'directorate', id: d.id, name: d.name, rows: [['Directorate', d.name]] },
+        waiting: waitingLabel(d.createdAt, now)
+      });
+    }
+    for (const d of departments) {
+      if (d.importId) { fromImport(d, 'department'); continue; }
+      items.push({
+        key: `department-${d.id}`, kind: 'Department approval', title: `${d.name} under ${d.directorate?.name || ''}`,
+        context: `Proposed by ${d.createdBy?.name || 'HR'}.`, link: '/hr/departments',
+        review: { type: 'org', entity: 'department', id: d.id, name: d.name, rows: [['Department', d.name], ['Directorate', d.directorate?.name]] },
         ...(await sla('DepartmentApproval', d.id, d.createdAt, now))
+      });
+    }
+    for (const p of positions) {
+      if (p.importId) { fromImport(p, 'position'); continue; }
+      const where = `${p.department?.name || ''}${p.department?.directorate?.name ? `, ${p.department.directorate.name}` : ''}`;
+      items.push({
+        key: `position-${p.id}`, kind: 'Position approval', title: `${p.name} · ${where}`,
+        context: `Added by ${p.createdBy?.name || 'HR'}.`, link: '/hr/departments',
+        review: { type: 'org', entity: 'position', id: p.id, name: p.name, rows: [['Position', p.name], ['Department', where], ['Level', LEVEL_NAMES[p.level] || p.level]] },
+        waiting: waitingLabel(p.createdAt, now)
+      });
+    }
+    for (const [importId, imp] of imports) {
+      const parts = [['directorate', 'directorates'], ['department', 'departments'], ['position', 'positions']]
+        .filter(([k]) => imp.counts[k]).map(([k, many]) => `${imp.counts[k]} ${imp.counts[k] === 1 ? k : many}`);
+      items.push({
+        key: `org-import-${importId}`, kind: 'Import approval', title: `${parts.join(', ')} from ${imp.fileName}`,
+        context: `Imported by ${imp.createdBy?.name || 'HR'}.`, link: '/hr/departments',
+        review: { type: 'org', entity: 'import', id: importId, name: imp.fileName, rows: [['File', imp.fileName], ['Waiting', parts.join(', ')]] },
+        waiting: waitingLabel(imp.createdAt, now)
       });
     }
   }

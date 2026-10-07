@@ -108,10 +108,12 @@ module.exports = {
     where: { approvedAt: { not: null } },
     select: { id: true, createdAt: true, approvedAt: true, approvedById: true, approvedBy: { select: { name: true } } }
   }),
+  // A department its PHRO+ creator approved on creation ("Approve now") was
+  // never waiting, so it is left out of the turnaround figures.
   resolvedDepartmentApprovals: () => prisma.department.findMany({
     where: { approvedAt: { not: null } },
-    select: { id: true, createdAt: true, approvedAt: true, approvedById: true, approvedBy: { select: { name: true } } }
-  }),
+    select: { id: true, createdAt: true, createdById: true, approvedAt: true, approvedById: true, approvedBy: { select: { name: true } } }
+  }).then((rows) => (rows || []).filter((d) => d.approvedById !== d.createdById)),
   resolvedOfferApprovals: () => prisma.offer.findMany({
     where: { approvedDate: { not: null } },
     select: { id: true, recommendedDate: true, approvedDate: true, approvedById: true, approvedBy: { select: { name: true } } }
