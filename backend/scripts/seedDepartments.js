@@ -1,37 +1,63 @@
-// Seeds the six real Directorates and every real Department/Directorate
-// pairing evidenced in the Cyber Security Workshop nomination list -
-// 29 department rows, including the 5 distinct department-rows named
-// "CWG" that each sit under a different directorate. All pre-approved,
-// since every one of these is already in active use, not a proposal
-// awaiting review.
+// Seeds the six real Directorates and UCAA's departments, from HR's list of
+// departments by directorate - 28 departments, plus the offices that recruit
+// in their own right (the Director General's Office, each Director's Office,
+// Corporate Affairs and the General Manager's Office). All pre-approved,
+// since every one of these is in use, not a proposal awaiting review.
+//
+// Re-running it is safe: rows are matched by code within their directorate,
+// a missing one is created and an existing one gets the full name below.
+// Departments not in this list are left alone and listed at the end;
+// `--prune` deletes those that nothing uses (no positions, vacancies or staff).
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-// [code, full name]. Full names only where we are sure of them; the rest
-// keep the code as their name until HR edits it on the Directorates page.
+const PRUNE = process.argv.includes('--prune');
+
+// [code, full name]
 const DIRECTORATES = [
   ['DHRA', 'Human Resource and Administration'], ['DANS', 'Air Navigation Services'], ['DAAS', 'Airports and Aviation Security'],
-  ['DSSER', 'Safety, Security and Economic Regulation'], ['DF', 'Finance'], ['CORP', 'CORP']
+  ['DSSER', 'Safety, Security and Economic Regulation'], ['DF', 'Finance'], ['CORP', 'Corporate']
 ];
 
-// Department full names we are sure of (frontend utils/orgNames.js); the
-// rest are named by their code until HR edits them.
-const DEPARTMENT_NAMES = {
-  ACCOUNTS: 'Accounts', ADMIN: 'Administration', ARFFS: 'Aerodrome Rescue and Fire Fighting Services', AUDIT: 'Internal Audit',
-  AVSEC: 'Aviation Security', ER: 'Economic Regulation', FINANCE: 'Finance', FSS: 'Flight Safety Standards', HR: 'Human Resource',
-  IT: 'Information Technology', 'MGT ACCT': 'Management Accounting', OPS: 'Operations', PDU: 'Procurement and Disposal'
-};
-
-// [department code, directorate code] - derived directly from the
-// attached participant list, not invented.
+// [department code, full name, directorate code]
 const DEPARTMENTS = [
-  ['CWG', 'CORP'], ['CWG', 'DANS'], ['CWG', 'DAAS'], ['CWG', 'DSSER'], ['CWG', 'DF'],
-  ['AUDIT', 'CORP'], ['IT', 'CORP'], ['IT INT', 'CORP'], ['PDU', 'CORP'],
-  ['HR', 'DHRA'], ['LD', 'DHRA'], ['ADMIN', 'DHRA'],
-  ['ACCOUNTS', 'DF'], ['FINANCE', 'DF'], ['MGT ACCT', 'DF'],
-  ['ASFAL', 'DSSER'], ['FSS', 'DSSER'], ['NCMC', 'DSSER'], ['ANSAS', 'DSSER'], ['SSP', 'DSSER'], ['ER', 'DSSER'],
-  ['AVSEC', 'DAAS'], ['EE', 'DAAS'], ['VIP', 'DAAS'], ['ME', 'DAAS'], ['CC', 'DAAS'],
-  ['CE', 'DAAS'], ['ARFFS', 'DAAS'], ['OPS', 'DAAS']
+  ['IT', 'Information Technology', 'CORP'],
+  ['AUDIT', 'Internal Audit and Risk Management', 'CORP'],
+  ['LEGAL', 'Legal', 'CORP'],
+  ['MCCS', 'Marketing, Commercial and Customer Service', 'CORP'],
+  ['PDU', 'Procurement', 'CORP'],
+  ['PA', 'Public Affairs', 'CORP'],
+  ['QA', 'Quality Assurance / Risk Management', 'CORP'],
+  ['SP', 'Strategic Planning', 'CORP'],
+  ['AEPD', 'Aerodrome Engineering, Planning and Development', 'DAAS'],
+  ['AM', 'Aerodrome Maintenance', 'DAAS'],
+  ['AVSEC', 'Aviation Security', 'DAAS'],
+  ['OPS EIA', 'Operations EIA', 'DAAS'],
+  ['RA', 'Regional Airports', 'DAAS'],
+  ['SMS', 'Safety Management System', 'DAAS'],
+  ['AIM', 'Aeronautical Information Management', 'DANS'],
+  ['ATS', 'Air Traffic Services', 'DANS'],
+  ['CNS', 'Communication, Navigation and Surveillance', 'DANS'],
+  ['TTSQA', 'Technical Training / SMS / Quality Assurance', 'DANS'],
+  ['ACCOUNTS', 'Accounting', 'DF'],
+  ['FINANCE', 'Finance', 'DF'],
+  ['MGT ACCT', 'Management Accounts', 'DF'],
+  ['ADMIN', 'Administration, Estates and Transport', 'DHRA'],
+  ['HR', 'Human Resource', 'DHRA'],
+  ['LD', 'Human Resource Learning and Development', 'DHRA'],
+  ['ANSAS', 'Air Navigation Services and Aerodrome Standards', 'DSSER'],
+  ['ASFAL', 'Aviation Security Facilitation Policy and Regulation', 'DSSER'],
+  ['ER', 'Economic Regulation', 'DSSER'],
+  ['FSS', 'Flight Safety Standards', 'DSSER'],
+  // Offices that have recruitments of their own.
+  ['DG OFFICE', "Director General's Office", 'CORP'],
+  ['CORP AFFAIRS', 'Corporate Affairs', 'CORP'],
+  ['DIR OFFICE', "Director's Office - HRA", 'DHRA'],
+  ['DIR OFFICE', "Director's Office - ANS", 'DANS'],
+  ['DIR OFFICE', "Director's Office - AAS", 'DAAS'],
+  ['DIR OFFICE', "Director's Office - SSER", 'DSSER'],
+  ['DIR OFFICE', "Director's Office - F", 'DF'],
+  ['GM OFFICE', "General Manager's Office", 'DAAS']
 ];
 
 async function main() {
@@ -49,21 +75,21 @@ async function main() {
   for (const [code, name] of DIRECTORATES) {
     directorateByCode[code] = await prisma.directorate.upsert({
       where: { code },
-      update: {},
+      update: { name },
       create: { code, name, createdById: systemUser.id }
     });
   }
   console.log(`Seeded ${DIRECTORATES.length} directorates.`);
 
-  let created = 0;
-  for (const [deptCode, directorateCode] of DEPARTMENTS) {
+  const seededIds = new Set();
+  for (const [code, name, directorateCode] of DEPARTMENTS) {
     const directorate = directorateByCode[directorateCode];
-    await prisma.department.upsert({
-      where: { code_directorateId: { code: deptCode, directorateId: directorate.id } },
-      update: {},
+    const row = await prisma.department.upsert({
+      where: { code_directorateId: { code, directorateId: directorate.id } },
+      update: { name },
       create: {
-        code: deptCode,
-        name: DEPARTMENT_NAMES[deptCode] || deptCode,
+        code,
+        name,
         directorateId: directorate.id,
         status: 'Approved',
         createdById: systemUser.id,
@@ -71,13 +97,31 @@ async function main() {
         approvedAt: new Date()
       }
     });
-    created++;
+    seededIds.add(row.id);
   }
-  console.log(`Seeded ${created} department rows (including 5 separate "CWG" rows under different directorates).`);
+  console.log(`Seeded ${DEPARTMENTS.length} departments and offices.`);
 
-  console.log('\nNo Position rows are seeded - the source list only contains staff names, not job');
-  console.log('titles or seniority levels. Positions need to be entered separately, once real');
-  console.log('position/level data is available, via the new Position admin screen.');
+  // Departments from before this list (e.g. the old "CWG" rows).
+  const others = await prisma.department.findMany({
+    where: { id: { notIn: [...seededIds] } },
+    include: { directorate: true, _count: { select: { positions: true, vacancies: true, staff: true } } }
+  });
+  if (others.length) {
+    console.log(`\n${others.length} department(s) not in the list:`);
+    for (const d of others) {
+      const inUse = d._count.positions + d._count.vacancies + d._count.staff > 0;
+      if (PRUNE && !inUse) {
+        await prisma.department.delete({ where: { id: d.id } });
+        console.log(`  deleted   ${d.code} (${d.directorate.code}) - ${d.name}`);
+      } else {
+        const use = `${d._count.positions} positions, ${d._count.vacancies} vacancies, ${d._count.staff} staff`;
+        console.log(`  kept      ${d.code} (${d.directorate.code}) - ${d.name}${inUse ? ` [in use: ${use}]` : ''}`);
+      }
+    }
+    if (!PRUNE) console.log('Re-run with --prune to delete the ones nothing uses; move or delete the rest on the Departments page.');
+  }
+
+  console.log('\nNo Position rows are seeded - add them on the Positions page or by import.');
 
   // Backfill departmentId (the real FK admin vacancy scoping actually
   // uses) onto every staff account whose legacy department string
@@ -96,7 +140,7 @@ async function main() {
       backfilled++;
     }
     // matches.length === 0 (no such department) or > 1 (ambiguous, e.g.
-    // "CWG") is left unassigned deliberately - listForAdmin treats a
+    // "DIR OFFICE") is left unassigned deliberately - listForAdmin treats a
     // missing departmentId as "sees nothing", never "sees everything".
   }
   console.log(`\nBackfilled departmentId for ${backfilled} staff account(s) from an unambiguous department-name match.`);

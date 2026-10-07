@@ -657,33 +657,32 @@ async function seedOrg() {
   const directorates = await api('GET', '/api/directorates', { token: T.hro });
   const dir = Object.fromEntries(directorates.map((d) => [d.code, d.id]));
 
-  // New departments go through propose -> approve (Principal HR Officer+).
-  const atm = await api('POST', '/api/departments', { token: T.hro, json: { code: 'ATM', name: 'Air Traffic Management', directorateId: dir.DANS } });
-  const aim = await api('POST', '/api/departments', { token: T.hro, json: { code: 'AIM', name: 'Aeronautical Information Management', directorateId: dir.DANS } });
-  await api('PATCH', `/api/departments/${atm.id}/approve`, { token: T.phro });
-  await api('PATCH', `/api/departments/${aim.id}/approve`, { token: T.phro });
+  // The real departments come from seedDepartments.js; these show the
+  // propose -> approve flow (Principal HR Officer+).
+  const rpas = await api('POST', '/api/departments', { token: T.hro, json: { code: 'RPAS', name: 'Remotely Piloted Aircraft Systems', directorateId: dir.DSSER } });
+  await api('PATCH', `/api/departments/${rpas.id}/approve`, { token: T.phro });
   const protocol = await api('POST', '/api/departments', { token: T.hro, json: { code: 'PROTOCOL', name: 'Protocol', directorateId: dir.CORP } });
   await api('PATCH', `/api/departments/${protocol.id}/reject`, {
-    token: T.phro, json: { reason: 'Protocol sits under the Corporate Affairs office (CWG) - a separate department is not needed.' }
+    token: T.phro, json: { reason: 'Protocol sits under Corporate Affairs - a separate department is not needed.' }
   });
-  const sms = await api('POST', '/api/departments', { token: T.hro, json: { code: 'SMS', name: 'Safety Management Systems', directorateId: dir.DSSER } });
+  const cyber = await api('POST', '/api/departments', { token: T.hro, json: { code: 'CYBER', name: 'Cyber Security', directorateId: dir.CORP } });
   // Waiting past its 48h SLA, so the escalation job has something to escalate.
-  await prisma.department.update({ where: { id: sms.id }, data: { createdAt: ago(3) } });
-  log('  Departments ATM + AIM (DANS) approved, PROTOCOL (CORP) rejected, SMS (DSSER) left Pending');
+  await prisma.department.update({ where: { id: cyber.id }, data: { createdAt: ago(3) } });
+  log('  Departments RPAS (DSSER) approved, PROTOCOL (CORP) rejected, CYBER (CORP) left Pending');
 
   const approved = await api('GET', '/api/departments/approved', { token: T.hro });
   const dept = Object.fromEntries(approved.map((d) => [`${d.code}/${d.directorate.code}`, d.id]));
 
   const positions = [
-    ['atcSenior', 'SATCO', 'Senior Air Traffic Control Officer', 'ATM/DANS', 3],
-    ['atc1', 'ATCO1', 'Air Traffic Control Officer I', 'ATM/DANS', 2],
-    ['atcTrainee', 'ATCOT', 'Air Traffic Control Officer (Trainee)', 'ATM/DANS', 1],
+    ['atcSenior', 'SATCO', 'Senior Air Traffic Control Officer', 'ATS/DANS', 3],
+    ['atc1', 'ATCO1', 'Air Traffic Control Officer I', 'ATS/DANS', 2],
+    ['atcTrainee', 'ATCOT', 'Air Traffic Control Officer (Trainee)', 'ATS/DANS', 1],
     ['ais', 'AIO', 'Aeronautical Information Officer', 'AIM/DANS', 1],
     ['avsec', 'ASO', 'Aviation Security Officer', 'AVSEC/DAAS', 1],
     ['avsecSenior', 'SASO', 'Senior Aviation Security Officer', 'AVSEC/DAAS', 2],
     ['avsecManager', 'MAVSEC', 'Manager Aviation Security', 'AVSEC/DAAS', 3],
-    ['fireFighter', 'FF', 'Fire Fighter', 'ARFFS/DAAS', 1],
-    ['fireOfficer', 'FO', 'Fire Officer', 'ARFFS/DAAS', 2],
+    ['fireFighter', 'FF', 'Fire Fighter', 'OPS EIA/DAAS', 1],
+    ['fireOfficer', 'FO', 'Fire Officer', 'OPS EIA/DAAS', 2],
     ['itSupport', 'ITSO', 'IT Support Officer', 'IT/CORP', 1],
     ['sysadmin', 'SA', 'Systems Administrator', 'IT/CORP', 2],
     ['itManager', 'MIT', 'Manager Information Technology', 'IT/CORP', 3],
@@ -718,7 +717,7 @@ const COMMITTEES = {
   finance: [committeeMember('Christine Namutebi', 'Manager Finance', true), committeeMember('Joel Byamugisha', 'Principal Accountant'), committeeMember('Sarah Achola', 'Manager Internal Audit')],
   fire: [committeeMember('Samuel Wandera', 'Chief Fire Officer', true), committeeMember('Isaac Ochieng', 'Station Officer, ARFFS'), committeeMember('Peter Kalule', 'Fire Safety Consultant (external)', false,
     'An independent fire-safety expert - UCAA has no other officer at this grade outside the station being recruited for.')],
-  atc: [committeeMember('Stephen Tumwine', 'Director Air Navigation Services', true), committeeMember('Josephine Nabwire', 'Manager Air Traffic Management'), committeeMember('Richard Opio', 'Senior Air Traffic Control Officer')],
+  atc: [committeeMember('Stephen Tumwine', 'Director Air Navigation Services', true), committeeMember('Josephine Nabwire', 'Manager Air Traffic Services'), committeeMember('Richard Opio', 'Senior Air Traffic Control Officer')],
   it: [committeeMember('Patrick Mugisha', 'Manager Information Technology', true), committeeMember('Brian Tumwesigye', 'Senior Systems Administrator'), committeeMember('Irene Kobusingye', 'Principal Systems Analyst')],
   avsec: [committeeMember('Ronald Ssemwogerere', 'Manager Aviation Security', true), committeeMember('Moses Okiror', 'Principal AVSEC Officer'), committeeMember('Harriet Namaganda', 'Airport Manager, Entebbe')]
 };
@@ -830,7 +829,7 @@ async function scenarioDeclineExpire() {
   await approveShortlist(v.id);
 
   const rounds = await scheduleSession(v.id, ids, {
-    startsAt: at(workday(1), '09:00'), mode: 'In-person', location: 'ARFFS Main Fire Station, Entebbe', durationMinutes: 60,
+    startsAt: at(workday(1), '09:00'), mode: 'In-person', location: 'Main Fire Station, Entebbe', durationMinutes: 60,
     instructions: 'Wear sports attire - the interview includes a 20-minute practical rescue drill.',
     panelMembers: panel([['Samuel Wandera', 'Chief Fire Officer', true], ['Agnes Nakiwala', 'Human Resource Representative'], ['Isaac Ochieng', 'Station Officer, ARFFS']])
   });
@@ -919,7 +918,7 @@ async function scenarioOffers() {
     startsAt: at(workday(1), '08:30'), mode: 'In-person', location: 'ATC Training Room, Old Control Tower, Entebbe', durationMinutes: 40, gapMinutes: 10,
     instructions: 'Report to the Old Control Tower reception 20 minutes early with your national ID.',
     internalNotes: 'Tower simulator booked for the practical part - confirm with the ATS Training Unit.',
-    panelMembers: panel([['Josephine Nabwire', 'Manager Air Traffic Management', true], ['Richard Opio', 'Senior Air Traffic Control Officer'], ['Diana Kyeyune', 'Human Resource Representative']])
+    panelMembers: panel([['Josephine Nabwire', 'Manager Air Traffic Services', true], ['Richard Opio', 'Senior Air Traffic Control Officer'], ['Diana Kyeyune', 'Human Resource Representative']])
   });
   await shiftRounds(Object.values(rounds), 14);
   const R = (cand) => rounds[apps[cand.name].id];
@@ -1180,7 +1179,7 @@ async function scenarioInternalShortlist() {
     work: [job('Uganda Civil Aviation Authority', position, years, null, ['Aerodrome and approach control', 'Coordination with Nairobi and Kigali ACCs'])],
     certs: [cert('ATC Licence - Aerodrome and Approach ratings', 'Uganda Civil Aviation Authority', years - 1)],
     internalProfile: {
-      employeeId, department: 'ATM', position, dateJoined: yearsAgo(years),
+      employeeId, department: 'ATS', position, dateJoined: yearsAgo(years),
       supervisorName: supervisor, supervisorEmail: `${slug(supervisor)}@example.com`
     }
   });
@@ -1193,8 +1192,8 @@ async function scenarioInternalShortlist() {
   const apps = {};
   for (const cand of cands) apps[cand.name] = await apply(cand, v);
   const [david, esther, quinn, rachel] = cands;
-  await verifyInternal(david.id, 'HR_Verified', 'Employment, grade and ATC licence ratings confirmed against the HR file and the ATM roster.');
-  await verifyInternal(esther.id, 'HR_Verified', 'Employment and grade confirmed with the ATM department; the licence copy on file is current.');
+  await verifyInternal(david.id, 'HR_Verified', 'Employment, grade and ATC licence ratings confirmed against the HR file and the ATS roster.');
+  await verifyInternal(esther.id, 'HR_Verified', 'Employment and grade confirmed with the ATS department; the licence copy on file is current.');
   await verifyInternal(rachel.id, 'Discrepancy_Flagged', 'Declared position is ATC Officer II but the HR file shows Assistant ATC Officer - referred to the supervisor.');
   await beginReview(v.id);
   await runCommittee(v, COMMITTEES.atc, {
@@ -1492,7 +1491,7 @@ async function main() {
       + `${await prisma.interviewRound.count()} interview rounds, ${await prisma.offer.count()} offers.`);
     log('\nLeft for live actions:');
     for (const line of LIVE) log(`  - ${line}`);
-    log('  - SMS department (DSSER) - approve or reject it [Principal HR Officer]');
+    log('  - CYBER department (CORP) - approve or reject it [Principal HR Officer]');
     log(`\nStaff password: ${STAFF_PASSWORD}   Candidate password: ${PASSWORD}`);
     log('External candidates sign in as firstname.lastname@example.com, internal ones as demo.firstname.lastname@caa.co.ug.');
   } finally {
