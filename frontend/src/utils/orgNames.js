@@ -5,6 +5,7 @@
 // Anything else is shown as stored.
 
 export const DIRECTORATE_NAMES = {
+  CORP: 'Corporate',
   DANS: 'Air Navigation Services',
   DAAS: 'Airports and Aviation Security',
   DSSER: 'Safety, Security and Economic Regulation',
