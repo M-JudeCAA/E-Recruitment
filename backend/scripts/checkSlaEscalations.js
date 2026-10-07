@@ -12,18 +12,29 @@
 require('dotenv').config();
 const slaModel = require('../src/models/slaModel');
 const { notifyAllWithRole } = require('../src/services/notificationService');
-// getPendingTasks/INITIAL_TIER/tierAbove now live in slaStatusService,
-// shared with the read-only GET /api/dashboard/follow-ups endpoint so the
-// two can never disagree on "who owns this task right now" or "is it
-// overdue" - this script is the only one of the two with side effects
-// (it's what actually creates the escalation + fires the notification).
-const { INITIAL_TIER, tierAbove, getPendingTasks } = require('../src/services/slaStatusService');
+// getPendingTasks/INITIAL_TIER/tierAbove live in slaStatusService, shared
+// with the read-only GET /api/dashboard/follow-ups endpoint and the Inbox so
+// they can never disagree on "who owns this task right now" or "is it
+// overdue" - this script is the only one with side effects (it's what
+// actually creates the escalation + fires the notification).
+const { INITIAL_TIER, SLA_TASK_TYPES, tierAbove, getPendingTasks } = require('../src/services/slaStatusService');
+
+const WORDS = {
+  VacancyApproval: 'vacancy approval',
+  DepartmentApproval: 'department approval',
+  DirectorateApproval: 'directorate approval',
+  PositionApproval: 'position approval',
+  OfferApproval: 'offer approval'
+};
 
 async function run() {
   const now = new Date();
   let totalEscalated = 0;
+  // Organisation items from one spreadsheet import escalate together - one
+  // notification per import and tier, not one per row.
+  const importNotices = new Map(); // `${importId}:${tier}` -> { tier, taskType, taskId, importName, count, hours }
 
-  for (const taskType of ['VacancyApproval', 'DepartmentApproval', 'OfferApproval']) {
+  for (const taskType of SLA_TASK_TYPES) {
     const pending = await getPendingTasks(taskType);
 
     for (const task of pending) {
@@ -51,14 +62,32 @@ async function run() {
       if (!nextTier) continue; // already at the top tier - nowhere further to escalate
 
       await slaModel.createEscalation({ taskType, taskId: task.id, currentTier: nextTier });
+      totalEscalated++;
+
+      if (task.importId) {
+        const key = `${task.importId}:${nextTier}`;
+        const notice = importNotices.get(key) || { tier: nextTier, taskType, taskId: task.id, importName: task.importName, count: 0, hours: 0 };
+        notice.count += 1;
+        notice.hours = Math.max(notice.hours, Math.floor(hoursWaiting));
+        importNotices.set(key, notice);
+        continue;
+      }
       await notifyAllWithRole(
         nextTier,
         taskType,
         task.id,
-        `A ${taskType.replace(/([A-Z])/g, ' $1').trim()} (#${task.id}) has been waiting ${Math.floor(hoursWaiting)}h and needs your attention. The original assignee can still act too - nothing has been taken from them.`
+        `A ${WORDS[taskType] || taskType} (${task.label || `#${task.id}`}) has been waiting ${Math.floor(hoursWaiting)}h and needs your attention. The original assignee can still act too - nothing has been taken from them.`
       );
-      totalEscalated++;
     }
+  }
+
+  for (const notice of importNotices.values()) {
+    await notifyAllWithRole(
+      notice.tier,
+      notice.taskType,
+      notice.taskId,
+      `${notice.count} item(s) imported from ${notice.importName || 'a spreadsheet'} have been waiting ${notice.hours}h for approval and need your attention (Organisation page). The original assignee can still act too - nothing has been taken from them.`
+    );
   }
 
   return `SLA check complete. ${totalEscalated} task(s) escalated.`;

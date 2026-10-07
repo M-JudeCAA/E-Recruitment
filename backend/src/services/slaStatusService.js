@@ -11,7 +11,34 @@ const { ROLE_RANK } = require('../middleware/auth');
 const INITIAL_TIER = {
   VacancyApproval: 'Manager',
   DepartmentApproval: 'Principal_HR_Officer',
+  DirectorateApproval: 'Principal_HR_Officer',
+  PositionApproval: 'Principal_HR_Officer',
   OfferApproval: 'Manager'
+};
+
+// The approval queues that are timed and escalated - the one list the
+// escalation job, the follow-ups report and the Inbox share.
+const SLA_TASK_TYPES = Object.keys(INITIAL_TIER);
+
+// The organisation approvals (orgApprovalService): pending directorates,
+// departments and positions, each carrying the import it came from, so the
+// escalation job can tell one import's items apart and notify once for them.
+const ORG_TASKS = {
+  DirectorateApproval: {
+    model: 'directorate',
+    select: { name: true },
+    label: (r) => `Directorate ${r.name}`
+  },
+  DepartmentApproval: {
+    model: 'department',
+    select: { name: true, directorate: { select: { name: true } } },
+    label: (r) => `${r.name} (${r.directorate.name})`
+  },
+  PositionApproval: {
+    model: 'position',
+    select: { name: true, department: { select: { name: true, directorate: { select: { name: true } } } } },
+    label: (r) => `${r.name} in ${r.department.name} (${r.department.directorate.name})`
+  }
 };
 
 // The role exactly one rank above the given one, or null at the top of the
@@ -41,13 +68,15 @@ async function getPendingTasks(taskType) {
       id: v.id, since: v.approvalRequestedAt || v.createdAt, label: `${v.jobRef} — ${v.title}`, to: `/hr/vacancy/${v.id}`
     }));
   }
-  if (taskType === 'DepartmentApproval') {
-    const rows = await prisma.department.findMany({
+  if (ORG_TASKS[taskType]) {
+    const spec = ORG_TASKS[taskType];
+    const rows = await prisma[spec.model].findMany({
       where: { status: 'Pending' },
-      select: { id: true, createdAt: true, name: true, directorate: { select: { name: true } } }
+      select: { id: true, createdAt: true, importId: true, import: { select: { fileName: true } }, ...spec.select }
     });
-    return rows.map((d) => ({
-      id: d.id, since: d.createdAt, label: `${d.name} (${d.directorate.name})`, to: '/hr/departments'
+    return (rows || []).map((r) => ({
+      id: r.id, since: r.createdAt, label: spec.label(r), to: '/hr/departments',
+      importId: r.importId || null, importName: r.import?.fileName || null
     }));
   }
   if (taskType === 'OfferApproval') {
@@ -94,6 +123,7 @@ async function computeStatus(taskType, task) {
     taskId: task.id,
     label: task.label,
     to: task.to,
+    importId: task.importId || null,
     since: task.since,
     currentTier,
     dueAt,
@@ -103,12 +133,11 @@ async function computeStatus(taskType, task) {
   };
 }
 
-// Every open task across all three queues, annotated with SLA status,
-// overdue-first then soonest-due - the shape ApprovalsCenter.jsx's urgency
-// badges and HRHome/ExecutiveDashboard's Follow-ups panel both consume.
+// Every open task across the approval queues, annotated with SLA status,
+// overdue-first then soonest-due (GET /api/dashboard/follow-ups; the
+// Organisation page uses it to mark overdue items).
 async function getPendingTasksWithStatus() {
-  const taskTypes = ['VacancyApproval', 'DepartmentApproval', 'OfferApproval'];
-  const perType = await Promise.all(taskTypes.map(async (taskType) => {
+  const perType = await Promise.all(SLA_TASK_TYPES.map(async (taskType) => {
     const tasks = await getPendingTasks(taskType);
     const statuses = await Promise.all(tasks.map((task) => computeStatus(taskType, task)));
     return statuses.filter(Boolean);
@@ -119,4 +148,4 @@ async function getPendingTasksWithStatus() {
   ));
 }
 
-module.exports = { INITIAL_TIER, tierAbove, getPendingTasks, computeStatus, getPendingTasksWithStatus };
+module.exports = { INITIAL_TIER, SLA_TASK_TYPES, tierAbove, getPendingTasks, computeStatus, getPendingTasksWithStatus };

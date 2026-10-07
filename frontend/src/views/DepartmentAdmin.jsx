@@ -29,6 +29,24 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 const LEVEL_NAMES = Object.fromEntries(POSITION_LEVELS.map((l) => [l.value, l.label]));
 
 const HISTORY_SHOWN = 12;
+const ORG_TASK_TYPES = { DirectorateApproval: 'directorate', DepartmentApproval: 'department', PositionApproval: 'position' };
+
+// A waiting item's deadline, worded as the Inbox words it (inboxService.dueLabel).
+function Due({ status }) {
+  if (!status) return null;
+  const hours = status.hoursRemaining;
+  let text;
+  if (hours <= 0) {
+    const over = Math.ceil(-hours / 24);
+    text = over <= 1 ? '1 day over' : `${over} days over`;
+  } else if (hours < 24) text = 'due today';
+  else text = Math.ceil(hours / 24) === 1 ? 'due tomorrow' : `due in ${Math.ceil(hours / 24)} days`;
+  return (
+    <span className={`ws-due${status.isOverdue ? ' over' : hours < 24 ? ' soon' : ''}`}>
+      {text}{status.escalated ? ' · escalated' : ''}
+    </span>
+  );
+}
 
 export default function DepartmentAdmin() {
   const { staff } = useAuth();
@@ -42,6 +60,7 @@ export default function DepartmentAdmin() {
   const [approvedDepartments, setApprovedDepartments] = useState([]);
   const [pending, setPending] = useState({ directorates: [], departments: [], positions: [] });
   const [history, setHistory] = useState(null);
+  const [deadlines, setDeadlines] = useState([]);
   const [showAllHistory, setShowAllHistory] = useState(false);
   const [loadingApproved, setLoadingApproved] = useState(true);
   const [loadingPending, setLoadingPending] = useState(true);
@@ -84,6 +103,11 @@ export default function DepartmentAdmin() {
   ]).then(([d, dep, p]) => setPending({ directorates: d.data, departments: dep.data, positions: p.data }))
     .catch((err) => setError(err.response?.data?.error || 'Could not load what is waiting for approval'))
     .finally(() => setLoadingPending(false));
+  // Approval deadlines (backend slaStatusService): which waiting items are
+  // due soon or overdue, the same figures the Inbox shows.
+  const loadDeadlines = () => staffClient.get('/api/dashboard/follow-ups')
+    .then((res) => setDeadlines(res.data.filter((t) => ORG_TASK_TYPES[t.taskType])))
+    .catch(() => setDeadlines([]));
   const loadHistory = () => staffClient.get('/api/audit/organisation')
     .then((res) => setHistory(res.data))
     .catch(() => setHistory([]));
@@ -92,7 +116,7 @@ export default function DepartmentAdmin() {
     loadDirectorates();
     loadApprovedDepartments();
     loadHistory();
-    if (isReviewer) loadPending();
+    if (isReviewer) { loadPending(); loadDeadlines(); }
     refreshInbox();
   };
 
@@ -100,8 +124,7 @@ export default function DepartmentAdmin() {
     loadDirectorates();
     loadApprovedDepartments();
     loadHistory();
-    if (isReviewer) loadPending();
-    else setLoadingPending(false);
+    if (isReviewer) { loadPending(); loadDeadlines(); } else setLoadingPending(false);
   }, [isReviewer]);
 
   const openAdd = (kind) => { setAutoApprove(true); setAdding(kind); };
@@ -166,8 +189,12 @@ export default function DepartmentAdmin() {
   pending.departments.forEach((d) => addPending('department', d, <b>{d.name} under {d.directorate.name}</b>, d.createdBy?.name));
   pending.positions.forEach((p) => addPending('position', p,
     <b>{p.name} ({LEVEL_NAMES[p.level] || p.level}) in {p.department.name}, {p.department.directorate.name}</b>, p.createdBy?.name));
+  // Deadlines by item; an import's is its earliest-due item's.
+  const deadlineOf = new Map(deadlines.map((t) => [`${ORG_TASK_TYPES[t.taskType]}-${t.taskId}`, t]));
+  const importDeadline = (id) => deadlines.filter((t) => t.importId === id).sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt))[0];
   const importList = [...imports.values()].map((imp) => ({
     ...imp,
+    deadline: importDeadline(imp.id),
     mine: imp.createdById === me,
     summary: Object.entries(imp.counts).map(([k, n]) => `${n} ${k}${n === 1 ? '' : 's'}`).join(', ')
   }));
@@ -212,7 +239,7 @@ export default function DepartmentAdmin() {
                   <div className="kind">Imported</div>
                   <div className="what">
                     <b>{imp.summary} from {imp.fileName}</b>
-                    <div>{imp.createdBy?.name ? `Imported by ${imp.createdBy.name}` : 'Imported'} on {formatDay(imp.createdAt)}</div>
+                    <div>{imp.createdBy?.name ? `Imported by ${imp.createdBy.name}` : 'Imported'} on {formatDay(imp.createdAt)} <Due status={imp.deadline} /></div>
                   </div>
                   <span />
                   {imp.mine ? ownNote : (
@@ -226,7 +253,7 @@ export default function DepartmentAdmin() {
                   <div className="kind">{ORG_WORD[item.entity]} approval</div>
                   <div className="what">
                     {item.what}
-                    <div>{item.by ? `Added by ${item.by}` : 'Added'}</div>
+                    <div>{item.by ? `Added by ${item.by}` : 'Added'} <Due status={deadlineOf.get(`${item.entity}-${item.id}`)} /></div>
                   </div>
                   {item.mine ? <><span />{ownNote}</> : (
                     <>

@@ -185,8 +185,11 @@ async function forStaff(req, now = new Date()) {
     ]).then((lists) => lists.map((l) => l || []));
 
     const imports = new Map();
+    // An import's items are all added at once and escalate together, so its
+    // first item's deadline stands for the whole import.
     const fromImport = (row, type) => {
-      const entry = imports.get(row.importId) || { ...row.import, counts: { directorate: 0, department: 0, position: 0 } };
+      const entry = imports.get(row.importId)
+        || { ...row.import, counts: { directorate: 0, department: 0, position: 0 }, first: { taskType: `${type[0].toUpperCase()}${type.slice(1)}Approval`, id: row.id, since: row.createdAt } };
       entry.counts[type] += 1;
       imports.set(row.importId, entry);
     };
@@ -196,7 +199,8 @@ async function forStaff(req, now = new Date()) {
         key: `directorate-${d.id}`, kind: 'Directorate approval', title: d.name,
         context: `Added by ${d.createdBy?.name || 'HR'}.`, link: '/hr/departments',
         review: { type: 'org', entity: 'directorate', id: d.id, name: d.name, rows: [['Directorate', d.name]] },
-        waiting: waitingLabel(d.createdAt, now)
+        waiting: waitingLabel(d.createdAt, now),
+        ...(await sla('DirectorateApproval', d.id, d.createdAt, now))
       });
     }
     for (const d of departments) {
@@ -205,6 +209,7 @@ async function forStaff(req, now = new Date()) {
         key: `department-${d.id}`, kind: 'Department approval', title: `${d.name} under ${d.directorate?.name || ''}`,
         context: `Proposed by ${d.createdBy?.name || 'HR'}.`, link: '/hr/departments',
         review: { type: 'org', entity: 'department', id: d.id, name: d.name, rows: [['Department', d.name], ['Directorate', d.directorate?.name]] },
+        waiting: waitingLabel(d.createdAt, now),
         ...(await sla('DepartmentApproval', d.id, d.createdAt, now))
       });
     }
@@ -215,7 +220,8 @@ async function forStaff(req, now = new Date()) {
         key: `position-${p.id}`, kind: 'Position approval', title: `${p.name} · ${where}`,
         context: `Added by ${p.createdBy?.name || 'HR'}.`, link: '/hr/departments',
         review: { type: 'org', entity: 'position', id: p.id, name: p.name, rows: [['Position', p.name], ['Department', where], ['Level', LEVEL_NAMES[p.level] || p.level]] },
-        waiting: waitingLabel(p.createdAt, now)
+        waiting: waitingLabel(p.createdAt, now),
+        ...(await sla('PositionApproval', p.id, p.createdAt, now))
       });
     }
     for (const [importId, imp] of imports) {
@@ -225,7 +231,8 @@ async function forStaff(req, now = new Date()) {
         key: `org-import-${importId}`, kind: 'Import approval', title: `${parts.join(', ')} from ${imp.fileName}`,
         context: `Imported by ${imp.createdBy?.name || 'HR'}.`, link: '/hr/departments',
         review: { type: 'org', entity: 'import', id: importId, name: imp.fileName, rows: [['File', imp.fileName], ['Waiting', parts.join(', ')]] },
-        waiting: waitingLabel(imp.createdAt, now)
+        waiting: waitingLabel(imp.createdAt, now),
+        ...(await sla(imp.first.taskType, imp.first.id, imp.first.since, now))
       });
     }
   }

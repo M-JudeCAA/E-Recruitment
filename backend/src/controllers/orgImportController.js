@@ -3,7 +3,6 @@ const orgApproval = require('../services/orgApprovalService');
 const delegationModel = require('../models/delegationModel');
 const audit = require('../services/auditService');
 const { sendError } = require('../utils/errorResponse');
-const slaModel = require('../models/slaModel');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
 // Batch import of directorates, departments and positions (HR Officer+).
@@ -66,13 +65,10 @@ async function run(req, res) {
 // PATCH /api/departments/imports/:importId/approve (Principal HR Officer+,
 // not the importer) - approves every directorate, department and position
 // from one import that is still pending, with the same follow-through as
-// approving them one by one.
+// approving them one by one (approveImport closes their deadline escalations).
 async function approveImported(req, res) {
   const result = await orgApproval.approveImport(req, Number(req.params.importId));
-  for (const id of result.departmentIds) {
-    await slaModel.resolveEscalations('DepartmentApproval', id);
-    broadcastDashboardEvent('DepartmentApproved', { departmentId: id });
-  }
+  for (const id of result.departmentIds) broadcastDashboardEvent('DepartmentApproved', { departmentId: id });
   res.json({
     approved: result.directorates + result.departments + result.positions,
     directorates: result.directorates, departments: result.departments, positions: result.positions
