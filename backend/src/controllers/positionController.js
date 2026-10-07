@@ -4,19 +4,20 @@ const { levelFromInput, LEVEL_WORDS } = require('../utils/positionLevels');
 const prisma = require('../config/db');
 const headcount = require('../services/headcountService');
 const audit = require('../services/auditService');
+const orgApproval = require('../services/orgApprovalService');
+const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
-// Positions are operational, not structural, the way Directorates and
-// Departments are - new job titles get added far more often than new
-// departments do. No approval workflow here, unlike Department; any
-// HR Officer can add one directly. Flagged as a design choice worth
-// revisiting if UCAA wants tighter control over position creation.
+// Any HR Officer can add a position to an approved department. It can be
+// used on a vacancy once approved: a Principal HR Officer or above approves
+// their own at once unless they untick "Approve now"; anyone else's waits
+// for a PHRO+ who did not add it (services/orgApprovalService.js).
 async function create(req, res) {
   const { name, departmentId, level } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Position name is required' });
   }
   const department = await departmentModel.findById(Number(departmentId));
-  if (!department || department.status !== 'Approved') {
+  if (!department || department.status !== 'Approved' || department.directorate?.status !== 'Approved') {
     return res.status(400).json({ error: 'Select a valid, approved department' });
   }
   const levelValue = levelFromInput(level);
@@ -24,15 +25,35 @@ async function create(req, res) {
     return res.status(400).json({ error: `Level must be one of: ${LEVEL_WORDS.join(', ')}` });
   }
 
+  const state = await orgApproval.initialState(req);
   let position;
   try {
     position = await positionModel.create({
-      name: name.trim(), departmentId: department.id, level: levelValue, createdById: req.user.id
+      name: name.trim(), departmentId: department.id, level: levelValue, createdById: req.user.id, ...state.data
     });
   } catch (err) {
+    if (err.code !== 'P2002') throw err;
     return res.status(409).json({ error: 'This position already exists in that department' });
   }
-  res.status(201).json(position);
+  await orgApproval.recordCreated(req, 'Position', position, state);
+  if (!state.autoApproved) broadcastDashboardEvent('OrgPendingApproval', { positionId: position.id });
+  res.status(201).json({ ...position, autoApproved: state.autoApproved });
+}
+
+async function listPending(req, res) {
+  res.json(await positionModel.findPending());
+}
+
+async function approve(req, res) {
+  const updated = await orgApproval.decide(req, 'Position', Number(req.params.id), 'approve');
+  broadcastDashboardEvent('OrgApproved', { positionId: updated.id });
+  res.json(updated);
+}
+
+async function reject(req, res) {
+  const updated = await orgApproval.decide(req, 'Position', Number(req.params.id), 'reject', req.body?.reason);
+  broadcastDashboardEvent('OrgRejected', { positionId: updated.id });
+  res.json(updated);
 }
 
 async function listForDropdown(req, res) {
@@ -89,4 +110,4 @@ async function setHeadcount(req, res) {
   res.json({ ...updated, ...(await headcount.availability(id)) });
 }
 
-module.exports = { create, listForDropdown, listSeniorOptions, listByDepartment, getHeadcount, setHeadcount };
+module.exports = { create, listForDropdown, listSeniorOptions, listByDepartment, getHeadcount, setHeadcount, listPending, approve, reject };

@@ -5,6 +5,7 @@ const vacancyModel = require('../models/vacancyModel');
 const vacancyDraftModel = require('../models/vacancyDraftModel');
 const applicationModel = require('../models/applicationModel');
 const positionModel = require('../models/positionModel');
+const orgApproval = require('../services/orgApprovalService');
 const offerModel = require('../models/offerModel');
 const workflow = require('../services/workflowService');
 const audit = require('../services/auditService');
@@ -103,6 +104,9 @@ async function create(req, res) {
   if (!position) {
     return res.status(400).json({ error: 'Select a valid position' });
   }
+  if (!orgApproval.usablePosition(position)) {
+    return res.status(400).json({ error: 'This position, its department or its directorate is not approved yet, so it cannot be used on a vacancy' });
+  }
 
   // postingType is now required, no silent default. Removing
   // PostingType.Open means there is no longer a safe "both" fallback to
@@ -127,7 +131,7 @@ async function create(req, res) {
   let validatedReportsToId = null;
   if (reportsToPositionId) {
     const reportsTo = await positionModel.findById(Number(reportsToPositionId));
-    if (!reportsTo || reportsTo.departmentId !== position.departmentId) {
+    if (!reportsTo || reportsTo.departmentId !== position.departmentId || reportsTo.status !== 'Approved') {
       return res.status(400).json({ error: 'The selected "Reports To" position must be in the same department' });
     }
     if (reportsTo.level <= position.level) {

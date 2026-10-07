@@ -1,19 +1,21 @@
 const departmentModel = require('../models/departmentModel');
 const directorateModel = require('../models/directorateModel');
 const slaModel = require('../models/slaModel');
+const orgApproval = require('../services/orgApprovalService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
-// Departments are structural (unlike Positions, which any HR Officer can
-// add freely) - a new department affects reporting lines and vacancy
-// scoping org-wide, so it goes through Principal HR Officer approval
-// before it can be selected on the vacancy form.
+// Departments are structural - a new department affects reporting lines and
+// vacancy scoping org-wide - so one can be used on a vacancy only once
+// approved (services/orgApprovalService.js: a Principal HR Officer or above
+// approves their own at once unless they untick "Approve now"; anyone
+// else's waits for a PHRO+ who did not propose it).
 async function propose(req, res) {
   const { name, directorateId } = req.body;
   if (!name || !name.trim()) {
     return res.status(400).json({ error: 'Department name is required' });
   }
   const directorate = await directorateModel.findById(Number(directorateId));
-  if (!directorate) {
+  if (!directorate || directorate.status === 'Rejected') {
     return res.status(400).json({ error: 'Select a valid directorate' });
   }
 
@@ -22,11 +24,13 @@ async function propose(req, res) {
     return res.status(409).json({ error: 'A department with this name already exists under this directorate' });
   }
 
+  const state = await orgApproval.initialState(req);
   const department = await departmentModel.create({
-    name: name.trim(), directorateId: directorate.id, status: 'Pending', createdById: req.user.id
+    name: name.trim(), directorateId: directorate.id, createdById: req.user.id, ...state.data
   });
-  broadcastDashboardEvent('DepartmentPendingApproval', { departmentId: department.id });
-  res.status(201).json(department);
+  await orgApproval.recordCreated(req, 'Department', department, state);
+  broadcastDashboardEvent(state.autoApproved ? 'DepartmentApproved' : 'DepartmentPendingApproval', { departmentId: department.id });
+  res.status(201).json({ ...department, autoApproved: state.autoApproved });
 }
 
 async function listApproved(req, res) {
@@ -45,39 +49,18 @@ async function listAllForAdmin(req, res) {
 }
 
 async function approve(req, res) {
-  const department = await departmentModel.findById(Number(req.params.id));
-  if (!department) return res.status(404).json({ error: 'Department not found' });
-  if (department.status !== 'Pending') {
-    return res.status(422).json({ error: 'This department is not awaiting approval' });
-  }
-  const updated = await departmentModel.update(department.id, {
-    status: 'Approved', approvedById: req.user.id, approvedAt: new Date(), rejectionReason: null
-  });
-  // See the same note in applicationController.approveOffer: the spec
-  // defines slaModel.resolveEscalations but never invokes it anywhere -
-  // without this, an escalated DepartmentApproval task never clears.
-  await slaModel.resolveEscalations('DepartmentApproval', department.id);
-  broadcastDashboardEvent('DepartmentApproved', { departmentId: department.id });
+  const updated = await orgApproval.decide(req, 'Department', Number(req.params.id), 'approve');
+  // See the same note in applicationController.approveOffer: without this,
+  // an escalated DepartmentApproval task never clears.
+  await slaModel.resolveEscalations('DepartmentApproval', updated.id);
+  broadcastDashboardEvent('DepartmentApproved', { departmentId: updated.id });
   res.json(updated);
 }
 
 async function reject(req, res) {
-  const department = await departmentModel.findById(Number(req.params.id));
-  if (!department) return res.status(404).json({ error: 'Department not found' });
-  if (department.status !== 'Pending') {
-    return res.status(422).json({ error: 'This department is not awaiting approval' });
-  }
-
-  const { reason } = req.body;
-  if (!reason || !reason.trim()) {
-    return res.status(400).json({ error: 'A rejection reason is required' });
-  }
-
-  const updated = await departmentModel.update(department.id, {
-    status: 'Rejected', approvedById: req.user.id, approvedAt: new Date(), rejectionReason: reason
-  });
-  await slaModel.resolveEscalations('DepartmentApproval', department.id);
-  broadcastDashboardEvent('DepartmentRejected', { departmentId: department.id });
+  const updated = await orgApproval.decide(req, 'Department', Number(req.params.id), 'reject', req.body?.reason);
+  await slaModel.resolveEscalations('DepartmentApproval', updated.id);
+  broadcastDashboardEvent('DepartmentRejected', { departmentId: updated.id });
   res.json(updated);
 }
 

@@ -5,11 +5,13 @@ import Card from './Card';
 import Button from './Button';
 import Alert from './Alert';
 import CsvDownloadButton from './CsvDownloadButton';
+import ApproveNowBox from './ApproveNowBox';
 
 // Batch import of directorates, departments and positions from a spreadsheet
 // (backend orgImportService.js). Upload -> every row checked (nothing is
-// changed) -> Import, which takes the whole file or nothing. New departments
-// arrive pending, for a Principal HR Officer to approve.
+// changed) -> Import, which takes the whole file or nothing. A Principal HR
+// Officer or above (canApprove) approves what it adds at once unless they
+// untick "Approve now"; otherwise it arrives pending for a PHRO+ to approve.
 
 const STATUS = {
   new: { label: 'Will be added', color: 'var(--color-accent)' },
@@ -17,12 +19,12 @@ const STATUS = {
   warning: { label: 'Check', color: 'var(--color-warning)' },
   error: { label: 'Fix this', color: 'var(--color-danger)' }
 };
-const CREATES = { directorate: 'directorate', department: 'department (pending)', position: 'position' };
+const CREATES = { directorate: 'directorate', department: 'department', position: 'position' };
 const ROWS_SHOWN = 200;
 
 const cell = { padding: '6px 10px', borderTop: '1px solid var(--color-border)', verticalAlign: 'top' };
 
-export default function OrgImportCard({ onImported }) {
+export default function OrgImportCard({ onImported, canApprove = false }) {
   const inputRef = useRef(null);
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -30,10 +32,12 @@ export default function OrgImportCard({ onImported }) {
   const [error, setError] = useState('');
   const [done, setDone] = useState('');
   const [onlyProblems, setOnlyProblems] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(true);
 
   const send = (path) => {
     const body = new FormData();
     body.append('file', file);
+    if (canApprove) body.append('autoApprove', autoApprove ? 'true' : 'false');
     return staffClient.post(path, body);
   };
 
@@ -62,10 +66,10 @@ export default function OrgImportCard({ onImported }) {
       const r = res.data;
       const parts = [
         r.directorates && `${r.directorates} directorate(s)`,
-        r.departments && `${r.departments} department(s), awaiting approval`,
+        r.departments && `${r.departments} department(s)`,
         r.positions && `${r.positions} position(s)`
       ].filter(Boolean);
-      setDone(`Imported ${parts.join(', ')}.${r.skipped ? ` ${r.skipped} row(s) were already there.` : ''}`);
+      setDone(`Imported ${parts.join(', ')}${r.autoApproved ? ', approved' : `, awaiting approval by ${canApprove ? 'another' : 'a'} Principal HR Officer or above`}.${r.skipped ? ` ${r.skipped} row(s) were already there.` : ''}`);
       setPreview(null); setFile(null);
       onImported?.();
     } catch (err) {
@@ -87,13 +91,14 @@ export default function OrgImportCard({ onImported }) {
           <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}><FileSpreadsheet size={18} /> Import from a spreadsheet</h3>
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
             Add many directorates, departments and positions at once from an Excel (.xlsx) or CSV file, one row per
-            position. Nothing already in the system is changed. New departments still need Principal HR Officer approval,
-            and their positions can be used on a vacancy once it is approved.
+            position. Nothing already in the system is changed. What it adds can be used on a vacancy once approved
+            by a Principal HR Officer or above.
           </p>
         </div>
         <CsvDownloadButton url="/api/org-import/template" label="Download template" fallbackName="org-structure-import-template.xlsx" />
       </div>
 
+      {canApprove && <ApproveNowBox checked={autoApprove} onChange={setAutoApprove} what="imported directorates, departments and positions" />}
       <input ref={inputRef} type="file" accept=".xlsx,.csv" style={{ display: 'none' }} aria-label="Spreadsheet to import"
         onChange={(e) => choose(e.target.files?.[0])} />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>

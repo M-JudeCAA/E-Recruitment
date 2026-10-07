@@ -1,6 +1,7 @@
 const auditService = require('../services/auditService');
 const accessLog = require('../services/accessLogService');
 const applicationModel = require('../models/applicationModel');
+const orgApproval = require('../services/orgApprovalService');
 
 // GET /api/audit/:entityType/:entityId - the history of one vacancy,
 // application, offer or interview round, newest first. Only the changed
@@ -27,4 +28,11 @@ async function access(req, res) {
   res.json(await accessLog.forApplication(applicationId, application.candidateId));
 }
 
-module.exports = { history, access };
+// GET /api/audit/organisation - the latest changes to directorates,
+// departments, positions and imports (who added or decided what, and
+// whether "Approve now" was used), newest first, for the Organisation page.
+async function organisation(req, res) {
+  res.json(await orgApproval.history());
+}
+
+module.exports = { history, access, organisation };

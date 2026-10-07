@@ -6,6 +6,7 @@ const { guardVacancy, vacancyFrom } = require('../middleware/applicantConflict')
 const router = express.Router();
 
 // Any HR staff member can see the history of what they can already see.
+router.get('/organisation', authenticate, requireStaffRole('HR_Officer'), controller.organisation);
 router.get('/:entityType/:entityId', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.auditEntity()), controller.history);
 // Who viewed a candidate's data is for managers to review, not the HR team
 // whose access it records.

@@ -9,6 +9,7 @@ import OfferSummary from '../offers/OfferSummary';
 import OfferActions from '../offers/OfferActions';
 import { useConfirm } from '../ConfirmDialog';
 import { approveVacancy } from '../../utils/approveVacancy';
+import { approveOrg, rejectOrg, ORG_WORD } from '../../utils/orgApproval';
 import { SidePanel, KeyValues, Pill, formatDay } from './ui';
 
 // The Inbox's "Review" side panel: one approval, its facts, and the decision
@@ -17,7 +18,8 @@ import { SidePanel, KeyValues, Pill, formatDay } from './ui';
 //   vacancy    approve / return / reject (approveVacancy asks about any exception)
 //   offer      the terms, with OfferActions' approve & issue / return
 //   committee  the nominated members, approve / return (Directors)
-//   department approve / reject
+//   org        a directorate, department or position: approve / reject;
+//              an import: approve all
 // onDone(message) closes the panel and refreshes the Inbox.
 export default function ReviewPanel({ item, staffRole, onClose, onDone }) {
   const { review } = item;
@@ -35,7 +37,7 @@ export default function ReviewPanel({ item, staffRole, onClose, onDone }) {
         .then((r) => (r.data.data || []).find((o) => o.id === review.offerId) || null),
       committee: () => staffClient.get('/api/shortlist-committee/nominations/pending')
         .then((r) => (r.data || []).find((c) => c.vacancy.id === review.vacancyId) || null),
-      department: () => Promise.resolve(review)
+      org: () => Promise.resolve(review)
     }[review.type];
     load().then((d) => {
       if (!d) setError('This is no longer waiting for a decision.');
@@ -163,24 +165,26 @@ export default function ReviewPanel({ item, staffRole, onClose, onDone }) {
     }
   }
 
-  if (review.type === 'department' && data) {
-    body = (
-      <KeyValues rows={[['Department', data.name], ['Directorate', data.directorate], ['Proposed by', item.context.replace(/^Proposed by /, '').replace(/\.$/, '')]]} />
-    );
+  if (review.type === 'org' && data) {
+    const word = ORG_WORD[data.entity];
+    const isImport = data.entity === 'import';
+    body = <KeyValues rows={[...data.rows, ['Added by', item.context.replace(/^(Proposed|Added|Imported) by /, '').replace(/\.$/, '')]]} />;
     footer = (
       <>
-        <Button variant="ghost" style={{ color: 'var(--color-danger)' }} disabled={busy} onClick={() => setAsking('reject')}>Reject</Button>
-        <Button loading={busy} loadingText="Approving..." onClick={() => run(() => staffClient.patch(`/api/departments/${data.departmentId}/approve`), 'Department approved.')}>Approve</Button>
+        {!isImport && <Button variant="ghost" style={{ color: 'var(--color-danger)' }} disabled={busy} onClick={() => setAsking('reject')}>Reject</Button>}
+        <Button loading={busy} loadingText="Approving..." onClick={() => run(() => approveOrg(data.entity, data.id), `${word} approved.`)}>
+          {isImport ? 'Approve all' : 'Approve'}
+        </Button>
       </>
     );
     if (asking) {
       reasonDialog = (
-        <ReasonDialog title={`Reject department — ${data.name}`} label="Reason" confirmLabel="Reject department" danger
+        <ReasonDialog title={`Reject ${word.toLowerCase()} — ${data.name}`} label="Reason" confirmLabel={`Reject ${word.toLowerCase()}`} danger
           onClose={() => setAsking(null)}
           onSubmit={async (reason) => {
-            await staffClient.patch(`/api/departments/${data.departmentId}/reject`, { reason });
+            await rejectOrg(data.entity, data.id, reason);
             setAsking(null);
-            onDone('Department rejected.');
+            onDone(`${word} rejected.`);
           }} />
       );
     }

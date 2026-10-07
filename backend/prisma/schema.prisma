@@ -192,9 +192,11 @@ model StaffUser {
   auditLogs                      AuditLog[]
   verificationTokens             VerificationToken[]
   directoratesCreated            Directorate[]           @relation("DirectorateCreatedBy")
+  directoratesApproved           Directorate[]           @relation("DirectorateApprovedBy")
   departmentsCreated             Department[]            @relation("DepartmentCreatedBy")
   departmentsApproved            Department[]            @relation("DepartmentApprovedBy")
   positionsCreated               Position[]              @relation("PositionCreatedBy")
+  positionsApproved              Position[]              @relation("PositionApprovedBy")
   orgImports                     OrgImport[]             @relation("OrgImportCreatedBy")
   applicationsRejected           Application[]           @relation("ApplicationRejectedBy")
   applicationsShortlistProposed  Application[]           @relation("ApplicationShortlistProposedBy")
@@ -223,15 +225,28 @@ model StaffUser {
   vacancyDrafts         VacancyDraft[] @relation("VacancyDraftCreatedBy")
 }
 
+// Directorates, departments and positions share one approval rule
+// (services/orgApprovalService.js): a Principal HR Officer or above approves
+// what they add at once ("Approve now", ticked by default) or sends it for
+// another PHRO+ to approve; anyone below always sends it for approval. Only
+// an Approved item - with its department and directorate Approved too - can
+// be used on a vacancy. Rows from before this rule default to Approved.
 model Directorate {
-  id            Int          @id @default(autoincrement())
-  name          String       @unique
-  directorName  String?
-  directorEmail String?
-  createdById   Int
-  createdBy     StaffUser    @relation("DirectorateCreatedBy", fields: [createdById], references: [id])
-  createdAt     DateTime     @default(now())
-  departments   Department[]
+  id              Int              @id @default(autoincrement())
+  name            String           @unique
+  directorName    String?
+  directorEmail   String?
+  status          DepartmentStatus @default(Approved)
+  createdById     Int
+  createdBy       StaffUser        @relation("DirectorateCreatedBy", fields: [createdById], references: [id])
+  approvedById    Int?
+  approvedBy      StaffUser?       @relation("DirectorateApprovedBy", fields: [approvedById], references: [id])
+  approvedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime         @default(now())
+  importId        Int?
+  import          OrgImport?       @relation(fields: [importId], references: [id], onDelete: SetNull)
+  departments     Department[]
 }
 
 model Department {
@@ -275,7 +290,12 @@ model OrgImport {
   departmentsProposed Int          @default(0)
   positionsCreated    Int          @default(0)
   rowsSkipped         Int          @default(0)
+  // Whether the importer (PHRO+) approved what it created at once, rather
+  // than sending it for approval.
+  autoApproved        Boolean      @default(false)
+  directorates        Directorate[]
   departments         Department[]
+  positions           Position[]
 
   @@index([createdAt])
 }
@@ -298,9 +318,16 @@ model Position {
   occupied             Int        @default(0)
   headcountUpdatedAt   DateTime?
   headcountUpdatedById Int?
+  status               DepartmentStatus @default(Approved)
   createdById          Int
   createdBy            StaffUser  @relation("PositionCreatedBy", fields: [createdById], references: [id])
+  approvedById         Int?
+  approvedBy           StaffUser? @relation("PositionApprovedBy", fields: [approvedById], references: [id])
+  approvedAt           DateTime?
+  rejectionReason      String?
   createdAt            DateTime   @default(now())
+  importId             Int?
+  import               OrgImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
 
   vacancies              Vacancy[] @relation("VacancyPosition")
   vacanciesReportingHere Vacancy[] @relation("VacancyReportsToPosition")

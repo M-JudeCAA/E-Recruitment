@@ -110,6 +110,24 @@ describe('checking the rows', () => {
     expect(result.summary.errors).toBe(7);
   });
 
+  test('rejected directorates and positions can\'t be imported again; pending ones are noted', async () => {
+    prisma.directorate.findMany.mockResolvedValue([...DIRECTORATES, { id: 3, name: 'DOLD', status: 'Rejected', rejectionReason: 'Abolished' }, { id: 4, name: 'DNEW', status: 'Pending' }]);
+    prisma.position.findMany.mockResolvedValue([...POSITIONS,
+      { id: 101, name: 'Clerk', departmentId: 10, level: 1, status: 'Rejected', rejectionReason: 'Not on the establishment' },
+      { id: 102, name: 'Coach', departmentId: 10, level: 1, status: 'Pending' }]);
+    const result = await run([
+      'Directorate,Department,Position,Level',
+      'DOLD,X,,',
+      'DHRA,HR,Clerk,Officer',
+      'DHRA,HR,Coach,Officer',
+      'DNEW,Y,,'
+    ].join('\n'));
+    expect(result.rows[0].messages[0]).toMatch(/Directorate "DOLD" was rejected \(Abolished\)/);
+    expect(result.rows[1].messages[0]).toMatch(/Position "Clerk" was rejected \(Not on the establishment\)/);
+    expect(result.rows[2].messages).toEqual(['Position is awaiting approval', 'Position already exists']);
+    expect(result.rows[3]).toEqual(expect.objectContaining({ status: 'new', messages: ['Directorate is awaiting approval'] }));
+  });
+
   test('a Principal HR Officer can add directorates; an existing position at another level is a warning, not an error', async () => {
     const result = await run([
       'Directorate,Department,Position,Level',
@@ -126,30 +144,46 @@ describe('checking the rows', () => {
 });
 
 describe('importing', () => {
-  test('creates everything in one transaction, departments pending and tied to the import', async () => {
-    prisma.orgImport.create.mockResolvedValue({ id: 7 });
+  const FILE = [
+    'Directorate,Department,Position,Level',
+    'DANS,AIM,AIS Officer,Officer',
+    'DHRA,HR,Senior HR Officer,Senior',
+    'DHRA,HR,HR Analyst,Officer'
+  ].join('\n');
+  const arrange = () => {
+    prisma.orgImport.create.mockResolvedValue({ id: 7, fileName: 'org.csv' });
     prisma.directorate.create.mockResolvedValue({ id: 3 });
     prisma.department.create.mockResolvedValueOnce({ id: 20 });
     prisma.department.findFirst.mockResolvedValue({ id: 10 });
     prisma.directorate.findUnique.mockResolvedValue({ id: 1 });
+  };
 
-    const result = await orgImport.run(csvFile([
-      'Directorate,Department,Position,Level',
-      'DANS,AIM,AIS Officer,Officer',
-      'DHRA,HR,Senior HR Officer,Senior',
-      'DHRA,HR,HR Analyst,Officer'
-    ].join('\n')), { staffId: 5, canAddDirectorates: true });
+  test('creates everything in one transaction, all pending and tied to the import', async () => {
+    arrange();
+    const result = await orgImport.run(csvFile(FILE), { staffId: 5, canAddDirectorates: true });
 
-    expect(result).toEqual({ importId: 7, directorates: 1, departments: 1, positions: 2, skipped: 1 });
+    expect(result).toEqual({ importId: 7, fileName: 'org.csv', autoApproved: false, directorates: 1, departments: 1, positions: 2, skipped: 1 });
     expect(prisma.$transaction).toHaveBeenCalled();
     expect(prisma.orgImport.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      fileName: 'org.csv', createdById: 5, directoratesCreated: 1, departmentsProposed: 1, positionsCreated: 2, rowsSkipped: 1
+      fileName: 'org.csv', createdById: 5, directoratesCreated: 1, departmentsProposed: 1, positionsCreated: 2, rowsSkipped: 1, autoApproved: false
     }) });
+    expect(prisma.directorate.create).toHaveBeenCalledWith({ data: { name: 'DANS', createdById: 5, importId: 7, status: 'Pending' } });
     expect(prisma.department.create).toHaveBeenCalledWith({ data: { name: 'AIM', directorateId: 3, status: 'Pending', createdById: 5, importId: 7 } });
     expect(prisma.position.create.mock.calls.map((c) => c[0].data)).toEqual([
-      { name: 'AIS Officer', departmentId: 20, level: 1, createdById: 5 },
-      { name: 'Senior HR Officer', departmentId: 10, level: 2, createdById: 5 }
+      { name: 'AIS Officer', departmentId: 20, level: 1, createdById: 5, importId: 7, status: 'Pending' },
+      { name: 'Senior HR Officer', departmentId: 10, level: 2, createdById: 5, importId: 7, status: 'Pending' }
     ]);
+  });
+
+  test('"Approve now" (autoApproved) creates everything approved by the importer', async () => {
+    arrange();
+    await orgImport.run(csvFile(FILE), { staffId: 5, canAddDirectorates: true, autoApproved: true });
+
+    const approved = { status: 'Approved', approvedById: 5, approvedAt: expect.any(Date) };
+    expect(prisma.orgImport.create.mock.calls[0][0].data.autoApproved).toBe(true);
+    expect(prisma.directorate.create.mock.calls[0][0].data).toEqual(expect.objectContaining(approved));
+    expect(prisma.department.create.mock.calls[0][0].data).toEqual(expect.objectContaining(approved));
+    prisma.position.create.mock.calls.forEach(([arg]) => expect(arg.data).toEqual(expect.objectContaining(approved)));
   });
 
   test('imports nothing while any row has an error, and returns the rows', async () => {

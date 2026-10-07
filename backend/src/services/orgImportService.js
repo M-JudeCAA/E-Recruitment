@@ -10,12 +10,12 @@ const { POSITION_LEVELS, LEVEL_WORDS, levelFromInput, levelLabel } = require('..
 //   DHRA        | HR         | HR Analyst | Officer
 //
 // A row with no Position just makes sure its department exists. Nothing
-// existing is changed: what is already there is skipped. New departments
-// arrive Pending, like any proposal (Department.importId lets a reviewer
-// approve one import's departments together); their positions are created
-// at once but stay out of the vacancy form until the department is approved
-// (positionModel.findAllForDropdown). New directorates need a Principal HR
-// Officer or above, as on the single form.
+// existing is changed: what is already there is skipped. What the import
+// creates follows the one approval rule (orgApprovalService.js): a
+// Principal HR Officer or above approves it all at once unless they untick
+// "Approve now"; otherwise everything new arrives Pending, linked to this
+// import (importId) so a reviewer can approve it together. New directorates
+// need a Principal HR Officer or above, as on the single form.
 //
 // preview() and run() both read the file afresh - nothing is held between
 // the two - and run() refuses while any row has an error, so a file is
@@ -124,9 +124,9 @@ async function readFile(file) {
 // 'error' (must be fixed before anything is imported) - and a message.
 async function plan(rows, { canAddDirectorates }) {
   const [directorates, departments, positions] = await Promise.all([
-    prisma.directorate.findMany({ select: { id: true, name: true } }),
+    prisma.directorate.findMany({ select: { id: true, name: true, status: true, rejectionReason: true } }),
     prisma.department.findMany({ select: { id: true, name: true, directorateId: true, status: true, rejectionReason: true } }),
-    prisma.position.findMany({ select: { id: true, name: true, departmentId: true, level: true } })
+    prisma.position.findMany({ select: { id: true, name: true, departmentId: true, level: true, status: true, rejectionReason: true } })
   ]);
   const dirByName = new Map(directorates.map((d) => [key(d.name), d]));
   const deptByKey = new Map(departments.map((d) => [key(d.directorateId, d.name), d]));
@@ -158,6 +158,10 @@ async function plan(rows, { canAddDirectorates }) {
     // Directorate
     const dirKey = key(row.directorate);
     const existingDir = dirByName.get(dirKey);
+    if (existingDir && existingDir.status === 'Rejected') {
+      return fail(`Directorate "${row.directorate}" was rejected${existingDir.rejectionReason ? ` (${existingDir.rejectionReason})` : ''} - it can't be imported again`);
+    }
+    if (existingDir && existingDir.status === 'Pending') out.messages.push('Directorate is awaiting approval');
     if (!existingDir) {
       if (!canAddDirectorates) {
         return fail(`Directorate "${row.directorate}" doesn't exist. Only a Principal HR Officer or above can add a directorate - ask one to add it or to import this file.`);
@@ -185,7 +189,11 @@ async function plan(rows, { canAddDirectorates }) {
       const posFileKey = key(row.directorate, row.department, row.position);
       const existingPos = existingDept ? posByKey.get(key(existingDept.id, row.position)) : null;
       const earlier = newPositions.get(posFileKey);
+      if (existingPos && existingPos.status === 'Rejected') {
+        return fail(`Position "${row.position}" was rejected${existingPos.rejectionReason ? ` (${existingPos.rejectionReason})` : ''} - it can't be imported again`);
+      }
       if (existingPos) {
+        if (existingPos.status === 'Pending') out.messages.push('Position is awaiting approval');
         if (existingPos.level !== level) {
           out.status = 'warning';
           out.messages.push(`Position already exists as ${levelLabel(existingPos.level)} - not changed`);
@@ -228,7 +236,9 @@ async function preview(file, options) {
 
 // --- Importing --------------------------------------------------------------
 
-async function run(file, { staffId, canAddDirectorates }) {
+// autoApproved: the importer is PHRO+ and left "Approve now" ticked - what
+// is created is Approved at once; otherwise it is all Pending.
+async function run(file, { staffId, canAddDirectorates, autoApproved = false }) {
   const result = await plan(await readFile(file), { canAddDirectorates });
   if (result.summary.errors > 0) {
     const err = new AppError(`${result.summary.errors} row(s) need fixing before anything is imported`, 422);
@@ -241,18 +251,22 @@ async function run(file, { staffId, canAddDirectorates }) {
     throw new AppError('Everything in this file is already there - nothing to import', 422);
   }
 
+  const approval = autoApproved
+    ? { status: 'Approved', approvedById: staffId, approvedAt: new Date() }
+    : { status: 'Pending' };
+
   return prisma.$transaction(async (tx) => {
     const record = await tx.orgImport.create({
       data: {
         fileName: String(file.originalname || 'import').slice(0, 255), createdById: staffId,
         directoratesCreated: directorates.length, departmentsProposed: departments.length,
-        positionsCreated: positions.length, rowsSkipped: result.summary.skipped
+        positionsCreated: positions.length, rowsSkipped: result.summary.skipped, autoApproved
       }
     });
 
     const dirIds = new Map();
     for (const d of directorates) {
-      const created = await tx.directorate.create({ data: { name: d.name, createdById: staffId } });
+      const created = await tx.directorate.create({ data: { name: d.name, createdById: staffId, importId: record.id, ...approval } });
       dirIds.set(key(d.name), created.id);
     }
     const dirId = async (name) => {
@@ -266,7 +280,7 @@ async function run(file, { staffId, canAddDirectorates }) {
     const deptIds = new Map();
     for (const d of departments) {
       const created = await tx.department.create({
-        data: { name: d.name, directorateId: await dirId(d.directorate), status: 'Pending', createdById: staffId, importId: record.id }
+        data: { name: d.name, directorateId: await dirId(d.directorate), createdById: staffId, importId: record.id, ...approval }
       });
       deptIds.set(key(d.directorate, d.name), created.id);
     }
@@ -281,11 +295,13 @@ async function run(file, { staffId, canAddDirectorates }) {
 
     for (const p of positions) {
       await tx.position.create({
-        data: { name: p.name, departmentId: await deptId(p.directorate, p.department), level: p.level, createdById: staffId }
+        data: { name: p.name, departmentId: await deptId(p.directorate, p.department), level: p.level, createdById: staffId, importId: record.id, ...approval }
       });
     }
     return {
       importId: record.id,
+      fileName: record.fileName,
+      autoApproved,
       directorates: directorates.length,
       departments: departments.length,
       positions: positions.length,
@@ -332,8 +348,8 @@ async function template() {
     'A row with no Position and no Level only makes sure the department exists.',
     '',
     'Nothing already in the system is changed - existing directorates, departments and positions are skipped.',
-    'New departments arrive pending: a Principal HR Officer or above approves them, all together if they like.',
-    'Their positions can be used on a vacancy once the department is approved.',
+    'A Principal HR Officer or above can approve everything the import adds at once ("Approve now", ticked by default).',
+    'Otherwise it all arrives pending, for a Principal HR Officer or above to approve together. Positions can be used on a vacancy once approved.',
     'New directorates can only be added by a Principal HR Officer or above.',
     '',
     'Upload this file on the Departments screen. You will see every row checked before anything is imported.'
