@@ -28,8 +28,10 @@ function parseRole(role) {
   return ROLES.includes(role) ? role : undefined;
 }
 
+// The staff account's department text may be the department's full name or
+// its short code.
 async function departmentIdFor(name) {
-  const department = await prisma.department.findFirst({ where: { name, status: 'Approved' } });
+  const department = await prisma.department.findFirst({ where: { OR: [{ name }, { code: name }], status: 'Approved' } });
   return department ? department.id : null;
 }
 

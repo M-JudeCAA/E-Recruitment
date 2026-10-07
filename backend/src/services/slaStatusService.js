@@ -27,17 +27,20 @@ const ORG_TASKS = {
   DirectorateApproval: {
     model: 'directorate',
     select: { name: true },
-    label: (r) => `Directorate ${r.name}`
+    label: (r) => `Directorate ${r.name}`,
+    to: '/hr/organisation/directorates'
   },
   DepartmentApproval: {
     model: 'department',
-    select: { name: true, directorate: { select: { name: true } } },
-    label: (r) => `${r.name} (${r.directorate.name})`
+    select: { name: true, directorate: { select: { name: true, code: true } } },
+    label: (r) => `${r.name} (${r.directorate.code || r.directorate.name})`,
+    to: '/hr/organisation/departments'
   },
   PositionApproval: {
     model: 'position',
-    select: { name: true, department: { select: { name: true, directorate: { select: { name: true } } } } },
-    label: (r) => `${r.name} in ${r.department.name} (${r.department.directorate.name})`
+    select: { name: true, department: { select: { name: true, directorate: { select: { name: true, code: true } } } } },
+    label: (r) => `${r.name} in ${r.department.name} (${r.department.directorate.code || r.department.directorate.name})`,
+    to: '/hr/organisation/positions'
   }
 };
 
@@ -75,7 +78,7 @@ async function getPendingTasks(taskType) {
       select: { id: true, createdAt: true, importId: true, import: { select: { fileName: true } }, ...spec.select }
     });
     return (rows || []).map((r) => ({
-      id: r.id, since: r.createdAt, label: spec.label(r), to: '/hr/departments',
+      id: r.id, since: r.createdAt, label: spec.label(r), to: spec.to,
       importId: r.importId || null, importName: r.import?.fileName || null
     }));
   }

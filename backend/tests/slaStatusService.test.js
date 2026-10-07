@@ -59,7 +59,7 @@ describe('getPendingTasks', () => {
     const tasks = await slaStatusService.getPendingTasks('DepartmentApproval');
 
     expect(tasks).toEqual([{
-      id: 4, since: new Date('2026-01-01T00:00:00Z'), label: 'Finance (CORP)', to: '/hr/departments', importId: null, importName: null
+      id: 4, since: new Date('2026-01-01T00:00:00Z'), label: 'Finance (CORP)', to: '/hr/organisation/departments', importId: null, importName: null
     }]);
   });
 

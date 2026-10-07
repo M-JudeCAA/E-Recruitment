@@ -74,9 +74,13 @@ function nameScore(candidate, wanted) {
   return 0;
 }
 
+// The better of an entry's full name and its short code (a requisition may
+// say "ARFFS" or spell it out).
+const entryScore = (entry, wanted) => Math.max(nameScore(entry?.name || '', wanted), entry?.code ? nameScore(entry.code, wanted) : 0);
+
 function bestMatch(options, wanted, label) {
   if (!wanted) return { match: null };
-  const scored = options.map((o) => ({ o, score: nameScore(o.name, wanted) })).filter((s) => s.score > 0);
+  const scored = options.map((o) => ({ o, score: entryScore(o, wanted) })).filter((s) => s.score > 0);
   if (!scored.length) return { match: null, warning: `${label} "${wanted}" is not on the organogram - pick it from the list.` };
   const top = Math.max(...scored.map((s) => s.score));
   const best = scored.filter((s) => s.score === top);
@@ -93,7 +97,7 @@ async function matchOrganogram(fields) {
   // The same department name recurs under different directorates - narrow
   // by the directorate when the document names one.
   if (fields.directorate?.value) {
-    const inDirectorate = departments.filter((d) => nameScore(d.directorate?.name || '', fields.directorate.value) > 0);
+    const inDirectorate = departments.filter((d) => entryScore(d.directorate, fields.directorate.value) > 0);
     if (inDirectorate.length) deptCandidates = inDirectorate;
   }
   const dept = bestMatch(deptCandidates, fields.department?.value, 'Department');

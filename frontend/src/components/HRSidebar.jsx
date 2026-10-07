@@ -12,7 +12,9 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 //   Recruitment - vacancies (each with its own workspace), candidates,
 //                 interviews, offers & hires
 //   Reports     - the recruitment dashboard (Manager+, as its API is)
-//   Setup       - organisation, templates, delegations, settings, accounts
+//   Setup       - organisation (overview, with Directorates, Departments
+//                 and Positions under its arrow), templates, delegations,
+//                 settings, accounts
 // Items a role can't use are left out rather than shown and refused. An
 // accounts-only system administrator (no HR role) sees only Setup.
 //
@@ -32,7 +34,14 @@ export default function HRSidebar({ active }) {
   const overdue = actionable.some((i) => i.overdue);
 
   const setup = [
-    staff?.role && { key: 'organisation', label: 'Organisation', icon: Network, to: '/hr/departments', section: 'Setup' },
+    staff?.role && {
+      key: 'organisation', label: 'Organisation', icon: Network, to: '/hr/organisation', section: 'Setup',
+      children: [
+        { key: 'org-directorates', label: 'Directorates', to: '/hr/organisation/directorates' },
+        { key: 'org-departments', label: 'Departments', to: '/hr/organisation/departments' },
+        { key: 'org-positions', label: 'Positions', to: '/hr/organisation/positions' }
+      ]
+    },
     staff?.role && { key: 'templates', label: 'Document templates', icon: FileSignature, to: '/hr/templates', section: 'Setup' },
     rank >= ROLE_RANK.Senior_HR_Officer && { key: 'delegations', label: 'Delegations', icon: Share2, to: '/hr/staff-management', section: 'Setup' },
     (staff?.isSystemAdmin || rank >= ROLE_RANK.Manager) && { key: 'settings', label: 'Settings & data', icon: Settings, to: '/hr/settings', section: 'Setup' },

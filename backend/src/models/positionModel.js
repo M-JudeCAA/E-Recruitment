@@ -7,6 +7,8 @@ const USABLE = { status: 'Approved', department: { status: 'Approved', directora
 module.exports = {
   create: (data) => prisma.position.create({ data }),
   findById: (id) => prisma.position.findUnique({ where: { id }, include: { department: { include: { directorate: true } } } }),
+  // A position in this department matching `where` (e.g. { code }).
+  findInDepartment: (departmentId, where) => prisma.position.findFirst({ where: { ...where, departmentId } }),
 
   // Powers the grouped Position dropdown on the vacancy form - every usable
   // position, with its department and directorate attached, so the frontend
@@ -15,7 +17,7 @@ module.exports = {
     where: USABLE,
     include: { department: { include: { directorate: true } } },
     orderBy: [
-      { department: { directorate: { name: 'asc' } } },
+      { department: { directorate: { code: 'asc' } } },
       { department: { name: 'asc' } },
       { level: 'asc' }
     ]

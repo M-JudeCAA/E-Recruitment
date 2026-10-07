@@ -231,8 +231,15 @@ model StaffUser {
 // another PHRO+ to approve; anyone below always sends it for approval. Only
 // an Approved item - with its department and directorate Approved too - can
 // be used on a vacancy. Rows from before this rule default to Approved.
+//
+// Directorates, departments and positions each have a short code (DHRA,
+// ARFFS, HRO - utils/orgFields.js) and a full name, both given when one is
+// added or imported. Directorates and departments used to be stored by
+// their short names; migration 20261025090000_org_codes moved those into
+// `code`. Positions from before have no code until HR gives them one.
 model Directorate {
   id              Int              @id @default(autoincrement())
+  code            String           @unique @db.VarChar(64)
   name            String           @unique
   directorName    String?
   directorEmail   String?
@@ -251,6 +258,7 @@ model Directorate {
 
 model Department {
   id              Int              @id @default(autoincrement())
+  code            String           @db.VarChar(64)
   name            String
   directorateId   Int
   directorate     Directorate      @relation(fields: [directorateId], references: [id])
@@ -273,8 +281,9 @@ model Department {
 
   // The same department name can recur under different directorates (e.g.
   // "CWG" under CORP, DANS, DAAS, DSSER, DF) - each is a distinct row.
-  // Uniqueness only within one directorate.
+  // Uniqueness only within one directorate - name and code alike.
   @@unique([name, directorateId])
+  @@unique([code, directorateId])
 }
 
 // One batch import of the org structure (orgImportService.js): who ran it,
@@ -302,6 +311,8 @@ model OrgImport {
 
 model Position {
   id                   Int        @id @default(autoincrement())
+  // Required when one is added; null only on positions from before codes.
+  code                 String?    @db.VarChar(64)
   name                 String
   departmentId         Int
   department           Department @relation(fields: [departmentId], references: [id])
@@ -333,8 +344,9 @@ model Position {
   vacanciesReportingHere Vacancy[] @relation("VacancyReportsToPosition")
 
   // The same title can exist in more than one department (confirmed) -
-  // uniqueness is per-department, not organisation-wide.
+  // uniqueness is per-department, not organisation-wide. Codes likewise.
   @@unique([name, departmentId])
+  @@unique([code, departmentId])
 }
 
 // A vacancy being written, before it is created - saved by hand or

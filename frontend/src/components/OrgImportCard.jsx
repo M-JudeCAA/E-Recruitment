@@ -24,6 +24,13 @@ const ROWS_SHOWN = 200;
 
 const cell = { padding: '6px 10px', borderTop: '1px solid var(--color-border)', verticalAlign: 'top' };
 
+// A code with its full name under it (or a title with its code), as the file gave them.
+function CodeName({ code, name, nameFirst = false }) {
+  const muted = { color: 'var(--color-text-muted)', fontSize: 12 };
+  if (nameFirst) return <>{name}{code && <div style={muted}>{code}</div>}</>;
+  return <>{code || <span style={muted}>-</span>}{name && <div style={muted}>{name}</div>}</>;
+}
+
 export default function OrgImportCard({ onImported, canApprove = false }) {
   const inputRef = useRef(null);
   const [file, setFile] = useState(null);
@@ -91,7 +98,7 @@ export default function OrgImportCard({ onImported, canApprove = false }) {
           <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}><FileSpreadsheet size={18} /> Import from a spreadsheet</h3>
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
             Add many directorates, departments and positions at once from an Excel (.xlsx) or CSV file, one row per
-            position. Nothing already in the system is changed. What it adds can be used on a vacancy once approved
+            position, each with its short code and full name. Nothing already in the system is changed. What it adds can be used on a vacancy once approved
             by a Principal HR Officer or above.
           </p>
         </div>
@@ -143,9 +150,9 @@ export default function OrgImportCard({ onImported, canApprove = false }) {
                 {rows.slice(0, ROWS_SHOWN).map((r) => (
                   <tr key={r.rowNumber}>
                     <td style={{ ...cell, fontVariantNumeric: 'tabular-nums' }}>{r.rowNumber}</td>
-                    <td style={cell}>{r.directorate}</td>
-                    <td style={cell}>{r.department}</td>
-                    <td style={cell}>{r.position || <span style={{ color: 'var(--color-text-muted)' }}>-</span>}</td>
+                    <td style={cell}><CodeName code={r.directorate} name={r.directorateName} /></td>
+                    <td style={cell}><CodeName code={r.department} name={r.departmentName} /></td>
+                    <td style={cell}>{r.position ? <CodeName code={r.positionCode} name={r.position} nameFirst /> : <span style={{ color: 'var(--color-text-muted)' }}>-</span>}</td>
                     <td style={cell}>{r.levelLabel || r.level}</td>
                     <td style={{ ...cell, minWidth: 200 }}>
                       <strong style={{ color: STATUS[r.status].color }}>{STATUS[r.status].label}</strong>

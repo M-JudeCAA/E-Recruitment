@@ -32,7 +32,10 @@ import OffersAndHires from "./views/OffersAndHires";
 import CandidateSearch from "./views/CandidateSearch";
 import HRDashboard from "./views/HRDashboard";
 import ApplicationManagement from "./views/ApplicationManagement";
-import DepartmentAdmin from "./views/DepartmentAdmin";
+import OrgOverview from "./views/organisation/OrgOverview";
+import DirectoratesPage from "./views/organisation/DirectoratesPage";
+import DepartmentsPage from "./views/organisation/DepartmentsPage";
+import PositionsPage from "./views/organisation/PositionsPage";
 import StaffManagement from "./views/StaffManagement";
 import StaffAccounts from "./views/StaffAccounts";
 import DocumentTemplates from "./views/DocumentTemplates";
@@ -160,11 +163,39 @@ export default function App() {
               </RequireStaff>
             }
           />
+          {/* Organisation: the overview, and one page per level (the
+              sidebar's Organisation group). /hr/departments was the old
+              single page. */}
+          <Route path="/hr/departments" element={<Navigate to="/hr/organisation" replace />} />
           <Route
-            path="/hr/departments"
+            path="/hr/organisation"
             element={
               <RequireStaff minRole="HR_Officer">
-                <DepartmentAdmin />
+                <OrgOverview />
+              </RequireStaff>
+            }
+          />
+          <Route
+            path="/hr/organisation/directorates"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <DirectoratesPage />
+              </RequireStaff>
+            }
+          />
+          <Route
+            path="/hr/organisation/departments"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <DepartmentsPage />
+              </RequireStaff>
+            }
+          />
+          <Route
+            path="/hr/organisation/positions"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <PositionsPage />
               </RequireStaff>
             }
           />
