@@ -2,6 +2,7 @@ const prisma = require('../config/db');
 const { ROLE_RANK } = require('../middleware/auth');
 const delegationModel = require('../models/delegationModel');
 const audit = require('./auditService');
+const slaModel = require('../models/slaModel');
 const { AppError } = require('../utils/errorResponse');
 
 // The one approval rule for the organisation structure - directorates,
@@ -116,6 +117,8 @@ async function decide(req, entityType, id, decision, reason) {
   const { count } = await prisma[model].updateMany({ where: { id, status: 'Pending' }, data });
   if (!count) throw new AppError(`This ${word} was decided by someone else just now`, 409);
   const updated = await prisma[model].findUnique({ where: { id } });
+  // Decided: any escalation of its approval deadline is closed.
+  await slaModel.resolveEscalations(`${entityType}Approval`, id);
 
   await audit.record({
     entityType, entityId: id, action: rejecting ? 'Rejected' : 'Approved',
@@ -154,6 +157,9 @@ async function approveImport(req, importId) {
     prisma.position.updateMany({ where, data })
   ]);
   const result = { directorates: d1.count, departments: d2.count, positions: d3.count, departmentIds: departments.map((d) => d.id) };
+  for (const [taskType, rows] of [['DirectorateApproval', directorates], ['DepartmentApproval', departments], ['PositionApproval', positions]]) {
+    for (const { id } of rows) await slaModel.resolveEscalations(taskType, id);
+  }
   await audit.record({
     entityType: 'OrgImport', entityId: importId, action: 'Approved import',
     actor: audit.actorFrom(req),

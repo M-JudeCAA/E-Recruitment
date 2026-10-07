@@ -1,6 +1,5 @@
 const departmentModel = require('../models/departmentModel');
 const directorateModel = require('../models/directorateModel');
-const slaModel = require('../models/slaModel');
 const orgApproval = require('../services/orgApprovalService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
@@ -49,17 +48,14 @@ async function listAllForAdmin(req, res) {
 }
 
 async function approve(req, res) {
+  // decide() also closes any escalation of the approval deadline.
   const updated = await orgApproval.decide(req, 'Department', Number(req.params.id), 'approve');
-  // See the same note in applicationController.approveOffer: without this,
-  // an escalated DepartmentApproval task never clears.
-  await slaModel.resolveEscalations('DepartmentApproval', updated.id);
   broadcastDashboardEvent('DepartmentApproved', { departmentId: updated.id });
   res.json(updated);
 }
 
 async function reject(req, res) {
   const updated = await orgApproval.decide(req, 'Department', Number(req.params.id), 'reject', req.body?.reason);
-  await slaModel.resolveEscalations('DepartmentApproval', updated.id);
   broadcastDashboardEvent('DepartmentRejected', { departmentId: updated.id });
   res.json(updated);
 }

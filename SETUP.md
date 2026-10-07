@@ -302,7 +302,7 @@ them, so they have to be started as part of every deployment:
 
 | Script | What it does |
 |---|---|
-| `checkSlaEscalations.js` | Escalates an overdue VacancyApproval/DepartmentApproval/OfferApproval to the next role tier |
+| `checkSlaEscalations.js` | Escalates an overdue vacancy, directorate, department, position or offer approval to the next role tier |
 | `checkVacancyDeadlines.js` | Notifies a vacancy's creator once its deadline passes while still Open/PartiallyFilled |
 | `sendInterviewReminders.js` | Reminds candidates and panelists about an interview a day ahead, and reminds HR when an interview's results haven't been recorded a day after it |
 | `expireOffers.js` | Reminds a candidate two days before their offer's response deadline, and expires offers past it |

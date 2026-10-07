@@ -8,6 +8,8 @@ beforeEach(() => {
   prisma.taskEscalation.findFirst.mockResolvedValue(null);
   prisma.taskEscalation.count.mockResolvedValue(0);
   prisma.slaPolicy.findUnique.mockResolvedValue(null);
+  prisma.directorate.findMany.mockResolvedValue([]);
+  prisma.position.findMany.mockResolvedValue([]);
 });
 
 describe('getPendingTasks', () => {
@@ -57,8 +59,26 @@ describe('getPendingTasks', () => {
     const tasks = await slaStatusService.getPendingTasks('DepartmentApproval');
 
     expect(tasks).toEqual([{
-      id: 4, since: new Date('2026-01-01T00:00:00Z'), label: 'Finance (CORP)', to: '/hr/departments'
+      id: 4, since: new Date('2026-01-01T00:00:00Z'), label: 'Finance (CORP)', to: '/hr/departments', importId: null, importName: null
     }]);
+  });
+
+  test('pending directorates and positions are timed too, carrying the import they came from', async () => {
+    prisma.directorate.findMany.mockResolvedValue([{ id: 2, createdAt: new Date('2026-01-01T00:00:00Z'), name: 'DSSER', importId: null }]);
+    prisma.position.findMany.mockResolvedValue([{
+      id: 7, createdAt: new Date('2026-01-02T00:00:00Z'), name: 'Clerk', importId: 3, import: { fileName: 'org.xlsx' },
+      department: { name: 'HR', directorate: { name: 'DHRA' } }
+    }]);
+
+    expect(await slaStatusService.getPendingTasks('DirectorateApproval')).toEqual([
+      expect.objectContaining({ id: 2, label: 'Directorate DSSER', importId: null })
+    ]);
+    expect(await slaStatusService.getPendingTasks('PositionApproval')).toEqual([
+      expect.objectContaining({ id: 7, label: 'Clerk in HR (DHRA)', importId: 3, importName: 'org.xlsx' })
+    ]);
+    expect(prisma.position.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { status: 'Pending' } }));
+    expect(slaStatusService.INITIAL_TIER.PositionApproval).toBe('Principal_HR_Officer');
+    expect(slaStatusService.SLA_TASK_TYPES).toEqual(expect.arrayContaining(['DirectorateApproval', 'PositionApproval']));
   });
 });
 
@@ -127,11 +147,15 @@ describe('getPendingTasksWithStatus', () => {
     prisma.offer.findMany.mockResolvedValue([
       { id: 3, recommendedDate: new Date(Date.now() - 40 * 60 * 60 * 1000), application: { vacancyId: 1, candidate: { fullName: 'A' }, vacancy: { title: 'B' } } } // due in 8h
     ]);
+    prisma.position.findMany.mockResolvedValue([
+      { id: 4, createdAt: new Date(Date.now() - 50 * 60 * 60 * 1000), name: 'Clerk', department: { name: 'HR', directorate: { name: 'DHRA' } } } // 2h overdue
+    ]);
 
     const tasks = await slaStatusService.getPendingTasksWithStatus();
 
     expect(tasks.map((t) => `${t.taskType}:${t.taskId}`)).toEqual([
       'DepartmentApproval:2', // overdue - sorts first
+      'PositionApproval:4',   // overdue, but less so
       'OfferApproval:3',      // due soonest among the on-track ones
       'VacancyApproval:1'
     ]);

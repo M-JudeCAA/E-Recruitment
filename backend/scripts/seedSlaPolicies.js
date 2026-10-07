@@ -10,6 +10,10 @@ const DEFAULTS = [
   { taskType: 'VacancyApproval', tier: 'Manager', durationHours: 48 },
   { taskType: 'DepartmentApproval', tier: 'Principal_HR_Officer', durationHours: 48 },
   { taskType: 'DepartmentApproval', tier: 'Manager', durationHours: 48 },
+  { taskType: 'DirectorateApproval', tier: 'Principal_HR_Officer', durationHours: 48 },
+  { taskType: 'DirectorateApproval', tier: 'Manager', durationHours: 48 },
+  { taskType: 'PositionApproval', tier: 'Principal_HR_Officer', durationHours: 48 },
+  { taskType: 'PositionApproval', tier: 'Manager', durationHours: 48 },
   { taskType: 'OfferApproval', tier: 'Manager', durationHours: 24 },
   { taskType: 'OfferApproval', tier: 'Director', durationHours: 48 },
 ];

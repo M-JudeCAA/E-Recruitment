@@ -1418,12 +1418,17 @@ model DelegationUsage {
 // way round. Despite the shared enum name/column, they are plain
 // Notification.taskType events, not real SLA-escalation task types:
 // SlaPolicy/TaskEscalation and scripts/checkSlaEscalations.js only ever
-// reference the original three by name, so adding these here does not
-// pull them into approval-SLA timing.
+// reference the approval types in slaStatusService.SLA_TASK_TYPES by name,
+// so adding others here does not pull them into approval-SLA timing.
 enum SlaTaskType {
   VacancyApproval
   DepartmentApproval
   OfferApproval
+  // A pending directorate / position (services/orgApprovalService.js) -
+  // timed and escalated like DepartmentApproval (SLA_TASK_TYPES in
+  // slaStatusService.js).
+  DirectorateApproval
+  PositionApproval
   // A shortlisting committee's nomination waiting for the DHRA (Directors),
   // and the answer back to whoever submitted it. Not escalated.
   CommitteeNominationSubmitted
