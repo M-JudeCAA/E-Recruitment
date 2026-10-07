@@ -21,7 +21,7 @@ beforeEach(() => {
 
 describe('propose', () => {
   test('rejects a missing name', async () => {
-    const req = { body: { name: '  ', directorateId: '1' }, user: hro };
+    const req = { body: { code: 'CWG', name: '  ', directorateId: '1' }, user: hro };
     const res = mockRes();
     await departmentController.propose(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
@@ -30,7 +30,7 @@ describe('propose', () => {
 
   test('rejects an invalid directorateId', async () => {
     prisma.directorate.findUnique.mockResolvedValue(null);
-    const req = { body: { name: 'CWG', directorateId: '999' }, user: hro };
+    const req = { body: { code: 'CWG', name: 'Corporate Working Group', directorateId: '999' }, user: hro };
     const res = mockRes();
     await departmentController.propose(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
@@ -40,7 +40,7 @@ describe('propose', () => {
   test('refuses a rejected directorate', async () => {
     prisma.directorate.findUnique.mockResolvedValue({ id: 10, name: 'CORP', status: 'Rejected' });
     const res = mockRes();
-    await departmentController.propose({ body: { name: 'CWG', directorateId: '10' }, user: phro }, res);
+    await departmentController.propose({ body: { code: 'CWG', name: 'Corporate Working Group', directorateId: '10' }, user: phro }, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(prisma.department.create).not.toHaveBeenCalled();
   });
@@ -52,10 +52,10 @@ describe('propose', () => {
     const res = mockRes();
 
     // autoApprove is ignored below Principal HR Officer.
-    await departmentController.propose({ body: { name: '  CWG  ', directorateId: '10', autoApprove: true }, user: hro }, res);
+    await departmentController.propose({ body: { code: ' cwg ', name: '  Corporate Working Group  ', directorateId: '10', autoApprove: true }, user: hro }, res);
 
     expect(prisma.department.create).toHaveBeenCalledWith(expect.objectContaining({
-      data: { name: 'CWG', directorateId: 10, createdById: 1, status: 'Pending' }
+      data: { code: 'CWG', name: 'Corporate Working Group', directorateId: 10, createdById: 1, status: 'Pending' }
     }));
     expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ autoApproved: false }));
@@ -71,7 +71,7 @@ describe('propose', () => {
     prisma.department.create.mockResolvedValue({ id: 2, name: 'CWG', status: 'Approved' });
     const res = mockRes();
 
-    await departmentController.propose({ body: { name: 'CWG', directorateId: '10' }, user: phro }, res);
+    await departmentController.propose({ body: { code: 'CWG', name: 'Corporate Working Group', directorateId: '10' }, user: phro }, res);
 
     expect(prisma.department.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ status: 'Approved', approvedById: 3, approvedAt: expect.any(Date) })
@@ -88,7 +88,7 @@ describe('propose', () => {
     prisma.department.create.mockResolvedValue({ id: 3, name: 'CWG', status: 'Pending' });
     const res = mockRes();
 
-    await departmentController.propose({ body: { name: 'CWG', directorateId: '10', autoApprove: false }, user: phro }, res);
+    await departmentController.propose({ body: { code: 'CWG', name: 'Corporate Working Group', directorateId: '10', autoApprove: false }, user: phro }, res);
 
     expect(prisma.department.create.mock.calls[0][0].data.status).toBe('Pending');
     expect(prisma.department.create.mock.calls[0][0].data.approvedById).toBeUndefined();
@@ -104,7 +104,7 @@ describe('propose', () => {
     prisma.department.findFirst.mockResolvedValue(null);
     prisma.department.create.mockResolvedValue({ id: 4, name: 'CWG', status: 'Approved' });
 
-    await departmentController.propose({ method: 'POST', originalUrl: '/api/departments', body: { name: 'CWG', directorateId: '10' }, user: { id: 2, role: 'Senior_HR_Officer' } }, mockRes());
+    await departmentController.propose({ method: 'POST', originalUrl: '/api/departments', body: { code: 'CWG', name: 'Corporate Working Group', directorateId: '10' }, user: { id: 2, role: 'Senior_HR_Officer' } }, mockRes());
 
     expect(prisma.department.create.mock.calls[0][0].data.status).toBe('Approved');
     expect(prisma.delegationUsage.create).toHaveBeenCalledWith({ data: expect.objectContaining({ delegationId: 9 }) });
@@ -116,7 +116,7 @@ describe('propose', () => {
     prisma.department.findFirst.mockResolvedValue({ id: 5, name: 'CWG', directorateId: 10 });
     const res = mockRes();
 
-    await departmentController.propose({ body: { name: 'CWG', directorateId: '10' }, user: hro }, res);
+    await departmentController.propose({ body: { code: 'CWG', name: 'Corporate Working Group', directorateId: '10' }, user: hro }, res);
 
     expect(res.status).toHaveBeenCalledWith(409);
     expect(prisma.department.create).not.toHaveBeenCalled();
@@ -201,5 +201,51 @@ describe('approve / reject', () => {
       where: { taskType: 'DepartmentApproval', taskId: 1, resolvedAt: null },
       data: { resolvedAt: expect.any(Date) }
     });
+  });
+});
+
+describe('update / remove', () => {
+  const dept = { id: 4, code: 'FIN', name: 'Finance', directorateId: 10, status: 'Approved', createdById: 9 };
+
+  beforeEach(() => prisma.department.findFirst.mockResolvedValue(null));
+
+  test('a Principal HR Officer moves it to another directorate; checked against that directorate, audited', async () => {
+    prisma.department.findUnique.mockResolvedValue(dept);
+    prisma.directorate.findUnique.mockResolvedValue({ id: 11, status: 'Approved' });
+    prisma.department.update.mockResolvedValue({ ...dept, directorateId: 11 });
+
+    await departmentController.update({ params: { id: '4' }, body: { directorateId: '11' }, user: phro }, mockRes());
+
+    expect(prisma.department.findFirst).toHaveBeenCalledWith({ where: { code: 'FIN', directorateId: 11, NOT: { id: 4 } }, select: { id: true } });
+    expect(prisma.department.update).toHaveBeenCalledWith({ where: { id: 4 }, data: { directorateId: 11 } });
+    expect(auditActions()[0]).toEqual(expect.objectContaining({
+      entityType: 'Department', action: 'Edited', payload: expect.objectContaining({ changes: { directorateId: { from: 10, to: 11 } } })
+    }));
+  });
+
+  test('whoever added a pending department may correct it; an HR Officer may not edit an approved one', async () => {
+    prisma.department.findUnique.mockResolvedValue({ ...dept, status: 'Pending', createdById: 1 });
+    prisma.department.update.mockResolvedValue({ ...dept, status: 'Pending', name: 'Finance Office' });
+    await departmentController.update({ params: { id: '4' }, body: { name: 'Finance Office' }, user: hro }, mockRes());
+    expect(prisma.department.update).toHaveBeenCalledWith({ where: { id: 4 }, data: { name: 'Finance Office' } });
+
+    prisma.department.findUnique.mockResolvedValue(dept);
+    await expect(departmentController.update({ params: { id: '4' }, body: { name: 'X' }, user: hro }, mockRes()))
+      .rejects.toMatchObject({ status: 403 });
+  });
+
+  test('delete is refused while positions, vacancies or staff use it', async () => {
+    prisma.department.findUnique.mockResolvedValueOnce(dept).mockResolvedValueOnce({ _count: { positions: 0, vacancies: 3, staff: 1 } });
+    await expect(departmentController.remove({ params: { id: '4' }, body: {}, user: phro }, mockRes()))
+      .rejects.toMatchObject({ status: 409, message: expect.stringMatching(/3 vacancy\(ies\), 1 staff account/) });
+    expect(prisma.department.delete).not.toHaveBeenCalled();
+  });
+
+  test('whoever added a pending department may withdraw it', async () => {
+    prisma.department.findUnique.mockResolvedValueOnce({ ...dept, status: 'Pending', createdById: 1 })
+      .mockResolvedValueOnce({ _count: { positions: 0, vacancies: 0, staff: 0 } });
+    await departmentController.remove({ params: { id: '4' }, body: {}, user: hro }, mockRes());
+    expect(prisma.department.delete).toHaveBeenCalledWith({ where: { id: 4 } });
+    expect(auditActions()[0]).toEqual(expect.objectContaining({ action: 'Withdrawn', performedById: 1 }));
   });
 });

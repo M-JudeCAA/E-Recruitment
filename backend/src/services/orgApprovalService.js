@@ -17,6 +17,8 @@ const { AppError } = require('../utils/errorResponse');
 //   - Only an Approved item whose department and directorate are Approved
 //     too can be used on a vacancy (usablePosition).
 //
+// Editing and deleting afterwards: orgAdminService.js.
+//
 // Every creation, approval and rejection is written to the audit trail
 // (entity types Directorate / Department / Position / OrgImport), saying
 // whether "Approve now" was used.
@@ -76,9 +78,9 @@ async function recordCreated(req, entityType, row, state) {
     entityType, entityId: row.id,
     action: state.autoApproved ? 'Created and approved (Approve now)' : 'Created, sent for approval',
     actor: audit.actorFrom(req),
-    before: {}, after: row, fields: ['name', 'status'],
+    before: {}, after: row, fields: ['code', 'name', 'status'],
     comment: creationNote(state),
-    details: { name: row.name, autoApproved: state.autoApproved, autoApproveAvailable: state.canApprove }
+    details: { name: row.name, code: row.code, autoApproved: state.autoApproved, autoApproveAvailable: state.canApprove }
   });
 }
 
@@ -125,7 +127,7 @@ async function decide(req, entityType, id, decision, reason) {
     actor: audit.actorFrom(req),
     before: row, after: updated, fields: ['status', 'rejectionReason'],
     comment: rejecting ? String(reason).trim() : null,
-    details: { name: row.name }
+    details: { name: row.name, code: row.code }
   });
   return updated;
 }
@@ -189,6 +191,7 @@ async function history(limit = 100) {
     id: row.id, entityType: row.entityType, entityId: row.entityId, action: row.action, timestamp: row.timestamp,
     performedBy: row.performedBy, actingAsId: row.actingAsId,
     name: row.payload?.name || null,
+    code: row.payload?.code || null,
     autoApproved: row.payload?.autoApproved ?? null,
     comment: row.payload?.comment || null
   }));

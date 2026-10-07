@@ -7,9 +7,22 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-const DIRECTORATES = ['DHRA', 'DANS', 'DAAS', 'DSSER', 'DF', 'CORP'];
+// [code, full name]. Full names only where we are sure of them; the rest
+// keep the code as their name until HR edits it on the Directorates page.
+const DIRECTORATES = [
+  ['DHRA', 'Human Resource and Administration'], ['DANS', 'Air Navigation Services'], ['DAAS', 'Airports and Aviation Security'],
+  ['DSSER', 'Safety, Security and Economic Regulation'], ['DF', 'Finance'], ['CORP', 'CORP']
+];
 
-// [department name, directorate name] - derived directly from the
+// Department full names we are sure of (frontend utils/orgNames.js); the
+// rest are named by their code until HR edits them.
+const DEPARTMENT_NAMES = {
+  ACCOUNTS: 'Accounts', ADMIN: 'Administration', ARFFS: 'Aerodrome Rescue and Fire Fighting Services', AUDIT: 'Internal Audit',
+  AVSEC: 'Aviation Security', ER: 'Economic Regulation', FINANCE: 'Finance', FSS: 'Flight Safety Standards', HR: 'Human Resource',
+  IT: 'Information Technology', 'MGT ACCT': 'Management Accounting', OPS: 'Operations', PDU: 'Procurement and Disposal'
+};
+
+// [department code, directorate code] - derived directly from the
 // attached participant list, not invented.
 const DEPARTMENTS = [
   ['CWG', 'CORP'], ['CWG', 'DANS'], ['CWG', 'DAAS'], ['CWG', 'DSSER'], ['CWG', 'DF'],
@@ -32,24 +45,25 @@ async function main() {
     throw new Error('Create a staff account first (scripts/createSystemAdmin.js) - departments need a createdById.');
   }
 
-  const directorateByName = {};
-  for (const name of DIRECTORATES) {
-    directorateByName[name] = await prisma.directorate.upsert({
-      where: { name },
+  const directorateByCode = {};
+  for (const [code, name] of DIRECTORATES) {
+    directorateByCode[code] = await prisma.directorate.upsert({
+      where: { code },
       update: {},
-      create: { name, createdById: systemUser.id }
+      create: { code, name, createdById: systemUser.id }
     });
   }
   console.log(`Seeded ${DIRECTORATES.length} directorates.`);
 
   let created = 0;
-  for (const [deptName, directorateName] of DEPARTMENTS) {
-    const directorate = directorateByName[directorateName];
+  for (const [deptCode, directorateCode] of DEPARTMENTS) {
+    const directorate = directorateByCode[directorateCode];
     await prisma.department.upsert({
-      where: { name_directorateId: { name: deptName, directorateId: directorate.id } },
+      where: { code_directorateId: { code: deptCode, directorateId: directorate.id } },
       update: {},
       create: {
-        name: deptName,
+        code: deptCode,
+        name: DEPARTMENT_NAMES[deptCode] || deptCode,
         directorateId: directorate.id,
         status: 'Approved',
         createdById: systemUser.id,
@@ -76,7 +90,7 @@ async function main() {
   let backfilled = 0;
   for (const s of staff) {
     if (s.departmentId) continue; // already assigned, leave it alone
-    const matches = await prisma.department.findMany({ where: { name: s.department, status: 'Approved' } });
+    const matches = await prisma.department.findMany({ where: { OR: [{ code: s.department }, { name: s.department }], status: 'Approved' } });
     if (matches.length === 1) {
       await prisma.staffUser.update({ where: { id: s.id }, data: { departmentId: matches[0].id } });
       backfilled++;

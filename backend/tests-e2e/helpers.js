@@ -34,11 +34,11 @@ async function createStaff(role, email) {
 
 // Directorate -> approved Department -> Position, as vacancy creation needs.
 async function createOrg(createdById) {
-  const directorate = await prisma.directorate.create({ data: { name: 'Corporate Affairs', createdById } });
+  const directorate = await prisma.directorate.create({ data: { code: 'CA', name: 'Corporate Affairs', createdById } });
   const department = await prisma.department.create({
-    data: { name: 'Human Resources', directorateId: directorate.id, createdById, status: 'Approved', approvedById: createdById, approvedAt: new Date() }
+    data: { code: 'HR', name: 'Human Resources', directorateId: directorate.id, createdById, status: 'Approved', approvedById: createdById, approvedAt: new Date() }
   });
-  const position = await prisma.position.create({ data: { name: 'HR Analyst', departmentId: department.id, level: 1, createdById } });
+  const position = await prisma.position.create({ data: { code: 'HRA', name: 'HR Analyst', departmentId: department.id, level: 1, createdById } });
   return { directorate, department, position };
 }
 

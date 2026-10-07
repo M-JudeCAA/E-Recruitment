@@ -1,7 +1,8 @@
-// Directorates and departments are stored by the short names UCAA uses
-// internally (DANS, ARFFS, ...). Applicants on the careers sites see them
-// spelled out. Only names we are sure of are listed; anything else is shown
-// as stored. Check and extend these with HR.
+// Directorates and departments now carry a short code (DANS, ARFFS, ...)
+// and a full name, and `name` is the full name. Rows from before codes
+// whose full name HR hasn't filled in yet still have the short name as
+// their name - this spells those out for applicants on the careers sites.
+// Anything else is shown as stored.
 
 export const DIRECTORATE_NAMES = {
   DANS: 'Air Navigation Services',

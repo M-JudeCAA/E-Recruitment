@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Menu, X } from 'lucide-react';
 
 // Shared shell behind HRSidebar/CandidateSidebar - both were identical
 // aside-in-a-flex-row layouts (same sticky positioning, same link markup),
@@ -26,7 +26,10 @@ import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react';
 // an inline style's `display` always wins over any class (media query or
 // not), which would silently defeat the responsive switch.
 //
-// `items` entries: { key, label, icon, to, badge?, section? }. Consecutive
+// `items` entries: { key, label, icon, to, badge?, section?, children? }.
+// `children` ([{ key, label, to }]) makes the item a group with an arrow
+// that shows its pages indented underneath - open by default while the
+// group or one of its pages is `active`; hidden in icon-only mode. Consecutive
 // items sharing the same `section` get one header rendered above the
 // first of them (or a plain divider in icon-only mode, since there's no
 // room for the label text) - items with no `section` render as a flat,
@@ -54,6 +57,9 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
     }
   });
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  // Groups opened or closed by hand (key -> bool); otherwise a group is open
+  // while it or one of its pages is the current page.
+  const [openGroups, setOpenGroups] = React.useState({});
   const rail = variant === 'rail';
 
   React.useEffect(() => {
@@ -146,7 +152,7 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
     const iconOnly = collapsed && !forceExpanded;
     const nodes = [];
     let prevSection;
-    items.forEach(({ key, label, icon: Icon, to, badge, badgeTone = 'alert', section }) => {
+    items.forEach(({ key, label, icon: Icon, to, badge, badgeTone = 'alert', section, children }) => {
       if (section && section !== prevSection) {
         nodes.push(
           iconOnly ? (
@@ -172,12 +178,15 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
 
       const isActive = active === key;
       const showBadge = badge != null && badge > 0;
-      nodes.push(
+      const hasChildren = Boolean(children?.length) && !iconOnly;
+      const childActive = Boolean(children?.some((c) => c.key === active));
+      const open = hasChildren && (openGroups[key] ?? (isActive || childActive));
+      const link = (
         <Link
           key={key}
           to={to}
           title={iconOnly ? (showBadge ? `${label} (${badge})` : label) : undefined}
-          onClick={onNavigate}
+          onClick={() => { if (hasChildren) setOpenGroups((g) => ({ ...g, [key]: true })); onNavigate?.(); }}
           // Hover tint lives in theme.css's .sidebar-link rule, not inline
           // styles - inline `background` always wins over a CSS class, so
           // the active state below only sets it inline when true and
@@ -196,7 +205,7 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
             marginBottom: 2,
             borderRadius: 'var(--radius-sm)',
             fontSize: 14,
-            fontWeight: isActive ? 600 : 500,
+            fontWeight: isActive || childActive ? 600 : 500,
             color: isActive ? 'var(--color-primary-dark)' : 'var(--color-text)',
             ...(isActive
               ? {
@@ -245,6 +254,53 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
           )}
         </Link>
       );
+      if (!hasChildren) {
+        nodes.push(link);
+        return;
+      }
+      // A group (Organisation): the row opens its overview page, the arrow
+      // shows or hides its pages underneath.
+      nodes.push(
+        <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>{link}</div>
+          <button
+            type="button"
+            className="sidebar-link"
+            aria-expanded={open}
+            aria-label={open ? `Hide ${label} pages` : `Show ${label} pages`}
+            title={open ? `Hide ${label} pages` : `Show ${label} pages`}
+            onClick={() => setOpenGroups((g) => ({ ...g, [key]: !open }))}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, width: 28, height: 34, marginBottom: 2,
+              border: 'none', borderRadius: 'var(--radius-sm)', background: 'transparent', cursor: 'pointer', color: 'var(--color-text-muted)',
+            }}
+          >
+            <ChevronDown size={15} style={{ transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s ease' }} />
+          </button>
+        </div>
+      );
+      if (open) {
+        children.forEach((child) => {
+          const on = active === child.key;
+          nodes.push(
+            <Link
+              key={child.key}
+              to={child.to}
+              onClick={onNavigate}
+              className="sidebar-link"
+              aria-current={on ? 'page' : undefined}
+              style={{
+                display: 'block', boxSizing: 'border-box', width: '100%', textDecoration: 'none',
+                padding: '7px 12px 7px 38px', marginBottom: 2, borderRadius: 'var(--radius-sm)', fontSize: 13.5,
+                fontWeight: on ? 600 : 400, color: on ? 'var(--color-primary-dark)' : 'var(--color-text)',
+                ...(on ? { background: 'var(--color-primary-light)', boxShadow: 'inset 3px 0 0 0 var(--color-primary)' } : {}),
+              }}
+            >
+              {child.label}
+            </Link>
+          );
+        });
+      }
     });
     return nodes;
   }

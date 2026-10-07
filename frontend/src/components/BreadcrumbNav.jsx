@@ -27,7 +27,10 @@ const ROUTE_TRAILS = [
 
   { path: '/hr/home', trail: [{ label: 'Home' }] },
   { path: '/hr', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Vacancies' }] },
-  { path: '/hr/departments', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Departments' }] },
+  { path: '/hr/organisation', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Organisation' }] },
+  { path: '/hr/organisation/directorates', trail: [{ label: 'Organisation', to: '/hr/organisation' }, { label: 'Directorates' }] },
+  { path: '/hr/organisation/departments', trail: [{ label: 'Organisation', to: '/hr/organisation' }, { label: 'Departments' }] },
+  { path: '/hr/organisation/positions', trail: [{ label: 'Organisation', to: '/hr/organisation' }, { label: 'Positions' }] },
   { path: '/hr/staff-management', trail: [{ label: 'Home', to: '/hr/home' }, { label: 'Delegations' }] },
   { path: '/hr/staff-accounts', trail: [{ label: 'Staff accounts' }] },
   {

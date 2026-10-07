@@ -67,9 +67,10 @@ export default function HRDashboard() {
   const { connected } = useDashboardEvents(refetch.current);
 
   const list = vacancies || [];
-  const directorates = [...new Set(list.map((v) => v.department?.directorate?.name).filter(Boolean))].sort();
+  const dirCode = (v) => v.department?.directorate?.code || v.department?.directorate?.name;
+  const directorates = [...new Set(list.map(dirCode).filter(Boolean))].sort();
   const base = list.filter((v) => {
-    if (directorate && v.department?.directorate?.name !== directorate) return false;
+    if (directorate && dirCode(v) !== directorate) return false;
     if (postingType && v.postingType !== postingType) return false;
     const words = q.trim().toLowerCase();
     if (words && !`${v.title} ${v.jobRef}`.toLowerCase().includes(words)) return false;
@@ -138,7 +139,7 @@ export default function HRDashboard() {
               columns={[
                 { key: 'ref', label: 'Job reference', className: 'ws-mono', render: (v) => v.jobRef.replace('UCAA/ADV/', '') },
                 { key: 'title', label: 'Title', render: (v) => <span className="t">{v.title}</span> },
-                { key: 'dept', label: 'Department', render: (v) => <>{v.department?.name}{v.department?.directorate?.name && <span className="s"> · {v.department.directorate.name}</span>}</> },
+                { key: 'dept', label: 'Department', render: (v) => <>{v.department?.name}{dirCode(v) && <span className="s" title={v.department.directorate.name}> · {dirCode(v)}</span>}</> },
                 { key: 'type', label: 'Posting', render: (v) => v.postingType },
                 { key: 'stage', label: 'Stage', render: (v) => <Pill tone={v.progress?.stage?.tone}>{v.progress?.stage?.label || v.status}</Pill> },
                 {

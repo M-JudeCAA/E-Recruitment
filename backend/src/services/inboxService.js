@@ -196,9 +196,9 @@ async function forStaff(req, now = new Date()) {
     for (const d of directorates) {
       if (d.importId) { fromImport(d, 'directorate'); continue; }
       items.push({
-        key: `directorate-${d.id}`, kind: 'Directorate approval', title: d.name,
-        context: `Added by ${d.createdBy?.name || 'HR'}.`, link: '/hr/departments',
-        review: { type: 'org', entity: 'directorate', id: d.id, name: d.name, rows: [['Directorate', d.name]] },
+        key: `directorate-${d.id}`, kind: 'Directorate approval', title: `${d.name} (${d.code})`,
+        context: `Added by ${d.createdBy?.name || 'HR'}.`, link: '/hr/organisation/directorates',
+        review: { type: 'org', entity: 'directorate', id: d.id, name: d.name, rows: [['Code', d.code], ['Directorate', d.name]] },
         waiting: waitingLabel(d.createdAt, now),
         ...(await sla('DirectorateApproval', d.id, d.createdAt, now))
       });
@@ -206,20 +206,20 @@ async function forStaff(req, now = new Date()) {
     for (const d of departments) {
       if (d.importId) { fromImport(d, 'department'); continue; }
       items.push({
-        key: `department-${d.id}`, kind: 'Department approval', title: `${d.name} under ${d.directorate?.name || ''}`,
-        context: `Proposed by ${d.createdBy?.name || 'HR'}.`, link: '/hr/departments',
-        review: { type: 'org', entity: 'department', id: d.id, name: d.name, rows: [['Department', d.name], ['Directorate', d.directorate?.name]] },
+        key: `department-${d.id}`, kind: 'Department approval', title: `${d.name} (${d.code}) under ${d.directorate?.code || ''}`,
+        context: `Proposed by ${d.createdBy?.name || 'HR'}.`, link: '/hr/organisation/departments',
+        review: { type: 'org', entity: 'department', id: d.id, name: d.name, rows: [['Code', d.code], ['Department', d.name], ['Directorate', d.directorate ? `${d.directorate.name} (${d.directorate.code})` : '']] },
         waiting: waitingLabel(d.createdAt, now),
         ...(await sla('DepartmentApproval', d.id, d.createdAt, now))
       });
     }
     for (const p of positions) {
       if (p.importId) { fromImport(p, 'position'); continue; }
-      const where = `${p.department?.name || ''}${p.department?.directorate?.name ? `, ${p.department.directorate.name}` : ''}`;
+      const where = `${p.department?.name || ''}${p.department?.directorate?.code ? `, ${p.department.directorate.code}` : ''}`;
       items.push({
-        key: `position-${p.id}`, kind: 'Position approval', title: `${p.name} · ${where}`,
-        context: `Added by ${p.createdBy?.name || 'HR'}.`, link: '/hr/departments',
-        review: { type: 'org', entity: 'position', id: p.id, name: p.name, rows: [['Position', p.name], ['Department', where], ['Level', LEVEL_NAMES[p.level] || p.level]] },
+        key: `position-${p.id}`, kind: 'Position approval', title: `${p.name}${p.code ? ` (${p.code})` : ''} · ${where}`,
+        context: `Added by ${p.createdBy?.name || 'HR'}.`, link: '/hr/organisation/positions',
+        review: { type: 'org', entity: 'position', id: p.id, name: p.name, rows: [['Code', p.code || '-'], ['Position', p.name], ['Department', where], ['Level', LEVEL_NAMES[p.level] || p.level]] },
         waiting: waitingLabel(p.createdAt, now),
         ...(await sla('PositionApproval', p.id, p.createdAt, now))
       });
@@ -229,7 +229,7 @@ async function forStaff(req, now = new Date()) {
         .filter(([k]) => imp.counts[k]).map(([k, many]) => `${imp.counts[k]} ${imp.counts[k] === 1 ? k : many}`);
       items.push({
         key: `org-import-${importId}`, kind: 'Import approval', title: `${parts.join(', ')} from ${imp.fileName}`,
-        context: `Imported by ${imp.createdBy?.name || 'HR'}.`, link: '/hr/departments',
+        context: `Imported by ${imp.createdBy?.name || 'HR'}.`, link: '/hr/organisation',
         review: { type: 'org', entity: 'import', id: importId, name: imp.fileName, rows: [['File', imp.fileName], ['Waiting', parts.join(', ')]] },
         waiting: waitingLabel(imp.createdAt, now),
         ...(await sla(imp.first.taskType, imp.first.id, imp.first.since, now))

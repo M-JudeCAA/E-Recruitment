@@ -5,17 +5,21 @@ const prisma = require('../config/db');
 const headcount = require('../services/headcountService');
 const audit = require('../services/auditService');
 const orgApproval = require('../services/orgApprovalService');
+const orgAdmin = require('../services/orgAdminService');
+const { clean, normalizeCode, codeError, nameError } = require('../utils/orgFields');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
 // Any HR Officer can add a position to an approved department. It can be
 // used on a vacancy once approved: a Principal HR Officer or above approves
 // their own at once unless they untick "Approve now"; anyone else's waits
-// for a PHRO+ who did not add it (services/orgApprovalService.js).
+// for a PHRO+ who did not add it (services/orgApprovalService.js). Each has
+// a short code (HRO) and its full title, both unique within its department.
 async function create(req, res) {
-  const { name, departmentId, level } = req.body;
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'Position name is required' });
-  }
+  const { departmentId, level } = req.body;
+  const code = normalizeCode(req.body.code);
+  const name = clean(req.body.name);
+  const invalid = codeError(code, 'position') || nameError(name, 'position');
+  if (invalid) return res.status(400).json({ error: invalid });
   const department = await departmentModel.findById(Number(departmentId));
   if (!department || department.status !== 'Approved' || department.directorate?.status !== 'Approved') {
     return res.status(400).json({ error: 'Select a valid, approved department' });
@@ -24,12 +28,15 @@ async function create(req, res) {
   if (!levelValue) {
     return res.status(400).json({ error: `Level must be one of: ${LEVEL_WORDS.join(', ')}` });
   }
+  if (await positionModel.findInDepartment(department.id, { code })) {
+    return res.status(409).json({ error: `That department already has a position with the code ${code}` });
+  }
 
   const state = await orgApproval.initialState(req);
   let position;
   try {
     position = await positionModel.create({
-      name: name.trim(), departmentId: department.id, level: levelValue, createdById: req.user.id, ...state.data
+      code, name, departmentId: department.id, level: levelValue, createdById: req.user.id, ...state.data
     });
   } catch (err) {
     if (err.code !== 'P2002') throw err;
@@ -42,6 +49,26 @@ async function create(req, res) {
 
 async function listPending(req, res) {
   res.json(await positionModel.findPending());
+}
+
+// Every position in any state, with its department, headcount and how many
+// vacancies use it - the Positions page.
+async function listAllForAdmin(req, res) {
+  res.json(await orgAdmin.listPositions());
+}
+
+// PATCH /api/positions/:id { code, name, level }
+async function update(req, res) {
+  const updated = await orgAdmin.edit(req, 'Position', Number(req.params.id));
+  broadcastDashboardEvent('OrgChanged', { positionId: updated.id });
+  res.json(updated);
+}
+
+// DELETE /api/positions/:id { reason } - only while no vacancy uses it.
+async function remove(req, res) {
+  const result = await orgAdmin.remove(req, 'Position', Number(req.params.id), req.body?.reason);
+  broadcastDashboardEvent('OrgChanged', { positionId: result.id });
+  res.json(result);
 }
 
 async function approve(req, res) {
@@ -110,4 +137,7 @@ async function setHeadcount(req, res) {
   res.json({ ...updated, ...(await headcount.availability(id)) });
 }
 
-module.exports = { create, listForDropdown, listSeniorOptions, listByDepartment, getHeadcount, setHeadcount, listPending, approve, reject };
+module.exports = {
+  create, listForDropdown, listSeniorOptions, listByDepartment, getHeadcount, setHeadcount, listPending, approve, reject,
+  listAllForAdmin, update, remove
+};

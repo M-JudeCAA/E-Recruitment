@@ -2,7 +2,6 @@ const prisma = require('../config/db');
 
 module.exports = {
   create: (data) => prisma.directorate.create({ data }),
-  findAll: () => prisma.directorate.findMany({ orderBy: { name: 'asc' } }),
   findPending: () => prisma.directorate.findMany({
     where: { status: 'Pending' },
     include: {
@@ -12,5 +11,6 @@ module.exports = {
     orderBy: { createdAt: 'asc' }
   }),
   findById: (id) => prisma.directorate.findUnique({ where: { id } }),
-  findByName: (name) => prisma.directorate.findUnique({ where: { name } })
+  findByName: (name) => prisma.directorate.findUnique({ where: { name } }),
+  findByCode: (code) => prisma.directorate.findUnique({ where: { code } })
 };

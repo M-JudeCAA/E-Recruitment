@@ -135,7 +135,7 @@ export default function CreateVacancyListing() {
   function groupDepartmentsByDirectorate(departments) {
     const groups = {};
     departments.forEach((dept) => {
-      const key = dept.directorate.name;
+      const key = `${dept.directorate.code} — ${dept.directorate.name}`;
       if (!groups[key]) groups[key] = [];
       groups[key].push(dept);
     });
@@ -341,7 +341,7 @@ export default function CreateVacancyListing() {
             <option value="">Select a department</option>
             {Object.entries(groupDepartmentsByDirectorate(approvedDepartments)).map(([directorateName, depts]) => (
               <optgroup key={directorateName} label={directorateName}>
-                {depts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                {depts.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.code})</option>)}
               </optgroup>
             ))}
           </Select>
@@ -350,11 +350,11 @@ export default function CreateVacancyListing() {
             <div>
               <Select label="Title" required value={form.positionId} onChange={(e) => handlePositionChange(e.target.value)} disabled={!form.departmentId || loadingPositions}>
                 <option value="">{loadingPositions ? 'Loading positions...' : form.departmentId ? 'Select a position' : 'Select a department first'}</option>
-                {departmentPositions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {departmentPositions.map((p) => <option key={p.id} value={p.id}>{p.name}{p.code ? ` (${p.code})` : ''}</option>)}
               </Select>
               {form.departmentId && !loadingPositions && departmentPositions.length === 0 && (
                 <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -14 }}>
-                  No positions yet. <Link to="/hr/departments">Add one</Link>.
+                  No positions yet. <Link to={`/hr/organisation/positions?department=${form.departmentId}&add=1`}>Add one</Link>.
                 </p>
               )}
             </div>
