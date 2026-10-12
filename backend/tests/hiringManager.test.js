@@ -40,6 +40,15 @@ describe('progress emails', () => {
     expect(await hiringManagers.notify(vacancy, 'applicationsClosed', { count: 12 })).toBe(false);
   });
 
+  test('a hiring manager who applied for the vacancy hears nothing more about it', async () => {
+    prisma.application.findFirst.mockResolvedValueOnce({ candidate: { email: 'Stephen.Tumwine@caa.co.ug' } });
+    expect(await hiringManagers.notify(vacancy, 'meritListApproved', { primary: ['A'], reserve: [] })).toBe(false);
+    expect(sendMail).not.toHaveBeenCalled();
+    expect(prisma.application.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { vacancyId: 3, status: { notIn: ['Draft'] }, candidate: { email: { in: ['stephen.tumwine@caa.co.ug'] } } }
+    }));
+  });
+
   test.each(Object.keys(hiringManagers.MESSAGES))('%s has a subject and a body', (event) => {
     const { subject, body } = hiringManagers.MESSAGES[event](vacancy, {
       count: 2, names: ['A'], primary: ['A'], reserve: [], candidateName: 'A', outcome: 'declined', from: new Date(), to: new Date(), reason: 'r'

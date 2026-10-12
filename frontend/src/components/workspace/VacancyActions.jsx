@@ -121,10 +121,11 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
   const confirm = useConfirm();
   const rank = rankOf(staffRole);
   const isApprover = rank >= ROLE_RANK.Manager;
-  const [dialog, setDialog] = useState(null); // 'edit' | 'readvertise' | 'transition' | 'close' | 'return' | 'reject' | 'advert'
+  const [dialog, setDialog] = useState(null); // 'edit' | 'readvertise' | 'transition' | 'close' | 'closeChoice' | 'return' | 'reject' | 'advert'
   const [form, setForm] = useState({});
   const [preview, setPreview] = useState(null);
   const [transition, setTransition] = useState(null);
+  const [closing, setClosing] = useState(null); // { reason, inProgress } once the API asks what becomes of the applicants
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -144,6 +145,13 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
   };
 
   const openForm = (kind) => { setForm(vacancyToFormFields(v)); setError(''); setDialog(kind); };
+
+  // Closing a vacancy with people still in it: 'continue' or 'end' (see the dialog).
+  const closeWith = (inFlight) => run(
+    () => staffClient.patch(`/api/vacancies/${v.id}/close`, { reason: closing.reason, inFlight }),
+    inFlight === 'end' ? 'Vacancy closed and the recruitment ended - the applicants have been told.' : 'Vacancy closed. Selection continues with the applicants already in.',
+    'Could not close the vacancy'
+  );
 
 
   const toDateInputValue = (date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -237,7 +245,46 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
           intro="Closing takes the vacancy off the jobs board and stops new applications. It can be re-opened later. The reason is kept in its history."
           label="Reason for closing" confirmLabel="Close vacancy" busyLabel="Closing..." danger
           onClose={() => setDialog(null)}
-          onSubmit={async (reason) => { await staffClient.patch(`/api/vacancies/${v.id}/close`, { reason }); done('Vacancy closed.'); }} />
+          onSubmit={async (reason) => {
+            try {
+              await staffClient.patch(`/api/vacancies/${v.id}/close`, { reason });
+            } catch (err) {
+              // People are still in it: the API wants to know what becomes of them.
+              if (err.response?.data?.code !== 'VACANCY_HAS_WORK_IN_PROGRESS') throw err;
+              setClosing({ reason, inProgress: err.response.data.inProgress || {} });
+              setError('');
+              setDialog('closeChoice');
+              return;
+            }
+            done('Vacancy closed.');
+          }} />
+      )}
+
+      {dialog === 'closeChoice' && closing && (
+        <Modal title={`Close vacancy — ${v.jobRef}`} onClose={busy ? undefined : () => setDialog(null)} maxWidth={560}
+          footer={<>
+            <Button variant="ghost" disabled={busy} onClick={() => setDialog(null)}>Cancel</Button>
+            <Button variant="secondary" disabled={busy} onClick={() => closeWith('continue')}>Close, selection continues</Button>
+            <Button disabled={busy} style={{ background: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}
+              onClick={() => closeWith('end')}>End the recruitment</Button>
+          </>}>
+          <Alert type="error" message={error} />
+          <p style={{ fontSize: 13, marginTop: 0 }}>This vacancy still has people in it:</p>
+          <ul style={{ fontSize: 13, marginTop: 0 }}>
+            {closing.inProgress.applications > 0 && <li>{closing.inProgress.applications} application{closing.inProgress.applications === 1 ? '' : 's'} still being considered</li>}
+            {closing.inProgress.scheduledInterviews > 0 && <li>{closing.inProgress.scheduledInterviews} interview{closing.inProgress.scheduledInterviews === 1 ? '' : 's'} booked</li>}
+            {closing.inProgress.openOffers > 0 && <li>{closing.inProgress.openOffers} offer{closing.inProgress.openOffers === 1 ? '' : 's'} not yet answered</li>}
+            {closing.inProgress.acceptedNotHired > 0 && <li>{closing.inProgress.acceptedNotHired} accepted offer{closing.inProgress.acceptedNotHired === 1 ? '' : 's'} not yet marked hired</li>}
+          </ul>
+          <p style={{ fontSize: 13 }}>
+            <strong>Close, selection continues</strong> only takes the advert down: no new applications, and everything above carries on as it is.
+          </p>
+          <p style={{ fontSize: 13, marginBottom: 0 }}>
+            <strong>End the recruitment</strong> stops it here: unanswered offers are withdrawn, booked interviews are cancelled, and every
+            applicant still being considered is told UCAA is no longer recruiting for this vacancy.
+            {closing.inProgress.acceptedNotHired > 0 ? ' It is not possible while an accepted offer is waiting - mark that candidate hired, or have a Manager withdraw the offer, first.' : ''}
+          </p>
+        </Modal>
       )}
 
       {(dialog === 'return' || dialog === 'reject') && (

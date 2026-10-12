@@ -18,6 +18,7 @@
 require('dotenv').config();
 const prisma = require('../src/config/db');
 const { runJob } = require('../src/utils/jobRunner');
+const { signalDashboards } = require('../src/utils/dashboardSignal');
 const { verifyMailTransport } = require('../src/utils/mailer');
 const { checkAndAlert } = require('../src/services/systemHealthService');
 
@@ -51,8 +52,15 @@ async function runCycle() {
   }
   cycleInProgress = true;
   try {
-    for (const job of JOBS) await runJob(job.name, job.run);
+    const ran = [];
+    for (const job of JOBS) {
+      if ((await runJob(job.name, job.run)).ok) ran.push(job.name);
+    }
     await checkAndAlert();
+    // The jobs change what the HR dashboards show (an expired offer, a
+    // promoted reserve...) from outside the API process - ask it to tell
+    // them to refetch. Once per cycle, not per job.
+    if (ran.length) await signalDashboards('MaintenanceRun', { jobs: ran });
   } catch (err) {
     console.error('Maintenance cycle error:', err);
   } finally {

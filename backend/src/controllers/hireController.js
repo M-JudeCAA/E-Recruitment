@@ -86,6 +86,34 @@ async function retry(req, res) {
   res.json(view({ ...updated, hiredBy: hire.hiredBy }));
 }
 
+// DELETE .../hire { reason } - Manager+ undoes Mark as Hired (hireService
+// .cancelHire). The offer is Accepted again; if the person is not coming,
+// the Manager then withdraws it and the post goes to the next reserve.
+async function cancel(req, res) {
+  const offerId = Number(req.params.offerId);
+  let result;
+  try {
+    result = await hires.cancelHire(offerId, req.body?.reason);
+  } catch (err) {
+    return sendError(res, err);
+  }
+  const { hire, reason } = result;
+  // The HRIS may already hold the case - it can't be recalled from here.
+  const hrisHasCase = hire.handoffStatus === 'Sent';
+  const details = {
+    caseRef: hire.caseRef, hiredAt: hire.hiredAt, hiredById: hire.hiredById,
+    handoffStatus: hire.handoffStatus, onboardingCaseId: hire.onboardingCaseId || null
+  };
+  await audit.record({ entityType: 'Offer', entityId: offerId, action: 'Hire cancelled', actor: audit.actorFrom(req), comment: reason, details });
+  await audit.record({ entityType: 'Application', entityId: hire.applicationId, action: 'Hire cancelled', actor: audit.actorFrom(req), comment: reason, details: { caseRef: hire.caseRef } });
+  await hiringManagers.notify(hire.vacancyId, 'hireCancelled', { candidateName: hire.package?.person?.fullName, caseRef: hire.caseRef });
+  broadcastDashboardEvent('ApplicationUpdated', { vacancyId: hire.vacancyId });
+  res.json({
+    cancelled: true, caseRef: hire.caseRef, hrisHasCase, onboardingCaseId: hire.onboardingCaseId || null,
+    ...(hrisHasCase ? { warning: `The HRIS already received onboarding case ${hire.caseRef} - tell its administrator to cancel it there.` } : {})
+  });
+}
+
 // GET /api/applications/hires - every onboarding case (newest first), for
 // the Offers tracker, leaving out vacancies the requester applied for.
 async function list(req, res) {
@@ -101,4 +129,4 @@ async function list(req, res) {
   res.json(rows.map(({ application, ...h }) => ({ ...view(h), candidateName: application.candidate.fullName, vacancy: application.vacancy })));
 }
 
-module.exports = { markHired, get, downloadPackage, retry, list };
+module.exports = { markHired, get, downloadPackage, retry, cancel, list };

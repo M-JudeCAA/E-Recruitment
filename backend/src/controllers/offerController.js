@@ -140,7 +140,7 @@ async function approve(req, res) {
     return res.status(422).json({ error: `An offer at status "${existing.status}" cannot be approved` });
   }
   try {
-    workflow.assertNotSelfApprovedOffer(existing, req.user.id);
+    workflow.assertNotSelfApprovedOffer(existing, workflow.actingIds(req));
   } catch (err) {
     return sendError(res, err, 422);
   }

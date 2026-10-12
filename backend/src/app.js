@@ -40,6 +40,8 @@ const dataProtectionRoutes = require('./routes/dataProtection');
 const talentRoutes = require('./routes/talent');
 const bulkEmailRoutes = require('./routes/bulkEmail');
 const { errorHandler } = require('./utils/errorResponse');
+const { verifySignal } = require('./utils/dashboardSignal');
+const { broadcastDashboardEvent } = require('./realtime/dashboardSocket');
 
 const app = express();
 
@@ -98,6 +100,14 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/data-protection', dataProtectionRoutes);
 app.use('/api/talent', talentRoutes);
 app.use('/api/bulk-email', bulkEmailRoutes);
+
+// The scheduler worker's "something changed" signal for the HR dashboards
+// (utils/dashboardSignal.js) - signed with the shared secret, no session.
+app.post('/api/internal/dashboard-events', (req, res) => {
+  if (!verifySignal(req)) return res.status(401).json({ error: 'Invalid signature' });
+  broadcastDashboardEvent(String(req.body.event).slice(0, 60), req.body.payload && typeof req.body.payload === 'object' ? req.body.payload : {});
+  res.status(204).end();
+});
 
 // Catch-all error handler - logs the full error server-side but only ever
 // sends the client a sanitized message (never Prisma query text, database

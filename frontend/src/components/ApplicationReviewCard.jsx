@@ -10,6 +10,7 @@ import AuditTrail from './AuditTrail';
 import AccessLog from './AccessLog';
 import TagEditor from './TagEditor';
 import TextArea from './TextArea';
+import ReasonDialog from './ReasonDialog';
 import { fileLink } from '../utils/fileLink';
 import { safeJsonParse } from '../utils/safeJsonParse';
 import InterviewScheduler from './interviews/InterviewScheduler';
@@ -208,6 +209,16 @@ export default function ApplicationReviewCard({
             style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
             Regret letter
           </button>
+          {/* A rejection made by mistake - the API puts the application back where it stood. */}
+          {rank >= ROLE_RANK.Principal_HR_Officer && (
+            <>
+              {' · '}
+              <button type="button" onClick={() => { setError(''); setActiveModal('reinstate'); }}
+                style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: 'pointer', fontSize: 13, textDecoration: 'underline' }}>
+                Undo rejection
+              </button>
+            </>
+          )}
         </div>
       )}
 
@@ -419,11 +430,24 @@ export default function ApplicationReviewCard({
         >
           {error && <div style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
-            This is a final decision - the candidate will be notified by email and in-app. A reason is optional
-            but is included in their notification when given.
+            The candidate is notified by email and in-app straight away, and any interview still booked is cancelled. A reason is
+            optional but is included in their notification when given. A Principal HR Officer can undo a rejection made by mistake.
           </p>
           <TextArea label="Reason (optional)" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
         </Modal>
+      )}
+
+      {activeModal === 'reinstate' && (
+        <ReasonDialog
+          title={`Undo rejection — ${app.candidate.fullName}`}
+          intro="Use this when the application was rejected by mistake. It goes back to the step it was at (interviews that were booked must be booked again, and a place on a shortlist or merit list proposed again). The candidate is told it is being considered again, and the reason is kept in the history."
+          label="Why the rejection is being undone" confirmLabel="Undo rejection" busyLabel="Reinstating..." minLength={10}
+          onClose={closeModal}
+          onSubmit={async (reason) => {
+            await staffClient.patch(`/api/applications/${app.id}/reinstate`, { reason });
+            closeModal();
+            onUpdated();
+          }} />
       )}
 
       {composingOffer && (

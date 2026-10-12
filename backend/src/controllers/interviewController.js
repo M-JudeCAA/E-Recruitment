@@ -130,6 +130,17 @@ function parsePanel(list) {
   return panel;
 }
 
+// Nobody competing for the post sits on its interview panels - the same
+// rule the shortlisting committee has. Panelists have no account here, so
+// they are matched to applicants by email (or their staff account).
+async function assertPanelNotApplicants(vacancyId, panel) {
+  const applicant = await conflictOfInterest.applicantAmong(vacancyId, panel);
+  if (!applicant) return;
+  const err = new AppError(`${applicant.name} has applied for this vacancy, so they cannot sit on its interview panel`, 422);
+  err.code = 'PANELIST_IS_APPLICANT';
+  throw err;
+}
+
 // The shape every Hub endpoint returns for a round: resultsDue marks an
 // interview whose time has come with no results recorded yet.
 function decorate(round) {
@@ -245,6 +256,7 @@ async function schedule(req, res) {
 
   const logistics = parseLogistics(req.body);
   const panel = parsePanel(req.body.panelMembers);
+  await assertPanelNotApplicants(application.vacancyId, panel);
 
   if (logistics.scheduledDate && !req.body.allowConflicts) {
     const conflicts = await scheduling.findConflicts({
@@ -308,6 +320,7 @@ async function buildSession(req) {
   const logistics = parseLogistics({ ...req.body, scheduledDate: undefined });
   delete logistics.scheduledDate;
   const panel = parsePanel(req.body.panelMembers);
+  await assertPanelNotApplicants(vacancyId, panel);
   const slots = scheduling.planSlots({
     startsAt: req.body.startsAt,
     durationMinutes: logistics.durationMinutes,
@@ -740,6 +753,7 @@ async function addPanelMember(req, res) {
   if (round.panelMembers.some((m) => scheduling.samePerson(m, panelist))) {
     return res.status(409).json({ error: `${panelist.name} is already on this panel` });
   }
+  await assertPanelNotApplicants(round.application?.vacancy?.id, [panelist]);
 
   if (!req.body.allowConflicts && round.scheduledDate) {
     const conflicts = await scheduling.findConflicts({
@@ -784,6 +798,9 @@ async function updatePanelMember(req, res) {
   if (Object.keys(data).length === 0) return res.status(400).json({ error: 'Nothing to update' });
 
   const before = await interviewModel.findDetailed(panelMember.interviewRoundId);
+  if ('email' in data) {
+    await assertPanelNotApplicants(before?.application?.vacancy?.id, [{ ...panelMember, ...data }]);
+  }
   if (data.isChair) await panelMemberModel.clearChair(panelMember.interviewRoundId);
   const updated = await panelMemberModel.update(panelMember.id, data);
   if ('email' in data && (data.email || '') !== (panelMember.email || '')) {
@@ -864,8 +881,15 @@ async function recordResults(req, res) {
 
     const application = await applicationModel.findById(round.applicationId, { offer: true, vacancy: true });
     if (correcting) {
-      if (round.recommendation === 'Reject' || recommendation === 'Reject') {
-        throw new AppError('A rejection is final and the candidate has been told - it can\'t be changed by correcting the results', 409);
+      // A rejection isn't undone or made by a correction: the candidate was
+      // told. A verdict entered as "Reject" by mistake is put right by
+      // reinstating the application first (applicationController.reinstate),
+      // which is what tells the candidate - then the verdict is corrected here.
+      if (recommendation === 'Reject') {
+        throw new AppError('A result can\'t be corrected into a rejection - reject the application instead, which tells the candidate', 409);
+      }
+      if (round.recommendation === 'Reject' && application.status === 'Rejected') {
+        throw new AppError('This application was rejected on this verdict and the candidate has been told - reinstate the application first, then correct the verdict', 409);
       }
       if (application.meritStatus || application.offer) {
         throw new AppError('This candidate is already on the merit list - take them off it (re-propose without them) before correcting their results', 409);
@@ -906,6 +930,7 @@ async function recordResults(req, res) {
         ? {
           status: 'Rejected', rejectedAt: now, rejectedById: req.user.id,
           rejectionReason: 'Not recommended following the interview panel\'s assessment.',
+          statusBeforeRejection: application.status,
           rank: null, listStatus: null, ...CLEARED_MERIT, rankVersion: { increment: 1 }
         }
         : { status: 'Interviewed' };

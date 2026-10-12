@@ -103,6 +103,13 @@ async function decide(req, entityType, id, decision, reason) {
     err.code = 'SELF_APPROVAL';
     throw err;
   }
+  // Under a delegation the decision is made with the delegator's authority,
+  // so it can't be on something the delegator added.
+  if (req.actingAsDelegateFor && row.createdById === req.actingAsDelegateFor) {
+    const err = new AppError(`You are acting under a delegation from the person who added this ${word}, so someone else must ${decision} it`, 403);
+    err.code = 'SELF_APPROVAL';
+    throw err;
+  }
   const rejecting = decision === 'reject';
   if (rejecting && !(reason && String(reason).trim())) throw new AppError('A rejection reason is required', 400);
   if (!rejecting && PARENT[entityType]) {
@@ -140,6 +147,11 @@ async function approveImport(req, importId) {
   if (!record) throw new AppError('Import not found', 404);
   if (record.createdById === req.user.id) {
     const err = new AppError('You ran this import, so another Principal HR Officer or above must approve it', 403);
+    err.code = 'SELF_APPROVAL';
+    throw err;
+  }
+  if (req.actingAsDelegateFor && record.createdById === req.actingAsDelegateFor) {
+    const err = new AppError('You are acting under a delegation from the person who ran this import, so someone else must approve it', 403);
     err.code = 'SELF_APPROVAL';
     throw err;
   }

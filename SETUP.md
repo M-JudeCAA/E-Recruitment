@@ -66,6 +66,7 @@ Every other field in `.env.example` needs a real value too:
 | `INTERVIEW_ORGANIZER_EMAIL` | Optional but recommended. The mailbox shown as the organizer of interview calendar invitations - when a panelist or candidate accepts or declines, the reply goes here (e.g. the HR recruitment mailbox). Default: the address in `SMTP_FROM` |
 | `HRIS_HANDOFF_URL`, `HRIS_HANDOFF_TOKEN` | Optional, for when the core HRIS can take new hires. "Mark as Hired" POSTs each onboarding case there as JSON (with the case reference as the `Idempotency-Key` header, and the token as a bearer token), retrying until it is accepted. Unset: HR downloads each case's package and passes it on by hand |
 | `SCHEDULER_INTERVAL_MINUTES` | Optional. How often the scheduler worker runs the maintenance jobs. Default `60` |
+| `INTERNAL_API_URL` | Optional. Where the scheduler worker reaches the API to tell open HR dashboards to refresh after a run. Default `http://127.0.0.1:<PORT>` - set it only if the worker runs on another machine than the API. The call is signed with `JWT_SECRET`, so both must share it |
 | `DATABASE_URL_TEST` | Only for the end-to-end tests: a separate, empty MySQL database whose name contains `test`. See [Running tests](#running-tests) |
 
 ## 3. Database

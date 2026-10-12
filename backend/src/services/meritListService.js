@@ -266,7 +266,9 @@ function meritListChanged() {
   return err;
 }
 
-async function approve(vacancyId, approverId, seenVersions) {
+// actingForId: the delegator, when the approver got here under a delegation -
+// their authority can't approve a list they proposed.
+async function approve(vacancyId, approverId, seenVersions, actingForId = null) {
   const proposed = await prisma.application.findMany({
     where: { vacancyId, meritStatus: 'Proposed' },
     select: { id: true, meritProposedById: true, meritListStatus: true, rankVersion: true }
@@ -274,6 +276,9 @@ async function approve(vacancyId, approverId, seenVersions) {
   if (proposed.length === 0) throw new AppError('No proposed merit list is awaiting approval for this vacancy', 422);
   if (proposed.some((a) => a.meritProposedById === approverId)) {
     throw new AppError('You proposed this merit list, so it must be approved by another Principal HR Officer or above', 422);
+  }
+  if (actingForId != null && proposed.some((a) => a.meritProposedById === actingForId)) {
+    throw new AppError('You are acting under a delegation from the person who proposed this merit list, so someone else must approve it', 422);
   }
   const data = { meritStatus: 'Approved', meritApprovedAt: new Date(), meritApprovedById: approverId };
 

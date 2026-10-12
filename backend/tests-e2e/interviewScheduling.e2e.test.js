@@ -192,6 +192,24 @@ test('a "Reject" verdict rejects the application, and is final; a no-show has no
   expect(await prisma.candidateNotification.count({ where: { candidateId: dan.candidateId, type: 'ApplicationRejected', channel: 'InApp' } })).toBe(1);
   expect((await api(tokens.hro).patch(`/api/interviews/${danRound.id}/results`, { score: 60, recommendation: 'Hold' })).status).toBe(409);
 
+  // The verdict was entered by mistake: a Principal HR Officer reinstates the
+  // application (the candidate is told), and only then is the verdict corrected.
+  const reinstate = (token, reason) => api(token).patch(`/api/applications/${dan.applicationId}/reinstate`, { reason });
+  expect((await reinstate(tokens.shro, 'Verdict entered against the wrong score sheet')).status).toBe(403);
+  expect((await reinstate(tokens.phro, 'oops')).status).toBe(400);
+  const back = expectStatus(await reinstate(tokens.phro, 'Verdict entered against the wrong score sheet'), 200).body;
+  expect(back).toEqual(expect.objectContaining({ status: 'Interviewed', rejectedAt: null, rejectionReason: null, statusBeforeRejection: null }));
+  expect(await prisma.candidateNotification.count({ where: { candidateId: dan.candidateId, type: 'ApplicationReinstated', channel: 'InApp' } })).toBe(1);
+  expect((await reinstate(tokens.phro, 'Verdict entered against the wrong score sheet')).status).toBe(422);
+  expectStatus(await api(tokens.hro).patch(`/api/interviews/${danRound.id}/results`, { score: 60, recommendation: 'Hold' }), 200);
+
+  // Someone competing for the post can't sit on its interview panel.
+  const rival = await api(tokens.shro).post(`/api/interviews/applications/${eve.applicationId}/interviews`, {
+    scheduledDate: inDays(4), mode: 'In person', panelMembers: [{ name: 'Dan Dumba', email: 'C0@example.com' }]
+  });
+  expect(rival.status).toBe(422);
+  expect(rival.body.code).toBe('PANELIST_IS_APPLICANT');
+
   const eveRound = await book(eve.applicationId);
   await prisma.interviewRound.update({ where: { id: eveRound.id }, data: { scheduledDate: new Date(Date.now() - 3600000) } });
   expectStatus(await api(tokens.shro).patch(`/api/interviews/${eveRound.id}/no-show`, {}), 200);
@@ -199,6 +217,39 @@ test('a "Reject" verdict rejects the application, and is final; a no-show has no
 
   // A vacancy with nothing interviewed still has a (short) scorecard.
   expectStatus(await api(tokens.hro).get(`/api/interviews/vacancies/${vacancy.id}/scorecard`), 200);
+});
+
+test('closing a vacancy with people in it: HR says whether selection continues or the recruitment ends', async () => {
+  const { vacancy, applicants } = await shortlistedVacancy(['Ian Isabirye', 'Joy Jemba']);
+  const [ian, joy] = applicants;
+  const round = expectStatus(await api(tokens.shro).post(`/api/interviews/applications/${ian.applicationId}/interviews`, {
+    scheduledDate: inDays(4), mode: 'In person', panelMembers: [{ name: 'P One', email: 'p1@caa.co.ug' }]
+  }), 201).body;
+  const close = (body) => api(tokens.phro).patch(`/api/vacancies/${vacancy.id}/close`, body);
+
+  const asked = await close({ reason: 'The post was abolished' });
+  expect(asked.status).toBe(409);
+  expect(asked.body).toEqual(expect.objectContaining({
+    code: 'VACANCY_HAS_WORK_IN_PROGRESS', inProgress: expect.objectContaining({ applications: 2, scheduledInterviews: 1, openOffers: 0 })
+  }));
+  expect((await prisma.vacancy.findUnique({ where: { id: vacancy.id } })).status).toBe('Open');
+
+  const ended = expectStatus(await close({ reason: 'The post was abolished', inFlight: 'end' }), 200).body;
+  expect(ended).toEqual(expect.objectContaining({ status: 'Closed', recruitmentEnded: { applicationsClosed: 2, offersWithdrawn: 0 } }));
+  const after = await prisma.application.findMany({ where: { vacancyId: vacancy.id }, orderBy: { id: 'asc' } });
+  expect(after.map((a) => [a.status, a.statusBeforeRejection])).toEqual([['Rejected', 'InterviewScheduled'], ['Rejected', 'Shortlisted']]);
+  expect((await prisma.interviewRound.findUnique({ where: { id: round.id } })).status).toBe('Cancelled');
+  // Told the recruitment stopped - not that they were unsuccessful.
+  expect(await prisma.candidateNotification.count({ where: { type: 'RecruitmentDiscontinued', channel: 'InApp' } })).toBe(2);
+  expect(await prisma.candidateNotification.count({ where: { type: 'ApplicationRejected' } })).toBe(0);
+
+  // Re-opened later, the applications that should continue are reinstated one by one.
+  const reinstate = (applicationId) => api(tokens.phro).patch(`/api/applications/${applicationId}/reinstate`, { reason: 'The post was restored by EXCO' });
+  expect((await reinstate(joy.applicationId)).body.code).toBe('VACANCY_NOT_OPEN');
+  expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
+  expect(expectStatus(await reinstate(joy.applicationId), 200).body.status).toBe('Shortlisted');
+  // Ian's interview was cancelled, so he is back to be booked again.
+  expect(expectStatus(await reinstate(ian.applicationId), 200).body.status).toBe('Shortlisted');
 });
 
 test('EXCO approves the shortlist outside the system: nobody is told or interviewed before the signed copy is attached', async () => {

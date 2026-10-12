@@ -2,6 +2,7 @@ const prisma = require('../config/db');
 const { sendMail } = require('../utils/mailer');
 const { escapeHtml } = require('../utils/interviewFormat');
 const { internalDomains } = require('./entraAuthService');
+const { applicantAmong } = require('./conflictOfInterestService');
 
 // The hiring manager: the UCAA employee the vacancy is being filled for,
 // picked from the directory when the vacancy is created (or later). They
@@ -71,6 +72,14 @@ const MESSAGES = {
     subject: 'hired',
     body: `<p><strong>${escapeHtml(d.candidateName)}</strong> has been hired${d.startDate ? `, starting on ${day(d.startDate)}` : ''}. HR has opened onboarding case ${escapeHtml(d.caseRef)}.</p>`
   }),
+  hireCancelled: (v, d) => ({
+    subject: 'hire cancelled',
+    body: `<p>HR has cancelled the hire of <strong>${escapeHtml(d.candidateName || 'the candidate')}</strong> (onboarding case ${escapeHtml(d.caseRef)}). HR will let you know what happens next with this post.</p>`
+  }),
+  recruitmentEnded: (v, d) => ({
+    subject: 'recruitment ended',
+    body: `<p>The vacancy has been closed and the recruitment ended${d.reason ? `: ${escapeHtml(d.reason)}` : '.'}</p><p>The applicants still being considered have been told it will not go further.</p>`
+  }),
   offerNotTaken: (v, d) => ({
     subject: 'offer not taken up',
     body: `<p>The offer to <strong>${escapeHtml(d.candidateName)}</strong> was ${escapeHtml(d.outcome)}.${d.promotedName ? ` <strong>${escapeHtml(d.promotedName)}</strong>, next on the merit list, moves up.` : ''}</p>`
@@ -87,6 +96,9 @@ async function notify(vacancyOrId, event, details = {}) {
       ? vacancyOrId
       : await prisma.vacancy.findUnique({ where: { id: Number(vacancyOrId?.id ?? vacancyOrId) } });
     if (!vacancy?.hiringManagerEmail || !MESSAGES[event]) return false;
+    // A hiring manager who applied for the vacancy is a candidate on it:
+    // they hear nothing about the other applicants.
+    if (await applicantAmong(vacancy.id, [{ email: vacancy.hiringManagerEmail }])) return false;
     const { subject, body } = MESSAGES[event](vacancy, details);
     await sendMail({
       to: vacancy.hiringManagerEmail,

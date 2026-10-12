@@ -90,6 +90,32 @@ describe('assertNotSelfApproval', () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 5, createdById: 42 });
     await expect(workflow.assertNotSelfApproval(5, 99)).resolves.toBeUndefined();
   });
+
+  // A delegate approving with the creator's own authority is the creator
+  // approving it.
+  test('blocks a delegate acting for the person who created the vacancy', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 5, createdById: 42 });
+    const req = { user: { id: 99 }, actingAsDelegateFor: 42 };
+    await expect(workflow.assertNotSelfApproval(5, workflow.actingIds(req))).rejects.toThrow(/acting under a delegation/);
+  });
+
+  test('allows a delegate acting for someone else', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 5, createdById: 42 });
+    const req = { user: { id: 99 }, actingAsDelegateFor: 7 };
+    await expect(workflow.assertNotSelfApproval(5, workflow.actingIds(req))).resolves.toBeUndefined();
+  });
+});
+
+describe('self-approval through a delegation', () => {
+  test('a shortlist the delegator proposed', async () => {
+    prisma.application.findMany.mockResolvedValue([{ id: 1, shortlistProposedById: 42 }]);
+    await expect(workflow.assertNotSelfApprovedShortlist(5, [99, 42])).rejects.toThrow(/acting under a delegation/);
+  });
+
+  test('an offer the delegator recommended', () => {
+    expect(() => workflow.assertNotSelfApprovedOffer({ recommendedById: 4 }, [5, 4])).toThrow(/acting under a delegation/);
+    expect(() => workflow.assertNotSelfApprovedOffer({ recommendedById: 4 }, [5, 6])).not.toThrow();
+  });
 });
 
 describe('assertNotSelfApprovedShortlist', () => {

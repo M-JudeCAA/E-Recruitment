@@ -414,6 +414,81 @@ describe('update', () => {
 });
 
 describe('close', () => {
+  // Nothing in progress unless a test says so.
+  const inProgress = ({ applications = 0, scheduled = 0, open = 0, accepted = 0 } = {}) => {
+    prisma.application.count.mockResolvedValue(applications);
+    prisma.interviewRound.count.mockResolvedValue(scheduled);
+    prisma.offer.count.mockImplementation(async ({ where }) => (where.status === 'Accepted' ? accepted : open));
+  };
+  beforeEach(() => inProgress());
+
+  describe('with applicants still in progress', () => {
+    const open = { id: 1, status: 'Open', title: 'Officer', jobRef: 'UCAA/ADV/EXT/001/2026' };
+
+    test('asks what becomes of them before closing anything', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue(open);
+      inProgress({ applications: 4, scheduled: 1, open: 1 });
+      const res = mockRes();
+      await vacancyController.close({ params: { id: '1' }, body: { reason: 'Post frozen' }, user: { id: 2 } }, res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        code: 'VACANCY_HAS_WORK_IN_PROGRESS', inProgress: expect.objectContaining({ applications: 4, scheduledInterviews: 1, openOffers: 1 })
+      }));
+      expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
+    });
+
+    test('"continue" only takes the advert down', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue(open);
+      prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+      inProgress({ applications: 4 });
+      await vacancyController.close({ params: { id: '1' }, body: { reason: 'Enough applicants', inFlight: 'continue' }, user: { id: 2 } }, mockRes());
+      expect(prisma.application.updateMany).not.toHaveBeenCalled();
+      expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+      expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ action: 'Vacancy closed (selection continues)' }) });
+    });
+
+    test('"end" withdraws open offers, closes the applications where they stood and tells the candidates', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue(open);
+      prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+      inProgress({ applications: 2, open: 1 });
+      prisma.offer.findMany.mockResolvedValue([{ id: 9, status: 'Approved', applicationId: 30, application: { candidateId: 300 } }]);
+      prisma.application.findMany.mockResolvedValue([
+        { id: 10, status: 'UnderReview', candidateId: 100 }, { id: 11, status: 'Interviewed', candidateId: 101 }
+      ]);
+      prisma.candidate.findUnique.mockResolvedValue(null); // no email in this test
+      const res = mockRes();
+      await vacancyController.close({ params: { id: '1' }, body: { reason: 'Post abolished', inFlight: 'end' }, user: { id: 2 } }, res);
+
+      expect(prisma.offer.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: { in: [9] }, status: { in: ['Recommended', 'Returned', 'Approved'] } },
+        data: expect.objectContaining({ status: 'Withdrawn', withdrawnById: 2 })
+      }));
+      expect(prisma.application.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [10] }, status: 'UnderReview' },
+        data: expect.objectContaining({ status: 'Rejected', statusBeforeRejection: 'UnderReview', rejectedById: 2 })
+      });
+      expect(prisma.application.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: [11] }, status: 'Interviewed' },
+        data: expect.objectContaining({ status: 'Rejected', statusBeforeRejection: 'Interviewed', meritStatus: null })
+      });
+      const notices = prisma.candidateNotification.create.mock.calls.map(([{ data }]) => [data.candidateId, data.type]);
+      expect(notices).toEqual(expect.arrayContaining([[300, 'OfferWithdrawn'], [100, 'RecruitmentDiscontinued'], [101, 'RecruitmentDiscontinued']]));
+      expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ action: 'Vacancy closed and recruitment ended' }) });
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ recruitmentEnded: { applicationsClosed: 2, offersWithdrawn: 1 } }));
+    });
+
+    test('"end" is refused while a candidate has accepted an offer and is not yet hired', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue(open);
+      prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+      inProgress({ applications: 1, accepted: 1 });
+      const res = mockRes();
+      await vacancyController.close({ params: { id: '1' }, body: { reason: 'Post abolished', inFlight: 'end' }, user: { id: 2 } }, res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ACCEPTED_OFFERS_OUTSTANDING' }));
+      expect(prisma.application.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
   test('returns 404 when the vacancy does not exist', async () => {
     prisma.vacancy.findUnique.mockResolvedValue(null);
     await vacancyController.close({ params: { id: '99' }, body: { reason: 'Frozen' } }, mockRes());
@@ -1250,6 +1325,40 @@ describe('update - moving the deadline (FR-ATS-027)', () => {
     const res = mockRes();
     await vacancyController.update({ params: { id: '1' }, body: { deadline: later }, user: { id: 2 } }, res);
     expect(prisma.vacancy.update).toHaveBeenCalled();
+  });
+
+  // The committee's applicants are assigned once, when rating opens.
+  test('can\'t reopen applications once the shortlisting committee is assessing', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open', deadline: new Date('2000-01-01') });
+    prisma.shortlistExercise.findUnique.mockResolvedValueOnce({ status: 'Rating' });
+    const res = mockRes();
+    await vacancyController.update({ params: { id: '1' }, body: { deadline: later, reason: 'Too few applicants' }, user: { id: 2 } }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'COMMITTEE_ASSESSING' }));
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
+  });
+
+  test('still extends while the committee is only being set up', async () => {
+    const before = { id: 1, status: 'Open', deadline: new Date('2000-01-01') };
+    prisma.vacancy.findUnique.mockResolvedValue(before);
+    prisma.vacancy.update.mockResolvedValue({ ...before, deadline: new Date(later) });
+    prisma.shortlistExercise.findUnique.mockResolvedValueOnce({ status: 'Setup' });
+    await vacancyController.update({ params: { id: '1' }, body: { deadline: later, reason: 'Too few applicants' }, user: { id: 2 } }, mockRes());
+    expect(prisma.vacancy.update).toHaveBeenCalled();
+  });
+
+  test('refuses a hiring manager who has applied for the vacancy', async () => {
+    process.env.INTERNAL_EMAIL_DOMAIN = process.env.INTERNAL_EMAIL_DOMAIN || 'caa.co.ug';
+    const domain = process.env.INTERNAL_EMAIL_DOMAIN.split(',')[0].trim();
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open', deadline: new Date('2999-01-01'), hiringManagerEmail: null });
+    prisma.application.findFirst.mockResolvedValueOnce({ candidate: { email: `jane@${domain}` } });
+    const res = mockRes();
+    await vacancyController.update({
+      params: { id: '1' }, body: { hiringManager: { name: 'Jane Doe', email: `jane@${domain}` } }, user: { id: 2 }
+    }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'HIRING_MANAGER_IS_APPLICANT' }));
+    expect(prisma.vacancy.update).not.toHaveBeenCalled();
   });
 
   test('refuses to edit a rejected vacancy', async () => {

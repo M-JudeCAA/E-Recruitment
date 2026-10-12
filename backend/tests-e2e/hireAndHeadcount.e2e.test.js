@@ -80,6 +80,31 @@ test('marking hired twice at once opens exactly one onboarding case, and fills a
   expect(expectStatus(await api(tokens.hro).get('/api/applications/hires'), 200).body).toHaveLength(1);
 });
 
+test('a Manager can cancel a hire: the case goes, the post is free again, and the offer can then be withdrawn', async () => {
+  await prisma.position.update({ where: { id: org.position.id }, data: { headcount: 3, occupied: 1 } });
+  const { offer } = await acceptedOffer();
+  expectStatus(await markHired(offer.id), 201);
+  const cancel = (token, reason) => request(app).delete(`/api/applications/offers/${offer.id}/hire`)
+    .set('Authorization', `Bearer ${token}`).send({ reason });
+  const withdraw = () => api(tokens.manager).patch(`/api/applications/offers/${offer.id}/withdraw`, { reason: 'She never took up the post' });
+
+  expectStatus(await cancel(tokens.phro, 'She never took up the post'), 403);
+  expectStatus(await cancel(tokens.manager, 'no'), 400);
+  expect(expectStatus(await withdraw(), 409).body.code).toBe('ALREADY_HIRED');
+
+  const done = expectStatus(await cancel(tokens.manager, 'She never took up the post'), 200).body;
+  expect(done).toEqual(expect.objectContaining({ cancelled: true, caseRef: expect.stringMatching(/^UCAA\/ONB\/001\//), hrisHasCase: false }));
+  expect(await prisma.hire.count()).toBe(0);
+  expect((await prisma.position.findUnique({ where: { id: org.position.id } })).occupied).toBe(1);
+  expect(await prisma.auditLog.count({ where: { entityType: 'Offer', entityId: offer.id, action: 'Hire cancelled' } })).toBe(1);
+  expectStatus(await cancel(tokens.manager, 'She never took up the post'), 404);
+
+  // Plain Accepted again: it can be withdrawn - or marked hired afresh, under a new case number.
+  expect(expectStatus(await markHired(offer.id), 201).body.caseRef).toMatch(/^UCAA\/ONB\/002\//);
+  expectStatus(await cancel(tokens.manager, 'Marked hired again by mistake'), 200);
+  expectStatus(await withdraw(), 200);
+});
+
 test('a declined offer cannot be marked hired', async () => {
   const { offer } = await acceptedOffer();
   await prisma.offer.update({ where: { id: offer.id }, data: { status: 'Declined' } });
