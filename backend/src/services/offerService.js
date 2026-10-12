@@ -127,7 +127,7 @@ const DRAFT_INCLUDE = {
   candidate: { select: { id: true, fullName: true, candidateType: true } },
   vacancy: {
     select: {
-      id: true, jobRef: true, title: true, salaryScale: true, employmentCategory: true, positionsRequired: true,
+      id: true, jobRef: true, title: true, salaryScale: true, employmentCategory: true, positionsRequired: true, location: true,
       department: { select: { name: true, directorate: { select: { name: true } } } }
     }
   },
@@ -162,7 +162,8 @@ async function draftContext(applicationId, now = new Date()) {
       employmentCategory: vacancy.employmentCategory || 'FullTime',
       contractMonths: vacancy.employmentCategory && vacancy.employmentCategory !== 'FullTime' ? 24 : null,
       startDate: start.toISOString().slice(0, 10),
-      dutyStation: vacancy.department?.name || null,
+      // Where the job is based (the advert's location) - not the department.
+      dutyStation: vacancy.location || null,
       conditions: application.candidate.candidateType === 'Internal'
         ? [...DEFAULT_CONDITIONS.slice(1), 'Release from your current UCAA post on the start date']
         : DEFAULT_CONDITIONS,

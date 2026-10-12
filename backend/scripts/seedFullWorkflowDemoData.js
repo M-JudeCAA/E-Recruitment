@@ -1180,7 +1180,10 @@ async function scenarioInternalShortlist() {
     certs: [cert('ATC Licence - Aerodrome and Approach ratings', 'Uganda Civil Aviation Authority', years - 1)],
     internalProfile: {
       employeeId, department: 'ATS', position, dateJoined: yearsAgo(years),
-      supervisorName: supervisor, supervisorEmail: `${slug(supervisor)}@example.com`
+      // A supervisor is a UCAA employee - the API refuses any other address
+      // (SUPERVISOR_NOT_UCAA). Nothing is emailed: SMTP_HOST is 'json' above.
+      supervisorName: supervisor,
+      supervisorEmail: `${slug(supervisor)}@${(process.env.INTERNAL_EMAIL_DOMAIN || 'caa.co.ug').split(',')[0].trim()}`
     }
   });
   const cands = await inBatches([

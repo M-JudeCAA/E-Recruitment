@@ -350,6 +350,22 @@ async function updateInternalProfile(req, res) {
   res.json(profile);
 }
 
+// The application's status as its candidate may know it. Two things are
+// HR's until they are final:
+//   - the interview shortlist: a candidate is told they are shortlisted only
+//     once EXCO has approved it (excoShortlistController), so a shortlist
+//     that is only proposed, or approved by HR and still with EXCO, reads as
+//     under review - EXCO may yet strike them off. (An application with an
+//     interview round from before the EXCO step is past that point.)
+//   - an offer not yet issued (see below).
+function candidateStatus(application, candidateOffer) {
+  const { status } = application;
+  if (status === 'Offered' && !candidateOffer) return 'Interviewed';
+  if (status === 'ShortlistProposed') return 'UnderReview';
+  if (status === 'Shortlisted' && !application.excoApprovalId && !(application.interviewRounds || []).length) return 'UnderReview';
+  return status;
+}
+
 // Each application embeds its full Vacancy row (include: { vacancy: true }),
 // which carries HR-only columns - strip them before they reach the candidate.
 async function myApplications(req, res) {
@@ -367,18 +383,20 @@ async function myApplications(req, res) {
   // still reads as Interviewed, so the candidate never learns of an offer
   // that is only recommended - or that is then returned or withdrawn.
   // Where they sit on the interview order, the shortlisting committee's
-  // ranking and the merit list (Primary or Reserve) is HR's working
-  // information, not the candidate's.
+  // ranking, the merit list (Primary or Reserve) and the score HR's ranking
+  // starts from is HR's working information, not the candidate's.
   res.json(applications.map((a) => {
     const {
       rank, listStatus, meritRank, meritListStatus, meritStatus,
       meritProposedAt, meritProposedById, meritApprovedAt, meritApprovedById,
-      committeeRank, committeeBand, committeeScore, committeeAgreement, ...rest
+      committeeRank, committeeBand, committeeScore, committeeAgreement,
+      excoApprovalId, shortlistProposedAt, shortlistProposedById, shortlistApprovedAt, shortlistApprovedById,
+      statusBeforeRejection, shortlistScore, shortlistScoreReasons, ...rest
     } = a;
     const offer = toCandidateOffer(a.offer);
     return {
       ...rest,
-      status: a.status === 'Offered' && !offer ? 'Interviewed' : a.status,
+      status: candidateStatus(a, offer),
       offer,
       vacancy: toPublicVacancy(a.vacancy),
       interviewRounds: (a.interviewRounds || [])

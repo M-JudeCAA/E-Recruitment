@@ -85,6 +85,48 @@ describe('candidateController.myApplications and offers', () => {
     // The shortlisting committee's view of them is HR's too.
     for (const hidden of ['committeeRank', 'committeeBand', 'committeeScore', 'committeeAgreement']) expect(app[hidden]).toBeUndefined();
   });
+
+  // A candidate is told they are shortlisted only once EXCO has approved the
+  // shortlist - until then My applications must not say so either.
+  describe('the interview shortlist before EXCO has approved it', () => {
+    const seenAs = async (application) => {
+      prisma.application.findMany.mockResolvedValue([{ id: 1, vacancy: { id: 3, title: 'ATC' }, interviewRounds: [], offer: null, ...application }]);
+      const res = mockRes();
+      await candidateController.myApplications({ user: { id: 7 } }, res);
+      return res.json.mock.calls[0][0][0];
+    };
+
+    test('a shortlist that is only proposed reads as under review', async () => {
+      expect((await seenAs({ status: 'ShortlistProposed', shortlistProposedById: 4 })).status).toBe('UnderReview');
+    });
+
+    test('approved by HR but still with EXCO reads as under review', async () => {
+      const app = await seenAs({ status: 'Shortlisted', excoApprovalId: null, shortlistApprovedById: 2 });
+      expect(app.status).toBe('UnderReview');
+    });
+
+    test('once EXCO has approved it reads as shortlisted', async () => {
+      expect((await seenAs({ status: 'Shortlisted', excoApprovalId: 5 })).status).toBe('Shortlisted');
+    });
+
+    test('an application interviewed before the EXCO step existed is not sent backwards', async () => {
+      const app = await seenAs({ status: 'Shortlisted', excoApprovalId: null, interviewRounds: [{ id: 1, roundNumber: 1, status: 'NoShow' }] });
+      expect(app.status).toBe('Shortlisted');
+    });
+
+    test('who proposed and approved the shortlist, and the EXCO link, are not sent to the candidate', async () => {
+      const app = await seenAs({
+        status: 'Rejected', excoApprovalId: 5, shortlistProposedById: 4, shortlistProposedAt: new Date(), shortlistApprovedById: 2,
+        shortlistApprovedAt: new Date(), statusBeforeRejection: 'Shortlisted', rejectionReason: 'Not approved for interview by EXCO.',
+        shortlistScore: 5, shortlistScoreReasons: '["+5.0 experience exceeds minimum"]'
+      });
+      for (const hidden of ['excoApprovalId', 'shortlistProposedById', 'shortlistProposedAt', 'shortlistApprovedById', 'shortlistApprovedAt',
+        'statusBeforeRejection', 'shortlistScore', 'shortlistScoreReasons']) {
+        expect(app[hidden]).toBeUndefined();
+      }
+      expect(app.rejectionReason).toBe('Not approved for interview by EXCO.');
+    });
+  });
 });
 
 describe('return and revise', () => {
