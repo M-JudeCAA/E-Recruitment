@@ -77,7 +77,9 @@ export default function ReviewPanel({ item, staffRole, onClose, onDone }) {
           ['Applications close', v.deadline ? formatDay(v.deadline) : null],
           ['Salary scale', v.salaryScale || null],
           ['Raised by', v.createdBy?.name || null],
-          ['Requisition', v.requisitionDetails?.excoReference || v.requisitionDetails?.fields?.excoReference || (v.requisitionDocumentName || null)]
+          // Each fact read from the requisition is { label, value, confidence } - show its value.
+          ['Requisition', v.requisitionDetails?.fields?.excoReference?.value
+            ? String(v.requisitionDetails.fields.excoReference.value) : (v.requisitionDocumentName || null)]
         ]} />
         {exceptions.map((e) => <Alert key={e} type="warning" message={e} />)}
         <div><Link to={`/hr/vacancy/${v.id}`} onClick={onClose}>Open the vacancy</Link> to read the full advert and requisition.</div>

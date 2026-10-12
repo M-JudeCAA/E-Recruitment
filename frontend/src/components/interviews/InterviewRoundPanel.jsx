@@ -108,7 +108,8 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
   const open = (v, t = null) => {
     setError(''); setNotice(''); setConflicts(null); setReason(''); setNotes(''); setTarget(t); setView(v);
     if (v === 'results') {
-      setScoreValue(round.score ?? ''); setRecommendation(round.recommendation || ''); setNotes(round.resultNotes || ''); setSheet(null);
+      // A result is never corrected into a rejection, so a "Reject" being corrected starts with no verdict chosen.
+      setScoreValue(round.score ?? ''); setRecommendation(round.recommendation === 'Reject' ? '' : (round.recommendation || '')); setNotes(round.resultNotes || ''); setSheet(null);
     }
     if (v === 'reschedule') {
       setNewDate(toLocalInput(round.scheduledDate)); setNewDuration(round.durationMinutes || 60); setNotifyPanel(true);
@@ -141,7 +142,10 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
   // Matches recordResults on the backend: a rejection is final, and nothing
   // changes under a merit list or an offer.
   const correctionBlocker = !hasResults ? null
-    : round.recommendation === 'Reject' ? 'A rejection is final - the candidate has been told.'
+    // A "Reject" can be corrected only once the rejection it caused has been
+    // undone (which is what tells the candidate) - the API refuses it until then.
+    : round.recommendation === 'Reject' && app.status === 'Rejected'
+      ? 'The application was rejected on this verdict and the candidate has been told. If it was entered by mistake, a Principal HR Officer undoes the rejection first; the verdict can then be corrected here.'
       : app.offer ? 'This candidate has an offer, so the results can no longer be corrected.'
         : app.meritStatus ? 'This candidate is on the merit list - re-propose the list without them before correcting their results.'
           : null;
