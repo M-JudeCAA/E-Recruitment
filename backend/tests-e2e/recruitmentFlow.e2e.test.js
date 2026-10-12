@@ -261,7 +261,11 @@ test('hides vacancies from the wrong audience but keeps them open to their own a
   expect((await api(insiderToken).get(`/api/vacancies/${vacancy.id}`)).status).toBe(404);
 
   // ...and a Closed one from the public, but not from someone who applied.
-  expectStatus(await api(tokens.phro).patch(`/api/vacancies/${vacancy.id}/close`, { reason: 'Position frozen' }), 200);
+  // With an applicant in it, closing has to say what becomes of them.
+  const asked = await api(tokens.phro).patch(`/api/vacancies/${vacancy.id}/close`, { reason: 'Position frozen' });
+  expect(asked.status).toBe(409);
+  expect(asked.body).toEqual(expect.objectContaining({ code: 'VACANCY_HAS_WORK_IN_PROGRESS', inProgress: expect.objectContaining({ applications: 1 }) }));
+  expectStatus(await api(tokens.phro).patch(`/api/vacancies/${vacancy.id}/close`, { reason: 'Position frozen', inFlight: 'continue' }), 200);
   expect((await api().get(`/api/vacancies/${vacancy.id}`)).status).toBe(404);
   expectStatus(await api(a.token).get(`/api/vacancies/${vacancy.id}`), 200);
   // Staff always see it.

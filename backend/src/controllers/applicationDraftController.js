@@ -358,6 +358,9 @@ async function submit(req, res) {
   // A UCAA staff member applying - the conflict-of-interest rule shuts them
   // out of the vacancy; this tells HR so someone else runs it.
   await conflictOfInterest.flagStaffApplicant(candidate, vacancy, applicationId);
+  // The hiring manager applying for their own vacancy is flagged the same way.
+  await conflictOfInterest.flagHiringManagerApplicant(candidate, vacancy, applicationId)
+    .catch((err) => console.error(`Hiring manager conflict notice for application ${applicationId} failed:`, err));
 
   broadcastDashboardEvent('ApplicationSubmitted', { applicationId, vacancyId: vacancy.id });
   res.json(updated);

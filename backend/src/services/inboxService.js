@@ -100,6 +100,8 @@ async function forStaff(req, now = new Date()) {
   const rank = Math.max(ownRank, delegatedRank);
   // Acting under a delegation, the delegator's conflicts apply too.
   if (delegatedRank > ownRank) req.actingAsDelegateFor = actingFor.delegatorId;
+  // A step this role takes is the viewer's only by the delegation.
+  const borrowed = (role) => Boolean(req.actingAsDelegateFor) && (ROLE_RANK[role] || 0) > ownRank;
   const conflicted = await conflictOfInterest.conflictedVacancyIds(req);
   const notConflicted = conflicted.length ? { notIn: conflicted } : undefined;
 
@@ -119,6 +121,9 @@ async function forStaff(req, now = new Date()) {
     if (!next || next.kind === 'approveOffer') continue; // offers are listed one by one below
     const mine = next.kind === 'resubmitVacancy' ? v.createdById === me || inAudience(next.role, rank) : inAudience(next.role, rank);
     if (!mine || next.excludeStaffIds?.includes(me)) continue;
+    // Theirs only through the delegation, and it is the delegator's own
+    // work: the delegator's authority can't approve it (workflowService.actingIds).
+    if (borrowed(next.role) && next.excludeStaffIds?.includes(req.actingAsDelegateFor)) continue;
     const item = {
       key: `vacancy-${v.id}-${next.kind}`,
       kind: KIND_LABELS[next.kind] || next.short,
@@ -145,6 +150,7 @@ async function forStaff(req, now = new Date()) {
     }) || [];
     for (const o of offers) {
       if (o.recommendedById === me) continue;
+      if (borrowed('Manager') && o.recommendedById === req.actingAsDelegateFor) continue;
       items.push({
         key: `offer-${o.id}`,
         kind: 'Offer approval',

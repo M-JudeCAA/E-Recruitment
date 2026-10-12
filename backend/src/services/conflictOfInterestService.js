@@ -52,7 +52,7 @@ async function staffIdsAppliedFor(vacancyId) {
     where: { applications: { some: { vacancyId, status: { notIn: CONFLICT_STATUSES_EXCLUDED } } } },
     select: { email: true, entraObjectId: true }
   });
-  if (!candidates.length) return [];
+  if (!candidates?.length) return [];
   const or = candidates.flatMap((c) => [{ email: c.email }, ...(c.entraObjectId ? [{ entraObjectId: c.entraObjectId }] : [])]);
   const staff = await prisma.staffUser.findMany({ where: { OR: or }, select: { id: true } });
   return staff.map((s) => s.id);
@@ -117,8 +117,58 @@ async function flagStaffApplicant(candidate, vacancy, applicationId) {
   return staff;
 }
 
+// People named on a vacancy who have no part in the system - interview
+// panelists, the hiring manager, committee members - can be applicants for
+// it too. Returns the first of `people` ([{ name, email, staffUserId? }])
+// who has applied for the vacancy (as in the rule above: any application
+// past Draft), or null.
+async function applicantAmong(vacancyId, people) {
+  const list = (people || []).filter(Boolean);
+  if (!vacancyId || !list.length) return null;
+  const emailOf = (p) => String(p.email || '').trim().toLowerCase();
+  const emails = [...new Set(list.map(emailOf).filter(Boolean))];
+  if (emails.length) {
+    const hit = await prisma.application.findFirst({
+      where: { vacancyId, status: { notIn: CONFLICT_STATUSES_EXCLUDED }, candidate: { email: { in: emails } } },
+      select: { candidate: { select: { email: true } } }
+    });
+    if (hit) return list.find((p) => emailOf(p) === String(hit.candidate?.email || '').toLowerCase()) || list.find(emailOf);
+  }
+  // A panelist picked from the staff list may sit under another address
+  // than their candidate account - match those by the linked identity.
+  if (list.some((p) => p.staffUserId)) {
+    const applied = await staffIdsAppliedFor(vacancyId);
+    return list.find((p) => p.staffUserId && applied.includes(p.staffUserId)) || null;
+  }
+  return null;
+}
+
+// When the vacancy's own hiring manager applies for it: they stop getting
+// its updates (hiringManagerService.notify leaves an applicant out), and the
+// Principal HR Officers (or Managers) are told to name someone else.
+async function flagHiringManagerApplicant(candidate, vacancy, applicationId) {
+  const email = String(vacancy?.hiringManagerEmail || '').toLowerCase();
+  if (!email || email !== String(candidate?.email || '').toLowerCase()) return false;
+  const { notify } = require('./notificationService');
+  const audit = require('./auditService');
+  const withRole = (role) => prisma.staffUser.findMany({ where: { role, active: true }, select: { id: true, email: true } });
+  let recipients = await withRole('Principal_HR_Officer');
+  if (!recipients.length) recipients = await withRole('Manager');
+  const message = `${candidate.fullName}, the hiring manager for "${vacancy.title}" (${vacancy.jobRef}), has applied for it. `
+    + 'They no longer receive updates on this recruitment - name another hiring manager on the vacancy.';
+  for (const r of recipients.filter((s) => String(s.email || '').toLowerCase() !== email)) {
+    await notify(r.id, 'StaffApplicantConflict', vacancy.id, message);
+  }
+  await audit.record({
+    entityType: 'Vacancy', entityId: vacancy.id, action: 'Hiring manager applied', details: { applicationId }
+  });
+  return true;
+}
+
 module.exports = {
   ApplicantConflictError,
+  applicantAmong,
+  flagHiringManagerApplicant,
   flagStaffApplicant,
   vacancyIdsAppliedForByStaff,
   staffIdsAppliedFor,

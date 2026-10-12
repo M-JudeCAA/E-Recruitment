@@ -902,6 +902,11 @@ model Application {
   rejectedById    Int?
   rejectedBy      StaffUser? @relation("ApplicationRejectedBy", fields: [rejectedById], references: [id])
   rejectionReason String?    @db.Text
+  // Where the application stood when it was rejected, kept so a rejection
+  // made by mistake can be undone (applicationReinstatementService) - which
+  // clears all four of these again. Null on rows rejected before this
+  // column existed; reinstating one of those reads the audit trail instead.
+  statusBeforeRejection ApplicationStatus?
 
   // Propose/approve shortlist split - see the ShortlistProposed comment on
   // ApplicationStatus above. shortlistProposedById is who ran shortlist()/
@@ -1584,6 +1589,13 @@ enum CandidateNotificationType {
   // (dataProtectionController). A completed erasure is told by email only -
   // nothing is left to show it in.
   DataRequestRefused
+  // A rejection was undone - the application is back in consideration
+  // (applicationReinstatementService).
+  ApplicationReinstated
+  // UCAA stopped recruiting for the vacancy while the application was still
+  // in progress (vacancyClosureService) - not a judgement on the candidate,
+  // so not ApplicationRejected.
+  RecruitmentDiscontinued
 }
 
 // A separate model rather than reusing Notification above: recipientId

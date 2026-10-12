@@ -46,6 +46,8 @@ router.patch('/:id/shortlist', authenticate, requireStaffRole('Senior_HR_Officer
 // Rejected (the other is interviewController.recordResults, when
 // the panel's own recommendation is "Reject"). Same tier as shortlist.
 router.patch('/:id/reject', authenticate, requireStaffRole('Senior_HR_Officer'), guardVacancy(vacancyFrom.application('id')), controller.reject);
+// Undoing a rejection made by mistake - a tier above rejecting, with a reason.
+router.patch('/:id/reinstate', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.application('id')), controller.reinstate);
 router.post('/vacancies/:vacancyId/approve-shortlist', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.param('vacancyId')), controller.approveShortlist);
 // The post-interview merit list (meritListController) - same tiers as the
 // interview shortlist: read by any HR tier, proposed by Senior_HR_Officer+,
@@ -79,6 +81,8 @@ router.get('/hires', authenticate, requireStaffRole('HR_Officer'), hireControlle
 router.post('/offers/:offerId/hire', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), uploadSignedAppointment.single('signedInstrument'), hireController.markHired);
 router.get('/offers/:offerId/hire', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), hireController.get);
 router.get('/offers/:offerId/hire/package', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), hireController.downloadPackage);
+// Undoing Mark as Hired (the person never started) - Manager+, with a reason.
+router.delete('/offers/:offerId/hire', authenticate, requireStaffRole('Manager'), guardVacancy(vacancyFrom.offer('offerId')), hireController.cancel);
 router.post('/offers/:offerId/hire/retry', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), hireController.retry);
 
 module.exports = router;

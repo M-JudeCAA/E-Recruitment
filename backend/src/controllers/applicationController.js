@@ -9,6 +9,9 @@ const accessLog = require('../services/accessLogService');
 const audit = require('../services/auditService');
 const meritList = require('../services/meritListService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
+const reinstatement = require('../services/applicationReinstatementService');
+const { cancelUpcomingInterviews } = require('../services/applicationWithdrawalService');
+const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { ROLE_RANK } = require('../middleware/auth');
 
 // NOTE: application creation/submission lives in applicationDraftController
@@ -203,10 +206,17 @@ async function reject(req, res) {
   // next save rather than silently re-including a rejected candidate.
   const result = await applicationModel.updateIfStatus(applicationId, application.status, {
     status: 'Rejected', rejectedAt: new Date(), rejectedById: req.user.id, rejectionReason: reason,
+    statusBeforeRejection: application.status,
     rank: null, listStatus: null, ...meritList.CLEARED_MERIT, rankVersion: { increment: 1 }
   });
   if (result.count === 0) {
     return res.status(409).json({ error: 'This application was already updated - please refresh and try again' });
+  }
+  // An interview still booked won't happen now - without this the round
+  // stayed Scheduled, on the candidate's and the panel's calendars.
+  if (application.status === 'InterviewScheduled') {
+    await cancelUpcomingInterviews(applicationId, new Date(), 'The application is no longer being considered')
+      .catch((err) => console.error(`Cancelling the interviews of rejected application ${applicationId} failed:`, err));
   }
 
   await audit.record({
@@ -232,6 +242,39 @@ async function reject(req, res) {
   res.json(updated);
 }
 
+// PATCH /api/applications/:id/reinstate { reason } - Principal HR Officer+
+// undoes a rejection made by mistake (applicationReinstatementService says
+// where the application goes back to). The candidate, who was told they
+// were unsuccessful, is told it is being considered again.
+async function reinstate(req, res) {
+  const applicationId = Number(req.params.id);
+  if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
+  let result;
+  try {
+    result = await reinstatement.reinstate(applicationId, req.body?.reason);
+  } catch (err) {
+    return sendError(res, err);
+  }
+  const { application, status, reason } = result;
+  await audit.record({
+    entityType: 'Application', entityId: applicationId, action: 'Application reinstated', actor: audit.actorFrom(req),
+    before: { status: 'Rejected', rejectionReason: application.rejectionReason }, after: { status, rejectionReason: null },
+    fields: ['status', 'rejectionReason'], comment: reason,
+    details: { rejectedById: application.rejectedById, rejectedAt: application.rejectedAt }
+  });
+  try {
+    await notifyCandidate(
+      application.candidateId, 'ApplicationReinstated',
+      `An update on your application for "${application.vacancy.title}": it is being considered again. `
+        + 'Please disregard our earlier message that it was unsuccessful - we apologise for the confusion. We will be in touch about the next step.'
+    );
+  } catch (err) {
+    console.error(`Failed to notify candidate ${application.candidateId} that application ${applicationId} was reinstated:`, err);
+  }
+  broadcastDashboardEvent('ApplicationUpdated', { applicationId, vacancyId: application.vacancyId });
+  res.json(await applicationModel.findById(applicationId, { vacancy: true }));
+}
+
 // The other half of the propose/approve split - shortlist()/saveRanking
 // only ever get an application to ShortlistProposed. This is what actually
 // makes it effective: every ShortlistProposed application for the vacancy
@@ -252,7 +295,7 @@ async function approveShortlist(req, res) {
   }
 
   try {
-    await workflow.assertNotSelfApprovedShortlist(vacancyId, req.user.id);
+    await workflow.assertNotSelfApprovedShortlist(vacancyId, workflow.actingIds(req));
   } catch (err) {
     return sendError(res, err, 422);
   }
@@ -271,4 +314,4 @@ async function approveShortlist(req, res) {
 // Offers (recommend, approve, return, accept, decline, withdraw) live in
 // offerController.js.
 
-module.exports = { count, list, shortlist, reject, approveShortlist };
+module.exports = { count, list, shortlist, reject, reinstate, approveShortlist };

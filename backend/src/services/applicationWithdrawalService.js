@@ -22,7 +22,7 @@ const { AppError } = require('../utils/errorResponse');
 //     reserve (workflowService.releasePrimary), as a declined offer does.
 
 const WITHDRAWABLE_STATUSES = ['Submitted', 'UnderReview', 'ShortlistProposed', 'Shortlisted', 'InterviewScheduled', 'Interviewed'];
-const CANCELLATION_REASON = 'The candidate withdrew their application';
+const WITHDREW = 'The candidate withdrew their application';
 
 async function withdraw(application, reason) {
   if (application.status === 'Offered') {
@@ -50,14 +50,16 @@ async function withdraw(application, reason) {
 }
 
 // Every round still Scheduled is called off. Notices are best-effort: the
-// withdrawal has already happened.
-async function cancelUpcomingInterviews(applicationId, now) {
+// withdrawal has already happened. Also used when HR rejects an application
+// or ends the recruitment (applicationController.reject,
+// vacancyClosureService), with their own reason.
+async function cancelUpcomingInterviews(applicationId, now = new Date(), reason = WITHDREW) {
   const scheduled = await prisma.interviewRound.findMany({ where: { applicationId, status: 'Scheduled' }, select: { id: true } });
   const cancelled = [];
   for (const { id } of scheduled) {
     const result = await prisma.interviewRound.updateMany({
       where: { id, status: 'Scheduled' },
-      data: { status: 'Cancelled', cancelledAt: now, cancellationReason: CANCELLATION_REASON }
+      data: { status: 'Cancelled', cancelledAt: now, cancellationReason: reason }
     });
     if (result.count === 0) continue;
     const round = await interviewModel.findDetailed(id);
@@ -66,7 +68,7 @@ async function cancelUpcomingInterviews(applicationId, now) {
   for (const round of cancelled) {
     try {
       await notifyCandidate(round.application.candidateId, 'InterviewCancelled',
-        invitations.candidateMessage('cancelled', round, round.application.vacancy.title, { reason: CANCELLATION_REASON }),
+        invitations.candidateMessage('cancelled', round, round.application.vacancy.title, { reason }),
         { calendar: invitations.candidateInvitation(round, round.application.vacancy.title, { cancelled: true }) });
     } catch (err) {
       console.error(`Interview cancellation notice for round ${round.id} failed:`, err);
@@ -74,7 +76,7 @@ async function cancelUpcomingInterviews(applicationId, now) {
   }
   if (cancelled.length) {
     try {
-      await invitations.syncPanelInvitations(cancelled, 'cancelled', { reason: CANCELLATION_REASON });
+      await invitations.syncPanelInvitations(cancelled, 'cancelled', { reason });
     } catch (err) {
       console.error('Panel calendar update after a withdrawal failed:', err);
     }
@@ -82,4 +84,4 @@ async function cancelUpcomingInterviews(applicationId, now) {
   return cancelled;
 }
 
-module.exports = { withdraw, WITHDRAWABLE_STATUSES };
+module.exports = { withdraw, cancelUpcomingInterviews, WITHDRAWABLE_STATUSES };

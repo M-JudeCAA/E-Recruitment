@@ -142,6 +142,42 @@ describe('guardVacancy', () => {
   });
 });
 
+describe('people named on a vacancy who applied for it', () => {
+  test('finds a panelist or hiring manager by email, whatever its case', async () => {
+    prisma.application.findFirst.mockResolvedValueOnce({ candidate: { email: 'ben@caa.co.ug' } });
+    const hit = await conflict.applicantAmong(12, [{ name: 'Ann', email: 'ann@caa.co.ug' }, { name: 'Ben', email: ' Ben@CAA.co.ug ' }]);
+    expect(hit.name).toBe('Ben');
+    expect(prisma.application.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: { vacancyId: 12, status: { notIn: ['Draft'] }, candidate: { email: { in: ['ann@caa.co.ug', 'ben@caa.co.ug'] } } }
+    }));
+  });
+
+  test('finds a panelist picked from the staff list by their linked candidate account', async () => {
+    prisma.application.findFirst.mockResolvedValueOnce(null);
+    prisma.candidate.findMany.mockResolvedValueOnce([{ email: 'personal@gmail.com', entraObjectId: 'oid-9' }]);
+    prisma.staffUser.findMany.mockResolvedValueOnce([{ id: 7 }]);
+    const hit = await conflict.applicantAmong(12, [{ name: 'Ann', email: 'ann@caa.co.ug', staffUserId: 7 }]);
+    expect(hit.name).toBe('Ann');
+  });
+
+  test('nobody when none of them applied', async () => {
+    prisma.application.findFirst.mockResolvedValueOnce(null);
+    expect(await conflict.applicantAmong(12, [{ name: 'Ann', email: 'ann@caa.co.ug' }])).toBeNull();
+    expect(await conflict.applicantAmong(12, [])).toBeNull();
+  });
+
+  test('the hiring manager applying is flagged to the Principal HR Officers', async () => {
+    const vacancy = { id: 12, title: 'HR Analyst', jobRef: 'UCAA/ADV/INT/001/2026', hiringManagerEmail: 'boss@caa.co.ug' };
+    prisma.staffUser.findMany.mockResolvedValueOnce([{ id: 3, email: 'p@caa.co.ug' }]);
+    prisma.staffUser.findUnique.mockResolvedValue({ id: 3, email: 'p@caa.co.ug' });
+    expect(await conflict.flagHiringManagerApplicant({ email: 'Boss@caa.co.ug', fullName: 'The Boss' }, vacancy, 99)).toBe(true);
+    expect(prisma.notification.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ recipientId: 3, taskType: 'StaffApplicantConflict', taskId: 12 })
+    });
+    expect(await conflict.flagHiringManagerApplicant({ email: 'someone@gmail.com', fullName: 'X' }, vacancy, 100)).toBe(false);
+  });
+});
+
 describe('flagStaffApplicant', () => {
   const vacancy = { id: 12, title: 'HR Analyst', jobRef: 'UCAA/ADV/INT/001/2026' };
 

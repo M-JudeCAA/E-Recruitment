@@ -437,6 +437,15 @@ async function openRating(req, res) {
   }
   const pool = await model.findPool(vacancy.id);
   if (pool.length === 0) return res.status(422).json({ error: 'There are no screened applications to assess' });
+  // Checked when each member was added, but someone nominated early can
+  // have applied since - they must not assess their rivals.
+  const applicant = await conflictOfInterest.applicantAmong(vacancy.id, exercise.members);
+  if (applicant) {
+    return res.status(422).json({
+      error: `${applicant.name} has applied for this vacancy since being nominated - take them off the committee before rating opens`,
+      code: 'MEMBER_IS_APPLICANT'
+    });
+  }
 
   const moved = await model.moveExercise(exercise.id, 'Setup', { status: 'Rating', ratingOpenedAt: new Date(), ratingOpenedById: req.user.id });
   if (moved.count === 0) return res.status(409).json({ error: 'Rating has already been opened' });
@@ -656,6 +665,11 @@ async function decideNomination(req, res, outcome) {
   if (exercise.nominationStatus !== 'Submitted') return res.status(409).json({ error: 'There is no nomination waiting for approval' });
   if (exercise.nominationSubmittedById === req.user.id) {
     return res.status(403).json({ error: 'You submitted this nomination - another Director must decide it', code: 'SELF_APPROVAL' });
+  }
+  // Deciding with the submitter's own authority, under their delegation, is
+  // the submitter deciding it.
+  if (req.actingAsDelegateFor && exercise.nominationSubmittedById === req.actingAsDelegateFor) {
+    return res.status(403).json({ error: 'You are acting under a delegation from the Director who submitted this nomination - another Director must decide it', code: 'SELF_APPROVAL' });
   }
   const reason = typeof req.body.reason === 'string' ? req.body.reason.trim().slice(0, 2000) : '';
   if (outcome === 'Returned' && reason.length < 10) return res.status(400).json({ error: 'Say why the nomination is returned (10 characters or more)' });

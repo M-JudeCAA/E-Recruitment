@@ -87,7 +87,7 @@ async function approve(req, res) {
   if (!vacancyId) return;
   try {
     // { applicationId: rankVersion } of the list the approver reviewed.
-    const result = await meritList.approve(vacancyId, req.user.id, req.body?.applicationRankVersions);
+    const result = await meritList.approve(vacancyId, req.user.id, req.body?.applicationRankVersions, req.actingAsDelegateFor || null);
     await audit.record({
       entityType: 'Vacancy', entityId: vacancyId, action: 'Merit list approved', actor: audit.actorFrom(req), details: result
     });

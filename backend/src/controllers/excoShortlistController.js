@@ -163,6 +163,7 @@ async function attach(req, res) {
           where: { ...awaitingWhere(vacancyId), id: { in: struck.map((a) => a.id) } },
           data: {
             status: 'Rejected', rejectedAt: now, rejectedById: req.user.id, rejectionReason: STRUCK_OFF_REASON,
+            statusBeforeRejection: 'Shortlisted',
             rank: null, listStatus: null, ...meritList.CLEARED_MERIT, rankVersion: { increment: 1 }
           }
         });

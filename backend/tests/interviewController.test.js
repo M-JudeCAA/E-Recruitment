@@ -536,6 +536,19 @@ describe('panel management', () => {
     expect(prisma.panelMember.create).not.toHaveBeenCalled();
   });
 
+  test('an applicant for the vacancy can\'t be added to its panel', async () => {
+    prisma.interviewRound.findUnique.mockResolvedValue(detailedRound({ panelMembers: [] }));
+    prisma.application.findFirst.mockResolvedValueOnce({ candidate: { email: 'rival@caa.co.ug' } });
+    const res = mockRes();
+    await interviewController.addPanelMember({ params: { interviewId: '1' }, body: { name: 'Rival Applicant', email: 'Rival@caa.co.ug' }, user: { id: 9 } }, res);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'PANELIST_IS_APPLICANT' }));
+    expect(prisma.application.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ vacancyId: 3, candidate: { email: { in: ['rival@caa.co.ug'] } } })
+    }));
+    expect(prisma.panelMember.create).not.toHaveBeenCalled();
+  });
+
   test('making someone chair clears the previous chair', async () => {
     prisma.panelMember.findUnique.mockResolvedValue({ id: 4, name: 'Ann', interviewRoundId: 1, interviewRound: scheduledRound });
     prisma.panelMember.update.mockResolvedValue({ id: 4, isChair: true });
@@ -710,11 +723,20 @@ describe('recordResults', () => {
       expect(res.json.mock.calls[0][0].error).toMatch(/merit list/);
     });
 
-    test('a rejection is final, and a result can\'t be corrected into one', async () => {
-      let { res } = await call({ score: '50', recommendation: 'Hold' }, { round: { ...completed, recommendation: 'Reject' }, file: null, application: interviewed });
+    test('a rejection can\'t be corrected away while the application is rejected, and a result can\'t be corrected into one', async () => {
+      let { res } = await call({ score: '50', recommendation: 'Hold' }, { round: { ...completed, recommendation: 'Reject' }, file: null, application: { ...interviewed, status: 'Rejected' } });
       expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json.mock.calls[0][0].error).toMatch(/reinstate the application first/);
       ({ res } = await call({ score: '50', recommendation: 'Reject' }, { round: completed, file: null, application: interviewed }));
       expect(res.status).toHaveBeenCalledWith(409);
+    });
+
+    test('once the application is reinstated, a "Reject" entered by mistake can be corrected', async () => {
+      const { res } = await call({ score: '71', recommendation: 'Shortlist' }, { round: { ...completed, recommendation: 'Reject' }, file: null, application: interviewed });
+      expect(res.status).not.toHaveBeenCalled();
+      expect(prisma.interviewRound.updateMany).toHaveBeenCalledWith({
+        where: { id: 1, status: 'Completed' }, data: expect.objectContaining({ score: 71, recommendation: 'Shortlist' })
+      });
     });
   });
 });

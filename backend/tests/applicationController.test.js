@@ -895,6 +895,116 @@ describe('reject', () => {
 
     expect(res.status).toHaveBeenCalledWith(409);
   });
+
+  test('keeps where the application stood, so the rejection can be undone', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'Shortlisted', candidateId: 7, vacancy: { title: 'Role' } });
+    prisma.application.updateMany.mockResolvedValue({ count: 1 });
+    await applicationController.reject({ params: { id: '1' }, body: {}, user: { id: 3 } }, mockRes());
+    expect(prisma.application.updateMany).toHaveBeenCalledWith({
+      where: { id: 1, status: 'Shortlisted' }, data: expect.objectContaining({ statusBeforeRejection: 'Shortlisted' })
+    });
+  });
+
+  test('cancels an interview still booked for the rejected applicant', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, status: 'InterviewScheduled', candidateId: 7, vacancy: { title: 'Role' } });
+    prisma.application.updateMany.mockResolvedValue({ count: 1 });
+    prisma.interviewRound.findMany.mockResolvedValueOnce([{ id: 55 }]);
+    prisma.interviewRound.updateMany.mockResolvedValue({ count: 1 });
+    prisma.interviewRound.findUnique.mockResolvedValue(null);
+    await applicationController.reject({ params: { id: '1' }, body: {}, user: { id: 3 } }, mockRes());
+    expect(prisma.interviewRound.updateMany).toHaveBeenCalledWith({
+      where: { id: 55, status: 'Scheduled' }, data: expect.objectContaining({ status: 'Cancelled' })
+    });
+  });
+});
+
+describe('reinstate', () => {
+  const rejected = (extra = {}) => ({
+    id: 1, status: 'Rejected', candidateId: 7, vacancyId: 4, rejectedById: 3, rejectionReason: 'Wrong applicant', statusBeforeRejection: 'UnderReview',
+    vacancy: { id: 4, title: 'Role', jobRef: 'UCAA/ADV/EXT/001/2026', status: 'Open' }, candidate: { id: 7, purgedAt: null }, ...extra
+  });
+  const call = async (application, body = { reason: 'Rejected the wrong applicant by mistake' }) => {
+    prisma.application.findUnique.mockResolvedValue(application);
+    const res = mockRes();
+    await applicationController.reinstate({ params: { id: '1' }, body, user: { id: 5 } }, res);
+    return res;
+  };
+  beforeEach(() => {
+    prisma.interviewRound.count.mockResolvedValue(0);
+    prisma.shortlistExercise.findUnique.mockResolvedValue(null);
+    prisma.application.updateMany.mockResolvedValue({ count: 1 });
+    prisma.candidate.findUnique.mockResolvedValue(null);
+  });
+
+  test('puts the application back where it stood, clears the rejection and tells the candidate', async () => {
+    const res = await call(rejected());
+    expect(prisma.application.updateMany).toHaveBeenCalledWith({
+      where: { id: 1, status: 'Rejected' },
+      data: expect.objectContaining({ status: 'UnderReview', rejectedAt: null, rejectedById: null, rejectionReason: null, statusBeforeRejection: null })
+    });
+    expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+      action: 'Application reinstated', performedById: 5,
+      payload: expect.objectContaining({ comment: 'Rejected the wrong applicant by mistake' })
+    }) });
+    expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ candidateId: 7, type: 'ApplicationReinstated' })
+    }));
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['Submitted', 'Submitted'], ['ShortlistProposed', 'UnderReview'], ['Shortlisted', 'Shortlisted'], ['InterviewScheduled', 'Shortlisted']
+  ])('from %s it goes back to %s', async (before, after) => {
+    await call(rejected({ statusBeforeRejection: before }));
+    expect(prisma.application.updateMany.mock.calls[0][0].data.status).toBe(after);
+  });
+
+  test('with interview results on record it is Interviewed', async () => {
+    prisma.interviewRound.count.mockResolvedValue(1);
+    await call(rejected({ statusBeforeRejection: 'InterviewScheduled' }));
+    expect(prisma.application.updateMany.mock.calls[0][0].data.status).toBe('Interviewed');
+  });
+
+  test('a row rejected before the status was kept is read from the audit trail', async () => {
+    prisma.auditLog.findMany.mockResolvedValueOnce([
+      { payload: { comment: 'unrelated' } }, { payload: { changes: { status: { from: 'Shortlisted', to: 'Rejected' } } } }
+    ]);
+    await call(rejected({ statusBeforeRejection: null }));
+    expect(prisma.application.updateMany.mock.calls[0][0].data.status).toBe('Shortlisted');
+  });
+
+  test('needs a reason', async () => {
+    const res = await call(rejected(), { reason: 'oops' });
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(prisma.application.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('only a rejected application', async () => {
+    const res = await call(rejected({ status: 'Withdrawn' }));
+    expect(res.status).toHaveBeenCalledWith(422);
+  });
+
+  test('not on a closed vacancy, nor for an erased candidate', async () => {
+    let res = await call(rejected({ vacancy: { id: 4, title: 'Role', status: 'Closed' } }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'VACANCY_NOT_OPEN' }));
+    res = await call(rejected({ candidate: { id: 7, purgedAt: new Date() } }));
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'CANDIDATE_ERASED' }));
+    expect(prisma.application.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('not once the committee has its applicants and this one was not among them', async () => {
+    prisma.shortlistExercise.findUnique.mockResolvedValue({ status: 'Rating' });
+    prisma.shortlistAssignment.count.mockResolvedValue(0);
+    const res = await call(rejected());
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'COMMITTEE_ASSESSING' }));
+  });
+
+  test('two people reinstating at once: the second is refused', async () => {
+    prisma.application.updateMany.mockResolvedValue({ count: 0 });
+    const res = await call(rejected());
+    expect(res.status).toHaveBeenCalledWith(409);
+  });
 });
 
 describe('shortlist', () => {

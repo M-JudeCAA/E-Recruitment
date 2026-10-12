@@ -34,6 +34,9 @@ async function recordSafely(write) {
 async function runAsScript(name, fn) {
   const prisma = require('../config/db');
   const result = await runJob(name, fn);
+  // Run on its own (cron / Task Scheduler) there is no scheduler cycle to
+  // tell the dashboards - do it here.
+  if (result.ok) await require('./dashboardSignal').signalDashboards('MaintenanceRun', { jobs: [name] });
   await prisma.$disconnect();
   process.exitCode = result.ok ? 0 : 1;
 }

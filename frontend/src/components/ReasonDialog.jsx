@@ -9,14 +9,18 @@ import TextArea from './TextArea';
 const MIN_LENGTH = 3;
 
 export default function ReasonDialog({
-  title, intro, label = 'Reason', hint, confirmLabel = 'Confirm', busyLabel = 'Saving...', danger = false, onSubmit, onClose
+  title, intro, label = 'Reason', hint, confirmLabel = 'Confirm', busyLabel = 'Saving...', danger = false, minLength = MIN_LENGTH,
+  onSubmit, onClose
 }) {
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (reason.trim().length < MIN_LENGTH) { setError('Please give a reason.'); return; }
+    if (reason.trim().length < minLength) {
+      setError(minLength > MIN_LENGTH ? `Please give a reason (at least ${minLength} characters).` : 'Please give a reason.');
+      return;
+    }
     setBusy(true); setError('');
     try {
       await onSubmit(reason.trim());

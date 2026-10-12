@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const prisma = require('../config/db');
-const { uploadPath } = require('../utils/uploadFiles');
+const { uploadPath, removeUploads } = require('../utils/uploadFiles');
 const { refYear } = require('../utils/jobRefGenerator');
 const { AppError } = require('../utils/errorResponse');
 
@@ -127,4 +127,38 @@ async function markHired(offerId, signed, staffId, now = new Date()) {
   }
 }
 
-module.exports = { markHired, buildPackage, formatCaseRef };
+const MIN_CANCEL_REASON = 10;
+
+/**
+ * Undoes Mark as Hired - recorded against the wrong offer, or the person
+ * never took up the post. The onboarding case is removed (its reference,
+ * who opened it and why it was cancelled stay in the audit trail, written
+ * by the caller), the position's filled-post count goes back down, and the
+ * offer is plain Accepted again: mark them hired afresh, or withdraw the
+ * offer so the post goes to the next reserve (offerController.withdraw).
+ * A case number is never reused. Returns { hire, reason } - the case as it was.
+ */
+async function cancelHire(offerId, reasonInput) {
+  const reason = typeof reasonInput === 'string' ? reasonInput.trim().slice(0, 1000) : '';
+  const hire = await prisma.hire.findUnique({ where: { offerId } });
+  if (!hire) throw new AppError('This candidate has not been marked hired', 404);
+  if (reason.length < MIN_CANCEL_REASON) {
+    throw new AppError(`Say why the hire is being cancelled (${MIN_CANCEL_REASON} characters or more) - it is kept in the history`, 400);
+  }
+  await prisma.$transaction(async (tx) => {
+    // Only if the case is still there: two people cancelling at once must
+    // not take the post off the count twice.
+    const gone = await tx.hire.deleteMany({ where: { id: hire.id } });
+    if (gone.count === 0) throw new AppError('This hire was already cancelled - please refresh', 409);
+    if (hire.positionId) {
+      await tx.position.updateMany({
+        where: { id: hire.positionId, headcount: { not: null }, occupied: { gt: 0 } }, data: { occupied: { decrement: 1 } }
+      });
+    }
+  }, { timeout: 15000, maxWait: 5000 });
+  // Nothing refers to the signed instrument any more.
+  await removeUploads(hire.signedInstrumentUrl);
+  return { hire, reason };
+}
+
+module.exports = { markHired, cancelHire, buildPackage, formatCaseRef };

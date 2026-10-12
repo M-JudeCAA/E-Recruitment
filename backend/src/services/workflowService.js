@@ -44,10 +44,26 @@ async function assertCanShortlist(applicationId) {
  * Self-approval block: a Principal HR Officer (or above) cannot approve
  * a vacancy or shortlist they personally created/acted on - must route up.
  */
-async function assertNotSelfApproval(vacancyId, approverId) {
+// Everyone a request acts for: the staff member, and - when a delegation is
+// what let them through the gate - the delegator whose authority they are
+// using. An approval given with someone's authority counts as theirs, so a
+// delegate can't approve what their delegator created, proposed or
+// recommended. Each assertNotSelf* below takes this list (or one id).
+function actingIds(req) {
+  return [req.user?.id, req.actingAsDelegateFor].filter((id) => id != null);
+}
+
+const idsOf = (approver) => (Array.isArray(approver) ? approver : [approver]).filter((id) => id != null);
+const FOR_DELEGATOR = 'Self-approval blocked: you are acting under a delegation from the person who';
+
+async function assertNotSelfApproval(vacancyId, approver) {
   const vacancy = await prisma.vacancy.findUnique({ where: { id: vacancyId } });
-  if (vacancy && vacancy.createdById === approverId) {
+  const [own, ...actingFor] = idsOf(approver);
+  if (vacancy && vacancy.createdById === own) {
     throw new Error('Self-approval blocked: route this approval to DHRA / Manager HR instead');
+  }
+  if (vacancy && actingFor.includes(vacancy.createdById)) {
+    throw new Error(`${FOR_DELEGATOR} created this vacancy - someone else must approve it`);
   }
 }
 
@@ -60,12 +76,16 @@ async function assertNotSelfApproval(vacancyId, approverId) {
  * saveRanking's batch can carry proposals made at different times by
  * different people.
  */
-async function assertNotSelfApprovedShortlist(vacancyId, approverId) {
+async function assertNotSelfApprovedShortlist(vacancyId, approver) {
   const proposed = await prisma.application.findMany({
     where: { vacancyId, status: 'ShortlistProposed' }
   });
-  if (proposed.some((a) => a.shortlistProposedById === approverId)) {
+  const [own, ...actingFor] = idsOf(approver);
+  if (proposed.some((a) => a.shortlistProposedById === own)) {
     throw new Error('Self-approval blocked: you proposed this shortlist - a different Principal HR Officer or above must approve it');
+  }
+  if (proposed.some((a) => actingFor.includes(a.shortlistProposedById))) {
+    throw new Error(`${FOR_DELEGATOR} proposed this shortlist - someone else must approve it`);
   }
 }
 
@@ -77,9 +97,13 @@ async function assertNotSelfApprovedShortlist(vacancyId, approverId) {
  * from recommendation to candidate on their own. Takes the offer row the
  * caller already loaded rather than re-reading it.
  */
-function assertNotSelfApprovedOffer(offer, approverId) {
-  if (offer.recommendedById != null && offer.recommendedById === approverId) {
+function assertNotSelfApprovedOffer(offer, approver) {
+  const [own, ...actingFor] = idsOf(approver);
+  if (offer.recommendedById != null && offer.recommendedById === own) {
     throw new Error('Self-approval blocked: you recommended this offer - a different Manager or Director must approve it');
+  }
+  if (offer.recommendedById != null && actingFor.includes(offer.recommendedById)) {
+    throw new Error(`${FOR_DELEGATOR} recommended this offer - someone else must approve it`);
   }
 }
 
@@ -390,6 +414,7 @@ async function logVacancyPostingTypeTransition(vacancyId, fromType, toType, perf
 
 module.exports = {
   assertCanShortlist,
+  actingIds,
   assertNotSelfApproval,
   assertNotSelfApprovedShortlist,
   assertNotSelfApprovedOffer,

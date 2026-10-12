@@ -17,6 +17,7 @@ const duplicateApplicants = require('../services/duplicateApplicantService');
 const accessLog = require('../services/accessLogService');
 const { sendRequisitionError } = require('./requisitionController');
 const headcount = require('../services/headcountService');
+const closure = require('../services/vacancyClosureService');
 const vacancyProgress = require('../services/vacancyProgressService');
 const { ROLE_RANK } = require('../middleware/auth');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
@@ -286,6 +287,23 @@ async function readvertise(req, res) {
 // What CANNOT: positionId, departmentId, reportsToPositionId, jobRef -
 // these are fixed at creation, consistent with `title` being an
 // immutable snapshot rather than a live pointer.
+
+// The shortlisting committee assesses every applicant, which is why rating
+// opens only after the deadline (shortlistCommitteeController.openRating):
+// the applicants are assigned to raters once, then. A deadline moved back
+// into the future after that would let in applicants nobody is assigned to
+// - so it is refused; more applications mean a readvertisement.
+const COMMITTEE_ASSESSING = {
+  error: 'The shortlisting committee has started assessing the applicants, so this vacancy can no longer take new applications. '
+    + 'Readvertise it to invite more.',
+  code: 'COMMITTEE_ASSESSING'
+};
+const reopensApplications = (deadline) => Boolean(deadline) && new Date(deadline) > new Date();
+async function committeeAssessing(vacancyId) {
+  const exercise = await prisma.shortlistExercise.findUnique({ where: { vacancyId }, select: { status: true } });
+  return Boolean(exercise) && exercise.status !== 'Setup';
+}
+
 async function update(req, res) {
   const vacancyId = Number(req.params.id);
   const vacancy = await vacancyModel.findById(vacancyId);
@@ -370,6 +388,13 @@ async function update(req, res) {
   if (req.body.hiringManager !== undefined) {
     const parsed = hiringManagers.parseHiringManager(req.body.hiringManager);
     if (parsed.error) return res.status(400).json({ error: parsed.error });
+    // Someone competing for the post can't be the one it is filled for.
+    if (parsed.data.hiringManagerEmail && parsed.data.hiringManagerEmail !== vacancy.hiringManagerEmail
+      && await conflictOfInterest.applicantAmong(vacancyId, [{ email: parsed.data.hiringManagerEmail }])) {
+      return res.status(422).json({
+        error: 'This person has applied for this vacancy, so they cannot be its hiring manager', code: 'HIRING_MANAGER_IS_APPLICANT'
+      });
+    }
     Object.assign(data, parsed.data);
   }
 
@@ -418,6 +443,9 @@ async function update(req, res) {
   const reason = reasonFrom(req.body);
   if (deadlineMoved && published && !reason) {
     return res.status(400).json({ error: 'Give a reason for changing the deadline of a published vacancy' });
+  }
+  if (deadlineMoved && reopensApplications(data.deadline) && await committeeAssessing(vacancyId)) {
+    return res.status(409).json(COMMITTEE_ASSESSING);
   }
 
   let updated = await vacancyModel.update(vacancyId, data);
@@ -561,16 +589,49 @@ async function close(req, res) {
   const reason = reasonFrom(req.body);
   if (!reason) return res.status(400).json({ error: 'A reason is required to close a vacancy' });
 
-  const result = await vacancyModel.updateIfStatus(vacancyId, vacancy.status, { status: 'Closed', closedAt: new Date(), closeReason: reason });
-  if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  // People still in it? Then closing has to say what becomes of them
+  // (vacancyClosureService): `inFlight` 'continue' only takes the advert
+  // down, 'end' stops the recruitment and tells everyone.
+  const inFlight = req.body?.inFlight;
+  if (inFlight !== undefined && !['continue', 'end'].includes(inFlight)) {
+    return res.status(400).json({ error: 'inFlight must be "continue" or "end"' });
+  }
+  const inProgress = await closure.inProgress(vacancyId);
+  if (inProgress.any && !inFlight) {
+    return res.status(409).json({
+      error: 'This vacancy still has applicants in progress - say whether selection continues from them, or the recruitment ends here',
+      code: 'VACANCY_HAS_WORK_IN_PROGRESS', inProgress
+    });
+  }
+  const ending = inFlight === 'end' && inProgress.any;
+
+  let ended = null;
+  if (ending) {
+    try {
+      ended = await closure.endRecruitment(vacancy, vacancy.status, reason, req.user.id);
+    } catch (err) {
+      return sendError(res, err);
+    }
+    if (ended.conflict) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  } else {
+    const result = await vacancyModel.updateIfStatus(vacancyId, vacancy.status, { status: 'Closed', closedAt: new Date(), closeReason: reason });
+    if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
+  }
   if (vacancy.status === 'PendingApproval') await slaModel.resolveEscalations('VacancyApproval', vacancyId);
   await audit.record({
-    entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy closed', actor: audit.actorFrom(req),
-    before: vacancy, after: { status: 'Closed' }, fields: ['status'], comment: reason
+    entityType: 'Vacancy', entityId: vacancyId,
+    action: ending ? 'Vacancy closed and recruitment ended' : inProgress.any ? 'Vacancy closed (selection continues)' : 'Vacancy closed',
+    actor: audit.actorFrom(req),
+    before: vacancy, after: { status: 'Closed' }, fields: ['status'], comment: reason,
+    ...(ended ? { details: { applicationsClosed: ended.applications.length, offersWithdrawn: ended.offers.length } } : {})
   });
-  await hiringManagers.notify(vacancy, 'closed', { reason });
+  if (ended) await closure.afterEnded(vacancy, ended, reason, audit.actorFrom(req));
+  await hiringManagers.notify(vacancy, ending ? 'recruitmentEnded' : 'closed', { reason });
   broadcastDashboardEvent('VacancyClosed', { vacancyId });
-  res.json(await vacancyModel.findById(vacancyId));
+  res.json({
+    ...(await vacancyModel.findById(vacancyId)),
+    ...(ended ? { recruitmentEnded: { applicationsClosed: ended.applications.length, offersWithdrawn: ended.offers.length } } : {})
+  });
 }
 
 // SIMPLIFIED from the 5-tier flow (create -> Senior HR Officer review ->
@@ -638,7 +699,7 @@ async function approve(req, res) {
   }
 
   try {
-    await workflow.assertNotSelfApproval(vacancyId, req.user.id);
+    await workflow.assertNotSelfApproval(vacancyId, workflow.actingIds(req));
   } catch (err) {
     return sendError(res, err, 422);
   }
@@ -665,6 +726,12 @@ async function approve(req, res) {
         error: `This vacancy is above the approved headcount (reason given: ${headcountException.reason}) - a Director must approve it.`,
         code: 'HEADCOUNT_EXCEPTION_NEEDS_DIRECTOR'
       });
+    }
+    // actsAsDirector may only now have brought a delegation into play.
+    try {
+      await workflow.assertNotSelfApproval(vacancyId, workflow.actingIds(req));
+    } catch (err) {
+      return sendError(res, err, 422);
     }
     if (req.body?.authoriseHeadcountException !== true) {
       return res.status(422).json({
@@ -754,6 +821,9 @@ async function transitionPostingType(req, res) {
   if (deadlineChanged) {
     const fieldErrors = validateVacancyEditableFields({ deadline });
     if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
+    if (reopensApplications(newDeadline) && await committeeAssessing(vacancyId)) {
+      return res.status(409).json(COMMITTEE_ASSESSING);
+    }
   }
 
   // Read before any deadline change this same request makes - a

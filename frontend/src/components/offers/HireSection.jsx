@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { BadgeCheck, Download, RefreshCw, Upload } from 'lucide-react';
+import { BadgeCheck, Download, RefreshCw, Undo2, Upload } from 'lucide-react';
 import staffClient from '../../models/staffApiClient';
 import Button from '../Button';
 import Modal from '../Modal';
+import ReasonDialog from '../ReasonDialog';
 import { errorMessage } from '../../utils/interviews';
 
 // "Mark as Hired" on an accepted offer (backend hireController): a Principal
@@ -26,6 +27,10 @@ const HANDOFF_TEXT = {
 // only until then).
 export default function HireSection({ offer, staffRole, onChanged, onHire }) {
   const canHire = (ROLE_RANK[staffRole] || 0) >= ROLE_RANK.Principal_HR_Officer;
+  // Undoing a hire is a Manager's call (the API also accepts a delegated one).
+  const canCancel = (ROLE_RANK[staffRole] || 0) >= ROLE_RANK.Manager;
+  const [cancelling, setCancelling] = useState(false);
+  const [notice, setNotice] = useState('');
   const [hire, setHire] = useState(undefined);
   const [modal, setModal] = useState(false);
   const [file, setFile] = useState(null);
@@ -83,6 +88,7 @@ export default function HireSection({ offer, staffRole, onChanged, onHire }) {
     if (!canHire) return null;
     return (
       <div style={{ marginTop: 6 }}>
+        {notice && <div role="status" style={{ color: 'var(--color-danger)', fontSize: 12, marginBottom: 6 }}>{notice}</div>}
         <Button style={small} onClick={() => { setError(''); setModal(true); }}><BadgeCheck size={13} /> Mark as hired</Button>
         {modal && (
           <Modal title="Mark as hired" onClose={() => setModal(false)} footer={<>
@@ -122,9 +128,24 @@ export default function HireSection({ offer, staffRole, onChanged, onHire }) {
           {hire.hrisConfigured && hire.handoffStatus !== 'Sent' && (
             <Button variant="secondary" style={small} onClick={retry} loading={busy === 'retry'} loadingText="Sending..."><RefreshCw size={13} /> Send to HRIS now</Button>
           )}
+          {canCancel && <Button variant="ghost" style={small} onClick={() => setCancelling(true)}><Undo2 size={13} /> Cancel hire…</Button>}
         </div>
       )}
       {error && <div style={{ color: 'var(--color-danger)', fontSize: 12, marginTop: 4 }}>{error}</div>}
+      {cancelling && (
+        <ReasonDialog
+          title={`Cancel hire — ${hire.caseRef}`}
+          intro={`Use this when the candidate was marked hired by mistake, or never took up the post. The onboarding case is removed and the post is free again on the position's headcount; the offer goes back to "Accepted", from where it can be withdrawn so the post goes to the next reserve.${hire.handoffStatus === 'Sent' ? ' The HRIS already has this case - its administrator must cancel it there.' : ''}`}
+          label="Why the hire is being cancelled" confirmLabel="Cancel hire" busyLabel="Cancelling..." danger minLength={10}
+          onClose={() => setCancelling(false)}
+          onSubmit={async (reason) => {
+            const res = await staffClient.delete(`/api/applications/offers/${offer.id}/hire`, { data: { reason } });
+            setCancelling(false);
+            setNotice(res.data?.warning || '');
+            setHire(null);
+            onChanged?.();
+          }} />
+      )}
     </div>
   );
 }
