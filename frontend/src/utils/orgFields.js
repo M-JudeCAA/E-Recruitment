@@ -18,5 +18,5 @@ export function codeError(value, word) {
 /** "Human Resource (HR)", or just the name when the code is missing or the same. */
 export function codeAndName(item) {
   if (!item) return '';
-  return item.code && item.code.toUpperCase() !== String(item.name || '').toUpperCase() ? `${item.name} (${item.code})` : (item.name || item.code || '');
+  return item.name && item.code && item.code.toUpperCase() !== String(item.name).toUpperCase() ? `${item.name} (${item.code})` : (item.name || item.code || '');
 }
