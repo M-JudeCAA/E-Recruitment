@@ -226,6 +226,10 @@ describe('prefill from a job advertisement', () => {
     expect(requisitionService.editedFields(prefill, { deadline: '2999-01-31T12:00' })).toEqual(['deadline']);
     expect(requisitionService.editedFields(prefill, { deadline: '2999-02-01T17:00' })).toEqual(['deadline']);
   });
+
+  test('a deadline is not an edit when the document gave no closing date - HR always sets it then', () => {
+    expect(requisitionService.editedFields({ positionId: 100 }, { positionId: 100, deadline: '2999-01-31T17:00' })).toEqual([]);
+  });
 });
 
 describe('forCreate (step 2: creating the vacancy)', () => {
