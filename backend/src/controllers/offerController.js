@@ -7,6 +7,7 @@ const workflow = require('../services/workflowService');
 const offerService = require('../services/offerService');
 const hiringManagers = require('../services/hiringManagerService');
 const audit = require('../services/auditService');
+const approvalNotices = require('../services/approvalNotificationService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { notify, notifyAllWithRole } = require('../services/notificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
@@ -40,6 +41,22 @@ async function safely(label, fn) {
   }
 }
 
+// An offer waiting for approval: its approvers (Managers and Directors,
+// never whoever recommended it) are told by email and in-app.
+async function askForApproval(offerId, req, how) {
+  const offer = await prisma.offer.findUnique({
+    where: { id: offerId },
+    select: { recommendedById: true, application: { select: { vacancyId: true, candidate: { select: { fullName: true } }, vacancy: { select: { jobRef: true, title: true } } } } }
+  });
+  if (!offer) return;
+  await approvalNotices.notifyApprovers('offer', {
+    taskId: offerId,
+    vacancyId: offer.application.vacancyId,
+    excludeIds: [offer.recommendedById, req.user.id],
+    message: `${req.user.name || 'HR'} ${how} an offer to ${offer.application.candidate?.fullName || 'a candidate'} for ${describeVacancy(offer.application.vacancy)} for your approval.`
+  });
+}
+
 // GET /api/applications/:id/offer-draft - what the offer form starts from.
 async function draft(req, res) {
   const applicationId = parseId(req.params.id);
@@ -70,6 +87,7 @@ async function recommend(req, res) {
     entityType: 'Application', entityId: applicationId, action: 'Offer recommended', actor: audit.actorFrom(req),
     details: { offerId: offer.id }
   });
+  await askForApproval(offer.id, req, 'recommended');
   broadcastDashboardEvent('OfferPendingApproval', { offerId: offer.id });
   res.status(201).json(offer);
 }
@@ -91,6 +109,7 @@ async function revise(req, res) {
   });
   // A fresh submission restarts the approval clock.
   await slaModel.resolveEscalations('OfferApproval', offerId);
+  if (result.previousStatus === 'Returned') await askForApproval(offerId, req, 'revised and resubmitted');
   broadcastDashboardEvent('OfferPendingApproval', { offerId });
   res.json(result.offer);
 }

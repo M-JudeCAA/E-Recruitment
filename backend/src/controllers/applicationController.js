@@ -12,6 +12,7 @@ const { notifyCandidate } = require('../services/candidateNotificationService');
 const reinstatement = require('../services/applicationReinstatementService');
 const { cancelUpcomingInterviews } = require('../services/applicationWithdrawalService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
+const approvalNotices = require('../services/approvalNotificationService');
 const { ROLE_RANK } = require('../middleware/auth');
 
 // NOTE: application creation/submission lives in applicationDraftController
@@ -170,6 +171,8 @@ async function shortlist(req, res) {
     entityType: 'Application', entityId: applicationId, action: 'Proposed for the interview shortlist', actor: audit.actorFrom(req),
     before: application, after: { status: 'ShortlistProposed', rank: rank ?? null }, fields: ['status', 'rank']
   });
+  // One notice per vacancy - approvers with an unread one aren't told again.
+  await approvalNotices.shortlistProposed(application.vacancyId, req.user);
   const updated = await applicationModel.findById(applicationId, { vacancy: true });
   res.json(updated);
 }

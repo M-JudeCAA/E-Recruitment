@@ -14,8 +14,9 @@ const { classifyError, sendError } = require('../utils/errorResponse');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { ROLE_RANK } = require('../middleware/auth');
 const delegationModel = require('../models/delegationModel');
-const { notify, notifyAllWithRole } = require('../services/notificationService');
+const { notify } = require('../services/notificationService');
 const conflictOfInterest = require('../services/conflictOfInterestService');
+const approvalNotices = require('../services/approvalNotificationService');
 
 // HR's side of the shortlisting committee (shortlistCommitteeService.js has
 // the ranking rules). HR builds the assessment sheet, invites the committee,
@@ -633,6 +634,7 @@ async function propose(req, res) {
     }))
   ]);
   await audit(vacancy.id, 'Interview shortlist proposed from the committee ranking', req.user.id, { count: Number(req.body.count), applicationIds: ids });
+  await approvalNotices.shortlistProposed(vacancy.id, req.user);
   broadcastDashboardEvent('ApplicationUpdated', { vacancyId: vacancy.id });
   res.json({ proposed: ids.length, applicationIds: ids });
 }
@@ -653,8 +655,13 @@ async function submitNomination(req, res) {
   if (moved.count === 0) return res.status(409).json({ error: 'The nomination changed meanwhile - reload and try again' });
   const vacancy = await vacancyModel.findById(exercise.vacancyId);
   await audit(exercise.vacancyId, 'Committee nomination submitted to the DHRA', req.user.id, { members: exercise.members.map((m) => ({ name: m.name, email: m.email, isChair: m.isChair })) });
-  await notifyAllWithRole('Director', 'CommitteeNominationSubmitted', exercise.id,
-    `The shortlisting committee for ${vacancy.jobRef} ${vacancy.title} (${exercise.members.length} members) is waiting for your approval.`).catch(() => {});
+  // The DHRA (Directors, and anyone acting for one) - never the submitter.
+  await approvalNotices.notifyApprovers('committee', {
+    taskId: exercise.id,
+    vacancyId: exercise.vacancyId,
+    excludeIds: [req.user.id],
+    message: `${req.user.name || 'HR'} submitted the shortlisting committee for ${vacancy.jobRef} ${vacancy.title} (${exercise.members.length} members) for your approval.`
+  });
   broadcastDashboardEvent('ShortlistCommitteeUpdated', { vacancyId: exercise.vacancyId });
   return get(req, res);
 }

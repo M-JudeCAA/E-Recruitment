@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
 import { useDashboardEvents } from '../models/dashboardSocket';
@@ -19,6 +19,11 @@ import { debounce } from '../utils/debounce';
 // Executive Overview and the Approvals Center. "Review" opens an approval in
 // a side panel with the decision at the bottom; "Open" goes to the vacancy
 // tab (or page) where the step is taken. A red edge marks only overdue work.
+//
+// /hr/inbox?item=<key> - where an approval notice leads (backend
+// utils/notificationLinks.js) - opens that item straight away: its review
+// panel, or its page. When it is no longer waiting for this person (someone
+// else dealt with it), the page says so and offers `fallback`.
 
 const GROUPS = [['overdue', 'Overdue'], ['week', 'Due this week'], ['later', 'Later']];
 
@@ -56,6 +61,8 @@ export default function Inbox() {
   const inbox = useInbox();
   const [reviewing, setReviewing] = useState(null);
   const [message, setMessage] = useState('');
+  const [params, setParams] = useSearchParams();
+  const [gone, setGone] = useState(null); // { fallback } for an item no longer here
 
   const refetch = useRef(debounce(() => refreshInbox(), 500));
   const { connected } = useDashboardEvents(refetch.current);
@@ -71,6 +78,17 @@ export default function Inbox() {
     if (item.link) { navigate(item.link); return; }
     if (item.vacancyId) navigate(`/hr/vacancy/${item.vacancyId}${item.tab && item.tab !== 'overview' ? `?tab=${item.tab}` : ''}`);
   };
+
+  // Opening the item a notification pointed at, once the list is in.
+  const wanted = params.get('item');
+  useEffect(() => {
+    if (!wanted || !inbox) return;
+    const item = (inbox.items || []).find((i) => i.key === wanted);
+    const fallback = params.get('fallback');
+    setParams({}, { replace: true });
+    if (item) { setGone(null); open(item); } else setGone({ fallback: fallback && fallback.startsWith('/hr') ? fallback : null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wanted, inbox]);
 
   const done = (text) => {
     setReviewing(null);
@@ -94,6 +112,15 @@ export default function Inbox() {
         />
         <SystemHealthBanner />
         <Alert type="success" message={message} />
+        {gone && (
+          <div className="ws-panel" role="status" style={{ display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 'var(--spacing-md)' }}>
+            <span style={{ fontSize: 14 }}>That request is no longer waiting for you - someone may have dealt with it already.</span>
+            <span style={{ display: 'flex', gap: 8 }}>
+              {gone.fallback && <Button variant="secondary" style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => navigate(gone.fallback)}>Open it</Button>}
+              <Button variant="ghost" style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => setGone(null)}>Dismiss</Button>
+            </span>
+          </div>
+        )}
 
         {inbox ? <Figures figures={inbox.figures} /> : <Skeleton height={76} />}
 

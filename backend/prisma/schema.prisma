@@ -1524,6 +1524,13 @@ enum SlaTaskType {
   // anyone who applied for the vacancy (applicationDraftController.withdraw).
   // taskId is the application id.
   ApplicationWithdrawn
+  // An interview shortlist was proposed and awaits approval - to the
+  // Principal HR Officers and Managers who didn't propose it
+  // (approvalNotificationService). taskId is the vacancy id.
+  ShortlistProposed
+  // The daily reminder of approvals still waiting for someone, one per
+  // person per working day (scripts/sendApprovalReminders.js). taskId is 0.
+  PendingApprovalsDigest
 }
 
 model SlaPolicy {
@@ -1562,6 +1569,10 @@ model Notification {
   // was hitting a real "value too long for column" error in production use,
   // not just a hypothetical edge case.
   message     String              @db.Text
+  // Where opening it takes the reader - a staff-app path (/hr/...), set when
+  // it is sent (notificationLinks.js). Null on rows from before: the link is
+  // worked out from taskType/taskId when they are read.
+  link        String?             @db.VarChar(500)
   sentAt      DateTime            @default(now())
   readAt      DateTime?
 }

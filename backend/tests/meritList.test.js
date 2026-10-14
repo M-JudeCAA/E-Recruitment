@@ -234,7 +234,7 @@ describe('meritListController', () => {
     expect(prisma.application.findMany).not.toHaveBeenCalled();
   });
 
-  test('propose notifies every Principal HR Officer', async () => {
+  test('propose notifies the Principal HR Officers and Managers (approvalNotificationService)', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 3, jobRef: 'REF', title: 'ATC', positionsRequired: 1 });
     prisma.application.findMany.mockResolvedValue([interviewed(1)]);
     prisma.application.update.mockResolvedValue({ id: 1 });
@@ -245,7 +245,8 @@ describe('meritListController', () => {
 
     await meritListController.propose({ params: { vacancyId: '3' }, body: { applicationIds: [1], applicationRankVersions: { 1: 0 } }, user: { id: 9 } }, res);
 
-    expect(prisma.staffUser.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { role: 'Principal_HR_Officer', active: true } }));
+    expect(prisma.staffUser.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { active: true, role: { in: ['Principal_HR_Officer', 'Manager'] } } }));
+    expect(prisma.notification.create).toHaveBeenCalledWith({ data: expect.objectContaining({ recipientId: 40, taskType: 'MeritListProposed', taskId: 3, link: expect.stringContaining('/hr/inbox?item=vacancy-3-approveMerit') }) });
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ primaryCount: 1, reserveCount: 0 }));
   });
 

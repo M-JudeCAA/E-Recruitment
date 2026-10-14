@@ -38,7 +38,7 @@ const mockDb = {
   delegationUsage: { create: jest.fn(), findMany: jest.fn() },
   slaPolicy: { findUnique: jest.fn(), upsert: jest.fn(), findMany: jest.fn() },
   taskEscalation: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
-  notification: { create: jest.fn(), findMany: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
+  notification: { create: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
   candidateNotification: { create: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
   systemHealth: { findMany: jest.fn(), upsert: jest.fn(), updateMany: jest.fn() },
   verificationToken: { deleteMany: jest.fn(), create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },

@@ -19,12 +19,14 @@ describe('notify', () => {
 
     await notify(1, 'DepartmentApproval', 5, 'A department needs your attention.');
 
+    // Both carry where opening it goes - here, the department's review in the Inbox.
+    const link = '/hr/inbox?item=department-5&fallback=%2Fhr%2Forganisation%2Fdepartments%3Fopen%3D5';
     expect(prisma.notification.create).toHaveBeenCalledWith({
-      data: { recipientId: 1, channel: 'InApp', taskType: 'DepartmentApproval', taskId: 5, message: 'A department needs your attention.' }
+      data: { recipientId: 1, channel: 'InApp', taskType: 'DepartmentApproval', taskId: 5, message: 'A department needs your attention.', link }
     });
-    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ to: 'a@caa.co.ug' }));
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ to: 'a@caa.co.ug', subject: 'Approval needed: department' }));
     expect(prisma.notification.create).toHaveBeenCalledWith({
-      data: { recipientId: 1, channel: 'Email', taskType: 'DepartmentApproval', taskId: 5, message: 'A department needs your attention.' }
+      data: { recipientId: 1, channel: 'Email', taskType: 'DepartmentApproval', taskId: 5, message: 'A department needs your attention.', link }
     });
     expect(prisma.notification.create).toHaveBeenCalledTimes(2);
   });
