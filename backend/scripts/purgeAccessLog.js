@@ -32,7 +32,9 @@ async function run(now = new Date()) {
   const days = set ? await settings.get('accessLogRetentionDays') : retentionDays();
   const cutoff = new Date(now.getTime() - days * DAY_MS);
   const { count } = await prisma.dataAccessLog.deleteMany({ where: { at: { lt: cutoff } } });
-  return `Access log purge complete. ${count} record(s) older than ${days} days removed.`;
+  // The activity log (who asked for what change, from where) is kept as long.
+  const activity = await prisma.activityLog.deleteMany({ where: { at: { lt: cutoff } } });
+  return `Access log purge complete. ${count} access record(s) and ${activity.count} activity record(s) older than ${days} days removed.`;
 }
 
 module.exports = { run, retentionDays, DEFAULT_RETENTION_DAYS, MIN_RETENTION_DAYS };

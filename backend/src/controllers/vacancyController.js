@@ -7,6 +7,7 @@ const applicationModel = require('../models/applicationModel');
 const positionModel = require('../models/positionModel');
 const orgApproval = require('../services/orgApprovalService');
 const reportingLines = require('../services/reportingLineService');
+const approvalNotices = require('../services/approvalNotificationService');
 const offerModel = require('../models/offerModel');
 const workflow = require('../services/workflowService');
 const audit = require('../services/auditService');
@@ -23,7 +24,6 @@ const vacancyProgress = require('../services/vacancyProgressService');
 const { ROLE_RANK } = require('../middleware/auth');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { toPublicVacancy } = require('../utils/publicVacancy');
-const { escapeHtml } = require('../utils/interviewFormat');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
 const {
   validateVacancyEditableFields, parseDeadline, screeningQuestionCountError,
@@ -198,6 +198,7 @@ async function create(req, res) {
       editedFromRequisition: requisition.requisitionDetails.editedFields
     }
   });
+  await askForApproval(vacancy, req, 'raised');
   broadcastDashboardEvent('VacancyPendingApproval', { vacancyId: vacancy.id });
   res.status(201).json(vacancy);
 }
@@ -280,6 +281,7 @@ async function readvertise(req, res) {
     entityType: 'Vacancy', entityId: vacancy.id, action: 'Vacancy readvertised', actor: audit.actorFrom(req),
     details: { readvertisedAsId: created.id, jobRef: created.jobRef }
   });
+  await askForApproval(created, req, 'readvertised');
   broadcastDashboardEvent('VacancyPendingApproval', { vacancyId: created.id });
   res.status(201).json(created);
 }
@@ -498,6 +500,22 @@ function describeVacancy(vacancy) {
   return `${vacancy.jobRef} (${vacancy.title})`;
 }
 
+// A vacancy waiting for approval: its approvers (Managers and Directors,
+// not whoever raised it) are told by email and in-app.
+async function askForApproval(vacancy, req, how) {
+  const exceptions = vacancy.requisitionDetails || {};
+  const needs = [
+    exceptions.headcountException && !exceptions.headcountException.authorisedById ? 'a Director (it is above the approved headcount)' : null,
+    exceptions.jdException && !exceptions.jdException.authorisedById ? 'the job description exception authorised' : null
+  ].filter(Boolean);
+  await approvalNotices.notifyApprovers('vacancy', {
+    taskId: vacancy.id,
+    vacancyId: vacancy.id,
+    excludeIds: [vacancy.createdById, req.user.id],
+    message: `${req.user.name || 'HR'} ${how} vacancy ${describeVacancy(vacancy)} for approval.${needs.length ? ` It needs ${needs.join(' and ')}.` : ''}`
+  });
+}
+
 // Notices are a side effect of a decision that already committed.
 async function notifySafely(recipientId, taskType, taskId, message) {
   try {
@@ -525,7 +543,7 @@ async function returnForRevision(req, res) {
     before: vacancy, after: { status: 'Returned' }, fields: ['status'], comment: reason
   });
   await notifySafely(vacancy.createdById, 'VacancyReturned', vacancy.id,
-    `${describeVacancy(vacancy)} was returned for revision: ${escapeHtml(reason)}. Edit it and resubmit it for approval.`);
+    `${describeVacancy(vacancy)} was returned for revision: ${reason}. Edit it and resubmit it for approval.`);
   broadcastDashboardEvent('VacancyReturned', { vacancyId: vacancy.id });
   res.json(await vacancyModel.findById(vacancy.id));
 }
@@ -548,7 +566,7 @@ async function reject(req, res) {
     before: vacancy, after: { status: 'Rejected' }, fields: ['status'], comment: reason
   });
   await notifySafely(vacancy.createdById, 'VacancyRejected', vacancy.id,
-    `${describeVacancy(vacancy)} was rejected: ${escapeHtml(reason)}`);
+    `${describeVacancy(vacancy)} was rejected: ${reason}`);
   await hiringManagers.notify(vacancy, 'closed', { reason: `it was not approved for advertising (${reason})` });
   broadcastDashboardEvent('VacancyRejected', { vacancyId: vacancy.id });
   res.json(await vacancyModel.findById(vacancy.id));
@@ -571,6 +589,7 @@ async function resubmit(req, res) {
     entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy resubmitted for approval', actor: audit.actorFrom(req),
     before: vacancy, after: { status: 'PendingApproval' }, fields: ['status'], comment: reasonFrom(req.body)
   });
+  await askForApproval(vacancy, req, 'revised and resubmitted');
   broadcastDashboardEvent('VacancyPendingApproval', { vacancyId });
   res.json(await vacancyModel.findById(vacancyId));
 }
@@ -1063,6 +1082,7 @@ async function saveRanking(req, res) {
     entityType: 'Application', entityId: id, action: 'Proposed for the interview shortlist', actor: audit.actorFrom(req),
     details: { rank }
   })));
+  await approvalNotices.shortlistProposed(vacancyId, req.user);
   res.json(results);
 }
 

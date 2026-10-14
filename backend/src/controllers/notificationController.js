@@ -1,13 +1,29 @@
 const notificationModel = require('../models/notificationModel');
+const { linkFor } = require('../utils/notificationLinks');
 
+// The staff bell: the signed-in staff member's unread in-app notices, each
+// with `link` - where opening it takes them (set when it was sent; worked
+// out from its task for rows from before links were kept).
 async function listMine(req, res) {
   const notifications = await notificationModel.findUnreadForStaff(req.user.id);
-  res.json(notifications);
+  const withLinks = await Promise.all(notifications.map(async (n) => ({
+    ...n, link: n.link || await linkFor(n.taskType, n.taskId).catch(() => '/hr/inbox')
+  })));
+  res.json(withLinks);
 }
 
+// Only the recipient can mark their own notice read.
 async function markRead(req, res) {
-  const notification = await notificationModel.markRead(Number(req.params.id));
-  res.json(notification);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid notification' });
+  const result = await notificationModel.markReadForStaff(id, req.user.id);
+  if (result.count === 0) return res.status(404).json({ error: 'Notification not found' });
+  res.json({ id, read: true });
 }
 
-module.exports = { listMine, markRead };
+async function markAllRead(req, res) {
+  const result = await notificationModel.markAllReadForStaff(req.user.id);
+  res.json({ read: result.count });
+}
+
+module.exports = { listMine, markRead, markAllRead };

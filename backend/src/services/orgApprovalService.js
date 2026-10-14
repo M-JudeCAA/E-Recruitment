@@ -82,6 +82,37 @@ async function recordCreated(req, entityType, row, state) {
     comment: creationNote(state),
     details: { name: row.name, code: row.code, autoApproved: state.autoApproved, autoApproveAvailable: state.canApprove }
   });
+  // Sent for approval: the Principal HR Officers and Managers who didn't add
+  // it are told by email and in-app (never fails the creation).
+  if (!state.autoApproved) {
+    const word = ENTITY[entityType].word;
+    await require('./approvalNotificationService').notifyApprovers(word, {
+      taskId: row.id,
+      excludeIds: [req.user.id],
+      message: `${req.user.name || 'HR'} added the ${word} ${row.name}${row.code ? ` (${row.code})` : ''}, waiting for your approval.`
+    });
+  }
+}
+
+// A spreadsheet import left items waiting for approval: one notice for the
+// whole import, opening its review in the Inbox. Its task is the import's
+// first pending item - the one the Inbox times the import by.
+async function notifyImportPending(req, result) {
+  const where = { importId: result.importId, status: 'Pending' };
+  const first = await prisma.directorate.findFirst({ where, orderBy: { id: 'asc' }, select: { id: true } }).then((r) => r && ['directorate', r.id])
+    || await prisma.department.findFirst({ where, orderBy: { id: 'asc' }, select: { id: true } }).then((r) => r && ['department', r.id])
+    || await prisma.position.findFirst({ where, orderBy: { id: 'asc' }, select: { id: true } }).then((r) => r && ['position', r.id]);
+  if (!first) return;
+  const parts = [[result.directorates, 'directorate'], [result.departments, 'department'], [result.positions, 'position']]
+    .filter(([n]) => n > 0).map(([n, word]) => `${n} ${word}${n === 1 ? '' : 's'}`);
+  const { notifyApprovers } = require('./approvalNotificationService');
+  const { inboxItem } = require('../utils/notificationLinks');
+  await notifyApprovers(first[0], {
+    taskId: first[1],
+    excludeIds: [req.user.id],
+    link: inboxItem(`org-import-${result.importId}`, '/hr/organisation'),
+    message: `${req.user.name || 'HR'} imported ${parts.join(', ')} from ${result.fileName}, waiting for your approval.`
+  });
 }
 
 const PARENT = {
@@ -210,5 +241,5 @@ async function history(limit = 100) {
 }
 
 module.exports = {
-  approverRights, wantsAutoApprove, initialState, creationNote, recordCreated, decide, approveImport, usablePosition, history, ORG_ENTITY_TYPES
+  approverRights, wantsAutoApprove, initialState, creationNote, recordCreated, notifyImportPending, decide, approveImport, usablePosition, history, ORG_ENTITY_TYPES
 };

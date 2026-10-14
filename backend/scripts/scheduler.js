@@ -24,6 +24,7 @@ const { checkAndAlert } = require('../src/services/systemHealthService');
 
 const JOBS = [
   { name: 'checkSlaEscalations', run: require('./checkSlaEscalations').run },
+  { name: 'sendApprovalReminders', run: () => require('./sendApprovalReminders').run() },
   { name: 'checkVacancyDeadlines', run: require('./checkVacancyDeadlines').run },
   { name: 'sendInterviewReminders', run: require('./sendInterviewReminders').run },
   { name: 'expireOffers', run: require('./expireOffers').run },

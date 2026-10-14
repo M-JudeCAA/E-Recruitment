@@ -52,6 +52,7 @@ async function run(req, res) {
         directorates: result.directorates, departments: result.departments, positions: result.positions, skipped: result.skipped
       }
     });
+    if (!autoApproved) await orgApproval.notifyImportPending(req, result).catch((err) => console.error(`Failed to notify approvers of import ${result.importId}:`, err));
     broadcastDashboardEvent(autoApproved ? 'DepartmentApproved' : 'DepartmentPendingApproval', { importId: result.importId });
     res.status(201).json(result);
   } catch (err) {

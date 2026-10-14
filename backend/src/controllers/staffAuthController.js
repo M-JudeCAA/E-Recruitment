@@ -4,6 +4,12 @@ const staffModel = require('../models/staffModel');
 const { verifyIdToken, EntraAuthError } = require('../services/entraAuthService');
 const audit = require('../services/auditService');
 
+// Who signed in, for the activity log (activityLogService) - there is no
+// session yet when the request arrives.
+function signedIn(res, staff) {
+  (res.locals ||= {}).auditActor = { actorType: 'staff', staffUserId: staff.id, actorLabel: staff.name || staff.email };
+}
+
 function sessionFor(staff) {
   const token = jwt.sign(
     {
@@ -33,6 +39,8 @@ async function entraLogin(req, res) {
     if (err instanceof EntraAuthError) return res.status(err.status).json({ error: err.message });
     throw err;
   }
+  // A refusal below is logged against the Microsoft account that tried.
+  (res.locals ||= {}).attemptedEmail = identity.email;
 
   let staff = await staffModel.findByEntraObjectId(identity.oid);
   if (!staff) {
@@ -57,6 +65,7 @@ async function entraLogin(req, res) {
   }
 
   staff = await staffModel.update(staff.id, { entraObjectId: identity.oid, lastLoginAt: new Date() });
+  signedIn(res, staff);
   res.json(sessionFor(staff));
 }
 
@@ -88,6 +97,7 @@ async function login(req, res) {
   const mode = devPasswordLogin() ? 'development' : 'break-glass';
   console.warn(`Password sign-in (${mode}) by staff #${staff.id} (${staff.email})`);
   const updated = await staffModel.update(staff.id, { lastLoginAt: new Date() });
+  signedIn(res, updated);
   await audit.record({ entityType: 'StaffUser', entityId: staff.id, action: 'PasswordSignIn', actor: { performedById: staff.id }, details: { mode } });
   res.json(sessionFor(updated));
 }

@@ -239,8 +239,10 @@ test('offers wait for an approved merit list, which its proposer cannot approve'
   expectStatus(await api(tokens.phro).post(`/api/applications/vacancies/${vacancy.id}/merit-list`, {
     applicationIds: [b.applicationId, a.applicationId], applicationRankVersions: versions
   }), 200);
-  expect((await prisma.notification.findMany({ where: { taskType: 'MeritListProposed', channel: 'InApp' } }))
-    .map((n) => n.recipientId).sort()).toEqual([staff.phro.id, staff.phro2.id].sort());
+  // Its approvers are told - not the proposer, who can't approve it.
+  const meritNotices = (await prisma.notification.findMany({ where: { taskType: 'MeritListProposed', channel: 'InApp' } })).map((n) => n.recipientId);
+  expect(meritNotices).toContain(staff.phro2.id);
+  expect(meritNotices).not.toContain(staff.phro.id);
   expect((await api(tokens.phro).post(`/api/applications/vacancies/${vacancy.id}/merit-list/approve`)).status).toBe(422);
   expectStatus(await api(tokens.phro2).post(`/api/applications/vacancies/${vacancy.id}/merit-list/approve`), 200);
 

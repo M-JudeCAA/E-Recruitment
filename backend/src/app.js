@@ -67,6 +67,12 @@ const { allowedOrigins } = require('./config/frontendUrl');
 // export under the filename the server gave it (CsvDownloadButton.jsx).
 app.use(cors({ origin: allowedOrigins, exposedHeaders: ['Content-Disposition'] }));
 app.use(express.json());
+// Who is asking and from where, for every audit row written while a request
+// runs (after express.json, which would lose the context), and the activity
+// log of every change request (utils/requestContext.js,
+// services/activityLogService.js).
+app.use(require('./utils/requestContext').middleware);
+app.use(require('./services/activityLogService').middleware);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -93,6 +99,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/admin/audit', require('./routes/adminAudit'));
 app.use('/api/vacancy-drafts', vacancyDraftRoutes);
 app.use('/api/directory', directoryRoutes);
 app.use('/api/documents', documentRoutes);

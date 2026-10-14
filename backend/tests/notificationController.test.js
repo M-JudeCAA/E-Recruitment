@@ -26,20 +26,40 @@ describe('listMine', () => {
       where: { recipientId: 7, channel: 'InApp', readAt: null },
       orderBy: { sentAt: 'desc' }
     });
-    expect(res.json).toHaveBeenCalledWith([{ id: 1, message: 'hi' }]);
+    // Each with where opening it goes - worked out from its task for rows without one.
+    expect(res.json).toHaveBeenCalledWith([{ id: 1, message: 'hi', link: '/hr/inbox' }]);
   });
 });
 
 describe('markRead', () => {
   test('sets readAt on the given notification', async () => {
-    prisma.notification.update.mockResolvedValue({ id: 5, readAt: new Date() });
-    const req = { params: { id: '5' } };
+    prisma.notification.updateMany.mockResolvedValue({ count: 1 });
+    const req = { params: { id: '5' }, user: { id: 7 } };
     const res = mockRes();
 
     await notificationController.markRead(req, res);
 
-    expect(prisma.notification.update).toHaveBeenCalledWith({
-      where: { id: 5 }, data: { readAt: expect.any(Date) }
+    // Only the recipient's own notice.
+    expect(prisma.notification.updateMany).toHaveBeenCalledWith({
+      where: { id: 5, recipientId: 7 }, data: { readAt: expect.any(Date) }
     });
+    expect(res.json).toHaveBeenCalledWith({ id: 5, read: true });
+  });
+
+  test("can't mark someone else's notification read", async () => {
+    prisma.notification.updateMany.mockResolvedValue({ count: 0 });
+    const res = mockRes();
+    await notificationController.markRead({ params: { id: '5' }, user: { id: 8 } }, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  test("marks all of the caller's in-app notices read", async () => {
+    prisma.notification.updateMany.mockResolvedValue({ count: 3 });
+    const res = mockRes();
+    await notificationController.markAllRead({ user: { id: 7 } }, res);
+    expect(prisma.notification.updateMany).toHaveBeenCalledWith({
+      where: { recipientId: 7, channel: 'InApp', readAt: null }, data: { readAt: expect.any(Date) }
+    });
+    expect(res.json).toHaveBeenCalledWith({ read: 3 });
   });
 });

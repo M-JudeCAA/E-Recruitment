@@ -74,7 +74,7 @@ describe('erasing a candidate', () => {
     tx = {
       workExperience: many(), education: many(), examGrade: many(), certificate: many(), internalProfile: many(),
       verificationToken: many(), candidateNotification: many(), candidateTagging: many(), bulkEmailRecipient: many(),
-      applicationDocument: many(), application: many(), interviewRound: many(), shortlistRating: many(), auditLog: many(),
+      applicationDocument: many(), application: many(), interviewRound: many(), shortlistRating: many(), auditLog: many(), activityLog: many(),
       candidate: { update: jest.fn() }, dataPurgeLog: { create: jest.fn() }
     };
     prisma.$transaction.mockImplementation((fn) => fn(tx));

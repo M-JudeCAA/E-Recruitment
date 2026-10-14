@@ -12,7 +12,7 @@ const mockDb = {
   education: { findMany: jest.fn() },
   certificate: { findMany: jest.fn() },
   examGrade: { findMany: jest.fn() },
-  auditLog: { create: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
+  auditLog: { create: jest.fn(), findMany: jest.fn(), count: jest.fn(), updateMany: jest.fn() },
   jobRefSequence: { findUnique: jest.fn() },
   vacancyDraft: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn(), deleteMany: jest.fn() },
   candidate: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), create: jest.fn() },
@@ -38,12 +38,13 @@ const mockDb = {
   delegationUsage: { create: jest.fn(), findMany: jest.fn() },
   slaPolicy: { findUnique: jest.fn(), upsert: jest.fn(), findMany: jest.fn() },
   taskEscalation: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
-  notification: { create: jest.fn(), findMany: jest.fn(), update: jest.fn(), findFirst: jest.fn() },
+  notification: { create: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), findFirst: jest.fn() },
   candidateNotification: { create: jest.fn(), findMany: jest.fn(), updateMany: jest.fn() },
   systemHealth: { findMany: jest.fn(), upsert: jest.fn(), updateMany: jest.fn() },
   verificationToken: { deleteMany: jest.fn(), create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
   pendingCandidateRegistration: { create: jest.fn(), findUnique: jest.fn(), delete: jest.fn() },
-  dataAccessLog: { create: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn() }
+  dataAccessLog: { create: jest.fn(), findMany: jest.fn(), count: jest.fn(), deleteMany: jest.fn() },
+  activityLog: { create: jest.fn(), findMany: jest.fn(), count: jest.fn(), deleteMany: jest.fn(), updateMany: jest.fn() }
 };
 
 // Self-referencing so `tx.offer.updateMany(...)` etc. inside a

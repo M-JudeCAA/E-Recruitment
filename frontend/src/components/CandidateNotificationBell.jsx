@@ -1,15 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bell } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Bell, ChevronRight } from 'lucide-react';
 import client from '../models/apiClient';
 import Spinner from './Spinner';
 import Skeleton from './Skeleton';
+import { candidateNotificationLink } from '../utils/candidateNotificationLinks';
 
 const POLL_MS = 30000;
 
 // Candidate-facing counterpart to NotificationBell.jsx (staff-only) -
 // same shape, pointed at apiClient (candidate JWT) and the
-// /api/candidates/me/notifications routes instead.
+// /api/candidates/me/notifications routes instead. Opening a notice marks
+// it read and goes to the page it is about (utils/candidateNotificationLinks.js).
 export default function CandidateNotificationBell() {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   // Only ever gates the FIRST load - the 30s poll after that updates the
   // list in place without re-showing a loading state over data already on
@@ -44,11 +48,19 @@ export default function CandidateNotificationBell() {
     try {
       await client.patch(`/api/candidates/me/notifications/${id}/read`);
       setNotifications((prev) => prev.filter((n) => n.id !== id));
+      return true;
     } catch (err) {
       setError(err.response?.data?.error || 'Could not mark notification read');
+      return false;
     } finally {
       setMarkingReadId(null);
     }
+  };
+
+  const openNotification = async (n) => {
+    await markRead(n.id);
+    setOpen(false);
+    navigate(candidateNotificationLink(n.type));
   };
 
   return (
@@ -92,14 +104,18 @@ export default function CandidateNotificationBell() {
             <div style={{ padding: 12, fontSize: 13, color: 'var(--color-text-muted)' }}>No unread notifications.</div>
           )}
           {!loading && notifications.map((n) => (
-            <div key={n.id} style={{ padding: 12, borderBottom: '1px solid var(--color-border)' }}>
+            <div key={n.id} role="button" tabIndex={0} title="Open"
+              onClick={() => openNotification(n)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openNotification(n); } }}
+              style={{ padding: 12, borderBottom: '1px solid var(--color-border)', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13 }}>{n.message}</div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
                 <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
                   {new Date(n.sentAt).toLocaleString()}
                 </span>
                 <button
-                  onClick={() => markRead(n.id)}
+                  onClick={(e) => { e.stopPropagation(); markRead(n.id); }}
                   disabled={markingReadId === n.id}
                   style={{ background: 'none', border: 'none', color: 'var(--color-primary)', fontSize: 12, cursor: markingReadId === n.id ? 'default' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
                 >
@@ -107,6 +123,8 @@ export default function CandidateNotificationBell() {
                   {markingReadId === n.id ? 'Marking...' : 'Mark read'}
                 </button>
               </div>
+              </div>
+              <ChevronRight size={16} style={{ color: 'var(--color-text-muted)', flexShrink: 0, marginTop: 2 }} />
             </div>
           ))}
         </div>

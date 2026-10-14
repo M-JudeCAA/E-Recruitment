@@ -45,6 +45,17 @@ const KIND_LABELS = {
 
 const REVIEW_KINDS = { approveVacancy: 'vacancy', approveCommittee: 'committee' };
 
+// The approval steps, and the notice that tells an approver about each
+// (approvalNotificationService; the reminders in
+// scripts/sendApprovalReminders.js). A committee's notice is about the
+// committee exercise, looked up from the vacancy.
+const APPROVAL_NOTICES = {
+  approveVacancy: 'VacancyApproval',
+  approveShortlist: 'ShortlistProposed',
+  approveMerit: 'MeritListProposed',
+  approveCommittee: 'CommitteeNominationSubmitted'
+};
+
 function inAudience(role, rank) {
   if (!role) return false;
   const base = ROLE_RANK[role];
@@ -133,7 +144,9 @@ async function forStaff(req, now = new Date()) {
       jobRef: v.jobRef,
       tab: next.tab,
       review: REVIEW_KINDS[next.kind] ? { type: REVIEW_KINDS[next.kind], vacancyId: v.id } : null,
-      waiting: waitingLabel(next.since, now)
+      waiting: waitingLabel(next.since, now),
+      since: next.since || null,
+      notice: APPROVAL_NOTICES[next.kind] ? { taskType: APPROVAL_NOTICES[next.kind], taskId: v.id, vacancyId: v.id } : null
     };
     if (next.kind === 'approveVacancy') Object.assign(item, await sla('VacancyApproval', v.id, next.since, now));
     items.push(item);
@@ -160,6 +173,8 @@ async function forStaff(req, now = new Date()) {
         jobRef: o.application.vacancy.jobRef,
         tab: 'merit',
         review: { type: 'offer', offerId: o.id, applicationId: o.application.id, vacancyId: o.application.vacancyId },
+        since: o.recommendedDate,
+        notice: { taskType: 'OfferApproval', taskId: o.id },
         ...(await sla('OfferApproval', o.id, o.recommendedDate, now))
       });
     }
@@ -173,6 +188,8 @@ async function forStaff(req, now = new Date()) {
         context: 'Complete it, or refuse it with a reason, under Settings & data.',
         link: '/hr/settings',
         waiting: waitingLabel(r.createdAt, now),
+        since: r.createdAt,
+        notice: { taskType: 'DataErasureRequested', taskId: r.id },
         overdue: now - new Date(r.createdAt) > 30 * DAY
       });
     }
@@ -206,6 +223,8 @@ async function forStaff(req, now = new Date()) {
         context: `Added by ${d.createdBy?.name || 'HR'}.`, link: '/hr/organisation/directorates',
         review: { type: 'org', entity: 'directorate', id: d.id, name: d.name, rows: [['Code', d.code], ['Directorate', d.name]] },
         waiting: waitingLabel(d.createdAt, now),
+        since: d.createdAt,
+        notice: { taskType: 'DirectorateApproval', taskId: d.id },
         ...(await sla('DirectorateApproval', d.id, d.createdAt, now))
       });
     }
@@ -216,6 +235,8 @@ async function forStaff(req, now = new Date()) {
         context: `Proposed by ${d.createdBy?.name || 'HR'}.`, link: '/hr/organisation/departments',
         review: { type: 'org', entity: 'department', id: d.id, name: d.name, rows: [['Code', d.code], ['Department', d.name], ['Directorate', d.directorate ? `${d.directorate.name} (${d.directorate.code})` : '']] },
         waiting: waitingLabel(d.createdAt, now),
+        since: d.createdAt,
+        notice: { taskType: 'DepartmentApproval', taskId: d.id },
         ...(await sla('DepartmentApproval', d.id, d.createdAt, now))
       });
     }
@@ -227,6 +248,8 @@ async function forStaff(req, now = new Date()) {
         context: `Added by ${p.createdBy?.name || 'HR'}.`, link: '/hr/organisation/positions',
         review: { type: 'org', entity: 'position', id: p.id, name: p.name, rows: [['Code', p.code || '-'], ['Position', p.name], ['Department', where], ['Level', LEVEL_NAMES[p.level] || p.level]] },
         waiting: waitingLabel(p.createdAt, now),
+        since: p.createdAt,
+        notice: { taskType: 'PositionApproval', taskId: p.id },
         ...(await sla('PositionApproval', p.id, p.createdAt, now))
       });
     }
@@ -238,6 +261,8 @@ async function forStaff(req, now = new Date()) {
         context: `Imported by ${imp.createdBy?.name || 'HR'}.`, link: '/hr/organisation',
         review: { type: 'org', entity: 'import', id: importId, name: imp.fileName, rows: [['File', imp.fileName], ['Waiting', parts.join(', ')]] },
         waiting: waitingLabel(imp.createdAt, now),
+        since: imp.createdAt,
+        notice: { taskType: imp.first.taskType, taskId: imp.first.id, link: `org-import-${importId}` },
         ...(await sla(imp.first.taskType, imp.first.id, imp.first.since, now))
       });
     }
@@ -311,4 +336,4 @@ async function forStaff(req, now = new Date()) {
   };
 }
 
-module.exports = { forStaff, inAudience, KIND_LABELS };
+module.exports = { forStaff, inAudience, KIND_LABELS, APPROVAL_NOTICES };

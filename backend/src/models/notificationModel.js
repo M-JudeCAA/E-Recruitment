@@ -7,6 +7,9 @@ module.exports = {
     orderBy: { sentAt: 'desc' }
   }),
   markRead: (id) => prisma.notification.update({ where: { id }, data: { readAt: new Date() } }),
+  // Scoped to the recipient - nobody marks someone else's notice read.
+  markReadForStaff: (id, staffId) => prisma.notification.updateMany({ where: { id, recipientId: staffId }, data: { readAt: new Date() } }),
+  markAllReadForStaff: (staffId) => prisma.notification.updateMany({ where: { recipientId: staffId, channel: 'InApp', readAt: null }, data: { readAt: new Date() } }),
   // Idempotency check for one-shot event notifications (e.g.
   // scripts/checkVacancyDeadlines.js) that run on a recurring schedule -
   // without this, a second run would re-notify for the same event every

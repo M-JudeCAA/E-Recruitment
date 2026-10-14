@@ -38,6 +38,7 @@ import DepartmentsPage from "./views/organisation/DepartmentsPage";
 import PositionsPage from "./views/organisation/PositionsPage";
 import StaffManagement from "./views/StaffManagement";
 import StaffAccounts from "./views/StaffAccounts";
+import AuditLogPage from "./views/AuditLogPage";
 import DocumentTemplates from "./views/DocumentTemplates";
 import SettingsAndData from "./views/SettingsAndData";
 import VacancyWorkspace from "./views/VacancyWorkspace";
@@ -238,6 +239,16 @@ export default function App() {
             element={
               <RequireSystemAdmin>
                 <StaffAccounts />
+              </RequireSystemAdmin>
+            }
+          />
+          {/* The audit log - who did what, when and from where. System
+              administrators only (AuditLogPage.jsx). */}
+          <Route
+            path="/hr/audit-log"
+            element={
+              <RequireSystemAdmin>
+                <AuditLogPage />
               </RequireSystemAdmin>
             }
           />

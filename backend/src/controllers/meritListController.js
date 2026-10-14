@@ -3,7 +3,7 @@ const conflictOfInterest = require('../services/conflictOfInterestService');
 const hiringManagers = require('../services/hiringManagerService');
 const meritList = require('../services/meritListService');
 const audit = require('../services/auditService');
-const { notifyAllWithRole } = require('../services/notificationService');
+const approvalNotices = require('../services/approvalNotificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { sendError } = require('../utils/errorResponse');
 
@@ -56,16 +56,17 @@ async function propose(req, res) {
     details: { applicationIds, primaryCount: result.primaryCount, reserveCount: result.reserveCount }
   });
 
-  // The proposal is already committed - a notification failure must not
-  // turn it into a 500.
-  try {
-    const { vacancy, primaryCount, reserveCount } = result;
-    await notifyAllWithRole('Principal_HR_Officer', 'MeritListProposed', vacancyId,
-      `A merit list for ${vacancy.jobRef} (${vacancy.title}) is awaiting approval: `
-      + `${primaryCount} recommended for appointment, ${reserveCount} on reserve.`);
-  } catch (err) {
-    console.error(`Failed to notify approvers of the merit list for vacancy ${vacancyId}:`, err);
-  }
+  // Its approvers (Principal HR Officers and Managers who proposed none of
+  // it) are told by email and in-app; never fails the proposal.
+  const { vacancy, primaryCount, reserveCount } = result;
+  const proposers = await prisma.application.findMany({ where: { vacancyId, meritProposedById: { not: null } }, select: { meritProposedById: true } }).catch(() => []);
+  await approvalNotices.notifyApprovers('merit', {
+    taskId: vacancyId,
+    vacancyId,
+    excludeIds: [req.user.id, ...(proposers || []).map((p) => p.meritProposedById)],
+    message: `${req.user.name || 'HR'} proposed the merit list for ${approvalNotices.vacancyName(vacancy)} for your approval: `
+      + `${primaryCount} recommended for appointment, ${reserveCount} on reserve.`
+  });
   broadcastDashboardEvent('MeritListProposed', { vacancyId });
   res.json({ message: 'Merit list proposed', vacancyId, primaryCount: result.primaryCount, reserveCount: result.reserveCount });
 }
