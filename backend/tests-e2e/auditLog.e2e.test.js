@@ -18,7 +18,7 @@ beforeEach(async () => {
   await resetDatabase();
   process.env.INTERNAL_EMAIL_DOMAIN = 'caa.co.ug';
   hro = await createStaff('HR_Officer', 'hro@caa.co.ug');
-  admin = await prisma.staffUser.create({ data: { name: 'Sam Admin', email: 'admin@caa.co.ug', passwordHash: hro.passwordHash, role: null, isSystemAdmin: true } });
+  admin = await prisma.staffUser.create({ data: { name: 'Sam Admin', email: 'admin@caa.co.ug', passwordHash: hro.passwordHash, role: null, isSystemAdmin: true, department: 'IT' } });
   await createOrg(hro.id);
   tokens = { hro: await staffToken(hro.email), admin: await staffToken(admin.email) };
 });

@@ -115,7 +115,7 @@ test('the retention job removes access records past the retention period and kee
 
   const summary = await require('../scripts/purgeAccessLog').run();
 
-  expect(summary).toMatch(/1 record\(s\) older than 730 days removed/);
+  expect(summary).toMatch(/1 access record\(s\) and \d+ activity record\(s\) older than 730 days removed/);
   expect((await prisma.dataAccessLog.findMany({ orderBy: { at: 'asc' } })).map((r) => r.action))
     .toEqual(['Opened a document', 'Viewed the applicants']);
 });
