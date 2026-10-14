@@ -35,7 +35,9 @@ export function AuthProvider({ children }) {
     const name = localStorage.getItem('staffName');
     const email = localStorage.getItem('staffEmail') || null;
     const isSystemAdmin = localStorage.getItem('staffIsSystemAdmin') === 'true';
-    return localStorage.getItem('staffToken') ? { role, name, email, isSystemAdmin } : null;
+    // HR or ICT (an HR Manager manages the HR team's roles - HrTeam.jsx).
+    const department = localStorage.getItem('staffDepartment') || null;
+    return localStorage.getItem('staffToken') ? { role, name, email, isSystemAdmin, department } : null;
   });
 
   function loginCandidate(token, candidateType, fullName, photoUrl, email) {
@@ -67,7 +69,7 @@ export function AuthProvider({ children }) {
     setCandidate((c) => (c ? { ...c, photoUrl } : c));
   }
 
-  function loginStaff(token, role, name, email, isSystemAdmin = false) {
+  function loginStaff(token, role, name, email, isSystemAdmin = false, department = null) {
     localStorage.setItem('staffToken', token);
     if (role) localStorage.setItem('staffRole', role);
     else localStorage.removeItem('staffRole');
@@ -75,7 +77,9 @@ export function AuthProvider({ children }) {
     if (email) localStorage.setItem('staffEmail', email);
     else localStorage.removeItem('staffEmail');
     localStorage.setItem('staffIsSystemAdmin', String(Boolean(isSystemAdmin)));
-    setStaff({ role: role || null, name, email: email || null, isSystemAdmin: Boolean(isSystemAdmin) });
+    if (department) localStorage.setItem('staffDepartment', department);
+    else localStorage.removeItem('staffDepartment');
+    setStaff({ role: role || null, name, email: email || null, isSystemAdmin: Boolean(isSystemAdmin), department: department || null });
   }
   function logoutStaff() {
     localStorage.removeItem('staffToken');
@@ -83,6 +87,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('staffName');
     localStorage.removeItem('staffEmail');
     localStorage.removeItem('staffIsSystemAdmin');
+    localStorage.removeItem('staffDepartment');
     clearMicrosoftSession('staff');
     clearInbox();
     setStaff(null);

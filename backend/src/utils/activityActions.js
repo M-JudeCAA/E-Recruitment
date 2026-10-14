@@ -137,6 +137,7 @@ const ACTIONS = {
   'POST /api/staff-users': 'Staff account created',
   'PATCH /api/staff-users/:id': 'Staff account changed',
   'POST /api/staff-users/:id/unlink': 'Staff account unlinked from Microsoft',
+  'PATCH /api/staff-users/hr-team/:id/role': 'HR role changed by HR Manager',
   'POST /api/delegations': 'Delegation granted',
   'PUT /api/settings/:key': 'Setting changed',
   'PUT /api/documents/templates/:key': 'Document template saved',

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Inbox, Briefcase, Users, CalendarClock, Award, BarChart3, Network, FileSignature, Share2, Settings, UserCog, ScrollText } from 'lucide-react';
+import { Inbox, Briefcase, Users, CalendarClock, Award, BarChart3, Network, FileSignature, Share2, Settings, UserCog, ScrollText, UsersRound } from 'lucide-react';
+import { isHrDepartment } from '../utils/staffDepartments';
 import Sidebar from './Sidebar';
 import { useAuth } from '../models/AuthContext';
 import { useInbox } from '../models/useInbox';
@@ -45,6 +46,8 @@ export default function HRSidebar({ active }) {
     staff?.role && { key: 'templates', label: 'Document templates', icon: FileSignature, to: '/hr/templates', section: 'Setup' },
     rank >= ROLE_RANK.Senior_HR_Officer && { key: 'delegations', label: 'Delegations', icon: Share2, to: '/hr/staff-management', section: 'Setup' },
     (staff?.isSystemAdmin || rank >= ROLE_RANK.Manager) && { key: 'settings', label: 'Settings & data', icon: Settings, to: '/hr/settings', section: 'Setup' },
+    // An HR Manager's own role (not a delegation) in the HR department.
+    ROLE_RANK[staff?.role] >= ROLE_RANK.Manager && isHrDepartment(staff?.department) && { key: 'hr-team', label: 'HR team', icon: UsersRound, to: '/hr/team', section: 'Setup' },
     staff?.isSystemAdmin && { key: 'staff-accounts', label: 'Staff accounts', icon: UserCog, to: '/hr/staff-accounts', section: 'Setup' },
     staff?.isSystemAdmin && { key: 'audit-log', label: 'Audit log', icon: ScrollText, to: '/hr/audit-log', section: 'Setup' }
   ].filter(Boolean);

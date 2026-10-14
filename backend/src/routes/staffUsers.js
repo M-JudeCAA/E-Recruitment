@@ -12,6 +12,11 @@ router.get('/entra-assignments', authenticate, requireSystemAdmin(), controller.
 router.post('/', authenticate, requireSystemAdmin(), controller.create);
 router.patch('/:id', authenticate, requireSystemAdmin(), controller.update);
 router.post('/:id/unlink', authenticate, requireSystemAdmin(), controller.unlink);
+// An HR Manager's team: the HR department's accounts and their HR roles -
+// Manager+ by their own role, in the HR department (checked in the
+// controller; a delegation isn't enough). No creating accounts.
+router.get('/hr-team', authenticate, requireStaffRole('Manager'), controller.hrTeam);
+router.patch('/hr-team/:id/role', authenticate, requireStaffRole('Manager'), controller.updateHrTeamRole);
 // The HR directory (name/email/role, nothing sensitive). Its caller is a
 // Senior HR Officer+ authorizing a delegation, looking up who's eligible
 // as their delegate.
