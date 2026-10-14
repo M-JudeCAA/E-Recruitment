@@ -39,6 +39,7 @@ import PositionsPage from "./views/organisation/PositionsPage";
 import StaffManagement from "./views/StaffManagement";
 import StaffAccounts from "./views/StaffAccounts";
 import AuditLogPage from "./views/AuditLogPage";
+import HrTeam from "./views/HrTeam";
 import DocumentTemplates from "./views/DocumentTemplates";
 import SettingsAndData from "./views/SettingsAndData";
 import VacancyWorkspace from "./views/VacancyWorkspace";
@@ -240,6 +241,16 @@ export default function App() {
               <RequireSystemAdmin>
                 <StaffAccounts />
               </RequireSystemAdmin>
+            }
+          />
+          {/* The HR team - an HR Manager (Manager+, HR department) manages
+              the HR roles of the HR department's staff (HrTeam.jsx). */}
+          <Route
+            path="/hr/team"
+            element={
+              <RequireStaff minRole="Manager">
+                <HrTeam />
+              </RequireStaff>
             }
           />
           {/* The audit log - who did what, when and from where. System

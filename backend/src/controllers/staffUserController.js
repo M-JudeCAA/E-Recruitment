@@ -6,12 +6,21 @@ const { staffFrontendUrl } = require('../config/frontendUrl');
 const { internalDomains } = require('../services/entraAuthService');
 const directory = require('../services/directoryService');
 const { ROLE_RANK } = require('../middleware/auth');
+const { STAFF_DEPARTMENTS, HR_DEPARTMENT, parseStaffDepartment, isHrDepartment } = require('../utils/staffDepartments');
 
-// Staff accounts are managed by a system administrator only (requireSystemAdmin
-// on every write route). Staff sign in with their UCAA Microsoft account, so
-// an account is just a name, a UCAA email, a role and a department: there is
-// no password to set or send. The account links itself to the person's
-// Microsoft identity the first time they sign in.
+// Staff accounts are managed by a system administrator (requireSystemAdmin on
+// the account routes): creating them, their role, department (HR or ICT,
+// utils/staffDepartments.js), administrator rights and active state. Staff
+// sign in with their UCAA Microsoft account, so an account is just a name, a
+// UCAA email, a role and a department: there is no password to set or send.
+// The account links itself to the person's Microsoft identity the first time
+// they sign in.
+//
+// An HR Manager (their own role Manager or Director - not a delegation - in
+// the HR department) also sees the HR department's accounts and changes
+// their HR roles, nothing else (hrTeam / updateHrTeamRole): only for staff
+// ranked below them, only to a role below their own, never their own
+// account or a system administrator's. They can't create accounts.
 
 const ROLES = Object.keys(ROLE_RANK);
 const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -53,8 +62,8 @@ async function create(req, res) {
   const email = normaliseEmail(req.body.email);
   const role = parseRole(req.body.role ?? null);
   const isSystemAdmin = req.body.isSystemAdmin === true;
-  const department = typeof req.body.department === 'string' && req.body.department.trim()
-    ? req.body.department.trim() : 'HR';
+  const department = req.body.department == null || req.body.department === '' ? HR_DEPARTMENT : parseStaffDepartment(req.body.department);
+  if (!department) return res.status(400).json({ error: `Department must be one of: ${STAFF_DEPARTMENTS.join(', ')}` });
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
   if (!email) return res.status(400).json({ error: 'Email is required' });
@@ -117,8 +126,8 @@ async function update(req, res) {
   if ('isSystemAdmin' in req.body) data.isSystemAdmin = req.body.isSystemAdmin === true;
   if ('active' in req.body) data.active = req.body.active === true;
   if ('department' in req.body) {
-    const department = typeof req.body.department === 'string' ? req.body.department.trim() : '';
-    if (!department) return res.status(400).json({ error: 'Department cannot be empty' });
+    const department = parseStaffDepartment(req.body.department);
+    if (!department) return res.status(400).json({ error: `Department must be one of: ${STAFF_DEPARTMENTS.join(', ')}` });
     data.department = department;
     data.departmentId = await departmentIdFor(department);
   }
@@ -164,6 +173,72 @@ async function unlink(req, res) {
   res.json({ id: staffId, linked: false });
 }
 
+// --- The HR Manager's team ----------------------------------------------
+
+// The signed-in staff member, when they may manage the HR team's roles: their
+// own role (re-read, not a delegation) Manager or above, in the HR
+// department. Otherwise null.
+async function hrManager(req) {
+  const me = await staffModel.findById(req.user.id);
+  if (!me || !me.active || (ROLE_RANK[me.role] || 0) < ROLE_RANK.Manager || !isHrDepartment(me.department)) return null;
+  return me;
+}
+
+const NOT_HR_MANAGER = { error: "Only an HR Manager or Director in the HR department can manage the HR team's roles.", code: 'NOT_HR_MANAGER' };
+
+// The roles a manager may give: those below their own.
+const assignableRoles = (me) => ROLES.filter((r) => ROLE_RANK[r] < ROLE_RANK[me.role]);
+
+// Why a manager can't change this account's role, or null when they can.
+function lockedReason(me, account) {
+  if (account.id === me.id) return 'This is your own account.';
+  if (account.isSystemAdmin) return "A system administrator's account - only a system administrator can change it.";
+  if (!account.role || ROLE_RANK[account.role] >= ROLE_RANK[me.role]) return 'Ranked the same as you or above.';
+  return null;
+}
+
+const teamMember = (me, a) => ({
+  id: a.id, name: a.name, email: a.email, role: a.role, department: a.department, isSystemAdmin: a.isSystemAdmin,
+  active: a.active, lastLoginAt: a.lastLoginAt, lockedReason: lockedReason(me, a)
+});
+
+// GET /api/staff-users/hr-team - the HR department's accounts, and the roles
+// the manager may give.
+async function hrTeam(req, res) {
+  const me = await hrManager(req);
+  if (!me) return res.status(403).json(NOT_HR_MANAGER);
+  const accounts = await staffModel.findByDepartment(HR_DEPARTMENT);
+  res.json({ assignableRoles: assignableRoles(me), accounts: accounts.map((a) => teamMember(me, a)) });
+}
+
+// PATCH /api/staff-users/hr-team/:id/role { role, comment } - an HR Manager
+// changes one HR staff member's role. Takes effect on their next request
+// (requireStaffRole re-reads the account). Audited.
+async function updateHrTeamRole(req, res) {
+  const me = await hrManager(req);
+  if (!me) return res.status(403).json(NOT_HR_MANAGER);
+  const staffId = Number(req.params.id);
+  const account = Number.isInteger(staffId) ? await staffModel.findById(staffId) : null;
+  // Someone outside the HR department isn't theirs to see.
+  if (!account || !isHrDepartment(account.department)) return res.status(404).json({ error: 'There is no such account in the HR department.' });
+  const locked = lockedReason(me, account);
+  if (locked) return res.status(403).json({ error: `You can't change ${account.name}'s role: ${locked}`, code: 'ROLE_CHANGE_NOT_ALLOWED' });
+
+  const role = parseRole(req.body.role);
+  if (!role) return res.status(400).json({ error: `Choose one of: ${assignableRoles(me).join(', ')}` });
+  if (!assignableRoles(me).includes(role)) {
+    return res.status(403).json({ error: 'You can only give a role below your own.', code: 'ROLE_CHANGE_NOT_ALLOWED' });
+  }
+  if (role === account.role) return res.status(400).json({ error: `${account.name} is already ${role.replace(/_/g, ' ')}` });
+
+  const updated = await staffModel.update(staffId, { role });
+  await audit.record({
+    entityType: 'StaffUser', entityId: staffId, action: 'HR role changed by HR Manager', actor: audit.actorFrom(req),
+    before: account, after: updated, fields: ['role'], comment: typeof req.body.comment === 'string' ? req.body.comment.trim() || undefined : undefined
+  });
+  res.json(teamMember(me, updated));
+}
+
 // The HR directory (name/email/role), e.g. for choosing a delegate.
 async function list(req, res) {
   res.json(await staffModel.findAllHRAndBelow());
@@ -204,4 +279,4 @@ async function entraAssignments(req, res) {
   res.json(assigned.filter((p) => !oids.has(p.entraObjectId) && !emails.has(p.email)));
 }
 
-module.exports = { create, update, unlink, list, listAccounts, entraAssignments };
+module.exports = { create, update, unlink, list, listAccounts, entraAssignments, hrTeam, updateHrTeamRole };

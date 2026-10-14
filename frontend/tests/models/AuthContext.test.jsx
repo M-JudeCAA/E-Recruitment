@@ -23,17 +23,17 @@ describe('signing in and out', () => {
   test('a staff sign-in is kept for the next visit', () => {
     const { result } = session();
     act(() => result.current.loginStaff('staff-jwt', 'Manager', 'Mary Manager', 'manager@caa.co.ug'));
-    expect(result.current.staff).toEqual({ role: 'Manager', name: 'Mary Manager', email: 'manager@caa.co.ug', isSystemAdmin: false });
+    expect(result.current.staff).toEqual({ role: 'Manager', name: 'Mary Manager', email: 'manager@caa.co.ug', isSystemAdmin: false, department: null });
     expect(localStorage.getItem('staffToken')).toBe('staff-jwt');
 
     // A new page load reads the same session back.
-    expect(session().result.current.staff).toEqual({ role: 'Manager', name: 'Mary Manager', email: 'manager@caa.co.ug', isSystemAdmin: false });
+    expect(session().result.current.staff).toEqual({ role: 'Manager', name: 'Mary Manager', email: 'manager@caa.co.ug', isSystemAdmin: false, department: null });
   });
 
   test('an accounts-only system administrator has no HR role', () => {
     const { result } = session();
     act(() => result.current.loginStaff('admin-jwt', null, 'Sam Admin', 'admin@caa.co.ug', true));
-    expect(result.current.staff).toEqual({ role: null, name: 'Sam Admin', email: 'admin@caa.co.ug', isSystemAdmin: true });
+    expect(result.current.staff).toEqual({ role: null, name: 'Sam Admin', email: 'admin@caa.co.ug', isSystemAdmin: true, department: null });
     expect(localStorage.getItem('staffRole')).toBeNull();
     expect(session().result.current.staff).toEqual(expect.objectContaining({ role: null, isSystemAdmin: true }));
   });

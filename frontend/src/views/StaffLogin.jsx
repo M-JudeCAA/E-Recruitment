@@ -46,7 +46,7 @@ export default function StaffLogin() {
   }
 
   const startSession = (data) => {
-    loginStaff(data.token, data.role, data.name, data.email, data.isSystemAdmin);
+    loginStaff(data.token, data.role, data.name, data.email, data.isSystemAdmin, data.department);
     // `replace: true` - this login page must not stay in browser history
     // once login succeeds, or Back from inside the dashboard lands back on
     // the (now-stale) login form instead of leaving the app.

@@ -15,6 +15,7 @@ import Skeleton from '../components/Skeleton';
 import { useConfirm } from '../components/ConfirmDialog';
 import DirectoryPersonField from '../components/DirectoryPersonField';
 import { isEntraConfigured, searchStaffDirectory } from '../models/entraAuth';
+import { STAFF_DEPARTMENTS, HR_DEPARTMENT } from '../utils/staffDepartments';
 
 // The five HR roles - matches ROLE_RANK in backend/src/middleware/auth.js.
 const ROLES = ['HR_Officer', 'Senior_HR_Officer', 'Principal_HR_Officer', 'Manager', 'Director'];
@@ -39,6 +40,9 @@ async function searchDirectory(q) {
 
 const checkboxRow = { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 22, fontSize: 14 };
 const inlineSelect = { padding: 4, border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', fontSize: 12 };
+
+// The directory's department text, when it is one of ours (HR / ICT).
+const ourDepartment = (text) => STAFF_DEPARTMENTS.find((d) => d === String(text || '').trim().toUpperCase());
 
 // Staff account administration, for system administrators only (backend:
 // requireSystemAdmin on /api/staff-users writes). Staff sign in with their
@@ -110,7 +114,7 @@ export default function StaffAccounts() {
     setBusy((b) => ({ ...b, [person.entraObjectId]: true }));
     await createAccount({
       name: person.name, email: person.email, role, entraObjectId: person.entraObjectId,
-      department: person.department || 'HR', isSystemAdmin: false
+      department: ourDepartment(person.department) || HR_DEPARTMENT, isSystemAdmin: false
     }, `${person.name} can now sign in as ${roleLabel(role)}. They have been emailed.`);
     setBusy((b) => ({ ...b, [person.entraObjectId]: false }));
   };
@@ -180,7 +184,15 @@ export default function StaffAccounts() {
         </div>
       )
     },
-    { key: 'department', label: 'Department', render: (a) => a.department || '—' },
+    {
+      key: 'department', label: 'Department', render: (a) => (isMe(a) ? (a.department || '—') : (
+        <select value={a.department || ''} style={inlineSelect} aria-label={`Department for ${a.name}`} disabled={!!busy[a.id]}
+          onChange={(e) => change(a, { department: e.target.value }, `${a.name} is now in ${e.target.value}.`)}>
+          {!STAFF_DEPARTMENTS.includes(a.department) && <option value="" disabled>{a.department || 'Not set'}</option>}
+          {STAFF_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+      ))
+    },
     {
       key: 'role', label: 'HR role', render: (a) => {
         if (isMe(a)) return roleLabel(a.role);
@@ -306,7 +318,7 @@ export default function StaffAccounts() {
               onType={(name) => setForm((f) => ({ ...f, name, ...(f.entraObjectId ? { email: '', entraObjectId: null } : {}) }))}
               onPick={(person) => setForm((f) => ({
                 ...f, name: person.name, email: person.email, entraObjectId: person.entraObjectId || null,
-                department: person.department || f.department
+                department: ourDepartment(person.department) || f.department
               }))} />
             <TextField label="UCAA email" type="email" value={form.email} required
               disabled={Boolean(form.entraObjectId)}
@@ -317,8 +329,11 @@ export default function StaffAccounts() {
               {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
               <option value="">No HR role (system administrator only)</option>
             </Select>
-            <TextField label="Department" value={form.department}
-              onChange={(e) => setForm({ ...form, department: e.target.value })} />
+            <Select label="Department" value={form.department}
+              hint="HR staff can have their HR role managed by the HR Manager."
+              onChange={(e) => setForm({ ...form, department: e.target.value })}>
+              {STAFF_DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </Select>
             <label style={checkboxRow}>
               <input type="checkbox" checked={form.isSystemAdmin}
                 onChange={(e) => setForm({ ...form, isSystemAdmin: e.target.checked })} />

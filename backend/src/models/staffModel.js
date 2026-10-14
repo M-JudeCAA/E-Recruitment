@@ -35,5 +35,12 @@ module.exports = {
     return rows.map(({ entraObjectId, ...row }) => ({ ...row, linked: Boolean(entraObjectId) }));
   },
 
-  countActiveAdmins: () => prisma.staffUser.count({ where: { isSystemAdmin: true, active: true } })
+  countActiveAdmins: () => prisma.staffUser.count({ where: { isSystemAdmin: true, active: true } }),
+
+  // One department's accounts (the HR Manager's team), most senior first.
+  findByDepartment: (department) => prisma.staffUser.findMany({
+    where: { department },
+    select: { id: true, name: true, email: true, role: true, department: true, isSystemAdmin: true, active: true, lastLoginAt: true },
+    orderBy: [{ active: 'desc' }, { name: 'asc' }]
+  })
 };
