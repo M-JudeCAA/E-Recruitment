@@ -11,6 +11,7 @@ import { useConfirm } from '../ConfirmDialog';
 import { approveVacancy } from '../../utils/approveVacancy';
 import { approveOrg, rejectOrg, ORG_WORD } from '../../utils/orgApproval';
 import { SidePanel, KeyValues, Pill, formatDay } from './ui';
+import { formatDeadline } from '../../utils/deadline';
 
 // The Inbox's "Review" side panel: one approval, its facts, and the decision
 // buttons at the bottom - so an approver never has to leave the list. One
@@ -74,7 +75,7 @@ export default function ReviewPanel({ item, staffRole, onClose, onDone }) {
           ['Department', `${v.department?.name || ''}${v.department?.directorate?.name ? `, ${v.department.directorate.name}` : ''}`],
           ['Posting', v.postingType],
           ['Posts', v.positionsRequired],
-          ['Applications close', v.deadline ? formatDay(v.deadline) : null],
+          ['Applications close', v.deadline ? formatDeadline(v.deadline, { long: false }) : null],
           ['Salary scale', v.salaryScale || null],
           ['Raised by', v.createdBy?.name || null],
           // Each fact read from the requisition is { label, value, confidence } - show its value.

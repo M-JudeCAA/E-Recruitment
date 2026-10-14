@@ -79,6 +79,24 @@ function dayBounds(day) {
   return { start: startOf(d), end: startOf(d + 1) };
 }
 
+// The instant of a wall-clock time ("17:00") on a YYYY-MM-DD day in
+// APP_TIMEZONE.
+function zonedDateTime(day, time) {
+  const [y, m, d] = day.split('-').map(Number);
+  const [h, min] = time.split(':').map(Number);
+  const guess = new Date(Date.UTC(y, m - 1, d, h, min));
+  return new Date(guess.getTime() - zoneOffsetMs(guess));
+}
+
+// "29 May 2026, 5:00pm" - an application deadline, with its closing time.
+function formatDeadline(date) {
+  if (!date) return '';
+  const at = new Date(date);
+  const day = at.toLocaleDateString('en-GB', { timeZone: timeZone(), day: 'numeric', month: 'long', year: 'numeric' });
+  const time = at.toLocaleTimeString('en-US', { timeZone: timeZone(), hour: 'numeric', minute: '2-digit' }).replace(/\s/g, '').toLowerCase();
+  return `${day}, ${time}`;
+}
+
 // "Thu, 1 Oct 2026" for a YYYY-MM-DD day.
 function formatDay(day) {
   const { start } = dayBounds(day);
@@ -87,5 +105,5 @@ function formatDay(day) {
 
 module.exports = {
   DEFAULT_DURATION_MINUTES, formatWhen, durationOf, endOf, escapeHtml, describeSlot, timeZone,
-  localDay, dayBounds, formatDay
+  localDay, dayBounds, formatDay, zonedDateTime, formatDeadline
 };

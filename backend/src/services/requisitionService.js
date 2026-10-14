@@ -4,10 +4,12 @@ const path = require('path');
 const prisma = require('../config/db');
 const departmentModel = require('../models/departmentModel');
 const positionModel = require('../models/positionModel');
+const reportingLines = require('./reportingLineService');
 const { extractDocumentText, PDF_MIME, DOCX_MIME } = require('../utils/documentText');
 const { parseRequisitionText, normalizeLabel } = require('../utils/requisitionParser');
 const { AppError } = require('../utils/errorResponse');
-const { escapeHtml } = require('../utils/interviewFormat');
+const { escapeHtml, zonedDateTime, formatDeadline } = require('../utils/interviewFormat');
+const { DEFAULT_DEADLINE_TIME } = require('../utils/vacancyValidation');
 
 // A vacancy is created only from an EXCO-approved, signed requisition that
 // HR uploads (there is no requisition workflow inside this system - the
@@ -88,6 +90,17 @@ function bestMatch(options, wanted, label) {
   return { match: best[0].o, confidence: top === 2 ? 'high' : 'medium' };
 }
 
+// A job advertisement often names no department ("a vacant position in the
+// Corporate Division") - the job title then says where it sits, when only
+// one position on the organogram (in that directorate) carries it.
+async function departmentFromTitle(fields, inDirectorate) {
+  if (!fields.jobTitle?.value) return null;
+  let positions = await positionModel.findAllForDropdown();
+  if (inDirectorate) positions = positions.filter((p) => inDirectorate.has(p.departmentId));
+  const pos = bestMatch(positions, fields.jobTitle.value, 'Job title');
+  return pos.match ? pos.match.department : null;
+}
+
 async function matchOrganogram(fields) {
   const warnings = [];
   const result = { department: null, position: null, reportsTo: null };
@@ -96,12 +109,26 @@ async function matchOrganogram(fields) {
   let deptCandidates = departments;
   // The same department name recurs under different directorates - narrow
   // by the directorate when the document names one.
+  let inDirectorate = null;
   if (fields.directorate?.value) {
-    const inDirectorate = departments.filter((d) => entryScore(d.directorate, fields.directorate.value) > 0);
-    if (inDirectorate.length) deptCandidates = inDirectorate;
+    const matching = departments.filter((d) => entryScore(d.directorate, fields.directorate.value) > 0);
+    if (matching.length) {
+      deptCandidates = matching;
+      inDirectorate = new Set(matching.map((d) => d.id));
+    }
   }
-  const dept = bestMatch(deptCandidates, fields.department?.value, 'Department');
-  if (dept.warning) warnings.push(dept.warning);
+  let dept = fields.department?.value ? bestMatch(deptCandidates, fields.department.value, 'Department') : { match: null };
+  if (!dept.match) {
+    const found = await departmentFromTitle(fields, inDirectorate);
+    if (found) {
+      dept = { match: found, confidence: 'medium' };
+      warnings.push(fields.department?.value
+        ? `Department "${fields.department.value}" is not on the organogram - ${found.name} is where the job title sits; check it.`
+        : `The document names no department - ${found.name} is where the job title sits on the organogram; check it.`);
+    } else if (dept.warning) {
+      warnings.push(dept.warning);
+    }
+  }
   if (!dept.match) return { ...result, warnings };
   result.department = { id: dept.match.id, name: dept.match.name, directorate: dept.match.directorate?.name || null, confidence: dept.confidence };
 
@@ -111,11 +138,24 @@ async function matchOrganogram(fields) {
   if (!pos.match) return { ...result, warnings };
   result.position = { id: pos.match.id, name: pos.match.name, confidence: pos.confidence };
 
+  // The requisition always says who the job reports to - matched among
+  // who the position may report to (reportingLineService). Only when it
+  // doesn't say is the head its reporting line points to used.
+  const { options, suggestedId } = await reportingLines.optionsFor({ ...pos.match, department: dept.match });
   if (fields.reportsTo?.value) {
-    const seniors = positions.filter((p) => p.level > pos.match.level);
-    const rep = bestMatch(seniors, fields.reportsTo.value, 'Reports to');
-    if (rep.warning) warnings.push(rep.warning);
-    if (rep.match) result.reportsTo = { id: rep.match.id, name: rep.match.name, confidence: rep.confidence };
+    const rep = bestMatch(options, fields.reportsTo.value, 'Reports to');
+    if (rep.match) {
+      result.reportsTo = { id: rep.match.id, name: rep.match.name, confidence: rep.confidence };
+    } else {
+      // Say where it is when it exists but can't be chosen for this job.
+      const anywhere = bestMatch(await positionModel.findAllForDropdown(), fields.reportsTo.value, 'Reports to');
+      warnings.push(anywhere.match
+        ? `Reports to "${fields.reportsTo.value}" is ${anywhere.match.name} (${anywhere.match.department?.name}), which is not above this job in its directorate - pick who it reports to from the list.`
+        : rep.warning);
+    }
+  } else if (suggestedId) {
+    const head = options.find((o) => o.id === suggestedId);
+    result.reportsTo = { id: head.id, name: head.name, confidence: 'medium' };
   }
   return { ...result, warnings };
 }
@@ -125,13 +165,38 @@ async function matchOrganogram(fields) {
 function jobPurposeHtml(fields) {
   const parts = [];
   for (const p of fields.jobPurpose?.value || []) parts.push(`<p>${escapeHtml(p)}</p>`);
-  const list = (title, items) => {
-    if (!items?.length) return;
-    parts.push(`<p><strong>${title}</strong></p><ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ul>`);
+  const bullets = (items) => `<ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ul>`;
+  const list = (title, field) => {
+    if (!field?.value?.length) return;
+    // The JD table: each accountability, numbered, with its activities.
+    if (field.groups?.length) {
+      const items = field.groups.map((g) => `<li>${g.heading ? `<strong>${escapeHtml(g.heading)}</strong>` : ''}${g.items.length ? bullets(g.items) : ''}</li>`);
+      parts.push(`<p><strong>${title}</strong></p><ol>${items.join('')}</ol>`);
+      return;
+    }
+    parts.push(`<p><strong>${title}</strong></p>${bullets(field.value)}`);
   };
-  list('Principal Accountabilities', fields.principalAccountabilities?.value);
-  list('Duties and Responsibilities', fields.duties?.value);
+  list('Principal Accountabilities', fields.principalAccountabilities);
+  list('Duties and Responsibilities', fields.duties);
   return parts.join('');
+}
+
+// The document's closing date as the form's two fields - the day and the
+// closing time, 5:00pm when it gives none.
+function deadlineParts(fields) {
+  const v = fields.deadline?.value;
+  if (!v) return null;
+  const [date, time] = v.split('T');
+  return { date, time: time || DEFAULT_DEADLINE_TIME };
+}
+
+// The advert's closing date fills the deadline only while it is still ahead.
+function deadlineWarning(fields) {
+  const parts = deadlineParts(fields);
+  if (!parts) return null;
+  const closes = zonedDateTime(parts.date, parts.time);
+  if (closes > new Date()) return null;
+  return `The closing date in the document (${formatDeadline(closes)}) has passed - set the deadline for this advert.`;
 }
 
 // The vacancy form, pre-filled from what was read. Only what the document
@@ -145,6 +210,10 @@ function prefillFrom(fields, organogram) {
   if (v('vacancies')) prefill.positionsRequired = v('vacancies');
   if (v('advertType')) prefill.postingType = v('advertType');
   if (v('salaryScale')) prefill.salaryScale = v('salaryScale');
+  if (deadlineParts(fields) && !deadlineWarning(fields)) {
+    prefill.deadline = deadlineParts(fields).date;
+    prefill.deadlineTime = deadlineParts(fields).time;
+  }
   if (v('station')) prefill.location = v('station');
   if (v('contractType')) prefill.employmentCategory = v('contractType');
   if (v('age')?.minimumAge) prefill.minimumAge = v('age').minimumAge;
@@ -228,7 +297,8 @@ async function read(file) {
     organogram: { department: organogram.department, position: organogram.position, reportsTo: organogram.reportsTo },
     warnings: [
       ...(jdApproval(stored.parsed.fields) === 'notApproved' ? [JD_NOT_APPROVED_WARNING] : []),
-      ...stored.parsed.warnings, ...organogram.warnings
+      ...stored.parsed.warnings, ...organogram.warnings,
+      ...(deadlineWarning(stored.parsed.fields) ? [deadlineWarning(stored.parsed.fields)] : [])
     ],
     jdStatus: jdApproval(stored.parsed.fields),
     prefill: prefillFrom(stored.parsed.fields, organogram)
@@ -241,19 +311,26 @@ async function read(file) {
 // own; rich text is compared as plain text, since the editor may rewrite
 // the markup without changing a word; a field the form didn't send isn't
 // a change.
-const COMPARED_FIELDS = ['positionId', 'reportsToPositionId', 'positionsRequired', 'postingType', 'salaryScale',
+const COMPARED_FIELDS = ['positionId', 'reportsToPositionId', 'positionsRequired', 'postingType', 'salaryScale', 'deadline',
   'location', 'employmentCategory', 'minimumAge', 'maximumAge', 'jobPurpose', 'essentialRequirements',
   'desirableQualifications', 'generalKnowledge', 'specialSkills'];
 
 function comparable(key, value) {
   if (value === undefined || value === null || value === '') return null;
+  // "2026-05-29" and "2026-05-29T17:00" are the same deadline.
+  if (key === 'deadline') {
+    const [date, time] = String(value).trim().split(/[T ]/);
+    return `${date}T${(time || DEFAULT_DEADLINE_TIME).slice(0, 5)}`;
+  }
   if (key === 'jobPurpose') return String(value).replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
   if (Array.isArray(value)) return JSON.stringify(value.map((v) => String(v).trim()).filter(Boolean));
   return String(value).trim();
 }
 
 function editedFields(prefill, body) {
-  return COMPARED_FIELDS.filter((key) => key in body && comparable(key, prefill[key]) !== comparable(key, body[key]));
+  // The prefill holds the closing time apart (the form's time field).
+  const read = prefill.deadline && prefill.deadlineTime ? { ...prefill, deadline: `${prefill.deadline}T${prefill.deadlineTime}` } : prefill;
+  return COMPARED_FIELDS.filter((key) => key in body && comparable(key, read[key]) !== comparable(key, body[key]));
 }
 
 // The scan of the signed requisition, just uploaded (multer has stored it).

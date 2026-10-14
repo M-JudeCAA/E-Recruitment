@@ -12,6 +12,7 @@ import VacancyAdvertFields from '../VacancyAdvertFields';
 import { useConfirm } from '../ConfirmDialog';
 import { approveVacancy } from '../../utils/approveVacancy';
 import { MenuButton, rankOf, ROLE_RANK } from './ui';
+import { DEFAULT_DEADLINE_TIME, deadlineFields, deadlineValue } from '../../utils/deadline';
 
 // Every action on one vacancy, for the header of its workspace page:
 // View advert, Edit, and a "⋯" menu (resubmit, return/reject for an
@@ -33,7 +34,8 @@ const PUBLISHED_STATUSES = ['Open', 'PartiallyFilled', 'Filled', 'Closed'];
 
 const vacancyToFormFields = (v) => ({
   positionsRequired: v.positionsRequired, postingType: v.postingType,
-  deadline: v.deadline ? v.deadline.slice(0, 10) : '',
+  // The day and closing time in Kampala (utils/deadline.js).
+  deadline: deadlineFields(v.deadline).date, deadlineTime: deadlineFields(v.deadline).time,
   salaryScale: v.salaryScale || '', location: v.location || '', employmentCategory: v.employmentCategory || '',
   internalSalaryRange: v.internalSalaryRange || '', recruiterNotes: v.recruiterNotes || '',
   minimumExperienceYears: v.minimumExperienceYears ?? '', minimumEducationLevel: v.minimumEducationLevel || '',
@@ -49,7 +51,7 @@ const departmentLabel = (v) => (v.department?.name
 
 const advertFrom = (v, form, extra = {}) => ({
   jobRef: v.jobRef, title: v.title, departmentLabel: departmentLabel(v), reportsToName: v.reportsToPosition?.name,
-  salaryScale: form.salaryScale, positionsRequired: form.positionsRequired, deadline: form.deadline,
+  salaryScale: form.salaryScale, positionsRequired: form.positionsRequired, deadline: deadlineValue(form.deadline, form.deadlineTime),
   location: form.location, employmentCategory: form.employmentCategory, jobPurpose: form.jobPurpose,
   essentialRequirements: form.essentialRequirements, minimumEducationLevel: form.minimumEducationLevel,
   minimumExperienceYears: form.minimumExperienceYears, preferredFieldOfStudy: form.preferredFieldOfStudy,
@@ -59,16 +61,36 @@ const advertFrom = (v, form, extra = {}) => ({
   ...extra
 });
 
+// The form's fields as the API takes them - the deadline day and its
+// closing time as one value.
+const toPayload = ({ deadlineTime, deadlineReason, ...fields }) => ({ ...fields, deadline: deadlineValue(fields.deadline, deadlineTime) || null });
+
 const errorText = (err, fallback) => {
   const errs = err.response?.data?.errors;
   return errs ? errs.join('; ') : (err.response?.data?.error || fallback);
 };
 
+/** The deadline day and its closing time, 5:00pm unless changed. */
+function DeadlineFields({ value, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ flex: 3, minWidth: 0 }}>
+        <TextField label="Deadline" type="date" value={value.deadline} onChange={(e) => onChange({ deadline: e.target.value })} />
+      </div>
+      <div style={{ flex: 2, minWidth: 0 }}>
+        <TextField label="Closing time" type="time" value={value.deadlineTime || DEFAULT_DEADLINE_TIME} hint="5:00pm unless changed"
+          onChange={(e) => onChange({ deadlineTime: e.target.value || DEFAULT_DEADLINE_TIME })} />
+      </div>
+    </div>
+  );
+}
+
 /** The advert fields form shared by Edit and Readvertise. */
 function VacancyForm({ vacancy, form, setForm, mode }) {
   const [customLocation, setCustomLocation] = useState(!!(form.location && !LOCATIONS.includes(form.location)));
+  const original = deadlineFields(vacancy.deadline);
   const deadlineMoved = mode === 'edit' && PUBLISHED_STATUSES.includes(vacancy.status)
-    && form.deadline !== (vacancy.deadline ? vacancy.deadline.slice(0, 10) : '');
+    && deadlineValue(form.deadline, form.deadlineTime) !== deadlineValue(original.date, original.time);
   return (
     <>
       <TextField label="Positions required" type="number" min="1" value={form.positionsRequired}
@@ -84,7 +106,7 @@ function VacancyForm({ vacancy, form, setForm, mode }) {
         <option value="Internal">Internal only</option>
         <option value="External">External only</option>
       </Select>
-      <TextField label="Deadline" type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+      <DeadlineFields value={form} onChange={(next) => setForm({ ...form, ...next })} />
       {deadlineMoved && (
         <TextField label="Reason for changing the deadline" required value={form.deadlineReason || ''}
           hint="Candidates can already see this vacancy, so the change and its reason are kept in the vacancy's history."
@@ -154,7 +176,7 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
   );
 
 
-  const toDateInputValue = (date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const toDateInputValue = (date) => deadlineFields(date).date;
   const live = ['Open', 'PartiallyFilled'].includes(v.status);
   const transitionDeadlinePassed = v.deadline && new Date(v.deadline) < new Date();
 
@@ -166,7 +188,7 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
     v.status === 'Closed' && { label: 'Readvertise…', onClick: () => openForm('readvertise') },
     live && isApprover && (v.postingTypeLocked
       ? { label: 'Posting type locked', disabled: true, hint: 'The posting type was changed after the deadline had passed, so it is now fixed.', onClick: () => {} }
-      : { label: `Change to ${v.postingType === 'Internal' ? 'External' : 'Internal'}…`, onClick: () => { setTransition({ target: v.postingType === 'Internal' ? 'External' : 'Internal', deadline: v.deadline ? v.deadline.slice(0, 10) : '' }); setError(''); setDialog('transition'); } }),
+      : { label: `Change to ${v.postingType === 'Internal' ? 'External' : 'Internal'}…`, onClick: () => { setTransition({ target: v.postingType === 'Internal' ? 'External' : 'Internal', deadline: deadlineFields(v.deadline).date, deadlineTime: deadlineFields(v.deadline).time }); setError(''); setDialog('transition'); } }),
     !['Closed', 'Returned', 'Rejected'].includes(v.status) && rank >= ROLE_RANK.Principal_HR_Officer && { divider: true },
     !['Closed', 'Returned', 'Rejected'].includes(v.status) && rank >= ROLE_RANK.Principal_HR_Officer && { label: 'Close vacancy…', danger: true, onClick: () => setDialog('close') }
   ];
@@ -194,11 +216,10 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
             <Button variant="secondary" disabled={busy} onClick={() => setPreview(advertFrom(v, form, dialog === 'readvertise' ? { jobRef: undefined, readvertised: true } : {}))}>Preview advert</Button>
             {dialog === 'edit' ? (
               <Button loading={busy} loadingText="Saving..." onClick={() => run(() => {
-                const { deadlineReason, ...fields } = form;
-                return staffClient.patch(`/api/vacancies/${v.id}`, { ...fields, reason: deadlineReason || undefined });
+                return staffClient.patch(`/api/vacancies/${v.id}`, { ...toPayload(form), reason: form.deadlineReason || undefined });
               }, 'Changes saved.', 'Could not save changes')}>Save changes</Button>
             ) : (
-              <Button loading={busy} loadingText="Publishing..." onClick={() => run(() => staffClient.post(`/api/vacancies/${v.id}/readvertise`, form),
+              <Button loading={busy} loadingText="Publishing..." onClick={() => run(() => staffClient.post(`/api/vacancies/${v.id}/readvertise`, toPayload(form)),
                 'Readvertised as a new vacancy - it needs approval before it goes live.', 'Could not readvertise this vacancy')}>Publish for approval</Button>
             )}
           </>}
@@ -218,7 +239,7 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
           footer={<>
             <Button variant="ghost" disabled={busy} onClick={() => setDialog(null)}>Cancel</Button>
             <Button loading={busy} loadingText="Changing..." onClick={() => run(() => staffClient.patch(`/api/vacancies/${v.id}/transition-posting-type`, {
-              postingType: transition.target, deadline: transition.deadline || null
+              postingType: transition.target, deadline: deadlineValue(transition.deadline, transition.deadlineTime) || null
             }), `Now advertised as ${transition.target}.`, 'Could not change the posting type')}>Change to {transition.target}</Button>
           </>}>
           <Alert type="error" message={error} />
@@ -235,7 +256,7 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
               }}>+{days} day{days > 1 ? 's' : ''}</Button>
             ))}
           </div>
-          <TextField label="Deadline" type="date" value={transition.deadline} onChange={(e) => setTransition({ ...transition, deadline: e.target.value })} />
+          <DeadlineFields value={transition} onChange={(next) => setTransition({ ...transition, ...next })} />
           <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Leave it as it is to keep the current deadline.</p>
         </Modal>
       )}

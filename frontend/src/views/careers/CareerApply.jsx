@@ -14,6 +14,7 @@ import { failedDisqualifyingRequirements } from '../../utils/screeningQuestions'
 import { evidenceRequirements, missingEvidence } from '../../utils/screeningEvidence';
 import { EmploymentForm } from './forms';
 import { SITE, CareerShell, WizardRail, profileGaps, formatDay } from './careers';
+import { formatDeadlineTime } from '../../utils/deadline';
 
 // Applying (Internal Careers: /careers/apply/:vacancyId; public site:
 // /apply/:vacancyId) on the draft/submit API (applicationDraftController),
@@ -163,7 +164,7 @@ export default function CareerApply() {
       <PageTop
         crumb={[{ label: SITE.jobsLabel, to: SITE.jobs }, { label: vacancy.title, to: SITE.job(vacancy.id) }, { label: 'Application' }]}
         title={`Apply: ${vacancy.title}`}
-        subtitle={<Meta parts={[<span className="ws-mono">{vacancy.jobRef}</span>, vacancy.deadline && `Closes ${formatDay(vacancy.deadline)}`, !decided && 'Saved as you go']} />}
+        subtitle={<Meta parts={[<span className="ws-mono">{vacancy.jobRef}</span>, vacancy.deadline && `Closes ${formatDay(vacancy.deadline)}, ${formatDeadlineTime(vacancy.deadline)}`, !decided && 'Saved as you go']} />}
         actions={!decided && <Button variant="ghost" onClick={async () => { setBusy(true); try { await saveDraft(); } catch { /* shown on next save */ } setBusy(false); navigate(SITE.applications); }}>Save and exit</Button>}
       />
       <div className="ws-wizard">

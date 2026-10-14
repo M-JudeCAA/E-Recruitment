@@ -16,10 +16,11 @@ import VacancyAdvert from '../components/VacancyAdvert';
 import RequisitionPanel from '../components/RequisitionPanel';
 import HiringManagerPicker from '../components/HiringManagerPicker';
 import useVacancyDraft from '../models/useVacancyDraft';
+import { DEFAULT_DEADLINE_TIME, deadlineValue } from '../utils/deadline';
 
 const emptyForm = {
   departmentId: '', positionId: '', reportsToPositionId: '', hiringManager: null,
-  positionsRequired: 1, postingType: '', deadline: '', // postingType is now required with no default, so this starts blank to force an explicit choice
+  positionsRequired: 1, postingType: '', deadline: '', deadlineTime: DEFAULT_DEADLINE_TIME, // postingType is now required with no default, so this starts blank to force an explicit choice
   salaryScale: '',
   // Site/contract metadata, distinct from the org-structure fields above -
   // location is shown to candidates (JobDetailsStep.jsx); internalSalaryRange
@@ -156,7 +157,9 @@ export default function CreateVacancyListing() {
     }
   };
 
-  // Step 2: Position (Title) chosen - loads senior positions for Reports To.
+  // Step 2: Position (Title) chosen - loads senior positions for Reports To,
+  // and picks the one its reporting line points to (a Manager's Director,
+  // the DDG for Corporate, a Director's DG) while HR hasn't chosen.
   const handlePositionChange = async (positionId) => {
     setForm({ ...form, positionId, reportsToPositionId: '' });
     if (!positionId) { setReportsToOptions([]); return; }
@@ -164,6 +167,10 @@ export default function CreateVacancyListing() {
     try {
       const res = await staffClient.get(`/api/positions/${positionId}/senior-options`);
       setReportsToOptions(res.data);
+      const suggested = res.data.find((p) => p.suggested);
+      if (suggested) {
+        setForm((f) => (f.positionId === positionId && !f.reportsToPositionId ? { ...f, reportsToPositionId: String(suggested.id) } : f));
+      }
     } finally {
       setLoadingReportsTo(false);
     }
@@ -243,7 +250,7 @@ export default function CreateVacancyListing() {
       title: position?.name || '(select a title)',
       departmentLabel: dept ? `${dept.name}${dept.directorate?.name ? ', ' + dept.directorate.name : ''}` : null,
       reportsToName: reportsTo?.name,
-      salaryScale: form.salaryScale, positionsRequired: form.positionsRequired, deadline: form.deadline,
+      salaryScale: form.salaryScale, positionsRequired: form.positionsRequired, deadline: deadlineValue(form.deadline, form.deadlineTime),
       location: form.location, employmentCategory: form.employmentCategory,
       jobPurpose: form.jobPurpose, essentialRequirements: form.essentialRequirements,
       minimumEducationLevel: form.minimumEducationLevel, minimumExperienceYears: form.minimumExperienceYears,
@@ -274,8 +281,10 @@ export default function CreateVacancyListing() {
     draft.cancelPending();
     setCreatingPause(true);
     try {
+      // The day and its closing time go as one local time (utils/deadline.js).
+      const { deadlineTime, ...fields } = form;
       const res = await staffClient.post('/api/vacancies', {
-        ...form, requisitionDocument: requisition.document, requisitionSignedCopy: signedCopy, requisitionConfirmed: true,
+        ...fields, deadline: deadlineValue(form.deadline, deadlineTime), requisitionDocument: requisition.document, requisitionSignedCopy: signedCopy, requisitionConfirmed: true,
         ...(draft.draftId ? { draftId: draft.draftId } : {})
       });
       navigate('/hr', { state: { vacancyCreatedMessage: `Vacancy created (Ref: ${res.data.jobRef}). It needs Manager or Director approval to open.` } });
@@ -362,11 +371,22 @@ export default function CreateVacancyListing() {
               <Select label="Reports to" value={form.reportsToPositionId}
                 onChange={(e) => setForm({ ...form, reportsToPositionId: e.target.value })} disabled={!form.positionId || loadingReportsTo}>
                 <option value="">{loadingReportsTo ? 'Loading...' : form.positionId ? 'Select a position (optional)' : 'Select a title first'}</option>
-                {reportsToOptions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                {[['line', 'Reporting line'], ['directorate', 'Elsewhere in the directorate']].map(([group, label]) => {
+                  const options = reportsToOptions.filter((p) => (p.group || 'line') === group);
+                  return options.length > 0 && (
+                    <optgroup key={group} label={label}>
+                      {options.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}{p.outsideDepartment ? ` (${p.department?.name})` : ''}{p.directorateHead ? ' - head of directorate' : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
               </Select>
               {form.positionId && !loadingReportsTo && reportsToOptions.length === 0 && (
                 <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -14 }}>
-                  No senior position exists yet in this department.
+                  No more senior position exists yet in this directorate.
                 </p>
               )}
             </div>
@@ -405,8 +425,17 @@ export default function CreateVacancyListing() {
             description="Timeline and compensation. The internal salary range and recruiter notes are never shown to candidates." />
 
           <div style={fieldGrid}>
-            <TextField label="Deadline" type="date" required value={form.deadline}
-              onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+            <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+              <div style={{ flex: 3, minWidth: 0 }}>
+                <TextField label="Deadline" type="date" required value={form.deadline}
+                  onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
+              </div>
+              <div style={{ flex: 2, minWidth: 0 }}>
+                <TextField label="Closing time" type="time" required value={form.deadlineTime || DEFAULT_DEADLINE_TIME}
+                  hint="5:00pm unless changed"
+                  onChange={(e) => setForm({ ...form, deadlineTime: e.target.value || DEFAULT_DEADLINE_TIME })} />
+              </div>
+            </div>
             <div>
               <Select label="Location" value={customLocation ? '__custom__' : form.location}
                 onChange={(e) => {

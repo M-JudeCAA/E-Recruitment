@@ -10,6 +10,7 @@ import { useVacancyPdfDownload } from '../../utils/useVacancyPdfDownload';
 import { evidenceRequirements } from '../../utils/screeningEvidence';
 import { orgLabel } from '../../utils/orgNames';
 import { SITE, CareerShell, useCareer, formatDay, daysLeft } from './careers';
+import { formatDeadlineTime } from '../../utils/deadline';
 
 // One vacancy (Internal Careers: /careers/vacancies/:id; public site, signed
 // in: /jobs/:id - guests get JobDetails.jsx): the advert on the left, the
@@ -65,7 +66,7 @@ export default function CareerJob() {
         <li>You are signed in with your UCAA account, so there is nothing to register.</li>
         <li>Check your profile is up to date. The application only asks for what this vacancy needs.</li>
         <li>Confirm your employment details. HR verifies them before shortlisting.</li>
-        <li>Answer the questions, name three referees, add your academic documents, and submit by 5:00pm on {formatDay(vacancy.deadline)}.</li>
+        <li>Answer the questions, name three referees, add your academic documents, and submit by {formatDeadlineTime(vacancy.deadline)} on {formatDay(vacancy.deadline)}.</li>
         <li>Your supervisor{supervisor ? `, ${supervisor},` : ''} is told that you have applied.</li>
       </ol>
     </div>
@@ -75,7 +76,7 @@ export default function CareerJob() {
       <ol>
         <li>Check your fit on the right. Every application is built from your profile, so keep it up to date.</li>
         <li>Answer a few questions, name three referees and attach your academic documents{needed.length ? ` and ${needed.join(', ').toLowerCase()}` : ''}.</li>
-        <li>Submit by 5:00pm on {formatDay(vacancy.deadline)}. Late applications are not accepted.</li>
+        <li>Submit by {formatDeadlineTime(vacancy.deadline)} on {formatDay(vacancy.deadline)}. Late applications are not accepted.</li>
       </ol>
       <p style={{ marginTop: 10 }}>UCAA never charges a fee to apply. Giving false information is an offence.</p>
     </div>
@@ -93,7 +94,7 @@ export default function CareerJob() {
             subtitle={<Meta parts={[
               orgLabel(vacancy.department),
               `${vacancy.positionsRequired} post${vacancy.positionsRequired === 1 ? '' : 's'}`,
-              vacancy.deadline && `${closed ? 'Closed' : 'Closes'} ${formatDay(vacancy.deadline)}`
+              vacancy.deadline && `${closed ? 'Closed' : 'Closes'} ${formatDay(vacancy.deadline)}, ${formatDeadlineTime(vacancy.deadline)}`
             ]} />}
             actions={<Button variant="secondary" loading={pdf.downloadingId === vacancy.id} loadingText="Preparing..." onClick={() => pdf.download(vacancy)}>Download advert</Button>}
           />
@@ -131,7 +132,7 @@ export default function CareerJob() {
                   ) : (
                     <>
                       <Button onClick={() => navigate(SITE.apply(vacancy.id))} style={{ justifyContent: 'center' }}>{mine ? 'Continue your application' : 'Apply'}</Button>
-                      {left != null && <div className="ws-note" style={{ textAlign: 'center' }}>{left === 0 ? 'Closes today' : `${left} day${left === 1 ? '' : 's'} left`} · closes {formatDay(vacancy.deadline)}</div>}
+                      {left != null && <div className="ws-note" style={{ textAlign: 'center' }}>{left === 0 ? 'Closes today' : `${left} day${left === 1 ? '' : 's'} left`} · closes {formatDay(vacancy.deadline)}, {formatDeadlineTime(vacancy.deadline)}</div>}
                     </>
                   )}
                 </div>

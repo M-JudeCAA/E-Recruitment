@@ -1,17 +1,22 @@
 const crypto = require('crypto');
-const { dayBounds } = require('./interviewFormat');
+const { zonedDateTime } = require('./interviewFormat');
 
-// The deadline as stored. The forms send a plain day ("2026-10-10"), which
-// means the whole of that day in APP_TIMEZONE - so it is kept as the last
-// millisecond of the day there. Read as `new Date(day)` it would be UTC
-// midnight, closing applications at 03:00 Kampala time on the deadline day.
-// A full timestamp is kept as sent. Returns null for no deadline, and an
-// Invalid Date for something that isn't a date.
+// The deadline as stored: a day and a closing time in APP_TIMEZONE. The
+// forms send "2026-10-10T17:00" (no zone - the time is Kampala's); a plain
+// day ("2026-10-10") closes at DEFAULT_DEADLINE_TIME, 5:00pm, as UCAA's
+// adverts say. Never `new Date(day)`, which is UTC midnight - 03:00 in
+// Kampala. A timestamp with a zone is kept as sent. Returns null for no
+// deadline, and an Invalid Date for something that isn't a date.
+const DEFAULT_DEADLINE_TIME = '17:00';
 const PLAIN_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const LOCAL_DATE_TIME_RE = /^(\d{4}-\d{2}-\d{2})[T ]([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d(?:\.\d{1,3})?)?$/;
 function parseDeadline(value) {
   if (value === undefined || value === null || value === '') return null;
-  if (typeof value === 'string' && PLAIN_DAY_RE.test(value.trim())) {
-    return new Date(dayBounds(value.trim()).end.getTime() - 1);
+  if (typeof value === 'string') {
+    const v = value.trim();
+    if (PLAIN_DAY_RE.test(v)) return zonedDateTime(v, DEFAULT_DEADLINE_TIME);
+    const local = LOCAL_DATE_TIME_RE.exec(v);
+    if (local) return zonedDateTime(local[1], `${local[2]}:${local[3]}`);
   }
   return new Date(value);
 }
@@ -236,7 +241,7 @@ function screeningQuestionCountError(desirable, disqualifying, previousCount = 0
 
 module.exports = {
   MAX_SCREENING_QUESTIONS, screeningQuestionCountError,
-  validateVacancyEditableFields, parseDeadline, VALID_POSTING_TYPES, VALID_EMPLOYMENT_CATEGORIES, VALID_LOCATIONS,
+  validateVacancyEditableFields, parseDeadline, DEFAULT_DEADLINE_TIME, VALID_POSTING_TYPES, VALID_EMPLOYMENT_CATEGORIES, VALID_LOCATIONS,
   VALID_SECONDARY_LEVELS, O_LEVEL_GRADES, A_LEVEL_GRADES,
   normalizeStringList, normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades
 };

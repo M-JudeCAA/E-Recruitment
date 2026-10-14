@@ -22,7 +22,7 @@
 
 const SCALARS = {
   jobTitle: ['job title', 'position', 'position title', 'title of position', 'title of the position', 'job position', 'designation'],
-  directorate: ['directorate'],
+  directorate: ['directorate', 'division'],
   department: ['department'],
   section: ['section', 'unit', 'section unit'],
   station: ['station', 'duty station', 'location', 'work station', 'work location'],
@@ -40,12 +40,14 @@ const SCALARS = {
   equipment: ['required items equipment', 'required items and equipment', 'required items', 'equipment', 'tools and equipment'],
   jobReference: ['job reference', 'job ref', 'reference number', 'ref no'],
   excoReference: ['approved by exco', 'exco approval', 'exco minute', 'exco min', 'exco minute no', 'exco minute number', 'minute no', 'minute number'],
-  approvalDate: ['date of approval', 'approval date', 'date approved']
+  approvalDate: ['date of approval', 'approval date', 'date approved'],
+  deadline: ['closing date', 'application deadline', 'deadline for applications', 'deadline']
 };
 
 const SECTIONS = {
   jobPurpose: ['job purpose', 'job role purpose', 'job role', 'purpose of the job', 'purpose of job', 'job summary', 'overall purpose', 'overall purpose of the job', 'main purpose of the job'],
-  principalAccountabilities: ['principal accountabilities', 'key accountabilities', 'key result areas', 'accountabilities'],
+  // The JD table's two column headings run together on one line in a PDF.
+  principalAccountabilities: ['principal accountabilities specific activities', 'principal accountabilities', 'key accountabilities', 'key result areas', 'accountabilities'],
   duties: ['duties and responsibilities', 'key duties and responsibilities', 'main duties and responsibilities', 'main duties', 'key responsibilities', 'responsibilities', 'duties'],
   essential: ['essential', 'essential requirements', 'essential qualifications', 'essential qualifications and experience', 'minimum qualifications', 'minimum requirements', 'qualifications and experience', 'qualifications'],
   desirable: ['desirable', 'desirable requirements', 'desirable qualifications', 'added advantage'],
@@ -59,8 +61,18 @@ const STRUCTURAL = [
   'person specifications', 'person specification', 'job description', 'job opening request', 'job vacancy details',
   'part a job vacancy details', 'part a', 'part b', 'part b validation', 'validation', 'approvals', 'approval',
   'uganda civil aviation authority', 'signature', 'signatures', 'signed', 'name', 'date', 'prepared by',
-  'reviewed by', 'validated by', 'head of department', 'director', 'dhra', 'director general'
+  'reviewed by', 'validated by', 'head of department', 'director', 'dhra', 'director general',
+  'how to apply', 'how to apply for this job', 'application procedure'
 ];
+
+// The advert's closing part - how to apply, contacts, the closing date and
+// the signature block. It ends whatever section runs into it.
+const CLOSING_RE = /^(?:for any (?:inquiries|enquiries)|applications (?:are|should|must) (?:to )?be (?:received|submitted|sent)|it is the duty of the applicant|we pledge|the director human resource|interested (?:candidates|applicants|employees) should)/;
+
+// Lines inside a section that only label a column ("SPECIFIC ACTIVITIES"
+// over the activities) or number a page.
+const COLUMN_HEADINGS = new Set(['specific activities', 'activities', 'key activities', 'specific duties', 'performance indicators']);
+const isFiller = (line) => /^\d{1,3}$/.test(line) || COLUMN_HEADINGS.has(normalizeLabel(line));
 
 // Fields a requisition is expected to state; anything here that isn't
 // found is reported as missing for HR to fill in.
@@ -73,12 +85,18 @@ const LABEL_FOR = {
   advertType: 'Type of advert', contractType: 'Contract type', contractDuration: 'Contract duration',
   expectedReportingDate: 'Expected reporting date', positionStatus: 'Position status', jdStatus: 'JD status', age: 'Age',
   equipment: 'Required items/equipment', jobReference: 'Job reference', excoReference: 'EXCO approval', approvalDate: 'Date of approval',
+  deadline: 'Closing date',
   jobPurpose: 'Job purpose', principalAccountabilities: 'Principal accountabilities', duties: 'Duties and responsibilities',
   essential: 'Essential requirements', desirable: 'Desirable requirements', knowledge: 'Knowledge', specialSkills: 'Special skills and attributes'
 };
 
 const LONGEST_REASONABLE_SCALAR = 160;
-const BULLET_RE = /^(?:[•·▪●○◦■□➢➤►\-*–—]|\(?(?:\d{1,2}|[ivx]{1,4}|[a-h])[.)])\s*/i;
+// Bullets, including Word's symbol-font ones (Wingdings arrows, Symbol
+// dots), which a PDF carries as private-use characters (U+F0D8, U+F0B7).
+const BULLET_RE = /^(?:[•·▪●○◦■□➢➤►\-*–—-]|\(?(?:\d{1,2}|[ivx]{1,4}|[a-h])[.)])\s*/i;
+// "1." / "2)" - how the JD table numbers its principal accountabilities.
+const NUMBERED_RE = /^\(?\d{1,2}[.)]\s+/;
+const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 // "PART A:", "1.", "3.1", "3.1.", "(a)", "iv)" before a heading or label.
 const NUMBERING_RE = /^(?:part\s+[a-z]\b\s*[:.\-–]?\s*|\(?(?:\d{1,2}(?:\.\d{1,2})+\.?|(?:\d{1,2}|[ivx]{1,4}|[a-h])[.)])\s+)/i;
 const WORD_NUMBERS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
@@ -113,7 +131,7 @@ function classify(rawLine) {
   const norm = normalizeLabel(line.replace(/:\s*$/, ''));
   if (!norm) return { type: 'content', text: rawLine };
   if (EXACT.has(norm)) return { type: 'label', ...EXACT.get(norm) };
-  if (STRUCTURAL_SET.has(norm) || /^part [a-z]\b/.test(norm)) return { type: 'structural' };
+  if (STRUCTURAL_SET.has(norm) || /^part [a-z]\b/.test(norm) || CLOSING_RE.test(norm)) return { type: 'structural' };
 
   for (const a of ALIASES) {
     // The alias's words at the start of the line, in any case, with the
@@ -140,10 +158,21 @@ function isBreak(cls) {
   return cls.type !== 'content';
 }
 
-// Section lines into list items. PDF lines wrap mid-sentence, so a line
-// that starts in lower case, or follows one ending mid-phrase, continues
-// the item above it; a Word paragraph is always its own item.
-function toItems(lines, mergeWraps) {
+// Whether a line continues the item above it rather than starting one.
+// PDF lines wrap mid-sentence: when the section marks its items (bullets or
+// numbers), every unmarked line is a wrap; otherwise a line starting in
+// lower case, or following one that ends mid-phrase, is. A Word paragraph
+// is its own item unless it starts in lower case (a line break inside a
+// table cell: "Brand Marketing, ... management" / "and contract negotiations.").
+function continuesPrevious(text, prev, { format, marked }) {
+  if (!prev) return false;
+  if (format !== 'pdf') return /^[a-z]/.test(text);
+  return marked || /^[a-z(]/.test(text) || /(?:[,(\-–]|\b(?:and|or|of|the|in|to|with|for|a|an|on|by|as|from))$/i.test(prev);
+}
+
+// Section lines into list items.
+function toItems(lines, format) {
+  const marked = format === 'pdf' && lines.some((l) => BULLET_RE.test(l));
   const items = [];
   let merged = false;
   for (const raw of lines) {
@@ -151,9 +180,7 @@ function toItems(lines, mergeWraps) {
     const text = raw.replace(BULLET_RE, '').trim();
     if (!text) continue;
     const prev = items[items.length - 1];
-    const continues = mergeWraps && prev && !hasBullet
-      && (/^[a-z(]/.test(text) || /(?:[,(\-–]|\b(?:and|or|of|the|in|to|with|for|a|an|on|by|as|from))$/i.test(prev));
-    if (continues) {
+    if (!hasBullet && continuesPrevious(text, prev, { format, marked })) {
       items[items.length - 1] = `${prev} ${text}`;
       merged = true;
     } else {
@@ -161,6 +188,141 @@ function toItems(lines, mergeWraps) {
     }
   }
   return { items, merged };
+}
+
+// A principal accountability's title: short, Title Case, no closing
+// punctuation ("Financial Management", "Input into Strategic Planning and
+// Vision") - unlike the activities under it, which are sentences.
+const TITLE_SMALL_WORDS = new Set(['and', 'or', 'of', 'the', 'in', 'into', 'to', 'for', 'a', 'an', 'on', 'with', 'by', 'at', '&']);
+function looksLikeHeading(text) {
+  if (!text || /[.;:,]$/.test(text)) return false;
+  const words = text.split(/\s+/);
+  if (words.length > 8) return false;
+  const big = words.filter((w) => !TITLE_SMALL_WORDS.has(w.toLowerCase()));
+  return big.length > 0 && big.every((w) => /^[A-Z0-9(]/.test(w));
+}
+
+// A PDF runs the two table cells into one line: "Financial Management
+// Understands the financial requirement ...". The activity starts at the
+// first verb ("Understands", "Builds") followed by a lower-case word.
+function splitHeading(text) {
+  // Usually the activity's own bullet sits between them.
+  const atBullet = /\s[•▪●➢➤►-]\s*/.exec(text);
+  if (atBullet && looksLikeHeading(text.slice(0, atBullet.index).trim())) {
+    return { heading: text.slice(0, atBullet.index).trim(), rest: text.slice(atBullet.index + atBullet[0].length).trim() };
+  }
+  const words = text.split(/\s+/);
+  for (let i = 1; i < words.length - 1; i++) {
+    if (/^[A-Z][a-z]+s$/.test(words[i]) && /^[a-z]/.test(words[i + 1]) && looksLikeHeading(words.slice(0, i).join(' '))) {
+      return { heading: words.slice(0, i).join(' '), rest: words.slice(i).join(' ') };
+    }
+  }
+  return { heading: text, rest: '' };
+}
+
+// The JD table of principal accountabilities, each a title with its
+// specific activities: [{ heading, items }]. In a PDF the titles are the
+// numbered lines and the activities the bulleted ones; a Word document
+// keeps neither marker, so a title is told by its shape. Null when the
+// section has no titles - a plain list.
+function toGroups(lines, format) {
+  const groups = [];
+  let current = null;
+  let last = null; // 'heading' | 'item'
+  let merged = false;
+  const open = (heading) => { current = { heading, items: [] }; groups.push(current); };
+
+  if (format === 'pdf') {
+    for (const raw of lines) {
+      const numbered = NUMBERED_RE.test(raw);
+      const bullet = !numbered && BULLET_RE.test(raw);
+      const text = raw.replace(numbered ? NUMBERED_RE : BULLET_RE, '').trim();
+      if (!text) continue;
+      if (numbered) {
+        const { heading, rest } = splitHeading(text);
+        if (looksLikeHeading(heading)) {
+          open(heading);
+          last = 'heading';
+          if (rest) { current.items.push(rest); last = 'item'; merged = true; }
+          continue;
+        }
+      }
+      if (numbered || bullet || !current || !last) {
+        if (!current) open(null);
+        current.items.push(text);
+        last = 'item';
+      } else if (last === 'heading') {
+        current.heading = `${current.heading} ${text}`;
+      } else {
+        current.items[current.items.length - 1] = `${current.items[current.items.length - 1]} ${text}`;
+        merged = true;
+      }
+    }
+  } else {
+    for (const raw of lines) {
+      const text = raw.replace(BULLET_RE, '').trim();
+      if (!text) continue;
+      if (looksLikeHeading(text)) {
+        open(text);
+      } else if (current?.items.length && /^[a-z]/.test(text)) {
+        current.items[current.items.length - 1] = `${current.items[current.items.length - 1]} ${text}`;
+        merged = true;
+      } else {
+        if (!current) open(null);
+        current.items.push(text);
+      }
+    }
+  }
+
+  const titled = groups.filter((g) => g.heading);
+  // Titles but nothing under them: they were the list itself.
+  if (!titled.length || !groups.some((g) => g.items.length)) return null;
+  return { groups, merged };
+}
+
+// "5:00pm", "5 p.m.", "17:00 hrs" -> "17:00"; null when no time is given.
+function parseTime(text) {
+  const t = String(text);
+  let m = /\b(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?\s*m\b\.?/i.exec(t);
+  if (m) {
+    let h = Number(m[1]) % 12;
+    if (m[3].toLowerCase() === 'p') h += 12;
+    const min = Number(m[2] || 0);
+    return Number(m[1]) <= 12 && min < 60 ? `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}` : null;
+  }
+  m = /\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:hrs?|hours)?\b/i.exec(t);
+  return m ? `${m[1].padStart(2, '0')}:${m[2]}` : null;
+}
+
+// A closing date with its time when the document gives one:
+// "5:00pm, 29TH May 2026" -> "2026-05-29T17:00", "29 May 2026" -> "2026-05-29".
+function parseDeadlineText(text) {
+  const date = parseDate(text);
+  if (!date) return null;
+  // The time is looked for apart from the date, so "29" isn't read as an hour.
+  const time = parseTime(String(text).replace(/\b\d{1,2}\s*(?:st|nd|rd|th)?\s+[A-Za-z]{3,9}\.?,?\s+\d{4}\b/i, ''));
+  return time ? `${date}T${time}` : date;
+}
+
+// "29TH May 2026", "29 May, 2026", "May 29, 2026" -> "2026-05-29".
+function parseDate(text) {
+  const t = String(text).replace(/\s+/g, ' ');
+  const monthAt = (word) => MONTHS.findIndex((m) => m.startsWith(String(word).toLowerCase().slice(0, 3)) && String(word).length >= 3);
+  let day; let month; let year;
+  let m = /(\d{1,2})\s*(?:st|nd|rd|th)?\s+([A-Za-z]{3,9})\.?,?\s+(\d{4})/i.exec(t);
+  if (m) { day = Number(m[1]); month = monthAt(m[2]); year = Number(m[3]); }
+  if (!m || month < 0) {
+    m = /([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i.exec(t);
+    if (m) { month = monthAt(m[1]); day = Number(m[2]); year = Number(m[3]); }
+  }
+  if (!m || month < 0) {
+    m = /\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})\b/.exec(t);
+    if (m) { day = Number(m[1]); month = Number(m[2]) - 1; year = Number(m[3]); }
+  }
+  if (!m || month < 0 || month > 11 || day < 1 || day > 31) return null;
+  const date = new Date(Date.UTC(year, month, day));
+  if (date.getUTCDate() !== day) return null;
+  return date.toISOString().slice(0, 10);
 }
 
 function interpretScalar(field, value) {
@@ -191,6 +353,10 @@ function interpretScalar(field, value) {
         return { value: { minimumAge: min ? Number(min[1]) : null, maximumAge: max ? Number(max[1]) : null }, raw: v, interpreted: true };
       }
       return { value: null, raw: v };
+    }
+    case 'deadline': {
+      const deadline = parseDeadlineText(v);
+      return deadline ? { value: deadline, raw: v, interpreted: true } : { value: null, raw: v };
     }
     case 'directReports': {
       if (/^(none|nil|n\/a|0)$/i.test(v)) return { value: 'None' };
@@ -237,9 +403,11 @@ function parseRequisitionText(text, { format = 'docx' } = {}) {
         i += 1;
       }
     } else if ((cls.type === 'label' || cls.type === 'inline') && cls.kind === 'section') {
-      const body = cls.type === 'inline' ? [cls.value] : [];
+      const body = cls.type === 'inline' && !isFiller(cls.value) ? [cls.value] : [];
       let j = i + 1;
-      while (j < lines.length && !isBreak(classes[j])) body.push(lines[j++]);
+      for (; j < lines.length && !isBreak(classes[j]); j++) {
+        if (!isFiller(lines[j])) body.push(lines[j]);
+      }
       if (!sections[cls.field] && body.length) sections[cls.field] = body;
       i = j - 1;
     }
@@ -268,22 +436,57 @@ function parseRequisitionText(text, { format = 'docx' } = {}) {
 
   for (const [field, body] of Object.entries(sections)) {
     if (field === 'jobPurpose') {
-      // Paragraphs, not items - a PDF's wrapped lines are rejoined into one.
-      const paragraphs = format === 'pdf' ? [body.join(' ')] : body;
+      // Paragraphs, not items - a PDF's wrapped lines are rejoined into
+      // one, a Word paragraph continued in lower case joins the one above.
+      const paragraphs = format === 'pdf' ? [body.join(' ')] : toItems(body, format).items;
       fields[field] = { value: paragraphs.map((p) => p.replace(BULLET_RE, '').trim()).filter(Boolean), confidence: 'high', label: LABEL_FOR[field] };
       continue;
     }
-    const { items, merged } = toItems(body, format === 'pdf');
+    if (field === 'principalAccountabilities' || field === 'duties') {
+      const grouped = toGroups(body, format);
+      if (grouped) {
+        fields[field] = {
+          value: grouped.groups.flatMap((g) => g.items),
+          groups: grouped.groups,
+          confidence: grouped.merged && format === 'pdf' ? 'medium' : 'high',
+          label: LABEL_FOR[field]
+        };
+        continue;
+      }
+    }
+    const { items, merged } = toItems(body, format);
     if (items.length) {
       fields[field] = { value: items, confidence: merged ? 'medium' : 'high', label: LABEL_FOR[field] };
     }
   }
 
+  // What a job advertisement says in its prose rather than under a label.
+  const flat = String(text || '').replace(/\s+/g, ' ');
+  if (!fields.directorate) {
+    // "... the following vacant position in the Corporate Division, ..."
+    const m = /\bin the ((?:[A-Z][A-Za-z&'-]*)(?: (?:[A-Z][A-Za-z&'-]*|and|of|&))*) (?:Division|Directorate)\b/.exec(flat);
+    if (m) fields.directorate = { value: m[1], confidence: 'medium', label: LABEL_FOR.directorate, raw: m[0] };
+  }
+  if (!fields.advertType) {
+    // "INTERNAL JOB ADVERTISEMENT", or the reference "UCAA/ADV/INT/06/2026".
+    const heading = /\b(internal|external)\s+(?:job\s+)?advert(?:isement)?\b/i.exec(flat);
+    const ref = /\/(INT|EXT)\//i.exec(fields.jobReference?.value || '');
+    const word = heading ? heading[1] : ref && (ref[1].toUpperCase() === 'INT' ? 'internal' : 'external');
+    if (word) fields.advertType = { value: word.toLowerCase() === 'internal' ? 'Internal' : 'External', confidence: 'medium', label: LABEL_FOR.advertType };
+  }
+  if (!fields.deadline) {
+    // "Applications are to be received not later than 5:00pm, 29TH May 2026."
+    // A full stop ends it, except inside "5.00" or "p.m.".
+    const m = /(?:not later than|no later than|on or before|closing date (?:is|of))\s+((?:[^.]|\.(?=[\dmM])|(?<=[mM])\.){0,60}?\d{4})/i.exec(flat);
+    const deadline = m && parseDeadlineText(m[1]);
+    if (deadline) fields.deadline = { value: deadline, confidence: 'medium', label: LABEL_FOR.deadline, raw: m[0] };
+  }
+
   const missing = EXPECTED.filter((key) => !fields[key]);
   if (!fields.excoReference && !fields.approvalDate && !/\bexco\b/i.test(text)) {
-    warnings.push('No EXCO approval was found in the document - make sure this is the approved, signed requisition.');
+    warnings.push('The document doesn\'t mention the EXCO approval - make sure the signed copy you attach shows it.');
   }
   return { fields, missing, labels: LABEL_FOR, warnings };
 }
 
-module.exports = { parseRequisitionText, normalizeLabel, classify, LABEL_FOR, EXPECTED };
+module.exports = { parseRequisitionText, normalizeLabel, classify, parseDate, parseTime, parseDeadlineText, LABEL_FOR, EXPECTED };

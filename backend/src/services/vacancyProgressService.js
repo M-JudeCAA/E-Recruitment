@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const { formatDeadline } = require('../utils/interviewFormat');
 
 // Where a vacancy is in the process, worked out from its records - never
 // stored, so it can't drift from them. Drives the staff workspace: the Stage
@@ -103,7 +104,7 @@ function computeProgress(vacancy, facts = {}, now = new Date()) {
         'The DHRA returned the shortlisting committee. Change the members and submit it again.', 'revise committee', 'committee');
     } else {
       next = step('advertising', null,
-        `Applications close on ${vacancy.deadline ? formatDay(vacancy.deadline) : 'the closing date'}. ${plural(apps.length, 'application')} so far.`,
+        `Applications close on ${vacancy.deadline ? formatDeadline(vacancy.deadline) : 'the closing date'}. ${plural(apps.length, 'application')} so far.`,
         vacancy.deadline ? `closes ${formatDay(vacancy.deadline)}` : 'advertised', 'applicants', { who: 'Applicants' });
     }
   } else {

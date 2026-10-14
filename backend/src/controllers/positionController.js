@@ -6,6 +6,7 @@ const headcount = require('../services/headcountService');
 const audit = require('../services/auditService');
 const orgApproval = require('../services/orgApprovalService');
 const orgAdmin = require('../services/orgAdminService');
+const reportingLines = require('../services/reportingLineService');
 const { clean, normalizeCode, codeError, nameError } = require('../utils/orgFields');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
@@ -89,14 +90,15 @@ async function listForDropdown(req, res) {
 }
 
 // Called after a Title/Position is selected on the vacancy form, to
-// populate the Reports To dropdown with only genuinely senior positions
-// in that exact department record.
+// populate the Reports To dropdown: the senior positions in that exact
+// department record, plus the directorate head (reportingLineService). The
+// one the reporting lines point to is marked `suggested`.
 async function listSeniorOptions(req, res) {
   const position = await positionModel.findById(Number(req.params.id));
   if (!position) return res.status(404).json({ error: 'Position not found' });
 
-  const seniorPositions = await positionModel.findSeniorInDepartment(position.departmentId, position.level);
-  res.json(seniorPositions);
+  const { options, suggestedId } = await reportingLines.optionsFor(position);
+  res.json(options.map((o) => ({ ...o, suggested: o.id === suggestedId })));
 }
 
 // Populates the Position dropdown only after a Department has been

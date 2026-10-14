@@ -243,6 +243,11 @@ model Directorate {
   name            String           @unique
   directorName    String?
   directorEmail   String?
+  // The position at the head of the directorate - its Director, or for
+  // Corporate the Deputy Director General. Managers in the directorate and
+  // everyone in the head's own office report to it (reportingLineService).
+  headPositionId  Int?             @unique
+  headPosition    Position?        @relation("DirectorateHead", fields: [headPositionId], references: [id], onDelete: SetNull)
   status          DepartmentStatus @default(Approved)
   createdById     Int
   createdBy       StaffUser        @relation("DirectorateCreatedBy", fields: [createdById], references: [id])
@@ -342,6 +347,7 @@ model Position {
 
   vacancies              Vacancy[] @relation("VacancyPosition")
   vacanciesReportingHere Vacancy[] @relation("VacancyReportsToPosition")
+  headOfDirectorate      Directorate? @relation("DirectorateHead")
 
   // The same title can exist in more than one department (confirmed) -
   // uniqueness is per-department, not organisation-wide. Codes likewise.

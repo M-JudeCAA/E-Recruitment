@@ -149,6 +149,30 @@ describe('update', () => {
     expect(prisma.directorate.update).not.toHaveBeenCalled();
   });
 
+  test('names the head of the directorate - one of its own approved positions - and clears it', async () => {
+    prisma.directorate.findUnique.mockResolvedValue(approved);
+    prisma.position.findUnique.mockResolvedValue({ id: 70, status: 'Approved', department: { directorateId: 5 } });
+    prisma.directorate.update.mockResolvedValue({ ...approved, headPositionId: 70 });
+    await directorateController.update({ params: { id: '5' }, body: { headPositionId: '70' }, user: phro }, mockRes());
+    expect(prisma.directorate.update).toHaveBeenCalledWith({ where: { id: 5 }, data: { headPositionId: 70 } });
+
+    prisma.directorate.findUnique.mockResolvedValue({ ...approved, headPositionId: 70 });
+    prisma.directorate.update.mockClear();
+    await directorateController.update({ params: { id: '5' }, body: { headPositionId: null }, user: phro }, mockRes());
+    expect(prisma.directorate.update).toHaveBeenCalledWith({ where: { id: 5 }, data: { headPositionId: null } });
+  });
+
+  test('refuses a head from another directorate, or not approved', async () => {
+    prisma.directorate.findUnique.mockResolvedValue(approved);
+    prisma.position.findUnique.mockResolvedValueOnce({ id: 71, status: 'Approved', department: { directorateId: 6 } });
+    await expect(directorateController.update({ params: { id: '5' }, body: { headPositionId: 71 }, user: phro }, mockRes()))
+      .rejects.toMatchObject({ status: 400 });
+    prisma.position.findUnique.mockResolvedValueOnce({ id: 72, status: 'Pending', department: { directorateId: 5 } });
+    await expect(directorateController.update({ params: { id: '5' }, body: { headPositionId: 72 }, user: phro }, mockRes()))
+      .rejects.toMatchObject({ status: 400 });
+    expect(prisma.directorate.update).not.toHaveBeenCalled();
+  });
+
   test('an HR Officer cannot edit an approved directorate', async () => {
     prisma.directorate.findUnique.mockResolvedValue(approved);
     await expect(directorateController.update({ params: { id: '5' }, body: { name: 'X' }, user: hro }, mockRes()))
