@@ -43,7 +43,7 @@ export default function ReasonDialog({
     >
       {intro && <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>{intro}</p>}
       {error && <div role="alert" style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
-      <TextArea label={label} hint={hint} required value={reason} maxLength={2000} autoFocus onChange={(e) => setReason(e.target.value)} />
+      <TextArea label={label} hint={hint} required={minLength > 0} value={reason} maxLength={2000} autoFocus onChange={(e) => setReason(e.target.value)} />
     </Modal>
   );
 }
