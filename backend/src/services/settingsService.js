@@ -13,8 +13,8 @@ const DEFINITIONS = {
     default: () => 24, min: 6, max: 120
   },
   accessLogRetentionDays: {
-    label: 'Keep the record of who viewed candidate data for (days)',
-    help: 'Each view is recorded (the access log); older records are deleted by the scheduled purge.',
+    label: 'Keep the record of who viewed candidate data, and of every change request, for (days)',
+    help: 'Each view (the access log) and each change anyone asked for, with where from (the activity log), is recorded; older records are deleted by the scheduled purge. The audit trail of what changed is kept.',
     default: () => {
       const env = Number(process.env.ACCESS_LOG_RETENTION_DAYS);
       return Number.isInteger(env) && env >= 90 ? env : 730;

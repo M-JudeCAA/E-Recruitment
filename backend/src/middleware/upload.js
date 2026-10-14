@@ -1,4 +1,5 @@
 const multer = require('multer');
+const { keepContext } = require('../utils/requestContext');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const {
@@ -130,4 +131,10 @@ function fileUrl(file) {
   return file ? `/api/files/${file.filename}` : null;
 }
 
-module.exports = { upload, uploadPhoto, uploadSupportingDocument, uploadRequisition, uploadSignedRequisition, uploadSignedAppointment, fileUrl };
+// Each keeps the request's context through the upload (utils/requestContext.js),
+// so what the handler audits still knows who and where.
+module.exports = {
+  upload: keepContext(upload), uploadPhoto: keepContext(uploadPhoto), uploadSupportingDocument: keepContext(uploadSupportingDocument),
+  uploadRequisition: keepContext(uploadRequisition), uploadSignedRequisition: keepContext(uploadSignedRequisition),
+  uploadSignedAppointment: keepContext(uploadSignedAppointment), fileUrl
+};

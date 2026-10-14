@@ -13,7 +13,7 @@ test('records who viewed whose data', async () => {
   await accessLog.record(staffReq, { action: 'Viewed the applicants', vacancyId: 3, candidateIds: [9, 7, 9] });
   expect(prisma.dataAccessLog.create).toHaveBeenCalledWith({ data: {
     actorType: 'staff', staffUserId: 4, action: 'Viewed the applicants', vacancyId: 3, applicationId: null,
-    candidateIds: [7, 9], detail: undefined, ip: '10.0.0.5'
+    candidateIds: [7, 9], detail: undefined, ip: '10.0.0.5', userAgent: null, requestId: null
   } });
 });
 

@@ -38,7 +38,7 @@ const TABLES = [
   'BulkEmailRecipient', 'BulkEmail', 'CandidateTagging', 'CandidateTag',
   'CandidateNotification', 'VerificationToken', 'PendingCandidateRegistration', 'DataSubjectRequest', 'DataPurgeLog',
   'InternalProfile', 'WorkExperience', 'Education', 'ExamGrade', 'Certificate', 'Candidate',
-  'Notification', 'TaskEscalation', 'AuditLog', 'SystemHealth', 'DataAccessLog',
+  'Notification', 'TaskEscalation', 'AuditLog', 'SystemHealth', 'DataAccessLog', 'ActivityLog',
   'VacancyDraft', 'DocumentTemplate', 'Vacancy', 'JobRefSequence', 'Position', 'Department', 'OrgImport', 'Directorate'
 ];
 

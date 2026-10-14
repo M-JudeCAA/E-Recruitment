@@ -1,4 +1,5 @@
 const multer = require('multer');
+const { keepContext } = require('../utils/requestContext');
 const { ALLOWED_MIME, MAX_FILE_SIZE } = require('./uploadConstants');
 const { AppError } = require('../utils/errorResponse');
 
@@ -35,4 +36,5 @@ const uploadSpreadsheet = multer({
   limits: { fileSize: SPREADSHEET_MAX_SIZE }
 });
 
-module.exports = { uploadMemory, uploadSpreadsheet };
+// Keeping the request's context through the upload (utils/requestContext.js).
+module.exports = { uploadMemory: keepContext(uploadMemory), uploadSpreadsheet: keepContext(uploadSpreadsheet) };

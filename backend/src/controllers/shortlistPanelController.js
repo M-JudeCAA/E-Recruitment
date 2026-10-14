@@ -26,6 +26,8 @@ function parseJsonList(text) {
 async function loadMember(req, res) {
   const member = await model.findMemberByToken(req.params.token);
   if (!member) { res.status(410).json({ error: 'This link is no longer valid - ask HR for the current one' }); return null; }
+  // Who is acting through the link, for the audit and activity logs.
+  req.committeeMember = { id: member.id, name: member.name, email: member.email };
   const { status } = member.exercise;
   if (status === 'Setup') { res.status(410).json({ error: 'Rating has not opened yet - HR will let you know' }); return null; }
   if (status === 'Closed') { res.status(410).json({ error: 'This shortlisting exercise has closed. Thank you.' }); return null; }

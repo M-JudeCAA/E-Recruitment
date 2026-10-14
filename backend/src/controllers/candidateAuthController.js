@@ -201,6 +201,8 @@ async function login(req, res) {
   const firstLogin = candidate.lastLoginAt === null;
   await candidateModel.update(candidate.id, { lastLoginAt: new Date() });
 
+  // Who signed in, for the activity log (activityLogService).
+  (res.locals ||= {}).auditActor = { actorType: 'candidate', candidateId: candidate.id, actorLabel: candidate.email };
   res.json(candidateSession(candidate, firstLogin));
 }
 
@@ -232,6 +234,7 @@ async function entraLogin(req, res) {
   let identity;
   try {
     identity = await verifyIdToken(req.body.idToken, 'candidate');
+    (res.locals ||= {}).attemptedEmail = identity.email;
   } catch (err) {
     if (err instanceof EntraAuthError) return res.status(err.status).json({ error: err.message });
     throw err;
@@ -273,6 +276,7 @@ async function entraLogin(req, res) {
 
   const firstLogin = candidate.lastLoginAt === null || candidate.lastLoginAt === undefined;
   await candidateModel.update(candidate.id, { lastLoginAt: new Date() });
+  (res.locals ||= {}).auditActor = { actorType: 'candidate', candidateId: candidate.id, actorLabel: candidate.email };
   res.json(candidateSession(candidate, firstLogin));
 }
 

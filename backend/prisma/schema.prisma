@@ -401,6 +401,8 @@ model DataAccessLog {
   candidateIds  Json?
   detail        Json?
   ip            String?  @db.VarChar(64)
+  userAgent     String?  @db.VarChar(500)
+  requestId     String?  @db.VarChar(36)
 
   @@index([at])
   @@index([staffUserId])
@@ -1400,6 +1402,57 @@ model AuditLog {
   actingAsId    Int?
   timestamp     DateTime   @default(now())
   payload       Json?
+  // Who acted and from where, from the request that wrote the row
+  // (utils/requestContext.js, stamped in config/db.js): staff | candidate |
+  // committee | anonymous | system (a scheduled job or script). actorLabel
+  // is the name (or email) at the time, kept even if the account goes.
+  // requestId links the row to its ActivityLog entry.
+  actorType     String?    @db.VarChar(20)
+  actorLabel    String?    @db.VarChar(255)
+  ipAddress     String?    @db.VarChar(64)
+  userAgent     String?    @db.VarChar(500)
+  requestMethod String?    @db.VarChar(10)
+  requestPath   String?    @db.VarChar(500)
+  requestId     String?    @db.VarChar(36)
+
+  @@index([timestamp])
+  @@index([entityType, entityId])
+  @@index([requestId])
+}
+
+// Every change anyone asks the system for - each POST/PUT/PATCH/DELETE,
+// sign-in attempts included - with who, when, from which address and
+// browser, what it was and how it ended (services/activityLogService.js).
+// The audit trail (AuditLog) says what changed; this says who tried what
+// from where, refused and failed attempts too. Never request bodies or
+// query strings. Kept accessLogRetentionDays (scripts/purgeAccessLog.js);
+// read by system administrators (/api/admin/audit).
+model ActivityLog {
+  id          Int      @id @default(autoincrement())
+  at          DateTime @default(now())
+  requestId   String?  @db.VarChar(36)
+  actorType   String   @db.VarChar(20) // staff | candidate | committee | anonymous
+  staffUserId Int?
+  candidateId Int?
+  actingAsId  Int?
+  actorLabel  String?  @db.VarChar(255)
+  method      String   @db.VarChar(10)
+  path        String   @db.VarChar(500)
+  route       String?  @db.VarChar(300)
+  action      String?  @db.VarChar(255)
+  statusCode  Int
+  outcome     String   @db.VarChar(20) // success | refused | failed
+  durationMs  Int?
+  ipAddress   String?  @db.VarChar(64)
+  userAgent   String?  @db.VarChar(500)
+  // The route's parameters (the ids acted on); for a sign-in, the email tried.
+  detail      Json?
+
+  @@index([at])
+  @@index([staffUserId])
+  @@index([candidateId])
+  @@index([ipAddress])
+  @@index([requestId])
 }
 
 // ============================================================

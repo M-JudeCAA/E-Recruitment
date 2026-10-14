@@ -10,6 +10,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   delete process.env.ACCESS_LOG_RETENTION_DAYS;
   prisma.dataAccessLog.deleteMany.mockResolvedValue({ count: 4 });
+  prisma.activityLog.deleteMany.mockResolvedValue({ count: 2 });
 });
 
 afterAll(() => {
@@ -24,7 +25,9 @@ test('deletes access records older than the default two years', async () => {
   expect(prisma.dataAccessLog.deleteMany).toHaveBeenCalledWith({
     where: { at: { lt: new Date(now.getTime() - 730 * DAY_MS) } }
   });
-  expect(summary).toMatch(/4 record\(s\) older than 730 days removed/);
+  // The activity log goes with it, on the same retention.
+  expect(prisma.activityLog.deleteMany).toHaveBeenCalledWith({ where: { at: { lt: new Date(now.getTime() - 730 * DAY_MS) } } });
+  expect(summary).toMatch(/4 access record\(s\) and 2 activity record\(s\) older than 730 days removed/);
 });
 
 test('uses ACCESS_LOG_RETENTION_DAYS when set', async () => {

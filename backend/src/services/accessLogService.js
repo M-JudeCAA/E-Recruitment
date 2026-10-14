@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const { clientIp, userAgent } = require('../utils/requestContext');
 
 // FR-ATS-081 - the read side of the audit trail: who viewed candidate data.
 // Called by the handlers that show it (applicant lists, the application
@@ -47,7 +48,9 @@ async function record(req, { action, vacancyId = null, applicationId = null, can
         ...actor, action, vacancyId, applicationId,
         candidateIds: ids.length ? ids : undefined,
         detail: detail || undefined,
-        ip: String(req?.ip || '').slice(0, 64) || null
+        ip: clientIp(req),
+        userAgent: userAgent(req),
+        requestId: req?.requestContext?.requestId || null
       }
     });
   } catch (err) {

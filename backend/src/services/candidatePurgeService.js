@@ -133,6 +133,12 @@ async function purgeCandidate(candidateId, { reason, requestId = null, performed
       });
       await tx.shortlistRating.updateMany({ where: { assignment: { applicationId: { in: applicationIds } } }, data: { comment: null } });
     }
+    // Their own actions stay in the audit and activity logs - what was done
+    // and when - but no longer say who or from where: the email they acted
+    // under, their address and browser.
+    const unidentified = { actorLabel: null, ipAddress: null, userAgent: null };
+    await tx.activityLog.updateMany({ where: { candidateId }, data: { ...unidentified, detail: Prisma.DbNull } });
+    await tx.auditLog.updateMany({ where: { actorType: 'candidate', payload: { path: '$.actor.id', equals: candidateId } }, data: unidentified });
     await tx.candidate.update({ where: { id: candidateId }, data: anonymisedCandidate(candidateId, now) });
     await tx.dataPurgeLog.create({ data: { candidateId, reason, requestId, performedById, removed, at: now } });
   }, { timeout: 30000, maxWait: 5000 });
