@@ -1,6 +1,6 @@
 const prisma = require('../config/db');
 const { sendMail } = require('../utils/mailer');
-const { escapeHtml } = require('../utils/interviewFormat');
+const { escapeHtml, formatDeadline } = require('../utils/interviewFormat');
 const { internalDomains } = require('./entraAuthService');
 const { applicantAmong } = require('./conflictOfInterestService');
 
@@ -46,7 +46,7 @@ const day = (d) => new Date(d).toLocaleDateString('en-GB', { day: 'numeric', mon
 const MESSAGES = {
   published: (v) => ({
     subject: 'advertised',
-    body: `<p>The vacancy has been approved and is now advertised.${v.deadline ? ` Applications close on <strong>${day(v.deadline)}</strong>.` : ''}</p>`
+    body: `<p>The vacancy has been approved and is now advertised.${v.deadline ? ` Applications close on <strong>${formatDeadline(v.deadline)}</strong>.` : ''}</p>`
   }),
   applicationsClosed: (v, d) => ({
     subject: 'applications closed',

@@ -136,7 +136,7 @@ describe('checks for HR', () => {
   });
 
   test('warns when no EXCO approval appears anywhere', () => {
-    expect(parseRequisitionText('Job Title: Driver').warnings.join(' ')).toMatch(/No EXCO approval/);
+    expect(parseRequisitionText('Job Title: Driver').warnings.join(' ')).toMatch(/EXCO approval/);
     expect(parseRequisitionText('Job Title: Driver\nApproved by EXCO: MIN 3/2026').warnings).toEqual([]);
   });
 

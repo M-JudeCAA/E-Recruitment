@@ -1,5 +1,5 @@
 const {
-  validateVacancyEditableFields, parseDeadline, VALID_POSTING_TYPES, VALID_EMPLOYMENT_CATEGORIES, VALID_LOCATIONS,
+  validateVacancyEditableFields, parseDeadline, DEFAULT_DEADLINE_TIME, VALID_POSTING_TYPES, VALID_EMPLOYMENT_CATEGORIES, VALID_LOCATIONS,
   normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades
 } = require('../src/utils/vacancyValidation');
 const { localDay } = require('../src/utils/interviewFormat');
@@ -107,9 +107,17 @@ describe('parseDeadline', () => {
     else process.env.APP_TIMEZONE = original;
   });
 
-  test('reads a plain day as the last moment of that day in Kampala', () => {
+  test('reads a plain day as 5:00pm that day in Kampala, as UCAA adverts close', () => {
     process.env.APP_TIMEZONE = 'Africa/Kampala';
-    expect(parseDeadline('2026-10-10').toISOString()).toBe('2026-10-10T20:59:59.999Z');
+    expect(DEFAULT_DEADLINE_TIME).toBe('17:00');
+    expect(parseDeadline('2026-10-10').toISOString()).toBe('2026-10-10T14:00:00.000Z');
+  });
+
+  test("reads the form's day and closing time as Kampala time", () => {
+    process.env.APP_TIMEZONE = 'Africa/Kampala';
+    expect(parseDeadline('2026-10-10T12:30').toISOString()).toBe('2026-10-10T09:30:00.000Z');
+    expect(parseDeadline('2026-10-10T23:59').toISOString()).toBe('2026-10-10T20:59:00.000Z');
+    expect(parseDeadline('2026-10-10 08:00:00').toISOString()).toBe('2026-10-10T05:00:00.000Z');
   });
 
   test('keeps the same calendar day as the form sent it', () => {

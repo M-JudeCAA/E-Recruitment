@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDeadlineDay, formatDeadlineTime } from '../utils/deadline';
 
 // Matches UCAA's actual printed/PDF job-advertisement layout (plain
 // letterhead, colon-style facts, Person Specification table) as closely
@@ -85,9 +86,8 @@ export default function VacancyAdvertPrintLayout({
     ...(essentialRequirements || [])
   ];
 
-  const deadlineText = deadline
-    ? new Date(deadline).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })
-    : null;
+  // The closing time as set on the vacancy - 5:00pm unless HR changed it.
+  const deadlineText = deadline ? `${formatDeadlineTime(deadline)}, ${formatDeadlineDay(deadline)}` : null;
 
   // label | colon | value, each its own column - guarantees every colon
   // lines up under the next regardless of how long "SALARY LEVEL" is next
@@ -228,7 +228,7 @@ export default function VacancyAdvertPrintLayout({
 
       {deadlineText && (
         <p style={bodyParagraphStyle}>
-          Applications are to be received not later than <strong style={{ color: DEADLINE_COLOR }}>5:00pm, {deadlineText}</strong>.
+          Applications are to be received not later than <strong style={{ color: DEADLINE_COLOR }}>{deadlineText}</strong>.
         </p>
       )}
       <p style={{ ...bodyParagraphStyle, fontWeight: 700, fontStyle: 'italic' }}>

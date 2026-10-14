@@ -36,6 +36,18 @@ const seniorCorp = { id: 101, name: 'CWG Senior Officer', status: 'Approved', de
 const equalCorp = { id: 102, name: 'CWG Officer II', status: 'Approved', departmentId: 1, level: 1, department: cwgCorpDept };
 const juniorCorp = { id: 103, name: 'CWG Assistant', status: 'Approved', departmentId: 1, level: 0, department: cwgCorpDept };
 const seniorDans = { id: 200, name: 'CWG Director', status: 'Approved', departmentId: 2, level: 5, department: cwgDansDept };
+// A Manager in another DANS department: reports to DANS's one Director-level
+// position (seniorDans), which stands in as head while none is set.
+const opsDansDept = { id: 3, name: 'Operations', status: 'Approved', directorateId: 20, directorate: { id: 20, name: 'DANS', status: 'Approved' } };
+const managerDans = { id: 201, name: 'Manager Operations', status: 'Approved', departmentId: 3, level: 4, department: opsDansDept };
+const ALL_POSITIONS = [officerCorp, seniorCorp, equalCorp, juniorCorp, seniorDans, managerDans];
+
+// position.findMany as the database would answer the queries
+// reportingLineService makes.
+const positionsWhere = async ({ where }) => ALL_POSITIONS.filter((p) => p.status === 'Approved'
+  && (where.departmentId === undefined || p.departmentId === where.departmentId)
+  && (where.department?.directorateId === undefined || p.department.directorateId === where.department.directorateId)
+  && (where.level === undefined || (typeof where.level === 'number' ? p.level === where.level : p.level > where.level.gt)));
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -44,6 +56,8 @@ beforeEach(() => {
 });
 
 describe('create', () => {
+  beforeEach(() => prisma.position.findMany.mockImplementation(positionsWhere));
+
   // FR: a vacancy is created only from an uploaded, EXCO-approved requisition.
   test('refuses without a usable requisition, passing on why', async () => {
     prisma.position.findUnique.mockResolvedValue(officerCorp);
@@ -200,7 +214,7 @@ describe('create', () => {
     await vacancyController.create(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'The selected "Reports To" position must be in the same department' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'The selected "Reports To" position must be more senior and in the same directorate (or the Director General, for a Director)' });
     expect(prisma.vacancy.create).not.toHaveBeenCalled();
   });
 
@@ -258,6 +272,19 @@ describe('create', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(prisma.vacancy.create).not.toHaveBeenCalled();
+  });
+
+  test('accepts the head of the directorate, in another department, for a Manager', async () => {
+    prisma.position.findUnique.mockImplementation(({ where: { id } }) => Promise.resolve(ALL_POSITIONS.find((p) => p.id === id) || null));
+    prisma.vacancy.create.mockResolvedValue({ id: 1 });
+    const res = mockRes();
+
+    await vacancyController.create({ body: { positionId: '201', postingType: 'External', reportsToPositionId: '200' }, user: { id: 1 } }, res);
+
+    expect(prisma.vacancy.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ reportsToPositionId: 200 })
+    }));
+    expect(res.status).toHaveBeenCalledWith(201);
   });
 
   test('rejects a lower-level Reports To position', async () => {
@@ -859,6 +886,26 @@ describe('transitionPostingType', () => {
     expect(prisma.vacancy.update).not.toHaveBeenCalled();
   });
 
+  test('keeping a deadline from before closing times (23:59:59.999, sent back as 23:59) is not a change', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open', postingType: 'Internal', postingTypeLocked: false, deadline: new Date('2000-01-01T20:59:59.999Z') });
+    prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open', postingType: 'External' });
+    const res = mockRes();
+    await vacancyController.transitionPostingType({
+      params: { id: '1' }, body: { postingType: 'External', deadline: '2000-01-01T23:59' }, user: { id: 2, role: 'Manager' }
+    }, res);
+    expect(res.status).not.toHaveBeenCalledWith(400);
+    expect(prisma.vacancy.update.mock.calls[0][0].data).not.toHaveProperty('deadline');
+  });
+
+  test('a chosen closing time is kept, read as Kampala time', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open', postingType: 'Internal', postingTypeLocked: false, deadline: new Date('2000-01-01') });
+    prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open', postingType: 'External' });
+    await vacancyController.transitionPostingType({
+      params: { id: '1' }, body: { postingType: 'External', deadline: '2999-01-01T12:00' }, user: { id: 2, role: 'Manager' }
+    }, mockRes());
+    expect(prisma.vacancy.update.mock.calls[0][0].data.deadline).toEqual(new Date('2999-01-01T09:00:00.000Z'));
+  });
+
   test('extends the deadline to a valid future date as part of the transition', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open', postingType: 'Internal', postingTypeLocked: false, deadline: new Date('2000-01-01') });
     prisma.vacancy.update.mockResolvedValue({ id: 1, status: 'Open', postingType: 'External' });
@@ -867,8 +914,8 @@ describe('transitionPostingType', () => {
       params: { id: '1' }, body: { postingType: 'External', deadline: '2999-01-01' }, user: { id: 2, role: 'Manager' }
     }, res);
     expect(prisma.vacancy.update).toHaveBeenCalledWith(expect.objectContaining({
-      // The whole of that day in Kampala (vacancyValidation.parseDeadline).
-      data: expect.objectContaining({ deadline: new Date('2999-01-01T20:59:59.999Z'), postingTypeLocked: true })
+      // 5:00pm that day in Kampala (vacancyValidation.parseDeadline).
+      data: expect.objectContaining({ deadline: new Date('2999-01-01T14:00:00.000Z'), postingTypeLocked: true })
     }));
   });
 });

@@ -15,6 +15,7 @@ require('dotenv').config();
 const prisma = require('../src/config/db');
 const hiringManagers = require('../src/services/hiringManagerService');
 const { notify } = require('../src/services/notificationService');
+const { formatDeadline } = require('../src/utils/interviewFormat');
 
 async function run() {
   const now = new Date();
@@ -42,7 +43,7 @@ async function run() {
       ? 'The review queue is already open.'
       : 'Open the review queue from the vacancy page to begin screening.';
     const message = `The application deadline for ${vacancy.jobRef} (${vacancy.title}) passed on `
-      + `${vacancy.deadline.toLocaleDateString()}. ${applicationCount} application${applicationCount === 1 ? '' : 's'} `
+      + `${formatDeadline(vacancy.deadline)}. ${applicationCount} application${applicationCount === 1 ? '' : 's'} `
       + `${applicationCount === 1 ? 'was' : 'were'} received. ${reviewNote}`;
 
     await notify(vacancy.createdById, 'VacancyDeadlinePassed', vacancy.id, message);

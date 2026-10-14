@@ -81,6 +81,7 @@ async function listDirectorates() {
   const rows = await prisma.directorate.findMany({
     include: {
       createdBy: STAFF_NAME, approvedBy: STAFF_NAME, import: IMPORT,
+      headPosition: { select: { id: true, name: true, department: { select: { id: true, name: true } } } },
       departments: { select: { status: true, _count: { select: { positions: true } } } }
     },
     orderBy: { code: 'asc' }
@@ -140,6 +141,18 @@ async function editedFields(entityType, row, body) {
       if (field in body) data[field] = clean(body[field]) || null;
     }
     if (data.directorEmail && !EMAIL_RE.test(data.directorEmail)) throw fail("The director's email doesn't look right", 400);
+    // The head of the directorate (its Director; the DDG for Corporate) -
+    // an approved position in one of its own departments.
+    if ('headPositionId' in body) {
+      const headId = body.headPositionId === null || body.headPositionId === '' ? null : Number(body.headPositionId);
+      if (headId !== null) {
+        const head = Number.isInteger(headId) && await prisma.position.findUnique({ where: { id: headId }, include: { department: true } });
+        if (!head || head.status !== 'Approved' || head.department.directorateId !== row.id) {
+          throw fail('The head of the directorate must be an approved position in one of its departments', 400);
+        }
+      }
+      data.headPositionId = headId;
+    }
     if (data.code !== undefined && await taken(model, { code: data.code }, row.id)) throw fail(`Another directorate already has the code ${data.code}`, 409, 'ORG_DUPLICATE');
     if (data.name !== undefined && await taken(model, { name: data.name }, row.id)) throw fail(`Another directorate is already called ${data.name}`, 409, 'ORG_DUPLICATE');
   }

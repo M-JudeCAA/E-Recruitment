@@ -24,6 +24,11 @@ const POSITIONS = [
   { id: 102, name: 'Manager Human Resources', departmentId: 1, level: 3 }
 ];
 
+// position.findMany as the database would answer it: by department, and
+// above a level for the Reports-to options.
+const positionsWhere = (list) => async ({ where }) => list.filter((p) => p.departmentId === where.departmentId
+  && (where.level === undefined || (typeof where.level === 'number' ? p.level === where.level : p.level > where.level.gt)));
+
 let n = 0;
 async function store(buffer, ext = 'docx') {
   n += 1;
@@ -44,7 +49,7 @@ function storeSigned(content = '%PDF-1.4 scanned signatures', ext = 'pdf') {
 beforeEach(() => {
   jest.clearAllMocks();
   prisma.department.findMany.mockResolvedValue(DEPARTMENTS);
-  prisma.position.findMany.mockImplementation(async ({ where }) => POSITIONS.filter((p) => p.departmentId === where.departmentId));
+  prisma.position.findMany.mockImplementation(positionsWhere(POSITIONS));
   prisma.vacancy.findFirst.mockResolvedValue(null);
 });
 
@@ -126,6 +131,100 @@ describe('organogram matching', () => {
       department: { value: 'Human Resources' }, jobTitle: { value: 'Senior HR Officer' }, reportsTo: { value: 'HR Analyst' }
     });
     expect(junior.reportsTo).toBeNull();
+  });
+
+  test('a Manager is matched to the head of the directorate - the DDG for Corporate - when the document names no one', async () => {
+    const ddg = { id: 900, name: 'Deputy Director General', departmentId: 9, level: 5, status: 'Approved', department: { id: 9, code: 'DG OFFICE', name: "Director General's Office" } };
+    prisma.department.findMany.mockResolvedValue([{ id: 1, name: 'Human Resources', directorate: { ...corporate, headPositionId: 900 } }]);
+    prisma.position.findMany.mockImplementation(positionsWhere([...POSITIONS, { id: 104, name: 'Manager Administration', departmentId: 1, level: 4 }]));
+    prisma.position.findUnique.mockResolvedValue(ddg);
+
+    const manager = await requisitionService.matchOrganogram({ department: { value: 'Human Resources' }, jobTitle: { value: 'Manager Administration' } });
+    expect(manager.reportsTo).toEqual({ id: 900, name: 'Deputy Director General', confidence: 'medium' });
+
+    const named = await requisitionService.matchOrganogram({
+      department: { value: 'Human Resources' }, jobTitle: { value: 'Manager Administration' }, reportsTo: { value: 'Deputy Director General' }
+    });
+    expect(named.reportsTo).toEqual({ id: 900, name: 'Deputy Director General', confidence: 'high' });
+  });
+});
+
+describe('a job advertisement (names no department)', () => {
+  // Corporate, with no head named yet: the DG and the DDG in the DG Office,
+  // Manager Marketing & Commercial in MCCS. Another directorate has a
+  // position with the same title.
+  const corp = { id: 20, code: 'CORP', name: 'Corporate', status: 'Approved', headPositionId: null };
+  const dans = { id: 30, code: 'DANS', name: 'Air Navigation Services', status: 'Approved', headPositionId: null };
+  const mccs = { id: 7, code: 'MCCS', name: 'Marketing, Commercial and Customer Service', directorateId: 20, directorate: corp };
+  const dgOffice = { id: 9, code: 'DG OFFICE', name: "Director General's Office", directorateId: 20, directorate: corp };
+  const dansMarketing = { id: 8, code: 'MKT', name: 'Marketing', directorateId: 30, directorate: dans };
+  const ORG = [
+    { id: 70, name: 'Manager Marketing & Commercial', departmentId: 7, level: 4, status: 'Approved', department: mccs },
+    { id: 80, name: 'Manager Marketing & Commercial', departmentId: 8, level: 4, status: 'Approved', department: dansMarketing },
+    { id: 300, name: 'Deputy Director General', departmentId: 9, level: 5, status: 'Approved', department: dgOffice },
+    { id: 301, code: 'DG', name: 'Director General', departmentId: 9, level: 5, status: 'Approved', department: dgOffice }
+  ];
+
+  beforeEach(() => {
+    prisma.department.findMany.mockResolvedValue([mccs, dgOffice, dansMarketing]);
+    prisma.position.findMany.mockImplementation(async ({ where }) => ORG.filter((p) => (where.departmentId === undefined
+      || (typeof where.departmentId === 'object' ? p.departmentId !== where.departmentId.not : p.departmentId === where.departmentId))
+      && (where.department?.directorateId === undefined || p.department.directorateId === where.department.directorateId)
+      && (where.level === undefined || (typeof where.level === 'number' ? p.level === where.level : p.level > where.level.gt))
+      && (!where.OR || where.OR.some((c) => (c.code && p.code === c.code) || (c.name && p.name.includes(c.name.contains))))));
+  });
+
+  const ADVERT = {
+    directorate: { value: 'Corporate' }, jobTitle: { value: 'MANAGER MARKETING & COMMERCIAL' }, reportsTo: { value: 'DEPUTY DIRECTOR GENERAL' }
+  };
+
+  test('finds the department from the job title within the directorate, and reports-to from the document', async () => {
+    const result = await requisitionService.matchOrganogram(ADVERT);
+    expect(result.department).toEqual(expect.objectContaining({ id: 7, confidence: 'medium' }));
+    expect(result.warnings).toContain('The document names no department - Marketing, Commercial and Customer Service is where the job title sits on the organogram; check it.');
+    expect(result.position).toEqual(expect.objectContaining({ id: 70 }));
+    expect(result.reportsTo).toEqual({ id: 300, name: 'Deputy Director General', confidence: 'high' });
+  });
+
+  test('without the directorate, a title on two departments is left for HR', async () => {
+    const result = await requisitionService.matchOrganogram({ ...ADVERT, directorate: undefined });
+    expect(result.department).toBeNull();
+  });
+
+  test('says where a reports-to is when it is outside the job\'s directorate', async () => {
+    const result = await requisitionService.matchOrganogram({ ...ADVERT, directorate: { value: 'Air Navigation Services' } });
+    expect(result.position.id).toBe(80);
+    expect(result.reportsTo).toBeNull();
+    expect(result.warnings.join(' ')).toMatch(/Deputy Director General \(Director General's Office\), which is not above this job in its directorate/);
+  });
+});
+
+describe('prefill from a job advertisement', () => {
+  const fields = {
+    jobPurpose: { value: ['To lead marketing.'] },
+    principalAccountabilities: {
+      value: ['Understands the focus.', 'Monitors costs.'],
+      groups: [{ heading: 'Strategic Planning', items: ['Understands the focus.'] }, { heading: 'Financial Management', items: ['Monitors costs.'] }]
+    }
+  };
+
+  test('the accountabilities go into the advert numbered, each with its activities', () => {
+    expect(requisitionService.jobPurposeHtml(fields)).toBe('<p>To lead marketing.</p><p><strong>Principal Accountabilities</strong></p><ol>'
+      + '<li><strong>Strategic Planning</strong><ul><li>Understands the focus.</li></ul></li>'
+      + '<li><strong>Financial Management</strong><ul><li>Monitors costs.</li></ul></li></ol>');
+  });
+
+  test('the closing date fills the deadline and its time only while it is ahead - 5:00pm when the document gives no time', () => {
+    expect(requisitionService.prefillFrom({ deadline: { value: '2999-01-31T12:00' } }, {})).toEqual(expect.objectContaining({ deadline: '2999-01-31', deadlineTime: '12:00' }));
+    expect(requisitionService.prefillFrom({ deadline: { value: '2999-01-31' } }, {})).toEqual(expect.objectContaining({ deadline: '2999-01-31', deadlineTime: '17:00' }));
+    expect(requisitionService.prefillFrom({ deadline: { value: '2020-05-29T17:00' } }, {})).not.toHaveProperty('deadline');
+  });
+
+  test('the deadline as sent ("day T time") is the same as the prefill\'s day and time - changing either is an edit', () => {
+    const prefill = { deadline: '2999-01-31', deadlineTime: '17:00' };
+    expect(requisitionService.editedFields(prefill, { deadline: '2999-01-31T17:00' })).toEqual([]);
+    expect(requisitionService.editedFields(prefill, { deadline: '2999-01-31T12:00' })).toEqual(['deadline']);
+    expect(requisitionService.editedFields(prefill, { deadline: '2999-02-01T17:00' })).toEqual(['deadline']);
   });
 });
 

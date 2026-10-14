@@ -6,6 +6,7 @@ const vacancyDraftModel = require('../models/vacancyDraftModel');
 const applicationModel = require('../models/applicationModel');
 const positionModel = require('../models/positionModel');
 const orgApproval = require('../services/orgApprovalService');
+const reportingLines = require('../services/reportingLineService');
 const offerModel = require('../models/offerModel');
 const workflow = require('../services/workflowService');
 const audit = require('../services/auditService');
@@ -126,17 +127,19 @@ async function create(req, res) {
   if (questionError) fieldErrors.push(questionError);
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
-  // Reports-To must be a genuinely senior position in the exact same
-  // department record - not merely a department with a matching name
-  // (the "CWG appears under five directorates" case).
+  // Reports-To must be one of reportingLineService's options: a genuinely
+  // senior position in the same directorate record - not merely one with a
+  // matching department name elsewhere (the "CWG appears under five
+  // directorates" case) - or, for a Director, the Director General.
   let validatedReportsToId = null;
   if (reportsToPositionId) {
     const reportsTo = await positionModel.findById(Number(reportsToPositionId));
-    if (!reportsTo || reportsTo.departmentId !== position.departmentId || reportsTo.status !== 'Approved') {
-      return res.status(400).json({ error: 'The selected "Reports To" position must be in the same department' });
-    }
-    if (reportsTo.level <= position.level) {
-      return res.status(400).json({ error: 'The selected "Reports To" position must be senior to the vacancy’s own position' });
+    const { options } = await reportingLines.optionsFor(position);
+    if (!reportsTo || !options.some((o) => o.id === reportsTo.id)) {
+      if (reportsTo && reportsTo.departmentId === position.departmentId && reportsTo.status === 'Approved' && reportsTo.level <= position.level) {
+        return res.status(400).json({ error: 'The selected "Reports To" position must be senior to the vacancy’s own position' });
+      }
+      return res.status(400).json({ error: 'The selected "Reports To" position must be more senior and in the same directorate (or the Director General, for a Director)' });
     }
     validatedReportsToId = reportsTo.id;
   }
@@ -435,10 +438,12 @@ async function update(req, res) {
   // Moving the deadline of a vacancy candidates can already see - extending
   // or shortening it - needs a reason (FR-ATS-027). Before approval it's
   // just drafting.
-  // Compared by calendar day: the edit form sends a plain date, and
-  // re-saving an untouched form must not count as moving the deadline.
-  const dayOf = (d) => (d ? d.toISOString().slice(0, 10) : null);
-  const deadlineMoved = data.deadline !== undefined && dayOf(data.deadline) !== dayOf(vacancy.deadline);
+  // Compared to the minute: the edit form sends the day and the closing
+  // time, and re-saving an untouched form must not count as moving it (a
+  // deadline from before closing times were kept is 23:59:59.999, which
+  // the form shows as 23:59).
+  const minuteOf = (d) => (d ? Math.floor(d.getTime() / 60000) : null);
+  const deadlineMoved = data.deadline !== undefined && minuteOf(data.deadline) !== minuteOf(vacancy.deadline);
   const published = ['Open', 'PartiallyFilled', 'Filled', 'Closed'].includes(vacancy.status);
   const reason = reasonFrom(req.body);
   if (deadlineMoved && published && !reason) {
@@ -815,9 +820,11 @@ async function transitionPostingType(req, res) {
   // leave it as-is. Only re-validate "not in the past" when it's actually
   // being changed - re-sending the vacancy's own already-past deadline
   // unchanged (the "kept as is" choice) must still be accepted.
-  const currentDeadlineTime = vacancy.deadline ? vacancy.deadline.getTime() : null;
+  // Compared to the minute, as the form sends it (a deadline from before
+  // closing times were kept is 23:59:59.999, sent back as 23:59).
+  const minuteOf = (d) => (d ? Math.floor(d.getTime() / 60000) : null);
   const newDeadline = deadline !== undefined ? parseDeadline(deadline) : undefined;
-  const deadlineChanged = newDeadline !== undefined && (newDeadline?.getTime() ?? null) !== currentDeadlineTime;
+  const deadlineChanged = newDeadline !== undefined && minuteOf(newDeadline) !== minuteOf(vacancy.deadline);
   if (deadlineChanged) {
     const fieldErrors = validateVacancyEditableFields({ deadline });
     if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
@@ -847,11 +854,11 @@ async function transitionPostingType(req, res) {
     postingTypeChangedById: req.user.id,
     postingTypeChangedByRole: req.user.role,
     postingTypeLocked: wasDeadlinePassed ? true : vacancy.postingTypeLocked,
-    ...(newDeadline !== undefined ? { deadline: newDeadline } : {})
+    ...(deadlineChanged ? { deadline: newDeadline } : {})
   });
 
   await workflow.logVacancyPostingTypeTransition(vacancyId, vacancy.postingType, postingType, req.user.id);
-  if (newDeadline !== undefined) {
+  if (deadlineChanged) {
     await audit.record({
       entityType: 'Vacancy', entityId: vacancyId, action: 'Vacancy edited', actor: audit.actorFrom(req),
       before: vacancy, after: updated, fields: ['deadline', 'postingTypeLocked']

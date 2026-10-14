@@ -1,6 +1,7 @@
 import React from 'react';
 import HowToApplyBlock from './HowToApplyBlock';
 import StatusBadge from './StatusBadge';
+import { formatDeadline } from '../utils/deadline';
 
 // Renders a vacancy in UCAA's standard job-advertisement layout (header
 // facts, Job Purpose, Person Specification, How to Apply). Shared between
@@ -41,7 +42,7 @@ export default function VacancyAdvert({
     ['Employment Category', EMPLOYMENT_CATEGORY_LABELS[employmentCategory]],
     ['Salary Scale', salaryScale],
     ['Vacancies', positionsRequired],
-    ['Application Deadline', deadline ? new Date(deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : null],
+    ['Application Deadline', deadline ? formatDeadline(deadline) : null],
   ].filter(([, value]) => value);
 
   const ageRequirementText = [minimumAge ? `${minimumAge}+` : null, maximumAge ? `${maximumAge} or under` : null].filter(Boolean).join(', ');

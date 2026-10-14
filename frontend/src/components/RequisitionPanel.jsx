@@ -96,8 +96,22 @@ function describe(key, field) {
     const parts = [value.minimumAge && `at least ${value.minimumAge}`, value.maximumAge && `not above ${value.maximumAge}`].filter(Boolean);
     return `${parts.join(', ')}${field.raw ? ` ("${field.raw}")` : ''}`;
   }
+  if (key === 'deadline') {
+    // "2026-05-29T17:00" (the time when the document gives one) - the
+    // document's own wording, not converted between time zones.
+    const [day, time] = value.split('T');
+    const date = new Date(`${day}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+    if (!time) return `${date} (no time given - 5:00pm)`;
+    const [h, m] = time.split(':').map(Number);
+    return `${date}, ${h % 12 || 12}:${String(m).padStart(2, '0')}${h < 12 ? 'am' : 'pm'}`;
+  }
   if (Array.isArray(value)) {
     if (key === 'jobPurpose') return shorten(value.join(' '));
+    // The JD table: accountabilities, each with its activities.
+    if (field.groups?.length) {
+      const titled = field.groups.filter((g) => g.heading);
+      return `${titled.length} accountabilit${titled.length === 1 ? 'y' : 'ies'}, ${value.length} activit${value.length === 1 ? 'y' : 'ies'} - ${shorten(titled.map((g) => g.heading).join('; '))}`;
+    }
     return `${value.length} item${value.length === 1 ? '' : 's'} - ${shorten(value[0])}`;
   }
   return shorten(String(value));

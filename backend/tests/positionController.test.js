@@ -147,6 +147,18 @@ describe('listSeniorOptions', () => {
       orderBy: { level: 'asc' }
     });
   });
+
+  test('adds the directorate head for a Manager and marks it suggested', async () => {
+    const director = { id: 500, name: 'Director HRA', departmentId: 9, level: 5, status: 'Approved', department: { id: 9, name: "Director's Office - HRA" } };
+    prisma.position.findUnique.mockImplementation(async ({ where }) => (where.id === 500 ? director
+      : { id: 100, departmentId: 1, level: 4, department: { id: 1, directorate: { id: 10, headPositionId: 500 } } }));
+    prisma.position.findMany.mockResolvedValue([]);
+    const res = mockRes();
+
+    await positionController.listSeniorOptions({ params: { id: '100' } }, res);
+
+    expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ id: 500, directorateHead: true, outsideDepartment: true, suggested: true })]);
+  });
 });
 
 describe('listByDepartment', () => {

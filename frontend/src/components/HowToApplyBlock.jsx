@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDeadlineDay, formatDeadlineTime } from '../utils/deadline';
 
 // UCAA's standard "How to Apply" instructions, matching the wording used
 // on every UCAA job advertisement. Deliberately NOT an HR-editable field
@@ -15,7 +16,7 @@ export const HEAD_OFFICE_CONTACTS = ['+256 414 352000', '+256 312 352000', '+256
 export default function HowToApplyBlock({ deadline }) {
   const siteUrl = typeof window !== 'undefined' ? window.location.origin : '';
   const deadlineText = deadline
-    ? `Applications must be received not later than 5:00pm, ${new Date(deadline).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}.`
+    ? `Applications must be received not later than ${formatDeadlineTime(deadline)}, ${formatDeadlineDay(deadline)}.`
     : null;
 
   return (
