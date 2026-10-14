@@ -330,7 +330,11 @@ function comparable(key, value) {
 function editedFields(prefill, body) {
   // The prefill holds the closing time apart (the form's time field).
   const read = prefill.deadline && prefill.deadlineTime ? { ...prefill, deadline: `${prefill.deadline}T${prefill.deadlineTime}` } : prefill;
-  return COMPARED_FIELDS.filter((key) => key in body && comparable(key, read[key]) !== comparable(key, body[key]));
+  return COMPARED_FIELDS.filter((key) => key in body
+    // Most requisitions give no closing date - HR always sets the deadline,
+    // so it departs from the document only when the document gave one.
+    && !(key === 'deadline' && !read.deadline)
+    && comparable(key, read[key]) !== comparable(key, body[key]));
 }
 
 // The scan of the signed requisition, just uploaded (multer has stored it).
