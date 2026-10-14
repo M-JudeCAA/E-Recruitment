@@ -45,6 +45,21 @@ module.exports = {
     }
   }),
 
+  // A vacancy for staff (the vacancy page, the approval review): the same
+  // details plus who raised, approved and last changed the posting type of
+  // it. Never handed to a candidate (toPublicVacancy would not strip these).
+  findByIdForStaff: (id) => prisma.vacancy.findUnique({
+    where: { id },
+    include: {
+      department: { include: { directorate: true } },
+      position: true,
+      reportsToPosition: true,
+      createdBy: { select: { id: true, name: true } },
+      approvedBy: { select: { id: true, name: true } },
+      postingTypeChangedBy: { select: { id: true, name: true } }
+    }
+  }),
+
   findManyForAdmin: (where) => prisma.vacancy.findMany({
     where,
     include: {

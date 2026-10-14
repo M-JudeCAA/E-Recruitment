@@ -961,9 +961,12 @@ async function progress(req, res) {
 async function getOne(req, res) {
   const vacancyId = Number(req.params.id);
   if (!Number.isInteger(vacancyId)) return res.status(404).json({ error: 'Not found' });
-  const vacancy = await vacancyModel.findByIdWithDetails(vacancyId);
+  const staff = req.user?.type === 'staff';
+  // Staff also see who raised and approved it ("Raised by" on the vacancy
+  // page and the approval review); candidates and guests never get those.
+  const vacancy = staff ? await vacancyModel.findByIdForStaff(vacancyId) : await vacancyModel.findByIdWithDetails(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Not found' });
-  if (req.user?.type === 'staff') {
+  if (staff) {
     try {
       await conflictOfInterest.assertNotApplicant(req, vacancyId);
     } catch (err) {
