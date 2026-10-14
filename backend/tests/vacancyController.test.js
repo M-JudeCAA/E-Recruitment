@@ -1117,6 +1117,21 @@ describe('getOne', () => {
     expect(returned.approvedByRole).toBe('Manager');
   });
 
+  test('tells staff who raised and approved it ("Raised by"); candidates never get those names', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy, createdBy: { id: 1, name: 'Alice HR' }, approvedBy: { id: 2, name: 'Mary Manager' } });
+    const res = mockRes();
+    await vacancyController.getOne({ params: { id: '5' }, user: { type: 'staff' } }, res);
+
+    expect(prisma.vacancy.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({ createdBy: { select: { id: true, name: true } }, approvedBy: { select: { id: true, name: true } } })
+    }));
+    expect(res.json.mock.calls[0][0].createdBy).toEqual({ id: 1, name: 'Alice HR' });
+
+    prisma.vacancy.findUnique.mockClear();
+    await vacancyController.getOne({ params: { id: '5' }, user: candidate('External') }, mockRes());
+    expect(prisma.vacancy.findUnique.mock.calls[0][0].include).not.toHaveProperty('createdBy');
+  });
+
   test('hides a vacancy still awaiting approval from an anonymous visitor', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ ...fullVacancy, status: 'PendingApproval' });
     const res = mockRes();
