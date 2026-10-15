@@ -228,6 +228,8 @@ test('the template downloads as a workbook, and positions are created with level
   const dept = await prisma.department.findFirst({ where: { code: 'HR' } });
   const created = expectStatus(await api(tokens.hro).post('/api/positions', { code: 'PHRO', name: 'Principal HR Officer', departmentId: dept.id, level: 'Principal' }), 201).body;
   expect([created.level, created.status]).toEqual([5, 'Pending']);
-  expect((await api(tokens.hro).post('/api/positions', { code: 'X', name: 'X', departmentId: dept.id, level: 'Chief' })).body.error)
-    .toBe('Level must be one of: Officer, Senior, Principal, Manager, Director');
+  expect((await api(tokens.hro).post('/api/positions', { code: 'X', name: 'X', departmentId: dept.id, level: 'Clerk' })).body.error)
+    .toBe('Level must be one of: Assistant, Assistant Officer, Officer, Senior Officer, Principal, Chief, Manager, Director');
+  // Chief is one of the eight now.
+  expect(expectStatus(await api(tokens.hro).post('/api/positions', { code: 'CHRO', name: 'Chief HR Officer', departmentId: dept.id, level: 'Chief' }), 201).body.level).toBe(6);
 });
