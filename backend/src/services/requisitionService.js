@@ -150,7 +150,7 @@ async function matchOrganogram(fields) {
       // Say where it is when it exists but can't be chosen for this job.
       const anywhere = bestMatch(await positionModel.findAllForDropdown(), fields.reportsTo.value, 'Reports to');
       warnings.push(anywhere.match
-        ? `Reports to "${fields.reportsTo.value}" is ${anywhere.match.name} (${anywhere.match.department?.name}), which is not above this job in its directorate - pick who it reports to from the list.`
+        ? `Reports to "${fields.reportsTo.value}" is ${anywhere.match.name} (${anywhere.match.department?.name}), which this job can't report to (only someone more senior in its department, or the head of the directorate) - pick who it reports to from the list.`
         : rep.warning);
     }
   } else if (suggestedId) {
