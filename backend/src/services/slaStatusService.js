@@ -33,13 +33,13 @@ const ORG_TASKS = {
   DepartmentApproval: {
     model: 'department',
     select: { name: true, directorate: { select: { name: true, code: true } } },
-    label: (r) => `${r.name} (${r.directorate.code || r.directorate.name})`,
+    label: (r) => (r.directorate ? `${r.name} (${r.directorate.code || r.directorate.name})` : r.name),
     to: '/hr/organisation/departments'
   },
   PositionApproval: {
     model: 'position',
     select: { name: true, department: { select: { name: true, directorate: { select: { name: true, code: true } } } } },
-    label: (r) => `${r.name} in ${r.department.name} (${r.department.directorate.code || r.department.directorate.name})`,
+    label: (r) => `${r.name} in ${r.department.name}${r.department.directorate ? ` (${r.department.directorate.code || r.department.directorate.name})` : ''}`,
     to: '/hr/organisation/positions'
   }
 };

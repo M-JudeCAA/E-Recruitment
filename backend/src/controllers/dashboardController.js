@@ -154,7 +154,7 @@ async function activity(req, res) {
       type: 'DepartmentApproved',
       at: d.approvedAt,
       actor: d.approvedBy?.name || null,
-      text: `approved department ${d.name} (${d.directorate.name})`
+      text: `approved department ${d.name}${d.directorate ? ` (${d.directorate.name})` : ''}`
     }))
   ]
     .sort((a, b) => new Date(b.at) - new Date(a.at))
@@ -172,9 +172,8 @@ async function headcountByDirectorate(req, res) {
 
   const byDirectorate = {};
   for (const v of vacancies) {
-    // department/directorate are non-nullable FKs on Vacancy/Department -
-    // always present, never defensively coded around.
-    const name = v.department.directorate.name;
+    // A department can sit outside every directorate (the DG's Office).
+    const name = v.department.directorate?.name || 'No directorate';
     if (!byDirectorate[name]) {
       byDirectorate[name] = { directorate: name, Open: 0, PartiallyFilled: 0, Filled: 0, totalPositions: 0 };
     }

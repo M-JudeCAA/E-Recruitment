@@ -39,7 +39,8 @@ function PositionForm({ editing, presetDepartment, departments, isReviewer, onCl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   // New positions go only into approved departments under approved directorates.
-  const usable = departments.filter((d) => d.status === 'Approved' && d.directorate?.status === 'Approved');
+  // A department outside every directorate (directorate null) is usable once approved.
+  const usable = departments.filter((d) => d.status === 'Approved' && (!d.directorate || d.directorate.status === 'Approved'));
 
   const submit = async (e) => {
     e.preventDefault();
@@ -68,12 +69,12 @@ function PositionForm({ editing, presetDepartment, departments, isReviewer, onCl
         <CodeAndName form={form} setForm={setForm} word="position" showErrors={showErrors} nameLabel="Full title"
           codePlaceholder="HRO" namePlaceholder="Human Resource Officer" codeHint="Unique in its department" />
         {editing ? (
-          <KeyValues rows={[['Department', `${editing.department?.name} (${editing.department?.code}) · ${editing.department?.directorate?.code}`]]} />
+          <KeyValues rows={[['Department', `${editing.department?.name} (${editing.department?.code})${editing.department?.directorate ? ` · ${editing.department.directorate.code}` : ''}`]]} />
         ) : (
           <Select label="Department" required value={form.departmentId} error={showErrors && !form.departmentId ? 'Choose its department' : null}
             onChange={(e) => setForm({ ...form, departmentId: e.target.value })}>
             <option value="">Select a department</option>
-            {usable.map((d) => <option key={d.id} value={d.id}>{d.directorate.code} — {d.name} ({d.code})</option>)}
+            {usable.map((d) => <option key={d.id} value={d.id}>{d.directorate ? `${d.directorate.code} — ` : ''}{d.name} ({d.code})</option>)}
           </Select>
         )}
         <Select label="Level" value={form.level} onChange={(e) => setForm({ ...form, level: Number(e.target.value) })}>
@@ -213,7 +214,7 @@ export default function PositionsPage() {
 
   const blockedBy = open && [open.vacancyCount && countLabel(open.vacancyCount, 'vacancy', 'vacancies'),
     open.reportingVacancyCount && `${countLabel(open.reportingVacancyCount, 'vacancy', 'vacancies')} reporting to it`].filter(Boolean);
-  const notUsable = open && open.status === 'Approved' && (open.department?.status !== 'Approved' || open.department?.directorate?.status !== 'Approved');
+  const notUsable = open && open.status === 'Approved' && (open.department?.status !== 'Approved' || (open.department?.directorate && open.department.directorate.status !== 'Approved'));
 
   return (
     <div style={{ display: 'flex', gap: 'var(--spacing-lg)', alignItems: 'flex-start' }}>

@@ -1,8 +1,12 @@
 const prisma = require('../config/db');
 
-// Only an approved position in an approved department under an approved
-// directorate can be chosen on a vacancy (orgApprovalService.usablePosition).
-const USABLE = { status: 'Approved', department: { status: 'Approved', directorate: { status: 'Approved' } } };
+// Only an approved position in an approved department, under an approved
+// directorate or none, can be chosen on a vacancy
+// (orgApprovalService.usablePosition).
+const USABLE = {
+  status: 'Approved',
+  department: { status: 'Approved', OR: [{ directorateId: null }, { directorate: { status: 'Approved' } }] }
+};
 
 module.exports = {
   create: (data) => prisma.position.create({ data }),

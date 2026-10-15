@@ -116,7 +116,7 @@ async function notifyImportPending(req, result) {
 }
 
 const PARENT = {
-  Department: async (row) => (await prisma.directorate.findUnique({ where: { id: row.directorateId } })),
+  Department: async (row) => (row.directorateId ? prisma.directorate.findUnique({ where: { id: row.directorateId } }) : null),
   Position: async (row) => (await prisma.department.findUnique({ where: { id: row.departmentId } }))
 };
 
@@ -215,11 +215,12 @@ async function approveImport(req, importId) {
 }
 
 // Whether a position (loaded with department.directorate) may be used on a
-// vacancy: it, its department and its directorate all Approved.
+// vacancy: it, its department and its directorate all Approved - or the
+// department sits outside every directorate.
 function usablePosition(position) {
   return Boolean(position && position.status === 'Approved'
     && position.department?.status === 'Approved'
-    && position.department?.directorate?.status === 'Approved');
+    && (position.department.directorate ? position.department.directorate.status === 'Approved' : !position.department.directorateId));
 }
 
 // Recent organisation changes, newest first, for the Organisation page.

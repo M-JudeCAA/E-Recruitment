@@ -10,28 +10,33 @@ const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 // approved (services/orgApprovalService.js: a Principal HR Officer or above
 // approves their own at once unless they untick "Approve now"; anyone
 // else's waits for a PHRO+ who did not propose it). Each has a short code
-// (ARFFS) and its full name, both unique within its directorate.
+// (ARFFS) and its full name, both unique within its directorate. A
+// department can also sit outside every directorate (the Director
+// General's Office): directorateId null - unique among those.
 async function propose(req, res) {
   const code = normalizeCode(req.body.code);
   const name = clean(req.body.name);
   const invalid = codeError(code, 'department') || nameError(name, 'department');
   if (invalid) return res.status(400).json({ error: invalid });
 
-  const directorate = await directorateModel.findById(Number(req.body.directorateId));
-  if (!directorate || directorate.status === 'Rejected') {
-    return res.status(400).json({ error: 'Select a valid directorate' });
+  const noDirectorate = req.body.directorateId === null || req.body.directorateId === '';
+  const directorate = noDirectorate ? null : await directorateModel.findById(Number(req.body.directorateId));
+  if (!noDirectorate && (!directorate || directorate.status === 'Rejected')) {
+    return res.status(400).json({ error: 'Select a valid directorate, or no directorate' });
   }
+  const directorateId = directorate ? directorate.id : null;
+  const where = directorate ? 'under this directorate' : 'outside the directorates';
 
-  if (await departmentModel.findByCodeAndDirectorate(code, directorate.id)) {
-    return res.status(409).json({ error: `A department with the code ${code} already exists under this directorate` });
+  if (await departmentModel.findByCodeAndDirectorate(code, directorateId)) {
+    return res.status(409).json({ error: `A department with the code ${code} already exists ${where}` });
   }
-  if (await departmentModel.findByNameAndDirectorate(name, directorate.id)) {
-    return res.status(409).json({ error: 'A department with this name already exists under this directorate' });
+  if (await departmentModel.findByNameAndDirectorate(name, directorateId)) {
+    return res.status(409).json({ error: `A department with this name already exists ${where}` });
   }
 
   const state = await orgApproval.initialState(req);
   const department = await departmentModel.create({
-    code, name, directorateId: directorate.id, createdById: req.user.id, ...state.data
+    code, name, directorateId, createdById: req.user.id, ...state.data
   });
   await orgApproval.recordCreated(req, 'Department', department, state);
   broadcastDashboardEvent(state.autoApproved ? 'DepartmentApproved' : 'DepartmentPendingApproval', { departmentId: department.id });

@@ -45,6 +45,8 @@ const HEADINGS = 'Directorate code, Directorate name, Department code, Departmen
 const COLUMN_COUNT = 7;
 
 const key = (...parts) => parts.map((p) => clean(p).toLowerCase()).join('\u0000');
+// The scope of departments outside every directorate, in key().
+const NO_DIRECTORATE = 'no-directorate';
 
 // --- Reading the file -------------------------------------------------------
 
@@ -149,8 +151,8 @@ async function plan(rows, { canAddDirectorates }) {
   ]);
   const dirByCode = new Map(directorates.map((d) => [key(d.code), d]));
   const dirByName = new Map(directorates.map((d) => [key(d.name), d]));
-  const deptByCode = new Map(departments.map((d) => [key(d.directorateId, d.code), d]));
-  const deptByName = new Map(departments.map((d) => [key(d.directorateId, d.name), d]));
+  const deptByCode = new Map(departments.map((d) => [key(d.directorateId ?? NO_DIRECTORATE, d.code), d]));
+  const deptByName = new Map(departments.map((d) => [key(d.directorateId ?? NO_DIRECTORATE, d.name), d]));
   const posByName = new Map(positions.map((p) => [key(p.departmentId, p.name), p]));
   const posByCode = new Map(positions.filter((p) => p.code).map((p) => [key(p.departmentId, p.code), p]));
 
@@ -169,9 +171,12 @@ async function plan(rows, { canAddDirectorates }) {
     const warn = (message) => { out.status = 'warning'; out.messages.push(message); };
     const rejected = (what, item) => fail(`${what} was rejected${item.rejectionReason ? ` (${item.rejectionReason})` : ''} - it can't be imported again`);
 
-    if (!row.directorate) return fail('Directorate code is missing');
+    // Directorate code and name both blank: a department outside every
+    // directorate (the Director General's Office).
+    const noDirectorate = !row.directorate && !row.directorateName;
+    if (!row.directorate && !noDirectorate) return fail('Directorate code is missing - or leave the directorate name blank too for a department outside the directorates');
     if (!row.department) return fail('Department code is missing');
-    const badCode = codeError(row.directorate, 'directorate') || codeError(row.department, 'department')
+    const badCode = (!noDirectorate && codeError(row.directorate, 'directorate')) || codeError(row.department, 'department')
       || (row.positionCode && codeError(row.positionCode, 'position'));
     if (badCode) return fail(badCode);
     if ([row.directorateName, row.departmentName, row.position].some((v) => v.length > MAX_NAME)) return fail(`Names can be at most ${MAX_NAME} characters`);
@@ -188,9 +193,12 @@ async function plan(rows, { canAddDirectorates }) {
 
     // Directorate, by code
     const dirCode = row.directorate;
-    const existingDir = dirByCode.get(key(dirCode));
+    const existingDir = noDirectorate ? null : dirByCode.get(key(dirCode));
+    const where = noDirectorate ? 'outside the directorates' : `under ${dirCode}`;
     let dirScope;
-    if (existingDir) {
+    if (noDirectorate) {
+      dirScope = NO_DIRECTORATE;
+    } else if (existingDir) {
       if (existingDir.status === 'Rejected') return rejected(`Directorate ${dirCode}`, existingDir);
       if (existingDir.status === 'Pending') out.messages.push('Directorate is awaiting approval');
       if (row.directorateName && key(row.directorateName) !== key(existingDir.name)) {
@@ -218,24 +226,25 @@ async function plan(rows, { canAddDirectorates }) {
       dirScope = `new:${dirCode}`;
     }
 
-    // Department, by code within the directorate
+    // Department, by code within the directorate (or among those outside one)
     const deptCode = row.department;
-    const existingDept = existingDir ? deptByCode.get(key(existingDir.id, deptCode)) : null;
+    const knownScope = noDirectorate ? NO_DIRECTORATE : existingDir?.id;
+    const existingDept = knownScope !== undefined ? deptByCode.get(key(knownScope, deptCode)) : null;
     if (existingDept) {
-      if (existingDept.status === 'Rejected') return rejected(`Department ${deptCode} under ${dirCode}`, existingDept);
+      if (existingDept.status === 'Rejected') return rejected(`Department ${deptCode} ${where}`, existingDept);
       if (existingDept.status === 'Pending') out.messages.push('Department is awaiting approval');
       if (row.departmentName && key(row.departmentName) !== key(existingDept.name)) {
         warn(`Department ${deptCode} is "${existingDept.name}" in the system - the name in the file is not used`);
       }
     } else {
-      const sameName = existingDir && row.departmentName && deptByName.get(key(existingDir.id, row.departmentName));
-      if (sameName) return fail(`Department "${sameName.name}" already exists under ${dirCode} with the code ${sameName.code} - use that code`);
+      const sameName = knownScope !== undefined && row.departmentName && deptByName.get(key(knownScope, row.departmentName));
+      if (sameName) return fail(`Department "${sameName.name}" already exists ${where} with the code ${sameName.code} - use that code`);
       const deptKey = key(dirScope, deptCode);
       const earlier = newDepartments.get(deptKey);
       if (!earlier) {
         if (nameError(row.departmentName, 'department')) return fail(`Department ${deptCode} is new - give its full name in "Department name"`);
         const otherCode = newDepartmentNames.get(key(dirScope, row.departmentName));
-        if (otherCode) return fail(`"${row.departmentName}" is also given the code ${otherCode} under ${dirCode} in this file`);
+        if (otherCode) return fail(`"${row.departmentName}" is also given the code ${otherCode} ${where} in this file`);
         newDepartments.set(deptKey, { directorate: dirCode, code: deptCode, name: row.departmentName, rowNumber: row.rowNumber });
         newDepartmentNames.set(key(dirScope, row.departmentName), deptCode);
         out.creates.push('department');
@@ -342,6 +351,7 @@ async function run(file, { staffId, canAddDirectorates, autoApproved = false }) 
       dirIds.set(d.code, created.id);
     }
     const dirId = async (code) => {
+      if (!code) return null; // outside every directorate
       if (!dirIds.has(code)) {
         const found = await tx.directorate.findUnique({ where: { code } });
         dirIds.set(code, found.id);
@@ -422,6 +432,7 @@ async function template() {
     '',
     'Directorate code and name - its short code (e.g. DHRA, DANS, DF) and its full name (e.g. Human Resource and Administration).',
     'Department code and name - its short code and full name within that directorate. The same code under two directorates is two departments.',
+    'Leave the directorate code and name both blank for a department outside every directorate (e.g. the Director General’s Office).',
     `Position code and Position - the job's short code (e.g. HRO) and its full title. Level - its seniority: ${POSITION_LEVELS.map((l) => l.label).join(', ')} (most junior first).`,
     'Codes can have letters, digits, spaces and & / . - (at most 20 characters).',
     'A row with no Position, Position code and Level only makes sure the department exists.',

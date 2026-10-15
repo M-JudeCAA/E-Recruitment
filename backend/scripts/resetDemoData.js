@@ -1,13 +1,12 @@
 // Empties the database of everything except the staff accounts (StaffUser)
 // and the SLA policy table (configuration, not data), deletes the uploaded
-// files that belonged to it, then re-seeds the directorate/department list
-// (scripts/seedDepartments.js) so the org structure exists again. Job
+// files that belonged to it, then re-seeds UCAA's organisation structure -
+// directorates, departments and positions - from the workbook
+// (scripts/seedDepartments.js, scripts/data/ucaa-org-structure.xlsx). Job
 // references start again from 001.
 //
-// Leave it there for a clean start (no positions are seeded - add them
-// before the first vacancy, since a requisition is matched to the
-// organogram), or run scripts/seedFullWorkflowDemoData.js afterwards to
-// repopulate vacancies, candidates and the selection workflow.
+// Leave it there for a clean start, or run scripts/seedFullWorkflowDemoData.js
+// afterwards to repopulate vacancies, candidates and the selection workflow.
 //
 // --remove-demo-staff also deletes the demo staff accounts prisma/seed.js
 // creates (scripts/lib/demoStaff.js), so only real people's accounts remain.
@@ -149,11 +148,10 @@ async function main() {
   staff.forEach((s) => console.log(`  ${(s.role || (s.isSystemAdmin ? 'System admin' : 'no role')).padEnd(22)} ${s.email}`));
   await prisma.$disconnect();
 
-  console.log('\nRe-seeding directorates and departments ...');
+  console.log('\nRe-seeding the organisation structure (directorates, departments, positions) ...');
   const result = spawnSync(process.execPath, [path.join(__dirname, 'seedDepartments.js')], { stdio: 'inherit' });
   if (result.status !== 0) throw new Error('seedDepartments.js failed');
-  console.log('\nDone - a clean start. Before the first vacancy, add positions to the departments (Departments');
-  console.log('screen): a requisition is matched to the organogram, and none are seeded.');
+  console.log("\nDone - a clean start, with UCAA's organisation structure in place.");
   console.log('For demo data instead: node scripts/seedFullWorkflowDemoData.js');
 }
 

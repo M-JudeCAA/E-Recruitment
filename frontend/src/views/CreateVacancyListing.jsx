@@ -136,7 +136,7 @@ export default function CreateVacancyListing() {
   function groupDepartmentsByDirectorate(departments) {
     const groups = {};
     departments.forEach((dept) => {
-      const key = `${dept.directorate.code} — ${dept.directorate.name}`;
+      const key = dept.directorate ? `${dept.directorate.code} — ${dept.directorate.name}` : 'No directorate';
       if (!groups[key]) groups[key] = [];
       groups[key].push(dept);
     });

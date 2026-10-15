@@ -27,10 +27,14 @@ import {
 // nothing uses it.
 
 const emptyForm = { code: '', name: '', directorateId: '' };
+// The Directorate choice for a department outside every directorate (the
+// Director General's Office); sent to the API as directorateId null.
+const NO_DIRECTORATE = 'none';
+const directorateChoice = (directorateId) => (directorateId == null ? NO_DIRECTORATE : String(directorateId));
 
 function DepartmentForm({ editing, presetDirectorate, directorates, isReviewer, onClose, onSaved }) {
   const [form, setForm] = useState(editing
-    ? { code: editing.code, name: editing.name, directorateId: String(editing.directorateId) }
+    ? { code: editing.code, name: editing.name, directorateId: directorateChoice(editing.directorateId) }
     : { ...emptyForm, directorateId: presetDirectorate || '' });
   const [autoApprove, setAutoApprove] = useState(true);
   const [showErrors, setShowErrors] = useState(false);
@@ -43,10 +47,11 @@ function DepartmentForm({ editing, presetDirectorate, directorates, isReviewer, 
     setShowErrors(true);
     if (codeError(form.code, 'department') || !form.name.trim() || !form.directorateId) return;
     setBusy(true); setError('');
+    const body = { ...form, directorateId: form.directorateId === NO_DIRECTORATE ? null : form.directorateId };
     try {
       const res = editing
-        ? await staffClient.patch(`/api/departments/${editing.id}`, form)
-        : await staffClient.post('/api/departments', { ...form, ...(isReviewer ? { autoApprove } : {}) });
+        ? await staffClient.patch(`/api/departments/${editing.id}`, body)
+        : await staffClient.post('/api/departments', { ...body, ...(isReviewer ? { autoApprove } : {}) });
       onSaved(editing ? 'Department updated.' : res.data.autoApproved ? 'Department added and approved.'
         : `Department added. It waits for ${isReviewer ? 'another ' : 'a '}Principal HR Officer or above to approve it before it can be used.`);
     } catch (err) {
@@ -61,13 +66,14 @@ function DepartmentForm({ editing, presetDirectorate, directorates, isReviewer, 
       <Alert type="error" message={error} />
       <form onSubmit={submit} noValidate>
         <CodeAndName form={form} setForm={setForm} word="department" showErrors={showErrors}
-          codePlaceholder="ARFFS" namePlaceholder="Aerodrome Rescue and Fire Fighting Services" codeHint="Unique in its directorate" />
+          codePlaceholder="ARFFS" namePlaceholder="Aerodrome Rescue and Fire Fighting Services" codeHint="Unique in its directorate, or among those outside one" />
         <Select label="Directorate" required value={form.directorateId} error={showErrors && !form.directorateId ? 'Choose its directorate' : null}
           onChange={(e) => setForm({ ...form, directorateId: e.target.value })}>
           <option value="">Select a directorate</option>
           {choices.map((d) => <option key={d.id} value={d.id}>{d.code} — {d.name}{d.status === 'Pending' ? ' (awaiting approval)' : ''}</option>)}
+          <option value={NO_DIRECTORATE}>No directorate (e.g. the Director General's Office)</option>
         </Select>
-        {editing && String(editing.directorateId) !== form.directorateId && (
+        {editing && directorateChoice(editing.directorateId) !== form.directorateId && (
           <p className="ws-note">Moving it takes its positions with it. Vacancies already raised keep their department.</p>
         )}
         {!editing && isReviewer && <ApproveNowBox checked={autoApprove} onChange={setAutoApprove} what="department" />}
@@ -117,7 +123,7 @@ export default function DepartmentsPage() {
   };
 
   const list = rows || [];
-  const base = list.filter((d) => (!directorate || String(d.directorateId) === directorate)
+  const base = list.filter((d) => (!directorate || directorateChoice(d.directorateId) === directorate)
     && matches(q, d.code, d.name, d.directorate?.code, d.directorate?.name));
   const filter = STATUS_FILTERS.find((f) => f.key === status) || STATUS_FILTERS[0];
   const shown = base.filter(filter.test);
@@ -145,7 +151,7 @@ export default function DepartmentsPage() {
         <PageTop
           crumb={[{ label: 'Organisation', to: '/hr/organisation' }, { label: 'Departments' }]}
           title="Departments"
-          subtitle="Every department under its directorate, with its short code, full name and what it holds"
+          subtitle="Every department under its directorate (or outside them), with its short code, full name and what it holds"
           actions={<>
             <Button variant="ghost" disabled={!shown.length} onClick={exportRows}>Export</Button>
             <Button onClick={() => setForm({ editing: null })}>+ Add department</Button>
@@ -159,6 +165,7 @@ export default function DepartmentsPage() {
           <select className="ws-field" aria-label="Directorate" value={directorate} onChange={(e) => setDirectorate(e.target.value)}>
             <option value="">All directorates</option>
             {directorates.map((d) => <option key={d.id} value={d.id}>{d.code} — {d.name}</option>)}
+            <option value={NO_DIRECTORATE}>No directorate</option>
           </select>
           <Chips style={{ marginLeft: 'auto' }} value={status} onChange={setStatus}
             options={STATUS_FILTERS.map((f) => ({ key: f.key, label: f.label, count: base.filter(f.test).length }))} />
@@ -176,7 +183,7 @@ export default function DepartmentsPage() {
               columns={[
                 { key: 'code', label: 'Code', width: 110, className: 'ws-mono', render: (d) => d.code },
                 { key: 'name', label: 'Name', render: (d) => <span className="t">{d.name}</span> },
-                { key: 'dir', label: 'Directorate', render: (d) => <span title={d.directorate?.name}>{d.directorate?.code}</span> },
+                { key: 'dir', label: 'Directorate', render: (d) => (d.directorate ? <span title={d.directorate.name}>{d.directorate.code}</span> : <span className="s">None</span>) },
                 { key: 'positions', label: 'Positions', align: 'right', className: 'ws-num', render: (d) => d.positionCount },
                 { key: 'staff', label: 'Staff', align: 'right', className: 'ws-num', render: (d) => d.staffCount },
                 { key: 'vacancies', label: 'Vacancies', align: 'right', className: 'ws-num', render: (d) => d.vacancyCount },
@@ -194,7 +201,7 @@ export default function DepartmentsPage() {
 
       {open && (
         <SidePanel
-          eyebrow={`Department · ${open.code} · ${open.directorate?.code || ''}`}
+          eyebrow={`Department · ${open.code} · ${open.directorate?.code || 'No directorate'}`}
           title={open.name}
           badges={<><StatusPill status={open.status} />{open.status === 'Pending' && <Due status={deadlines.deadlineOf('department', open.id)} />}</>}
           onClose={() => setOpenId(null)}
@@ -206,7 +213,7 @@ export default function DepartmentsPage() {
           <KeyValues rows={[
             ['Short code', <span className="ws-mono">{open.code}</span>],
             ['Full name', open.name],
-            ['Directorate', open.directorate && <Link to={`/hr/organisation/directorates?open=${open.directorate.id}`}>{open.directorate.name} ({open.directorate.code})</Link>],
+            ['Directorate', open.directorate ? <Link to={`/hr/organisation/directorates?open=${open.directorate.id}`}>{open.directorate.name} ({open.directorate.code})</Link> : 'None - outside every directorate'],
             ['Staff accounts', open.staffCount],
             ['Vacancies raised', open.vacancyCount]
           ]} />

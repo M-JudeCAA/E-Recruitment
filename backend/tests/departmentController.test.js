@@ -37,6 +37,28 @@ describe('propose', () => {
     expect(prisma.department.create).not.toHaveBeenCalled();
   });
 
+  test('a department outside every directorate (directorateId null) is checked for clashes among those and created with none', async () => {
+    prisma.department.findFirst.mockResolvedValue(null);
+    prisma.department.create.mockResolvedValue({ id: 5, code: 'DGO', name: "Director General's Office", directorateId: null, status: 'Approved' });
+    const res = mockRes();
+    await departmentController.propose({ body: { code: 'dgo', name: "Director General's Office", directorateId: null }, user: phro }, res);
+
+    expect(prisma.directorate.findUnique).not.toHaveBeenCalled();
+    expect(prisma.department.findFirst).toHaveBeenCalledWith({ where: { code: 'DGO', directorateId: null } });
+    expect(prisma.department.findFirst).toHaveBeenCalledWith({ where: { name: "Director General's Office", directorateId: null } });
+    expect(prisma.department.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ code: 'DGO', directorateId: null }) }));
+    expect(res.status).toHaveBeenCalledWith(201);
+  });
+
+  test('a code already used outside the directorates is refused', async () => {
+    prisma.department.findFirst.mockResolvedValueOnce({ id: 5, code: 'DGO', directorateId: null });
+    const res = mockRes();
+    await departmentController.propose({ body: { code: 'DGO', name: 'Another office', directorateId: '' }, user: phro }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ error: 'A department with the code DGO already exists outside the directorates' });
+    expect(prisma.department.create).not.toHaveBeenCalled();
+  });
+
   test('refuses a rejected directorate', async () => {
     prisma.directorate.findUnique.mockResolvedValue({ id: 10, name: 'CORP', status: 'Rejected' });
     const res = mockRes();
@@ -221,6 +243,28 @@ describe('update / remove', () => {
     expect(auditActions()[0]).toEqual(expect.objectContaining({
       entityType: 'Department', action: 'Edited', payload: expect.objectContaining({ changes: { directorateId: { from: 10, to: 11 } } })
     }));
+  });
+
+  test('it can be moved outside every directorate - checked against the departments already there', async () => {
+    prisma.department.findUnique.mockResolvedValue(dept);
+    prisma.directorate.findFirst.mockResolvedValue(null);
+    prisma.department.update.mockResolvedValue({ ...dept, directorateId: null });
+
+    await departmentController.update({ params: { id: '4' }, body: { directorateId: null }, user: phro }, mockRes());
+
+    expect(prisma.directorate.findUnique).not.toHaveBeenCalled();
+    expect(prisma.department.findFirst).toHaveBeenCalledWith({ where: { code: 'FIN', directorateId: null, NOT: { id: 4 } }, select: { id: true } });
+    expect(prisma.department.update).toHaveBeenCalledWith({ where: { id: 4 }, data: { directorateId: null } });
+  });
+
+  test("a department holding its directorate's head can't leave that directorate", async () => {
+    prisma.department.findUnique.mockResolvedValue(dept);
+    prisma.directorate.findFirst.mockResolvedValue({ code: 'DF' });
+
+    await expect(departmentController.update({ params: { id: '4' }, body: { directorateId: '' }, user: phro }, mockRes()))
+      .rejects.toMatchObject({ status: 409, code: 'ORG_IN_USE', message: expect.stringMatching(/holds the head of DF/) });
+    expect(prisma.directorate.findFirst).toHaveBeenCalledWith({ where: { id: 10, headPosition: { departmentId: 4 } }, select: { code: true } });
+    expect(prisma.department.update).not.toHaveBeenCalled();
   });
 
   test('whoever added a pending department may correct it; an HR Officer may not edit an approved one', async () => {

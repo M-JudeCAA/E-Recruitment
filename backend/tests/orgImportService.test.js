@@ -99,7 +99,7 @@ describe('checking the rows', () => {
       'DF,,PAY,,PO,Payroll Officer,Officer', // rejected department
       'DHRA,,HR,,TL,Talent Lead,Senior',
       'DHRA,,HR,,TL,Talent Lead,Manager', // same position, different level
-      ',,HR,,X,X,Officer', // no directorate code
+      ',Human Resource and Administration,HR,,X,X,Officer', // a directorate name but no code
       'DHRA,,ADMIN,,OA,Office Administrator,Officer', // new department without its name
       'DHRA,,HR,,,Records Assistant,Officer', // new position without a code
       'DHRA,,HR,,HRA,Recruitment Officer,Officer', // code HRA belongs to HR Analyst
@@ -147,6 +147,27 @@ describe('checking the rows', () => {
     expect(result.rows[3]).toEqual(expect.objectContaining({ status: 'new', messages: ['Directorate is awaiting approval'] }));
     expect(result.rows[4]).toEqual(expect.objectContaining({ status: 'warning', messages: [expect.stringMatching(/DHRA is "Human Resource and Administration" in the system/)] }));
     expect(result.rows[5]).toEqual(expect.objectContaining({ status: 'warning', messages: expect.arrayContaining([expect.stringMatching(/without a code/)]) }));
+  });
+
+  test('a blank directorate code and name is a department outside every directorate - matched, named and checked among those', async () => {
+    prisma.department.findMany.mockResolvedValue([...DEPARTMENTS,
+      { id: 13, code: 'DGO', name: "Director General's Office", directorateId: null, status: 'Approved' }]);
+    const result = await run([
+      ",,DGO,,DG,Director General,Director", // existing department outside the directorates
+      ",,ODG,Office Support,OS,Office Support Officer,Officer", // new one outside the directorates
+      ",,ODG,,OSA,Office Support Assistant,Officer", // the same new one again
+      ",,PERS,Director General's Office,X,X,Officer", // that name is taken outside the directorates
+      'DHRA,,DGO,DG Office in DHRA,Y,Y,Officer' // the code DGO is free under DHRA
+    ]);
+    expect(result.rows.map((r) => [r.status, r.creates.join('+')])).toEqual([
+      ['new', 'position'], ['new', 'department+position'], ['new', 'position'], ['error', ''], ['new', 'department+position']
+    ]);
+    expect(result.rows[3].messages[0]).toMatch(/Department "Director General's Office" already exists outside the directorates with the code DGO/);
+    expect(result.toCreate.departments).toEqual([
+      { directorate: '', code: 'ODG', name: 'Office Support', rowNumber: 3 },
+      { directorate: 'DHRA', code: 'DGO', name: 'DG Office in DHRA', rowNumber: 6 }
+    ]);
+    expect(result.toCreate.positions[0]).toEqual(expect.objectContaining({ directorate: '', department: 'DGO', code: 'DG', level: 5 }));
   });
 
   test('a Principal HR Officer can add directorates (with their full name); an existing position at another level is a warning', async () => {
@@ -212,6 +233,21 @@ describe('importing', () => {
     expect(prisma.directorate.create.mock.calls[0][0].data).toEqual(expect.objectContaining(approved));
     expect(prisma.department.create.mock.calls[0][0].data).toEqual(expect.objectContaining(approved));
     prisma.position.create.mock.calls.forEach(([arg]) => expect(arg.data).toEqual(expect.objectContaining(approved)));
+  });
+
+  test('a department outside every directorate is created and looked up with no directorate', async () => {
+    prisma.orgImport.create.mockResolvedValue({ id: 8, fileName: 'org.csv' });
+    prisma.department.create.mockResolvedValueOnce({ id: 21 });
+    prisma.department.findFirst.mockResolvedValue({ id: 13 });
+    prisma.department.findMany.mockResolvedValue([...DEPARTMENTS,
+      { id: 13, code: 'DGO', name: "Director General's Office", directorateId: null, status: 'Approved' }]);
+    await orgImport.run(csvFile([HEAD, ',,ODG,Office Support,OS,Office Support Officer,Officer', ',,DGO,,DG,Director General,Director'].join('\n')),
+      { staffId: 5, canAddDirectorates: false, autoApproved: true });
+
+    expect(prisma.department.create.mock.calls[0][0].data).toEqual(expect.objectContaining({ code: 'ODG', name: 'Office Support', directorateId: null }));
+    expect(prisma.department.findFirst).toHaveBeenCalledWith({ where: { code: 'DGO', directorateId: null }, select: { id: true } });
+    expect(prisma.directorate.findUnique).not.toHaveBeenCalled();
+    expect(prisma.position.create.mock.calls.map((c) => c[0].data.departmentId)).toEqual([21, 13]);
   });
 
   test('imports nothing while any row has an error, and returns the rows', async () => {
