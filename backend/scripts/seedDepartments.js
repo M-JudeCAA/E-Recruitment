@@ -138,6 +138,9 @@ async function seed({ prisma, file = DEFAULT_FILE, dryRun = false, log = console
     const existing = await tx.department.findMany({ include: { directorate: { select: { code: true } } } });
     const keyOf = (row) => deptKey(row.directorate?.code, row.code);
     const byKey = new Map(existing.map((row) => [keyOf(row), row]));
+    // POSITION_MOVES names positions by their department's code before the
+    // renames below, so read those keys first.
+    const keyBeforeRenames = new Map(existing.map((row) => [row.id, keyOf(row)]));
     const deptIds = new Map(); // workbook key -> department id
     const claimed = new Set();
     for (const [k, d] of target.departments) {
@@ -167,7 +170,7 @@ async function seed({ prisma, file = DEFAULT_FILE, dryRun = false, log = console
     // Earlier positions the workbook knows under another title or department.
     const moves = new Map();
     for (const p of positions) {
-      const to = POSITION_MOVES[`${keyOf(p.department)}/${upper(p.name)}`];
+      const to = POSITION_MOVES[`${keyBeforeRenames.get(p.departmentId)}/${upper(p.name)}`];
       if (to) moves.set(to, p);
     }
     const moving = new Set([...moves.values()].map((p) => p.id));
