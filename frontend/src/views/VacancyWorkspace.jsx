@@ -18,12 +18,14 @@ import VacancyInterviewsPanel from '../components/VacancyInterviewsPanel';
 import MeritListBoard from '../components/MeritListBoard';
 import VacancyActions from '../components/workspace/VacancyActions';
 import ApplicantsTable from '../components/workspace/ApplicantsTable';
+import ShareJobButton from '../components/workspace/ShareJobButton';
 import { PageTop, Meta, Panel, KeyValues, Pill, SidePanel, formatDay, rankOf, ROLE_RANK, currentStaffId } from '../components/workspace/ui';
 import { useConfirm } from '../components/ConfirmDialog';
 import { approveVacancy } from '../utils/approveVacancy';
 import { useGeneratedCvDownload } from '../utils/useGeneratedCvDownload';
 import { fileLink } from '../utils/fileLink';
 import { debounce } from '../utils/debounce';
+import { canShareJob } from '../utils/jobShareLink';
 
 // One page per vacancy (/hr/vacancy/:id?tab=...): the header carries every
 // action on it (VacancyActions), the Next step box says what happens next
@@ -236,7 +238,7 @@ export default function VacancyWorkspace() {
   const body = !v ? null : {
     overview: () => (
       <div className="ws-grid-main">
-        <Panel title="Job details">
+        <Panel title="Job details" actions={canShareJob(v) && <ShareJobButton vacancy={v} />}>
           <KeyValues rows={[
             ['Job title', v.title],
             ['Department', `${v.department?.name || ''}${v.department?.directorate?.name ? `, ${v.department.directorate.name}` : ''}`],
