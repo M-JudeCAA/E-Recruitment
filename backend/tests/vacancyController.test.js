@@ -214,7 +214,7 @@ describe('create', () => {
     await vacancyController.create(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(res.json).toHaveBeenCalledWith({ error: 'The selected "Reports To" position must be more senior and in the same directorate (or the Director General, for a Director)' });
+    expect(res.json).toHaveBeenCalledWith({ error: 'The selected "Reports To" position must be more senior and in the same department, or the head of the directorate (or the Director General, for a Director)' });
     expect(prisma.vacancy.create).not.toHaveBeenCalled();
   });
 

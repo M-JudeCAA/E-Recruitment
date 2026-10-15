@@ -150,7 +150,7 @@ describe('organogram matching', () => {
 });
 
 describe('a job advertisement (names no department)', () => {
-  // Corporate, with no head named yet: the DG and the DDG in the DG Office,
+  // Corporate, with no head named yet (one test names the DDG): the DG and the DDG in the DG Office,
   // Manager Marketing & Commercial in MCCS. Another directorate has a
   // position with the same title.
   const corp = { id: 20, code: 'CORP', name: 'Corporate', status: 'Approved', headPositionId: null };
@@ -178,8 +178,12 @@ describe('a job advertisement (names no department)', () => {
     directorate: { value: 'Corporate' }, jobTitle: { value: 'MANAGER MARKETING & COMMERCIAL' }, reportsTo: { value: 'DEPUTY DIRECTOR GENERAL' }
   };
 
-  test('finds the department from the job title within the directorate, and reports-to from the document', async () => {
-    const result = await requisitionService.matchOrganogram(ADVERT);
+  test('finds the department from the job title within the directorate, and reports-to (the head, the DDG) from the document', async () => {
+    // A Manager outside the head's office reaches the DDG only as head of
+    // Corporate, so name it here.
+    prisma.position.findUnique.mockResolvedValue(ORG[2]);
+    corp.headPositionId = 300;
+    const result = await requisitionService.matchOrganogram(ADVERT).finally(() => { corp.headPositionId = null; });
     expect(result.department).toEqual(expect.objectContaining({ id: 7, confidence: 'medium' }));
     expect(result.warnings).toContain('The document names no department - Marketing, Commercial and Customer Service is where the job title sits on the organogram; check it.');
     expect(result.position).toEqual(expect.objectContaining({ id: 70 }));
@@ -195,7 +199,7 @@ describe('a job advertisement (names no department)', () => {
     const result = await requisitionService.matchOrganogram({ ...ADVERT, directorate: { value: 'Air Navigation Services' } });
     expect(result.position.id).toBe(80);
     expect(result.reportsTo).toBeNull();
-    expect(result.warnings.join(' ')).toMatch(/Deputy Director General \(Director General's Office\), which is not above this job in its directorate/);
+    expect(result.warnings.join(' ')).toMatch(/Deputy Director General \(Director General's Office\), which this job can't report to/);
   });
 });
 

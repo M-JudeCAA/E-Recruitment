@@ -128,9 +128,10 @@ async function create(req, res) {
   if (fieldErrors.length) return res.status(400).json({ errors: fieldErrors });
 
   // Reports-To must be one of reportingLineService's options: a genuinely
-  // senior position in the same directorate record - not merely one with a
+  // senior position in the same department record - not merely one with a
   // matching department name elsewhere (the "CWG appears under five
-  // directorates" case) - or, for a Director, the Director General.
+  // directorates" case) - the directorate head, or, for a Director, the
+  // Director General.
   let validatedReportsToId = null;
   if (reportsToPositionId) {
     const reportsTo = await positionModel.findById(Number(reportsToPositionId));
@@ -139,7 +140,7 @@ async function create(req, res) {
       if (reportsTo && reportsTo.departmentId === position.departmentId && reportsTo.status === 'Approved' && reportsTo.level <= position.level) {
         return res.status(400).json({ error: 'The selected "Reports To" position must be senior to the vacancy’s own position' });
       }
-      return res.status(400).json({ error: 'The selected "Reports To" position must be more senior and in the same directorate (or the Director General, for a Director)' });
+      return res.status(400).json({ error: 'The selected "Reports To" position must be more senior and in the same department, or the head of the directorate (or the Director General, for a Director)' });
     }
     validatedReportsToId = reportsTo.id;
   }

@@ -43,37 +43,41 @@ function mockDatabase() {
     && (!where.OR || where.OR.some((c) => (c.code && p.code === c.code) || (c.name && p.name.includes(c.name.contains))))));
 }
 const withDirectorate = (p) => ({ ...p, department: { ...p.department, directorate: DIRECTORATES[p.department.directorateId] } });
-const ids = (options, group) => options.filter((o) => !group || o.group === group).map((o) => o.id);
+const ids = (options) => options.map((o) => o.id);
 
 describe('optionsFor', () => {
   beforeEach(mockDatabase);
 
   test('a Manager reports to the Director of the directorate, in the Director\'s Office', async () => {
     const { options, suggestedId } = await reportingLines.optionsFor(withDirectorate(P.hrManager));
-    expect(ids(options, 'line')).toEqual([100]);
+    expect(ids(options)).toEqual([100]);
     expect(options[0]).toEqual(expect.objectContaining({ directorateHead: true, outsideDepartment: true }));
     expect(suggestedId).toBe(100);
   });
 
   test('an officer in the Director\'s Office reports to the Director directly', async () => {
     const { options, suggestedId } = await reportingLines.optionsFor(withDirectorate(P.officeOfficer));
-    expect(ids(options, 'line')).toEqual([100]);
+    expect(ids(options)).toEqual([100]);
     expect(options[0].outsideDepartment).toBe(false);
     expect(suggestedId).toBe(100);
   });
 
-  test('an officer in a department has its line, then anyone more senior elsewhere in the directorate, and no suggestion', async () => {
+  test('an officer in a department has those more senior in it and the directorate head - nobody from another department - and no suggestion', async () => {
     const { options, suggestedId } = await reportingLines.optionsFor(withDirectorate(P.hrOfficer));
-    expect(ids(options, 'line')).toEqual([200, 100]);
-    expect(ids(options, 'directorate')).toEqual([500]);
+    expect(ids(options)).toEqual([200, 100]);
+    expect(ids(options)).not.toContain(500);
     expect(suggestedId).toBeNull();
   });
 
-  test('in Corporate a Manager reports to the DDG, the head HR named; the DG is a choice in the directorate', async () => {
+  test('in Corporate a Manager reports to the DDG, the head HR named; the DG in another department is not a choice', async () => {
     const { options, suggestedId } = await reportingLines.optionsFor(withDirectorate(P.itManager));
-    expect(ids(options, 'line')).toEqual([300]);
-    expect(ids(options, 'directorate')).toEqual([301]);
+    expect(ids(options)).toEqual([300]);
     expect(suggestedId).toBe(300);
+  });
+
+  test('an officer sees no one at its own level in its department', async () => {
+    const { options } = await reportingLines.optionsFor(withDirectorate({ ...P.hrOfficer, id: 202, name: 'HR Assistant' }));
+    expect(ids(options)).not.toContain(201);
   });
 
   test('in the DG Office the DG stays a choice, the DDG is suggested', async () => {
@@ -86,13 +90,13 @@ describe('optionsFor', () => {
   test('a Director reports to the Director General', async () => {
     const { options, suggestedId } = await reportingLines.optionsFor(withDirectorate(P.director));
     expect(ids(options)).toEqual([301]);
-    expect(options[0]).toEqual(expect.objectContaining({ directorGeneral: true, outsideDepartment: true, group: 'line' }));
+    expect(options[0]).toEqual(expect.objectContaining({ directorGeneral: true, outsideDepartment: true }));
     expect(suggestedId).toBe(301);
   });
 
   test('the DDG reports to the Director General', async () => {
     const { options, suggestedId } = await reportingLines.optionsFor(withDirectorate(P.ddg));
-    expect(ids(options, 'line')).toEqual([301]);
+    expect(ids(options)).toEqual([301]);
     expect(suggestedId).toBe(301);
   });
 

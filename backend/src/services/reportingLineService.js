@@ -12,8 +12,9 @@ const { normalizeLabel } = require('../utils/requisitionParser');
 //   - everyone in the head's own office (a Director's Office, the DG Office
 //     for the DDG) reports to the head directly;
 //   - otherwise, to someone more senior in the same department.
-// The requisition states who the job reports to, so anyone more senior in
-// the same directorate can be chosen too - listed after the reporting line.
+// Only those can be chosen: someone more senior in the job's own department,
+// the head of its directorate, or (for a Director) the Director General -
+// never a position elsewhere in the directorate.
 //
 // The head is Directorate.headPositionId, set by HR on the Directorates
 // page. Until it is set, the one approved Director-level position in the
@@ -52,15 +53,13 @@ async function directorGeneral() {
   return found.length === 1 ? found[0] : null;
 }
 
-// The positions this one may report to and the one the rules above say it
-// reports to (suggestedId, or null when they don't say). Each option has
-// `group`: 'line' (the reporting line - more senior in its department, the
-// directorate head, the DG) or 'directorate' (more senior elsewhere in the
-// directorate); `directorateHead`/`directorGeneral`/`outsideDepartment` say
-// what it is. position: with department.directorate (positionModel.findById).
+// The positions this one may report to - more senior in its department, the
+// directorate head, the DG - and the one the rules above say it reports to
+// (suggestedId, or null when they don't say). `directorateHead`/
+// `directorGeneral`/`outsideDepartment` on each option say what it is.
+// position: with department.directorate (positionModel.findById).
 async function optionsFor(position) {
   const directorate = position.department?.directorate;
-  const directorateId = directorate?.id ?? position.department?.directorateId;
   const [seniors, head] = await Promise.all([
     positionModel.findSeniorInDepartment(position.departmentId, position.level),
     directorateHead(directorate)
@@ -69,21 +68,10 @@ async function optionsFor(position) {
   const headApplies = Boolean(head) && !isHead && head.level > position.level;
   const dg = (isHead || position.level >= DIRECTOR_LEVEL) && !isDirectorGeneral(position) ? await directorGeneral() : null;
 
-  const options = seniors.map((p) => ({ ...p, group: 'line', outsideDepartment: false, directorateHead: headApplies && p.id === head.id, directorGeneral: Boolean(dg) && p.id === dg.id }));
-  const add = (p, extra) => { if (!options.some((o) => o.id === p.id)) options.push({ ...p, group: 'line', outsideDepartment: p.departmentId !== position.departmentId, ...extra }); };
+  const options = seniors.map((p) => ({ ...p, outsideDepartment: false, directorateHead: headApplies && p.id === head.id, directorGeneral: Boolean(dg) && p.id === dg.id }));
+  const add = (p, extra) => { if (!options.some((o) => o.id === p.id)) options.push({ ...p, outsideDepartment: p.departmentId !== position.departmentId, ...extra }); };
   if (headApplies) add(head, { directorateHead: true });
   if (dg && dg.id !== position.id) add(dg, { directorGeneral: true });
-
-  if (directorateId) {
-    const elsewhere = await prisma.position.findMany({
-      where: { status: 'Approved', level: { gt: position.level }, departmentId: { not: position.departmentId }, department: { directorateId, status: 'Approved' } },
-      include: { department: DEPARTMENT },
-      orderBy: [{ level: 'desc' }, { name: 'asc' }]
-    });
-    for (const p of elsewhere) {
-      if (!options.some((o) => o.id === p.id)) options.push({ ...p, group: 'directorate', outsideDepartment: true });
-    }
-  }
 
   let suggestedId = null;
   if (dg && (isHead || position.level >= DIRECTOR_LEVEL)) suggestedId = dg.id;

@@ -371,22 +371,15 @@ export default function CreateVacancyListing() {
               <Select label="Reports to" value={form.reportsToPositionId}
                 onChange={(e) => setForm({ ...form, reportsToPositionId: e.target.value })} disabled={!form.positionId || loadingReportsTo}>
                 <option value="">{loadingReportsTo ? 'Loading...' : form.positionId ? 'Select a position (optional)' : 'Select a title first'}</option>
-                {[['line', 'Reporting line'], ['directorate', 'Elsewhere in the directorate']].map(([group, label]) => {
-                  const options = reportsToOptions.filter((p) => (p.group || 'line') === group);
-                  return options.length > 0 && (
-                    <optgroup key={group} label={label}>
-                      {options.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}{p.outsideDepartment ? ` (${p.department?.name})` : ''}{p.directorateHead ? ' - head of directorate' : ''}
-                        </option>
-                      ))}
-                    </optgroup>
-                  );
-                })}
+                {reportsToOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}{p.outsideDepartment ? ` (${p.department?.name})` : ''}{p.directorateHead ? ' - head of directorate' : ''}
+                  </option>
+                ))}
               </Select>
               {form.positionId && !loadingReportsTo && reportsToOptions.length === 0 && (
                 <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -14 }}>
-                  No more senior position exists yet in this directorate.
+                  No one this job can report to exists yet: someone more senior in its department, or the head of its directorate.
                 </p>
               )}
             </div>
