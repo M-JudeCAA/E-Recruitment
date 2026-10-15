@@ -413,7 +413,7 @@ async function template() {
   sheet.views = [{ state: 'frozen', ySplit: 1 }];
   [
     ['DHRA', 'Human Resource and Administration', 'HR', 'Human Resource', 'HRO', 'Human Resource Officer', 'Officer'],
-    ['DHRA', 'Human Resource and Administration', 'HR', 'Human Resource', 'SHRO', 'Senior Human Resource Officer', 'Senior'],
+    ['DHRA', 'Human Resource and Administration', 'HR', 'Human Resource', 'SHRO', 'Senior Human Resource Officer', 'Senior Officer'],
     ['DHRA', 'Human Resource and Administration', 'HR', 'Human Resource', 'PHRO', 'Principal Human Resource Officer', 'Principal'],
     ['DHRA', 'Human Resource and Administration', 'HR', 'Human Resource', 'MHR', 'Manager Human Resources', 'Manager']
   ].forEach((r) => sheet.addRow(r));
@@ -433,7 +433,7 @@ async function template() {
     'Directorate code and name - its short code (e.g. DHRA, DANS, DF) and its full name (e.g. Human Resource and Administration).',
     'Department code and name - its short code and full name within that directorate. The same code under two directorates is two departments.',
     'Leave the directorate code and name both blank for a department outside every directorate (e.g. the Director General’s Office).',
-    `Position code and Position - the job's short code (e.g. HRO) and its full title. Level - its seniority: ${POSITION_LEVELS.map((l) => l.label).join(', ')} (most junior first).`,
+    `Position code and Position - the job's short code (e.g. HRO) and its full title. Level - its seniority: ${POSITION_LEVELS.map((l) => l.label).join(', ')} (most junior first). Not every directorate uses every level; older files' Senior is read as Senior Officer.`,
     'Codes can have letters, digits, spaces and & / . - (at most 20 characters).',
     'A row with no Position, Position code and Level only makes sure the department exists.',
     '',

@@ -18,15 +18,15 @@ const dhra = { id: 10, code: 'DHRA', headPositionId: null };
 const corp = { id: 20, code: 'CORP', headPositionId: 300 };
 
 const P = {
-  director: { id: 100, name: 'Director HRA', departmentId: 1, level: 5, status: 'Approved', department: dirOffice },
-  officeOfficer: { id: 101, name: 'Executive Assistant', departmentId: 1, level: 1, status: 'Approved', department: dirOffice },
-  hrManager: { id: 200, name: 'Manager Human Resources', departmentId: 2, level: 4, status: 'Approved', department: hr },
-  hrOfficer: { id: 201, name: 'HR Officer', departmentId: 2, level: 1, status: 'Approved', department: hr },
-  adminManager: { id: 500, name: 'Manager Administration', departmentId: 5, level: 4, status: 'Approved', department: admin },
-  dg: { id: 301, code: 'DG', name: 'Director General', departmentId: 3, level: 5, status: 'Approved', department: dgOffice },
-  ddg: { id: 300, name: 'Deputy Director General', departmentId: 3, level: 5, status: 'Approved', department: dgOffice },
-  dgOfficer: { id: 302, name: 'Personal Assistant', departmentId: 3, level: 1, status: 'Approved', department: dgOffice },
-  itManager: { id: 400, name: 'Manager IT', departmentId: 4, level: 4, status: 'Approved', department: it }
+  director: { id: 100, name: 'Director HRA', departmentId: 1, level: 8, status: 'Approved', department: dirOffice },
+  officeOfficer: { id: 101, name: 'Executive Assistant', departmentId: 1, level: 3, status: 'Approved', department: dirOffice },
+  hrManager: { id: 200, name: 'Manager Human Resources', departmentId: 2, level: 7, status: 'Approved', department: hr },
+  hrOfficer: { id: 201, name: 'HR Officer', departmentId: 2, level: 3, status: 'Approved', department: hr },
+  adminManager: { id: 500, name: 'Manager Administration', departmentId: 5, level: 7, status: 'Approved', department: admin },
+  dg: { id: 301, code: 'DG', name: 'Director General', departmentId: 3, level: 8, status: 'Approved', department: dgOffice },
+  ddg: { id: 300, name: 'Deputy Director General', departmentId: 3, level: 8, status: 'Approved', department: dgOffice },
+  dgOfficer: { id: 302, name: 'Personal Assistant', departmentId: 3, level: 3, status: 'Approved', department: dgOffice },
+  itManager: { id: 400, name: 'Manager IT', departmentId: 4, level: 7, status: 'Approved', department: it }
 };
 const ALL = Object.values(P);
 const DIRECTORATES = { 10: dhra, 20: corp };
@@ -66,6 +66,12 @@ describe('optionsFor', () => {
     const { options, suggestedId } = await reportingLines.optionsFor(withDirectorate(P.hrOfficer));
     expect(ids(options)).toEqual([200, 100]);
     expect(ids(options)).not.toContain(500);
+    expect(suggestedId).toBeNull();
+  });
+
+  test('a Chief reports to someone more senior in the department, like a Principal - only a Manager is pointed at the directorate head', async () => {
+    const { options, suggestedId } = await reportingLines.optionsFor(withDirectorate({ ...P.hrOfficer, id: 203, name: 'Chief HR Officer', level: 6 }));
+    expect(ids(options)).toEqual([200, 100]);
     expect(suggestedId).toBeNull();
   });
 

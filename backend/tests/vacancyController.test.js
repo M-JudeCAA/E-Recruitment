@@ -31,15 +31,15 @@ function mockRes() {
 const cwgCorpDept = { id: 1, name: 'CWG', status: 'Approved', directorateId: 10, directorate: { id: 10, name: 'CORP', status: 'Approved' } };
 const cwgDansDept = { id: 2, name: 'CWG', status: 'Approved', directorateId: 20, directorate: { id: 20, name: 'DANS', status: 'Approved' } };
 
-const officerCorp = { id: 100, name: 'CWG Officer', status: 'Approved', departmentId: 1, level: 1, department: cwgCorpDept };
-const seniorCorp = { id: 101, name: 'CWG Senior Officer', status: 'Approved', departmentId: 1, level: 2, department: cwgCorpDept };
-const equalCorp = { id: 102, name: 'CWG Officer II', status: 'Approved', departmentId: 1, level: 1, department: cwgCorpDept };
+const officerCorp = { id: 100, name: 'CWG Officer', status: 'Approved', departmentId: 1, level: 3, department: cwgCorpDept };
+const seniorCorp = { id: 101, name: 'CWG Senior Officer', status: 'Approved', departmentId: 1, level: 4, department: cwgCorpDept };
+const equalCorp = { id: 102, name: 'CWG Officer II', status: 'Approved', departmentId: 1, level: 3, department: cwgCorpDept };
 const juniorCorp = { id: 103, name: 'CWG Assistant', status: 'Approved', departmentId: 1, level: 0, department: cwgCorpDept };
-const seniorDans = { id: 200, name: 'CWG Director', status: 'Approved', departmentId: 2, level: 5, department: cwgDansDept };
+const seniorDans = { id: 200, name: 'CWG Director', status: 'Approved', departmentId: 2, level: 8, department: cwgDansDept };
 // A Manager in another DANS department: reports to DANS's one Director-level
 // position (seniorDans), which stands in as head while none is set.
 const opsDansDept = { id: 3, name: 'Operations', status: 'Approved', directorateId: 20, directorate: { id: 20, name: 'DANS', status: 'Approved' } };
-const managerDans = { id: 201, name: 'Manager Operations', status: 'Approved', departmentId: 3, level: 4, department: opsDansDept };
+const managerDans = { id: 201, name: 'Manager Operations', status: 'Approved', departmentId: 3, level: 7, department: opsDansDept };
 const ALL_POSITIONS = [officerCorp, seniorCorp, equalCorp, juniorCorp, seniorDans, managerDans];
 
 // position.findMany as the database would answer the queries

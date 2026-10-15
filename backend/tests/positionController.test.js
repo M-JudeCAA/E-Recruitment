@@ -23,7 +23,7 @@ beforeEach(() => {
 describe('create', () => {
   test('rejects a missing name', async () => {
     const res = mockRes();
-    await positionController.create({ body: { code: 'CWGO', name: '', departmentId: '1', level: 1 }, user: hro }, res);
+    await positionController.create({ body: { code: 'CWGO', name: '', departmentId: '1', level: 3 }, user: hro }, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(prisma.position.create).not.toHaveBeenCalled();
   });
@@ -31,14 +31,14 @@ describe('create', () => {
   test('rejects a department that does not exist', async () => {
     prisma.department.findUnique.mockResolvedValue(null);
     const res = mockRes();
-    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '999', level: 1 }, user: hro }, res);
+    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '999', level: 3 }, user: hro }, res);
     expect(res.status).toHaveBeenCalledWith(400);
   });
 
   test('rejects a department that is not yet Approved', async () => {
     prisma.department.findUnique.mockResolvedValue({ ...approvedDept, status: 'Pending' });
     const res = mockRes();
-    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 1 }, user: hro }, res);
+    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 3 }, user: hro }, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(prisma.position.create).not.toHaveBeenCalled();
   });
@@ -46,7 +46,7 @@ describe('create', () => {
   test('rejects a department whose directorate is not Approved', async () => {
     prisma.department.findUnique.mockResolvedValue({ ...approvedDept, directorate: { id: 10, status: 'Pending' } });
     const res = mockRes();
-    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 1 }, user: hro }, res);
+    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 3 }, user: hro }, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(prisma.position.create).not.toHaveBeenCalled();
   });
@@ -54,7 +54,7 @@ describe('create', () => {
   test('rejects a non-integer level', async () => {
     prisma.department.findUnique.mockResolvedValue(approvedDept);
     const res = mockRes();
-    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 1.5 }, user: hro }, res);
+    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 3.5 }, user: hro }, res);
     expect(res.status).toHaveBeenCalledWith(400);
     expect(prisma.position.create).not.toHaveBeenCalled();
   });
@@ -64,10 +64,10 @@ describe('create', () => {
     prisma.position.create.mockResolvedValue({ id: 1, name: 'CWG Officer', status: 'Pending' });
     const res = mockRes();
 
-    await positionController.create({ body: { code: 'cwgo', name: '  CWG Officer  ', departmentId: '1', level: 2 }, user: hro }, res);
+    await positionController.create({ body: { code: 'cwgo', name: '  CWG Officer  ', departmentId: '1', level: 4 }, user: hro }, res);
 
     expect(prisma.position.create).toHaveBeenCalledWith({
-      data: { code: 'CWGO', name: 'CWG Officer', departmentId: 1, level: 2, createdById: 1, status: 'Pending' }
+      data: { code: 'CWGO', name: 'CWG Officer', departmentId: 1, level: 4, createdById: 1, status: 'Pending' }
     });
     expect(res.status).toHaveBeenCalledWith(201);
     expect(prisma.auditLog.create.mock.calls[0][0].data).toEqual(expect.objectContaining({
@@ -79,11 +79,11 @@ describe('create', () => {
     prisma.department.findUnique.mockResolvedValue(approvedDept);
     prisma.position.create.mockResolvedValue({ id: 2, name: 'CWG Officer', status: 'Approved' });
 
-    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 2 }, user: phro }, mockRes());
+    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 4 }, user: phro }, mockRes());
     expect(prisma.position.create.mock.calls[0][0].data).toEqual(expect.objectContaining({ status: 'Approved', approvedById: 3 }));
     expect(prisma.auditLog.create.mock.calls[0][0].data.action).toBe('Created and approved (Approve now)');
 
-    await positionController.create({ body: { code: 'CWGA', name: 'CWG Analyst', departmentId: '1', level: 1, autoApprove: 'false' }, user: phro }, mockRes());
+    await positionController.create({ body: { code: 'CWGA', name: 'CWG Analyst', departmentId: '1', level: 3, autoApprove: 'false' }, user: phro }, mockRes());
     expect(prisma.position.create.mock.calls[1][0].data).toEqual(expect.objectContaining({ status: 'Pending' }));
     expect(prisma.auditLog.create.mock.calls[1][0].data.action).toBe('Created, sent for approval');
   });
@@ -93,7 +93,7 @@ describe('create', () => {
     prisma.position.create.mockRejectedValue(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }));
     const res = mockRes();
 
-    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 1 }, user: hro }, res);
+    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 3 }, user: hro }, res);
 
     expect(res.status).toHaveBeenCalledWith(409);
   });
@@ -137,21 +137,21 @@ describe('listSeniorOptions', () => {
   });
 
   test('scopes the senior-options query to approved positions in the position\'s own department and level', async () => {
-    prisma.position.findUnique.mockResolvedValue({ id: 100, departmentId: 1, level: 1 });
+    prisma.position.findUnique.mockResolvedValue({ id: 100, departmentId: 1, level: 3 });
     prisma.position.findMany.mockResolvedValue([]);
 
     await positionController.listSeniorOptions({ params: { id: '100' } }, mockRes());
 
     expect(prisma.position.findMany).toHaveBeenCalledWith({
-      where: { departmentId: 1, level: { gt: 1 }, status: 'Approved' },
+      where: { departmentId: 1, level: { gt: 3 }, status: 'Approved' },
       orderBy: { level: 'asc' }
     });
   });
 
   test('adds the directorate head for a Manager and marks it suggested', async () => {
-    const director = { id: 500, name: 'Director HRA', departmentId: 9, level: 5, status: 'Approved', department: { id: 9, name: "Director's Office - HRA" } };
+    const director = { id: 500, name: 'Director HRA', departmentId: 9, level: 8, status: 'Approved', department: { id: 9, name: "Director's Office - HRA" } };
     prisma.position.findUnique.mockImplementation(async ({ where }) => (where.id === 500 ? director
-      : { id: 100, departmentId: 1, level: 4, department: { id: 1, directorate: { id: 10, headPositionId: 500 } } }));
+      : { id: 100, departmentId: 1, level: 7, department: { id: 1, directorate: { id: 10, headPositionId: 500 } } }));
     prisma.position.findMany.mockResolvedValue([]);
     const res = mockRes();
 
@@ -175,17 +175,17 @@ describe('listByDepartment', () => {
 });
 
 describe('codes, editing and deleting', () => {
-  const pos = { id: 5, code: null, name: 'CWG Officer', level: 1, departmentId: 1, status: 'Approved', createdById: 9 };
+  const pos = { id: 5, code: null, name: 'CWG Officer', level: 3, departmentId: 1, status: 'Approved', createdById: 9 };
 
   test('a new position needs a code that its department does not already use', async () => {
     let res = mockRes();
-    await positionController.create({ body: { name: 'CWG Officer', departmentId: '1', level: 1 }, user: hro }, res);
+    await positionController.create({ body: { name: 'CWG Officer', departmentId: '1', level: 3 }, user: hro }, res);
     expect(res.json).toHaveBeenCalledWith({ error: expect.stringMatching(/short code/) });
 
     prisma.department.findUnique.mockResolvedValue(approvedDept);
     prisma.position.findFirst.mockResolvedValueOnce({ id: 2 });
     res = mockRes();
-    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 1 }, user: hro }, res);
+    await positionController.create({ body: { code: 'CWGO', name: 'CWG Officer', departmentId: '1', level: 3 }, user: hro }, res);
     expect(res.status).toHaveBeenCalledWith(409);
     expect(prisma.position.findFirst).toHaveBeenCalledWith({ where: { code: 'CWGO', departmentId: 1 } });
     expect(prisma.position.create).not.toHaveBeenCalled();
@@ -196,12 +196,12 @@ describe('codes, editing and deleting', () => {
     await expect(positionController.update({ params: { id: '5' }, body: { level: 'Senior' }, user: phro }, mockRes()))
       .rejects.toMatchObject({ status: 400, message: expect.stringMatching(/short code/) });
 
-    prisma.position.update.mockResolvedValue({ ...pos, code: 'CWGO', level: 2 });
+    prisma.position.update.mockResolvedValue({ ...pos, code: 'CWGO', level: 4 });
     await positionController.update({ params: { id: '5' }, body: { code: 'cwgo', level: 'Senior' }, user: phro }, mockRes());
-    expect(prisma.position.update).toHaveBeenCalledWith({ where: { id: 5 }, data: { code: 'CWGO', level: 2 } });
+    expect(prisma.position.update).toHaveBeenCalledWith({ where: { id: 5 }, data: { code: 'CWGO', level: 4 } });
     expect(prisma.auditLog.create.mock.calls[0][0].data).toEqual(expect.objectContaining({
       entityType: 'Position', action: 'Edited',
-      payload: expect.objectContaining({ changes: { code: { from: null, to: 'CWGO' }, level: { from: 1, to: 2 } } })
+      payload: expect.objectContaining({ changes: { code: { from: null, to: 'CWGO' }, level: { from: 3, to: 4 } } })
     }));
   });
 

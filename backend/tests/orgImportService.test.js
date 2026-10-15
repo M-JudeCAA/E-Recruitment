@@ -23,7 +23,7 @@ const DEPARTMENTS = [
   { id: 11, code: 'LD', name: 'Learning and Development', directorateId: 1, status: 'Pending' },
   { id: 12, code: 'PAY', name: 'Payroll', directorateId: 2, status: 'Rejected', rejectionReason: 'Merged into FINANCE' }
 ];
-const POSITIONS = [{ id: 100, code: 'HRA', name: 'HR Analyst', departmentId: 10, level: 1, status: 'Approved' }];
+const POSITIONS = [{ id: 100, code: 'HRA', name: 'HR Analyst', departmentId: 10, level: 3, status: 'Approved' }];
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -33,12 +33,15 @@ beforeEach(() => {
 });
 
 describe('position levels', () => {
-  test('words in any case, or their numbers; anything else is refused', () => {
-    expect(['Officer', ' senior ', 'PRINCIPAL', 'Manager', 'director'].map(levelFromInput)).toEqual([1, 2, 3, 4, 5]);
+  test("the eight words in any case, or their numbers; older files' Senior is a Senior Officer; anything else is refused", () => {
+    expect(['Assistant', 'assistant  officer', 'Officer', ' SENIOR officer ', 'Principal', 'chief', 'Manager', 'director'].map(levelFromInput))
+      .toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(levelFromInput(' senior ')).toBe(4);
     expect(levelFromInput(3)).toBe(3);
-    expect(levelFromInput('3')).toBe(3);
-    for (const bad of ['Assistant', '', null, 0, 6, '2.5', 'Senior Officer']) expect(levelFromInput(bad)).toBeNull();
-    expect(levelLabel(4)).toBe('Manager');
+    expect(levelFromInput('8')).toBe(8);
+    for (const bad of ['Clerk', '', null, 0, 9, '2.5', 'Senior Manager']) expect(levelFromInput(bad)).toBeNull();
+    expect(levelLabel(7)).toBe('Manager');
+    expect(levelLabel(4)).toBe('Senior Officer');
   });
 });
 
@@ -87,13 +90,13 @@ describe('checking the rows', () => {
     ]);
     expect(result.summary).toEqual(expect.objectContaining({ errors: 0, directorates: 0, departments: 1, positions: 3, skipped: 2 }));
     expect(result.toCreate.departments).toEqual([{ directorate: 'DHRA', code: 'ADMIN', name: 'Administration', rowNumber: 4 }]);
-    expect(result.toCreate.positions[0]).toEqual(expect.objectContaining({ directorate: 'DHRA', department: 'HR', code: 'SHRO', name: 'Senior HR Officer', level: 2 }));
+    expect(result.toCreate.positions[0]).toEqual(expect.objectContaining({ directorate: 'DHRA', department: 'HR', code: 'SHRO', name: 'Senior HR Officer', level: 4 }));
   });
 
   test('errors that must be fixed first', async () => {
     const result = await run([
       'DANS,Air Navigation Services,AIM,Aeronautical Information Management,AISO,AIS Officer,Officer', // unknown directorate, not allowed to add
-      'DHRA,,HR,,RC,Records Clerk,Assistant', // not a level
+      'DHRA,,HR,,RC,Records Clerk,Clerk', // not a level
       'DHRA,,HR,,RO,Records Officer,', // level missing
       'DHRA,,HR,,,,Senior', // level without position
       'DF,,PAY,,PO,Payroll Officer,Officer', // rejected department
@@ -110,7 +113,7 @@ describe('checking the rows', () => {
 
     const errors = result.rows.map((r) => (r.status === 'error' ? r.messages[0] : null));
     expect(errors[0]).toMatch(/Directorate DANS doesn't exist\. Only a Principal HR Officer/);
-    expect(errors[1]).toMatch(/"Assistant" isn't a level - use one of Officer, Senior, Principal, Manager, Director/);
+    expect(errors[1]).toMatch(/"Clerk" isn't a level - use one of Assistant, Assistant Officer, Officer, Senior Officer, Principal, Chief, Manager, Director/);
     expect(errors[2]).toMatch(/Level is missing/);
     expect(errors[3]).toMatch(/Position is empty but a position code or level is given/);
     expect(errors[4]).toMatch(/Department PAY under DF was rejected \(Merged into FINANCE\)/);
@@ -131,8 +134,8 @@ describe('checking the rows', () => {
       { id: 3, code: 'DOLD', name: 'Old', status: 'Rejected', rejectionReason: 'Abolished' },
       { id: 4, code: 'DNEW', name: 'New', status: 'Pending' }]);
     prisma.position.findMany.mockResolvedValue([...POSITIONS,
-      { id: 101, code: 'CLK', name: 'Clerk', departmentId: 10, level: 1, status: 'Rejected', rejectionReason: 'Not on the establishment' },
-      { id: 102, code: null, name: 'Coach', departmentId: 10, level: 1, status: 'Pending' }]);
+      { id: 101, code: 'CLK', name: 'Clerk', departmentId: 10, level: 3, status: 'Rejected', rejectionReason: 'Not on the establishment' },
+      { id: 102, code: null, name: 'Coach', departmentId: 10, level: 3, status: 'Pending' }]);
     const result = await run([
       'DOLD,,X,X,,,',
       'DHRA,,HR,,CLK,Clerk,Officer',
@@ -167,7 +170,7 @@ describe('checking the rows', () => {
       { directorate: '', code: 'ODG', name: 'Office Support', rowNumber: 3 },
       { directorate: 'DHRA', code: 'DGO', name: 'DG Office in DHRA', rowNumber: 6 }
     ]);
-    expect(result.toCreate.positions[0]).toEqual(expect.objectContaining({ directorate: '', department: 'DGO', code: 'DG', level: 5 }));
+    expect(result.toCreate.positions[0]).toEqual(expect.objectContaining({ directorate: '', department: 'DGO', code: 'DG', level: 8 }));
   });
 
   test('a Principal HR Officer can add directorates (with their full name); an existing position at another level is a warning', async () => {
@@ -219,8 +222,8 @@ describe('importing', () => {
     expect(prisma.directorate.findUnique).toHaveBeenCalledWith({ where: { code: 'DHRA' } });
     expect(prisma.department.findFirst).toHaveBeenCalledWith({ where: { code: 'HR', directorateId: 1 }, select: { id: true } });
     expect(prisma.position.create.mock.calls.map((c) => c[0].data)).toEqual([
-      { code: 'AISO', name: 'AIS Officer', departmentId: 20, level: 1, createdById: 5, importId: 7, status: 'Pending' },
-      { code: 'SHRO', name: 'Senior HR Officer', departmentId: 10, level: 2, createdById: 5, importId: 7, status: 'Pending' }
+      { code: 'AISO', name: 'AIS Officer', departmentId: 20, level: 3, createdById: 5, importId: 7, status: 'Pending' },
+      { code: 'SHRO', name: 'Senior HR Officer', departmentId: 10, level: 4, createdById: 5, importId: 7, status: 'Pending' }
     ]);
   });
 
@@ -251,7 +254,7 @@ describe('importing', () => {
   });
 
   test('imports nothing while any row has an error, and returns the rows', async () => {
-    await expect(orgImport.run(csvFile(`${HEAD}\nDHRA,,HR,,A,A,Officer\nDHRA,,HR,,B,B,Chief\n`), { staffId: 5, canAddDirectorates: false }))
+    await expect(orgImport.run(csvFile(`${HEAD}\nDHRA,,HR,,A,A,Officer\nDHRA,,HR,,B,B,Boss\n`), { staffId: 5, canAddDirectorates: false }))
       .rejects.toMatchObject({ status: 422, code: 'IMPORT_HAS_ERRORS', details: { summary: expect.objectContaining({ errors: 1 }) } });
     expect(prisma.orgImport.create).not.toHaveBeenCalled();
     expect(prisma.position.create).not.toHaveBeenCalled();

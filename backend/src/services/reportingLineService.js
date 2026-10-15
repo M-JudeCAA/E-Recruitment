@@ -22,8 +22,8 @@ const { normalizeLabel } = require('../utils/requisitionParser');
 // the DDG, so HR must name it there). The Director General is the approved
 // Director-level position called "Director General" (or coded DG).
 
-const MANAGER_LEVEL = 4;
-const DIRECTOR_LEVEL = 5;
+const MANAGER_LEVEL = 7;
+const DIRECTOR_LEVEL = 8;
 
 const DEPARTMENT = { select: { id: true, code: true, name: true, directorateId: true } };
 
