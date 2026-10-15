@@ -38,15 +38,16 @@ describe('organisation codes', () => {
 });
 
 describe('position levels', () => {
-  test('are the five the API stores as 1 to 5', () => {
+  test('are the eight the API stores as 1 to 8, most junior first (as backend/src/utils/positionLevels.js)', () => {
     expect(POSITION_LEVELS.map((l) => [l.value, l.label])).toEqual([
-      [1, 'Officer'], [2, 'Senior'], [3, 'Principal'], [4, 'Manager'], [5, 'Director']
+      [1, 'Assistant'], [2, 'Assistant Officer'], [3, 'Officer'], [4, 'Senior Officer'],
+      [5, 'Principal'], [6, 'Chief'], [7, 'Manager'], [8, 'Director']
     ]);
   });
 
   test('are shown as words, whatever type the number arrives as', () => {
-    expect(levelLabel(3)).toBe('Principal');
-    expect(levelLabel('5')).toBe('Director');
+    expect(levelLabel(5)).toBe('Principal');
+    expect(levelLabel('8')).toBe('Director');
     expect(levelLabel(9)).toBe('Level 9');
   });
 });

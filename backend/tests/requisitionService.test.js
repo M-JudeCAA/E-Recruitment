@@ -19,9 +19,9 @@ const DEPARTMENTS = [
   { id: 3, name: 'CWG', directorate: { id: 20, name: 'Air Navigation Services' } }
 ];
 const POSITIONS = [
-  { id: 100, name: 'HR Analyst', departmentId: 1, level: 1 },
-  { id: 101, name: 'Senior HR Officer', departmentId: 1, level: 2 },
-  { id: 102, name: 'Manager Human Resources', departmentId: 1, level: 3 }
+  { id: 100, name: 'HR Analyst', departmentId: 1, level: 3 },
+  { id: 101, name: 'Senior HR Officer', departmentId: 1, level: 4 },
+  { id: 102, name: 'Manager Human Resources', departmentId: 1, level: 5 }
 ];
 
 // position.findMany as the database would answer it: by department, and
@@ -134,9 +134,9 @@ describe('organogram matching', () => {
   });
 
   test('a Manager is matched to the head of the directorate - the DDG for Corporate - when the document names no one', async () => {
-    const ddg = { id: 900, name: 'Deputy Director General', departmentId: 9, level: 5, status: 'Approved', department: { id: 9, code: 'DG OFFICE', name: "Director General's Office" } };
+    const ddg = { id: 900, name: 'Deputy Director General', departmentId: 9, level: 8, status: 'Approved', department: { id: 9, code: 'DG OFFICE', name: "Director General's Office" } };
     prisma.department.findMany.mockResolvedValue([{ id: 1, name: 'Human Resources', directorate: { ...corporate, headPositionId: 900 } }]);
-    prisma.position.findMany.mockImplementation(positionsWhere([...POSITIONS, { id: 104, name: 'Manager Administration', departmentId: 1, level: 4 }]));
+    prisma.position.findMany.mockImplementation(positionsWhere([...POSITIONS, { id: 104, name: 'Manager Administration', departmentId: 1, level: 7 }]));
     prisma.position.findUnique.mockResolvedValue(ddg);
 
     const manager = await requisitionService.matchOrganogram({ department: { value: 'Human Resources' }, jobTitle: { value: 'Manager Administration' } });
@@ -159,10 +159,10 @@ describe('a job advertisement (names no department)', () => {
   const dgOffice = { id: 9, code: 'DG OFFICE', name: "Director General's Office", directorateId: 20, directorate: corp };
   const dansMarketing = { id: 8, code: 'MKT', name: 'Marketing', directorateId: 30, directorate: dans };
   const ORG = [
-    { id: 70, name: 'Manager Marketing & Commercial', departmentId: 7, level: 4, status: 'Approved', department: mccs },
-    { id: 80, name: 'Manager Marketing & Commercial', departmentId: 8, level: 4, status: 'Approved', department: dansMarketing },
-    { id: 300, name: 'Deputy Director General', departmentId: 9, level: 5, status: 'Approved', department: dgOffice },
-    { id: 301, code: 'DG', name: 'Director General', departmentId: 9, level: 5, status: 'Approved', department: dgOffice }
+    { id: 70, name: 'Manager Marketing & Commercial', departmentId: 7, level: 7, status: 'Approved', department: mccs },
+    { id: 80, name: 'Manager Marketing & Commercial', departmentId: 8, level: 7, status: 'Approved', department: dansMarketing },
+    { id: 300, name: 'Deputy Director General', departmentId: 9, level: 8, status: 'Approved', department: dgOffice },
+    { id: 301, code: 'DG', name: 'Director General', departmentId: 9, level: 8, status: 'Approved', department: dgOffice }
   ];
 
   beforeEach(() => {

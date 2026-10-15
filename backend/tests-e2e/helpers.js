@@ -38,7 +38,7 @@ async function createOrg(createdById) {
   const department = await prisma.department.create({
     data: { code: 'HR', name: 'Human Resources', directorateId: directorate.id, createdById, status: 'Approved', approvedById: createdById, approvedAt: new Date() }
   });
-  const position = await prisma.position.create({ data: { code: 'HRA', name: 'HR Analyst', departmentId: department.id, level: 1, createdById } });
+  const position = await prisma.position.create({ data: { code: 'HRA', name: 'HR Analyst', departmentId: department.id, level: 3, createdById } });
   return { directorate, department, position };
 }
 

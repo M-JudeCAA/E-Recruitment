@@ -26,9 +26,9 @@ async function oldStructure() {
   const pos = (code, name, departmentId, level) => prisma.position.create({ data: { code, name, departmentId, level, ...by } });
   return {
     corp, it, mccs, dgOffice, corpAffairs, gmOffice, hr,
-    ictInno: await pos('ICT INNO', 'ICT INNOVATION OFFICER', it.id, 1),
-    mmc: await pos('MMC', 'MANAGER MARKETING & COMMERCIAL', mccs.id, 4),
-    ddg: await pos('DDG', 'DEPUTY DIRECTOR GENERAL', dgOffice.id, 5),
+    ictInno: await pos('ICT INNO', 'ICT INNOVATION OFFICER', it.id, 3),
+    mmc: await pos('MMC', 'MANAGER MARKETING & COMMERCIAL', mccs.id, 7),
+    ddg: await pos('DDG', 'DEPUTY DIRECTOR GENERAL', dgOffice.id, 8),
     // A staff account keeps GM OFFICE (not in the workbook) in use.
     gmStaff: await prisma.staffUser.update({
       where: { id: (await createStaff('HR_Officer', 'gm.pa@caa.co.ug')).id }, data: { department: 'GM OFFICE', departmentId: gmOffice.id }
@@ -71,13 +71,13 @@ test('the earlier structure is carried over in place, and a second run changes n
 
   // Positions moved onto the workbook's, keeping their ids.
   const ddgo = await prisma.department.findFirst({ where: { code: 'DDGO', directorateId: corp.id } });
-  expect(await prisma.position.findUnique({ where: { id: old.ddg.id } })).toEqual(expect.objectContaining({ code: 'DDG', name: 'Deputy Director General', departmentId: ddgo.id, level: 5 }));
+  expect(await prisma.position.findUnique({ where: { id: old.ddg.id } })).toEqual(expect.objectContaining({ code: 'DDG', name: 'Deputy Director General', departmentId: ddgo.id, level: 8 }));
   expect(await prisma.position.findUnique({ where: { id: old.mmc.id } })).toEqual(expect.objectContaining({ code: 'MMCCS', name: 'Manager Marketing, Commercial & Customer Services', departmentId: old.mccs.id }));
   expect(await prisma.position.findUnique({ where: { id: old.ictInno.id } })).toEqual(expect.objectContaining({ code: 'ICTIO', name: 'ICT Innovations Officer' }));
   expect(await prisma.position.count()).toBe(514);
   expect(await prisma.position.count({ where: { status: { not: 'Approved' } } })).toBe(0);
   const dg = await prisma.position.findFirst({ where: { code: 'DG' }, include: { department: true } });
-  expect(dg).toEqual(expect.objectContaining({ name: 'Director General', level: 5, departmentId: dgo.id }));
+  expect(dg).toEqual(expect.objectContaining({ name: 'Director General', level: 8, departmentId: dgo.id }));
 
   // The HR team's account (department 'HR') is linked to DHRA's HR.
   expect((await prisma.staffUser.findUnique({ where: { id: director.id } })).departmentId).toBe(old.hr.id);

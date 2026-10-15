@@ -675,23 +675,23 @@ async function seedOrg() {
   const dept = Object.fromEntries(approved.map((d) => [`${d.code}/${d.directorate?.code || ''}`, d.id]));
 
   const positions = [
-    ['atcSenior', 'SATCO', 'Senior Air Traffic Control Officer', 'ATM/DANS', 3],
-    ['atc1', 'ATCO1', 'Air Traffic Control Officer I', 'ATM/DANS', 2],
-    ['atcTrainee', 'ATCOT', 'Air Traffic Control Officer (Trainee)', 'ATM/DANS', 1],
-    ['ais', 'AIO', 'Aeronautical Information Officer', 'AIM/DANS', 1],
-    ['avsec', 'ASO', 'Aviation Security Officer', 'AVSEC/DAAS', 1],
-    ['avsecSenior', 'SASO', 'Senior Aviation Security Officer', 'AVSEC/DAAS', 2],
-    ['avsecManager', 'MAVSEC', 'Manager Aviation Security', 'AVSEC/DAAS', 3],
-    ['fireFighter', 'FF', 'Fire Fighter', 'AO/DAAS', 1],
-    ['fireOfficer', 'FO', 'Fire Officer', 'AO/DAAS', 2],
-    ['itSupport', 'ITSO', 'IT Support Officer', 'IT/CORP', 1],
-    ['sysadmin', 'SA', 'Systems Administrator', 'IT/CORP', 2],
-    ['itManager', 'MIT', 'Manager Information Technology', 'IT/CORP', 3],
-    ['accountant', 'ACC', 'Accountant', 'FIN/DF', 1],
-    ['seniorAccountant', 'SACC', 'Senior Accountant', 'FIN/DF', 2],
-    ['financeManager', 'MF', 'Manager Finance', 'FIN/DF', 3],
-    ['hrOfficer', 'HRO', 'Human Resource Officer', 'HR/DHRA', 1],
-    ['flightOps', 'FOI', 'Flight Operations Inspector', 'FSS/DSSER', 2]
+    ['atcSenior', 'SATCO', 'Senior Air Traffic Control Officer', 'ATM/DANS', 5],
+    ['atc1', 'ATCO1', 'Air Traffic Control Officer I', 'ATM/DANS', 4],
+    ['atcTrainee', 'ATCOT', 'Air Traffic Control Officer (Trainee)', 'ATM/DANS', 3],
+    ['ais', 'AIO', 'Aeronautical Information Officer', 'AIM/DANS', 3],
+    ['avsec', 'ASO', 'Aviation Security Officer', 'AVSEC/DAAS', 3],
+    ['avsecSenior', 'SASO', 'Senior Aviation Security Officer', 'AVSEC/DAAS', 4],
+    ['avsecManager', 'MAVSEC', 'Manager Aviation Security', 'AVSEC/DAAS', 7],
+    ['fireFighter', 'FF', 'Fire Fighter', 'AO/DAAS', 3],
+    ['fireOfficer', 'FO', 'Fire Officer', 'AO/DAAS', 4],
+    ['itSupport', 'ITSO', 'IT Support Officer', 'IT/CORP', 3],
+    ['sysadmin', 'SA', 'Systems Administrator', 'IT/CORP', 4],
+    ['itManager', 'MIT', 'Manager Information Technology', 'IT/CORP', 7],
+    ['accountant', 'ACC', 'Accountant', 'FIN/DF', 3],
+    ['seniorAccountant', 'SACC', 'Senior Accountant', 'FIN/DF', 4],
+    ['financeManager', 'MF', 'Manager Finance', 'FIN/DF', 7],
+    ['hrOfficer', 'HRO', 'Human Resource Officer', 'HR/DHRA', 3],
+    ['flightOps', 'FOI', 'Flight Operations Inspector', 'FSS/DSSER', 4]
   ];
   // The organogram (seedDepartments.js) already has most of these: reuse the
   // one with that title, else that code, in the department. The rest are

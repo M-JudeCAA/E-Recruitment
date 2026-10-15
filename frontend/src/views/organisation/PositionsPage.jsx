@@ -27,7 +27,7 @@ import {
 // panel: headcount, history, approve / edit / delete while no vacancy uses
 // it. Positions from before codes have none until someone gives them one.
 
-const emptyForm = { code: '', name: '', departmentId: '', level: 1 };
+const emptyForm = { code: '', name: '', departmentId: '', level: 3 }; // Officer
 const FILTERS = [...STATUS_FILTERS, { key: 'nocode', label: 'No code yet', test: (p) => !p.code }];
 
 function PositionForm({ editing, presetDepartment, departments, isReviewer, onClose, onSaved }) {
