@@ -19,12 +19,11 @@ removes the demo staff accounts.
 |---|---|
 | All vacancies, drafts and requisitions | Real staff accounts and their Microsoft links |
 | All candidates and their applications | SLA settings and the data-retention settings |
-| Shortlisting, interviews, merit lists, offers, hires (onboarding cases) | The 6 directorates and 36 departments and offices (recreated) |
+| Shortlisting, interviews, merit lists, offers, hires (onboarding cases) | UCAA's organisation structure, recreated from `backend/scripts/data/ucaa-org-structure.xlsx`: 6 directorates, 38 departments (the Director General's Office outside every directorate) and 514 positions |
 | Notifications, audit and access logs, erasure requests and the erasure log, bulk emails, candidate tags | Job references restart at `UCAA/ADV/…/001/<year>` |
 | Edited document templates (they go back to the default wording) | |
 | Uploaded files in the upload folder | |
 | The six demo staff accounts | |
-| Positions (none are recreated) | |
 
 The demo accounts removed are `hro@`, `shro@`, `phro@`, `manager@`, `dhra@`
 and `admin@caa.co.ug`. Anyone who registered as a candidate before the reset
@@ -156,7 +155,7 @@ node scripts/resetDemoData.js --remove-demo-staff --yes
 ```
 
 It lists each table it empties, then *"Deleted N uploaded file(s)"*, the staff
-accounts it kept, and the re-created directorates and departments. It
+accounts it kept, and what it re-created of the organisation structure. It
 finishes with *"Done - a clean start."*
 
 Only the real administrator (and any other real staff) should appear under
@@ -205,14 +204,14 @@ Each approval must be done by someone other than the person who proposed it,
 so testers need at least two people at the approving levels to get through a
 whole recruitment.
 
-### Add positions
+### Positions
 
-No positions are recreated. On the **Departments** screen, add the positions
-for the departments being tested (for example "HR Analyst" under HR, level
-Officer), one at a time or many at once with **Import from a spreadsheet**
-(download the template there; one row per position). Departments added by an
-import still need a Principal HR Officer's approval, all at once with
-**Approve all**. A new vacancy starts from an uploaded EXCO-approved
+UCAA's 514 positions are recreated from the workbook, all approved. Add any
+others under **Organisation > Positions**, one at a time or many at once
+with **Import from a spreadsheet** (download the template there; one row per
+position). To change the structure for every future reset, edit
+`backend/scripts/data/ucaa-org-structure.xlsx` (same layout as the import)
+and merge it. A new vacancy starts from an uploaded EXCO-approved
 requisition (the Word document or a PDF saved from Word, plus a scan of the
 signed copy), and its job title and "reports to" are matched against these
 positions.

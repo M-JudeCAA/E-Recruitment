@@ -71,6 +71,14 @@ test('a position is usable only when it, its department and its directorate are 
   expect(orgApproval.usablePosition({ ...ok, department: { status: 'Approved', directorate: { status: 'Pending' } } })).toBe(false);
 });
 
+test('a position in a department outside every directorate is usable once it and its department are approved', () => {
+  const outside = { status: 'Approved', department: { status: 'Approved', directorateId: null, directorate: null } };
+  expect(orgApproval.usablePosition(outside)).toBe(true);
+  expect(orgApproval.usablePosition({ ...outside, department: { ...outside.department, status: 'Pending' } })).toBe(false);
+  // A directorate that wasn't loaded is not the same as none.
+  expect(orgApproval.usablePosition({ ...outside, department: { status: 'Approved', directorateId: 4 } })).toBe(false);
+});
+
 test('the organisation history reads the org audit rows, with whether "Approve now" was used', async () => {
   prisma.auditLog.findMany.mockResolvedValue([{
     id: 1, entityType: 'Position', entityId: 5, action: 'Created and approved (Approve now)', timestamp: new Date(0),

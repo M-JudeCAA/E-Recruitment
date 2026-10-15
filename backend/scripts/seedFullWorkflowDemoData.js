@@ -671,33 +671,44 @@ async function seedOrg() {
   log('  Departments RPAS (DSSER) approved, PROTOCOL (CORP) rejected, CYBER (CORP) left Pending');
 
   const approved = await api('GET', '/api/departments/approved', { token: T.hro });
-  const dept = Object.fromEntries(approved.map((d) => [`${d.code}/${d.directorate.code}`, d.id]));
+  // A department outside every directorate (the DG's Office) has none.
+  const dept = Object.fromEntries(approved.map((d) => [`${d.code}/${d.directorate?.code || ''}`, d.id]));
 
   const positions = [
-    ['atcSenior', 'SATCO', 'Senior Air Traffic Control Officer', 'ATS/DANS', 3],
-    ['atc1', 'ATCO1', 'Air Traffic Control Officer I', 'ATS/DANS', 2],
-    ['atcTrainee', 'ATCOT', 'Air Traffic Control Officer (Trainee)', 'ATS/DANS', 1],
+    ['atcSenior', 'SATCO', 'Senior Air Traffic Control Officer', 'ATM/DANS', 3],
+    ['atc1', 'ATCO1', 'Air Traffic Control Officer I', 'ATM/DANS', 2],
+    ['atcTrainee', 'ATCOT', 'Air Traffic Control Officer (Trainee)', 'ATM/DANS', 1],
     ['ais', 'AIO', 'Aeronautical Information Officer', 'AIM/DANS', 1],
     ['avsec', 'ASO', 'Aviation Security Officer', 'AVSEC/DAAS', 1],
     ['avsecSenior', 'SASO', 'Senior Aviation Security Officer', 'AVSEC/DAAS', 2],
     ['avsecManager', 'MAVSEC', 'Manager Aviation Security', 'AVSEC/DAAS', 3],
-    ['fireFighter', 'FF', 'Fire Fighter', 'OPS EIA/DAAS', 1],
-    ['fireOfficer', 'FO', 'Fire Officer', 'OPS EIA/DAAS', 2],
+    ['fireFighter', 'FF', 'Fire Fighter', 'AO/DAAS', 1],
+    ['fireOfficer', 'FO', 'Fire Officer', 'AO/DAAS', 2],
     ['itSupport', 'ITSO', 'IT Support Officer', 'IT/CORP', 1],
     ['sysadmin', 'SA', 'Systems Administrator', 'IT/CORP', 2],
     ['itManager', 'MIT', 'Manager Information Technology', 'IT/CORP', 3],
-    ['accountant', 'ACC', 'Accountant', 'FINANCE/DF', 1],
-    ['seniorAccountant', 'SACC', 'Senior Accountant', 'FINANCE/DF', 2],
-    ['financeManager', 'MF', 'Manager Finance', 'FINANCE/DF', 3],
+    ['accountant', 'ACC', 'Accountant', 'FIN/DF', 1],
+    ['seniorAccountant', 'SACC', 'Senior Accountant', 'FIN/DF', 2],
+    ['financeManager', 'MF', 'Manager Finance', 'FIN/DF', 3],
     ['hrOfficer', 'HRO', 'Human Resource Officer', 'HR/DHRA', 1],
     ['flightOps', 'FOI', 'Flight Operations Inspector', 'FSS/DSSER', 2]
   ];
-  // Added by a Principal HR Officer with "Approve now" (the default), so they
+  // The organogram (seedDepartments.js) already has most of these: reuse the
+  // one with that title, else that code, in the department. The rest are
+  // added by a Principal HR Officer with "Approve now" (the default), so they
   // can be used on vacancies at once - an HR Officer's would wait for approval.
+  const existing = await api('GET', '/api/positions/admin', { token: T.hro });
+  const same = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
+  let added = 0;
   for (const [key, code, name, d, level] of positions) {
-    POS[key] = await api('POST', '/api/positions', { token: T.phro, json: { code, name, departmentId: dept[d], level } });
+    const inDept = existing.filter((p) => p.departmentId === dept[d] && p.status === 'Approved');
+    POS[key] = inDept.find((p) => same(p.name, name)) || inDept.find((p) => same(p.code, code));
+    if (!POS[key]) {
+      POS[key] = await api('POST', '/api/positions', { token: T.phro, json: { code, name, departmentId: dept[d], level } });
+      added += 1;
+    }
   }
-  log(`  ${positions.length} positions created and approved`);
+  log(`  ${positions.length} positions: ${positions.length - added} from the organogram, ${added} added and approved`);
 
   await api('POST', '/api/delegations', {
     token: T.phro,

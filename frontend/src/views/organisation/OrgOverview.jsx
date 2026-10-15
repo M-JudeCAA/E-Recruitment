@@ -107,9 +107,9 @@ export default function OrgOverview() {
     }
   };
   pending.directorates.forEach((d) => addPending('directorate', d, <b>{d.name} ({d.code})</b>, d.createdBy?.name));
-  pending.departments.forEach((d) => addPending('department', d, <b>{d.name} ({d.code}) under {d.directorate.code}</b>, d.createdBy?.name));
+  pending.departments.forEach((d) => addPending('department', d, <b>{d.name} ({d.code}) {d.directorate ? `under ${d.directorate.code}` : 'outside the directorates'}</b>, d.createdBy?.name));
   pending.positions.forEach((p) => addPending('position', p,
-    <b>{p.name}{p.code ? ` (${p.code})` : ''}, {levelLabel(p.level)} in {p.department.name}, {p.department.directorate.code}</b>, p.createdBy?.name));
+    <b>{p.name}{p.code ? ` (${p.code})` : ''}, {levelLabel(p.level)} in {p.department.name}{p.department.directorate ? `, ${p.department.directorate.code}` : ''}</b>, p.createdBy?.name));
   const importList = [...imports.values()].map((imp) => ({
     ...imp,
     deadline: deadlines.importDeadline(imp.id),

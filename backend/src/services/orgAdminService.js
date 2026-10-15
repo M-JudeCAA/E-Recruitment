@@ -158,17 +158,29 @@ async function editedFields(entityType, row, body) {
   }
 
   if (entityType === 'Department') {
+    // directorateId null (or '') moves it outside every directorate.
     let directorateId = row.directorateId;
-    if ('directorateId' in body && Number(body.directorateId) !== row.directorateId) {
-      const target = await prisma.directorate.findUnique({ where: { id: Number(body.directorateId) } });
-      if (!target || target.status === 'Rejected') throw fail('Select a valid directorate', 400);
-      directorateId = target.id;
-      data.directorateId = directorateId;
+    if ('directorateId' in body) {
+      const wanted = body.directorateId === null || body.directorateId === '' ? null : Number(body.directorateId);
+      if (wanted !== row.directorateId) {
+        if (wanted !== null) {
+          const target = await prisma.directorate.findUnique({ where: { id: wanted } });
+          if (!target || target.status === 'Rejected') throw fail('Select a valid directorate, or no directorate', 400);
+        }
+        // The head of its old directorate must sit in that directorate.
+        const heads = row.directorateId && await prisma.directorate.findFirst({
+          where: { id: row.directorateId, headPosition: { departmentId: row.id } }, select: { code: true }
+        });
+        if (heads) throw fail(`This department holds the head of ${heads.code} - choose another head for ${heads.code} first`, 409, 'ORG_IN_USE');
+        directorateId = wanted;
+        data.directorateId = directorateId;
+      }
     }
     const code = data.code ?? row.code;
     const name = data.name ?? row.name;
-    if (await taken(model, { code, directorateId }, row.id)) throw fail(`That directorate already has a department with the code ${code}`, 409, 'ORG_DUPLICATE');
-    if (await taken(model, { name, directorateId }, row.id)) throw fail(`That directorate already has a department called ${name}`, 409, 'ORG_DUPLICATE');
+    const where = directorateId ? 'That directorate already has' : 'Outside the directorates there is already';
+    if (await taken(model, { code, directorateId }, row.id)) throw fail(`${where} a department with the code ${code}`, 409, 'ORG_DUPLICATE');
+    if (await taken(model, { name, directorateId }, row.id)) throw fail(`${where} a department called ${name}`, 409, 'ORG_DUPLICATE');
   }
 
   if (entityType === 'Position') {

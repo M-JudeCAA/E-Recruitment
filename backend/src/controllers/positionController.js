@@ -22,7 +22,7 @@ async function create(req, res) {
   const invalid = codeError(code, 'position') || nameError(name, 'position');
   if (invalid) return res.status(400).json({ error: invalid });
   const department = await departmentModel.findById(Number(departmentId));
-  if (!department || department.status !== 'Approved' || department.directorate?.status !== 'Approved') {
+  if (!department || department.status !== 'Approved' || (department.directorate ? department.directorate.status !== 'Approved' : Boolean(department.directorateId))) {
     return res.status(400).json({ error: 'Select a valid, approved department' });
   }
   const levelValue = levelFromInput(level);

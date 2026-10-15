@@ -265,8 +265,11 @@ model Department {
   id              Int              @id @default(autoincrement())
   code            String           @db.VarChar(64)
   name            String
-  directorateId   Int
-  directorate     Directorate      @relation(fields: [directorateId], references: [id])
+  // Null for a department outside every directorate (the Director General's
+  // Office). Codes and names of those are unique among themselves - checked
+  // in code, since MySQL lets unique keys repeat when a column is NULL.
+  directorateId   Int?
+  directorate     Directorate?     @relation(fields: [directorateId], references: [id], onDelete: Restrict)
   status          DepartmentStatus @default(Pending)
   createdById     Int
   createdBy       StaffUser        @relation("DepartmentCreatedBy", fields: [createdById], references: [id])
