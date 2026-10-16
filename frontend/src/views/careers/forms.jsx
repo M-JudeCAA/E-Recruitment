@@ -3,6 +3,7 @@ import client from '../../models/apiClient';
 import { myDirectoryProfile, isEntraConfigured, searchStaffDirectory } from '../../models/entraAuth';
 import TextField from '../../components/TextField';
 import DirectoryPersonField from '../../components/DirectoryPersonField';
+import SuggestField from '../../components/SuggestField';
 import Alert from '../../components/Alert';
 import { validateNationalId } from '../../utils/validators';
 
@@ -36,12 +37,38 @@ async function searchColleagues(q, ownEmail) {
   return people.filter((p) => p.email !== own);
 }
 
+const same = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+
 export function EmploymentForm({ me, bind, onSaved }) {
   const p = me?.internalProfile || {};
   const [form, setForm] = useState({
     position: p.position || '', department: p.department || '', employeeId: p.employeeId || '',
+    departmentId: p.departmentId || null, positionId: p.positionId || null,
     dateJoined: day(p.dateJoined), supervisorName: p.supervisorName || '', supervisorEmail: p.supervisorEmail || ''
   });
+  // The department and position are picked from UCAA's organisation
+  // structure (GET /api/candidates/me/organisation), never typed in.
+  const [org, setOrg] = useState(null);
+  const [orgError, setOrgError] = useState('');
+  useEffect(() => {
+    client.get('/api/candidates/me/organisation')
+      .then((res) => setOrg(res.data))
+      .catch(() => setOrgError('The list of departments could not be loaded. Refresh the page to try again.'));
+  }, []);
+  const departmentOptions = (org?.departments || []).map((d) => ({
+    id: d.id, label: d.name, detail: [d.code, d.directorate?.name].filter(Boolean).join(' · ')
+  }));
+  const positionOptions = (org?.positions || []).filter((x) => x.departmentId === form.departmentId)
+    .map((x) => ({ id: x.id, label: x.name, detail: x.code || undefined }));
+  // What the UCAA directory said, matched to the lists when the names agree.
+  useEffect(() => {
+    if (!org || form.departmentId) return;
+    const dept = org.departments.find((d) => same(d.name, form.department) || same(d.code, form.department));
+    if (!dept) return;
+    const post = org.positions.find((x) => x.departmentId === dept.id && same(x.name, form.position));
+    setForm((f) => ({ ...f, departmentId: dept.id, department: dept.name, ...(post ? { positionId: post.id, position: post.name } : {}) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [org, form.department]);
   const [fromDirectory, setFromDirectory] = useState({});
   // The supervisor is picked from the UCAA directory - name and email together.
   // One already on file counts as picked; typing a new name un-picks it. If the
@@ -70,7 +97,8 @@ export function EmploymentForm({ me, bind, onSaved }) {
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const missing = [
-    !form.position && 'Current position', !form.department && 'Department', !form.employeeId && 'Employee ID',
+    !form.departmentId && 'Department, picked from the list', !form.positionId && 'Current position, picked from the list',
+    !form.employeeId && 'Employee ID',
     !form.dateJoined && 'Date joined UCAA', !form.supervisorName && 'Supervisor',
     form.supervisorName && !directoryDown && !supervisorPicked && 'Your supervisor, picked from the suggestions',
     (directoryDown || supervisorPicked) && !EMAIL_RE.test(form.supervisorEmail) && 'Supervisor’s email'
@@ -96,8 +124,20 @@ export function EmploymentForm({ me, bind, onSaved }) {
       <div className="ws-form-grid">
         <TextField label="Full name" value={me?.fullName || ''} disabled hint="From your Microsoft account" />
         <TextField label="Work email" value={me?.email || ''} disabled hint="From your Microsoft account" />
-        <TextField label="Current position" required value={form.position} onChange={set('position')} hint={hint('position')} />
-        <TextField label="Department" required value={form.department} onChange={set('department')} hint={hint('department')} />
+        <SuggestField label="Department" required value={form.department} picked={Boolean(form.departmentId)}
+          options={departmentOptions} placeholder={org ? 'Start typing your department' : 'Loading departments...'} disabled={!org}
+          onType={(text) => setForm((f) => ({ ...f, department: text, departmentId: null, position: '', positionId: null }))}
+          onPick={(o) => setForm((f) => ({ ...f, department: o.label, departmentId: o.id, ...(o.id === f.departmentId ? {} : { position: '', positionId: null }) }))}
+          emptyMessage="No UCAA department matches that - check the spelling, or ask HR to add it."
+          error={orgError || undefined}
+          hint={form.departmentId ? (hint('department') || undefined) : form.department ? 'Pick your department from the list.' : 'Start typing, then pick it from the list'} />
+        <SuggestField label="Current position" required value={form.position} picked={Boolean(form.positionId)}
+          options={positionOptions} disabled={!form.departmentId}
+          placeholder={form.departmentId ? 'Start typing your position' : 'Pick your department first'}
+          onType={(text) => setForm((f) => ({ ...f, position: text, positionId: null }))}
+          onPick={(o) => setForm((f) => ({ ...f, position: o.label, positionId: o.id }))}
+          emptyMessage="No position in this department matches that - check the department, or ask HR to add the position."
+          hint={form.positionId ? (hint('position') || undefined) : form.position && form.departmentId ? 'Pick your position from the list.' : undefined} />
         <TextField label="Employee ID" required value={form.employeeId} onChange={set('employeeId')} hint={hint('employeeId')} />
         <TextField label="Date joined UCAA" type="date" required value={form.dateJoined} onChange={set('dateJoined')} />
         <DirectoryPersonField label="Supervisor" required value={form.supervisorName}

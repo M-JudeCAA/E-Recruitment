@@ -283,9 +283,10 @@ model Department {
   importId        Int?
   import          OrgImport?       @relation(fields: [importId], references: [id], onDelete: SetNull)
 
-  positions Position[]
-  vacancies Vacancy[]
-  staff     StaffUser[] @relation("StaffDepartment")
+  positions        Position[]
+  vacancies        Vacancy[]
+  staff            StaffUser[]       @relation("StaffDepartment")
+  internalProfiles InternalProfile[] @relation("InternalProfileDepartment")
 
   // The same department name can recur under different directorates (e.g.
   // "CWG" under CORP, DANS, DAAS, DSSER, DF) - each is a distinct row.
@@ -298,18 +299,18 @@ model Department {
 // from which file, and what it created. New departments it proposes point
 // back here (Department.importId) and arrive Pending, like any proposal.
 model OrgImport {
-  id                  Int          @id @default(autoincrement())
-  fileName            String       @db.VarChar(255)
+  id                  Int           @id @default(autoincrement())
+  fileName            String        @db.VarChar(255)
   createdById         Int
-  createdBy           StaffUser    @relation("OrgImportCreatedBy", fields: [createdById], references: [id])
-  createdAt           DateTime     @default(now())
-  directoratesCreated Int          @default(0)
-  departmentsProposed Int          @default(0)
-  positionsCreated    Int          @default(0)
-  rowsSkipped         Int          @default(0)
+  createdBy           StaffUser     @relation("OrgImportCreatedBy", fields: [createdById], references: [id])
+  createdAt           DateTime      @default(now())
+  directoratesCreated Int           @default(0)
+  departmentsProposed Int           @default(0)
+  positionsCreated    Int           @default(0)
+  rowsSkipped         Int           @default(0)
   // Whether the importer (PHRO+) approved what it created at once, rather
   // than sending it for approval.
-  autoApproved        Boolean      @default(false)
+  autoApproved        Boolean       @default(false)
   directorates        Directorate[]
   departments         Department[]
   positions           Position[]
@@ -318,12 +319,12 @@ model OrgImport {
 }
 
 model Position {
-  id                   Int        @id @default(autoincrement())
+  id                   Int              @id @default(autoincrement())
   // Required when one is added; null only on positions from before codes.
-  code                 String?    @db.VarChar(64)
+  code                 String?          @db.VarChar(64)
   name                 String
   departmentId         Int
-  department           Department @relation(fields: [departmentId], references: [id])
+  department           Department       @relation(fields: [departmentId], references: [id])
   // Higher = more senior. Comparisons only ever happen within the same
   // department (the Reports To options). Entered and shown as words -
   // Officer 1, Senior 2, Principal 3, Manager 4, Director 5
@@ -334,23 +335,24 @@ model Position {
   // of those posts are filled now - kept by HR (no HRIS link yet); Mark as
   // Hired adds one. Null headcount: not recorded, so not checked.
   headcount            Int?
-  occupied             Int        @default(0)
+  occupied             Int              @default(0)
   headcountUpdatedAt   DateTime?
   headcountUpdatedById Int?
   status               DepartmentStatus @default(Approved)
   createdById          Int
-  createdBy            StaffUser  @relation("PositionCreatedBy", fields: [createdById], references: [id])
+  createdBy            StaffUser        @relation("PositionCreatedBy", fields: [createdById], references: [id])
   approvedById         Int?
-  approvedBy           StaffUser? @relation("PositionApprovedBy", fields: [approvedById], references: [id])
+  approvedBy           StaffUser?       @relation("PositionApprovedBy", fields: [approvedById], references: [id])
   approvedAt           DateTime?
   rejectionReason      String?
-  createdAt            DateTime   @default(now())
+  createdAt            DateTime         @default(now())
   importId             Int?
-  import               OrgImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
+  import               OrgImport?       @relation(fields: [importId], references: [id], onDelete: SetNull)
 
-  vacancies              Vacancy[] @relation("VacancyPosition")
-  vacanciesReportingHere Vacancy[] @relation("VacancyReportsToPosition")
-  headOfDirectorate      Directorate? @relation("DirectorateHead")
+  vacancies              Vacancy[]         @relation("VacancyPosition")
+  vacanciesReportingHere Vacancy[]         @relation("VacancyReportsToPosition")
+  internalProfiles       InternalProfile[] @relation("InternalProfilePosition")
+  headOfDirectorate      Directorate?      @relation("DirectorateHead")
 
   // The same title can exist in more than one department (confirmed) -
   // uniqueness is per-department, not organisation-wide. Codes likewise.
@@ -832,8 +834,16 @@ model InternalProfile {
   candidateId              Int                       @unique
   candidate                Candidate                 @relation(fields: [candidateId], references: [id])
   employeeId               String?
+  // Picked from the organisation structure (Internal Careers): the ids, and
+  // the names as they were when picked - what HR verifies and sees. Older
+  // profiles have the names only, typed in. A department or position that is
+  // later deleted leaves its name here and clears the link.
   department               String?
   position                 String?
+  departmentId             Int?
+  departmentRef            Department?               @relation("InternalProfileDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
+  positionId               Int?
+  positionRef              Position?                 @relation("InternalProfilePosition", fields: [positionId], references: [id], onDelete: SetNull)
   dateJoined               DateTime?
   supervisorName           String?
   supervisorEmail          String?
@@ -909,10 +919,10 @@ model Application {
   // optional (HR's prerogative, mirrors withdrawalReason above) and is
   // shown to the candidate in the rejection notification/on their
   // application when present.
-  rejectedAt      DateTime?
-  rejectedById    Int?
-  rejectedBy      StaffUser? @relation("ApplicationRejectedBy", fields: [rejectedById], references: [id])
-  rejectionReason String?    @db.Text
+  rejectedAt            DateTime?
+  rejectedById          Int?
+  rejectedBy            StaffUser?         @relation("ApplicationRejectedBy", fields: [rejectedById], references: [id])
+  rejectionReason       String?            @db.Text
   // Where the application stood when it was rejected, kept so a rejection
   // made by mistake can be undone (applicationReinstatementService) - which
   // clears all four of these again. Null on rows rejected before this

@@ -22,6 +22,7 @@
 // something left to do by hand, not pre-seeded away.
 const prisma = require('../src/config/db');
 const { createVacancyFromRequisition } = require('./lib/demoVacancy');
+const { withEmployment } = require('./lib/demoEmployment');
 
 const BASE = process.env.API_BASE || 'http://localhost:4000';
 const STAMP = Date.now();
@@ -90,7 +91,7 @@ async function completeExternalProfile(candidateToken, { nationalId, education, 
 
 async function completeInternalProfile(candidateToken, { nationalId, education, workExperience, internalProfile }) {
   await completeExternalProfile(candidateToken, { nationalId, education, workExperience });
-  await api('PUT', '/api/candidates/me/internal-profile', { token: candidateToken, json: internalProfile });
+  await api('PUT', '/api/candidates/me/internal-profile', { token: candidateToken, json: await withEmployment(api, candidateToken, internalProfile) });
 }
 
 function refereesForm() {
