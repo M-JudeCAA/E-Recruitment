@@ -8,6 +8,7 @@ import StatusBadge from './StatusBadge';
 import TextArea from './TextArea';
 import { EMPLOYMENT_LABELS } from '../utils/employmentCategories';
 import DocumentLink from './DocumentLink';
+import { educationLabel } from './EssentialRequirementsBuilder';
 
 // Step 1 of a new vacancy: the EXCO-approved, signed requisition. HR uploads
 // it (POST /api/vacancies/requisition); the server reads the job details out
@@ -115,6 +116,46 @@ function describe(key, field) {
     return `${value.length} item${value.length === 1 ? '' : 's'} - ${shorten(value[0])}`;
   }
   return shorten(String(value));
+}
+
+// What the Essential Requirements suggest screening should check - already
+// put into the form's screening section, where HR confirms or changes it.
+function ScreeningSuggestions({ screening }) {
+  if (!screening) return null;
+  const { minimumEducationLevel, minimumExperienceYears, preferredFieldOfStudy, disqualifyingQuestion, sources = {} } = screening;
+  const from = (text) => (text ? <div className="ws-note" style={{ fontSize: 12 }}>From: &ldquo;{shorten(text)}&rdquo;</div> : null);
+  if (!minimumEducationLevel && !minimumExperienceYears) {
+    return (
+      <Alert type="warning" message="Nothing in the Essential Requirements could be turned into screening. Set what candidates must meet in the
+        screening section below - otherwise nothing is checked when they apply and anyone can." />
+    );
+  }
+  return (
+    <div style={{ marginTop: 16, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-subtle)', fontSize: 13 }}>
+      <strong>Screening suggested from the Essential Requirements</strong>
+      <p className="ws-note" style={{ margin: '2px 0 8px', fontSize: 12 }}>
+        Already filled in below for you to check. Candidates who don&apos;t meet these can&apos;t apply.
+      </p>
+      <ul style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 6 }}>
+        {minimumEducationLevel && (
+          <li>Minimum education: <strong>{educationLabel(minimumEducationLevel)}</strong> - checked against the candidate&apos;s profile{from(sources.education)}</li>
+        )}
+        {disqualifyingQuestion && (
+          <li>
+            Field of study, as a screening question: <strong>{disqualifyingQuestion.text}</strong> A &ldquo;No&rdquo; stops the application; a
+            &ldquo;Yes&rdquo; needs the {disqualifyingQuestion.evidenceLabel.toLowerCase()}, which the shortlisting committee checks.
+          </li>
+        )}
+        {minimumEducationLevel && preferredFieldOfStudy && !disqualifyingQuestion && (
+          <li>The requirement offers a choice of qualifications, so no question was added for the field - add one if it should stop candidates.</li>
+        )}
+        {preferredFieldOfStudy && <li>Preferred field of study: <strong>{preferredFieldOfStudy}</strong> - a mismatch is flagged to HR, never refused</li>}
+        {minimumExperienceYears && (
+          <li>Minimum experience: <strong>{minimumExperienceYears} year{minimumExperienceYears === 1 ? '' : 's'}</strong>{from(sources.experience)}</li>
+        )}
+      </ul>
+    </div>
+  );
 }
 
 function MatchLine({ label, wanted, match }) {
@@ -233,6 +274,8 @@ export default function RequisitionPanel({
           </tbody>
         </table>
       </div>
+
+      <ScreeningSuggestions screening={requisition.screening} />
 
       {requisition.jdStatus === 'notApproved' && (
         <div style={{ marginTop: 16 }}>

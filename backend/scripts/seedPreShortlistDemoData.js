@@ -188,8 +188,8 @@ async function main() {
   console.log(`  Vacancy ${intVacancy.id} (${intVacancy.jobRef}) - PendingApproval`);
 
   console.log('\nApproving both vacancies as manager@caa.co.ug...');
-  await api('PATCH', `/api/vacancies/${extVacancy.id}/approve`, { token: managerToken });
-  await api('PATCH', `/api/vacancies/${intVacancy.id}/approve`, { token: managerToken });
+  await api('PATCH', `/api/vacancies/${extVacancy.id}/approve`, { token: managerToken, json: { acknowledgeNoScreening: true } });
+  await api('PATCH', `/api/vacancies/${intVacancy.id}/approve`, { token: managerToken, json: { acknowledgeNoScreening: true } });
   console.log('  Both vacancies now Open.');
 
   const extDesirableIds = extVacancy.desirableRequirements.map((r) => r.id);

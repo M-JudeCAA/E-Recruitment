@@ -76,9 +76,20 @@ describe('read (step 1: upload and review)', () => {
     }));
     expect(result.prefill.jobPurpose).toMatch(/^<p>To support the recruitment.*<p><strong>Principal Accountabilities<\/strong><\/p><ul><li>/);
     expect(result.prefill.jobPurpose).toContain('<strong>Duties and Responsibilities</strong>');
-    // Screening is never pre-filled - HR adds it.
-    expect(result.prefill).not.toHaveProperty('minimumEducationLevel');
-    expect(result.prefill).not.toHaveProperty('disqualifyingRequirements');
+    // Screening is suggested from the Essential Requirements, for HR to
+    // confirm: the level and the years are checked, the field is a question
+    // answered with the certificate.
+    expect(result.prefill).toEqual(expect.objectContaining({
+      minimumEducationLevel: 'Bachelors', minimumExperienceYears: 3, preferredFieldOfStudy: 'Human Resource Management',
+      disqualifyingRequirements: [expect.objectContaining({
+        text: 'Do you hold a Bachelor\'s degree in Human Resource Management or a related field from a recognised institution?',
+        requiredAnswer: 'Yes', evidenceRequired: true, evidenceLabel: 'Degree certificate or academic transcript'
+      })]
+    }));
+    expect(result.screening.sources).toEqual({
+      education: 'A Bachelor\'s degree in Human Resource Management or a related field from a recognised institution.',
+      experience: 'At least three (3) years of relevant working experience.'
+    });
     expect(result.warnings).toEqual([]);
   });
 

@@ -231,7 +231,7 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
       )}
       {(profile?.education || []).map((e) => editingEduId === e.id ? (
         <div key={e.id} style={{ marginTop: 12, marginBottom: 12, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-          <TextField label="Institution" value={editEduForm.institution} onChange={(ev) => setEditEduForm({ ...editEduForm, institution: ev.target.value })} />
+          <TextField format="title" label="Institution" value={editEduForm.institution} onChange={(ev) => setEditEduForm({ ...editEduForm, institution: ev.target.value })} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <Select label="Qualification level" value={editEduForm.qualificationLevel} onChange={(ev) => setEditEduForm({ ...editEduForm, qualificationLevel: ev.target.value })}>
               <option value="">Select a level</option>
@@ -242,7 +242,7 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
               <option value="Masters">Master's</option>
               <option value="PhD">PhD</option>
             </Select>
-            <TextField label="Field of study" value={editEduForm.fieldOfStudy} onChange={(ev) => setEditEduForm({ ...editEduForm, fieldOfStudy: ev.target.value })} />
+            <TextField format="title" label="Field of study" value={editEduForm.fieldOfStudy} onChange={(ev) => setEditEduForm({ ...editEduForm, fieldOfStudy: ev.target.value })} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={editEduForm.yearCompleted} onChange={(ev) => setEditEduForm({ ...editEduForm, yearCompleted: ev.target.value })} />
@@ -263,7 +263,7 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
         </div>
       ))}
       <div style={{ marginTop: 12, marginBottom: 24 }}>
-        <TextField label="Institution" value={newEdu.institution} onChange={(e) => setNewEdu({ ...newEdu, institution: e.target.value })} />
+        <TextField format="title" label="Institution" value={newEdu.institution} onChange={(e) => setNewEdu({ ...newEdu, institution: e.target.value })} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
           <Select label="Qualification level" value={newEdu.qualificationLevel} onChange={(e) => setNewEdu({ ...newEdu, qualificationLevel: e.target.value })}>
             <option value="">Select a level</option>
@@ -274,7 +274,7 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
             <option value="Masters">Master's</option>
             <option value="PhD">PhD</option>
           </Select>
-          <TextField label="Field of study" value={newEdu.fieldOfStudy} onChange={(e) => setNewEdu({ ...newEdu, fieldOfStudy: e.target.value })} />
+          <TextField format="title" label="Field of study" value={newEdu.fieldOfStudy} onChange={(e) => setNewEdu({ ...newEdu, fieldOfStudy: e.target.value })} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
           <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={newEdu.yearCompleted} onChange={(e) => setNewEdu({ ...newEdu, yearCompleted: e.target.value })} />
@@ -291,8 +291,8 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
       )}
       {(profile?.workExperience || []).map((w) => editingExpId === w.id ? (
         <div key={w.id} style={{ marginTop: 12, marginBottom: 12, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-          <TextField label="Employer" value={editExpForm.employer} onChange={(ev) => setEditExpForm({ ...editExpForm, employer: ev.target.value })} />
-          <TextField label="Job title" value={editExpForm.jobTitle} onChange={(ev) => setEditExpForm({ ...editExpForm, jobTitle: ev.target.value })} />
+          <TextField format="title" label="Employer" value={editExpForm.employer} onChange={(ev) => setEditExpForm({ ...editExpForm, employer: ev.target.value })} />
+          <TextField format="title" label="Job title" value={editExpForm.jobTitle} onChange={(ev) => setEditExpForm({ ...editExpForm, jobTitle: ev.target.value })} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Start date" type="date" value={editExpForm.startDate} onChange={(ev) => setEditExpForm({ ...editExpForm, startDate: ev.target.value })} />
             <TextField label="End date" type="date" hint="Leave blank if this is your current role" value={editExpForm.endDate} onChange={(ev) => setEditExpForm({ ...editExpForm, endDate: ev.target.value })} />
@@ -321,8 +321,8 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
         </div>
       ))}
       <div style={{ marginTop: 12 }}>
-        <TextField label="Employer" value={newExp.employer} onChange={(e) => setNewExp({ ...newExp, employer: e.target.value })} />
-        <TextField label="Job title" value={newExp.jobTitle} onChange={(e) => setNewExp({ ...newExp, jobTitle: e.target.value })} />
+        <TextField format="title" label="Employer" value={newExp.employer} onChange={(e) => setNewExp({ ...newExp, employer: e.target.value })} />
+        <TextField format="title" label="Job title" value={newExp.jobTitle} onChange={(e) => setNewExp({ ...newExp, jobTitle: e.target.value })} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
           <TextField label="Start date" type="date" value={newExp.startDate} onChange={(e) => setNewExp({ ...newExp, startDate: e.target.value })} />
           <TextField label="End date" type="date" hint="Leave blank if this is your current role" value={newExp.endDate} onChange={(e) => setNewExp({ ...newExp, endDate: e.target.value })} />
@@ -338,8 +338,8 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
       )}
       {(profile?.certificates || []).map((c) => editingCertId === c.id ? (
         <div key={c.id} style={{ marginTop: 12, marginBottom: 12, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-          <TextField label="Certificate name" value={editCertForm.name} onChange={(ev) => setEditCertForm({ ...editCertForm, name: ev.target.value })} />
-          <TextField label="Issuing organization" value={editCertForm.issuingOrganization} onChange={(ev) => setEditCertForm({ ...editCertForm, issuingOrganization: ev.target.value })} />
+          <TextField format="title" label="Certificate name" value={editCertForm.name} onChange={(ev) => setEditCertForm({ ...editCertForm, name: ev.target.value })} />
+          <TextField format="title" label="Issuing organization" value={editCertForm.issuingOrganization} onChange={(ev) => setEditCertForm({ ...editCertForm, issuingOrganization: ev.target.value })} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Issue date" type="date" value={editCertForm.issueDate} onChange={(ev) => setEditCertForm({ ...editCertForm, issueDate: ev.target.value })} />
             <TextField label="Expiry date" type="date" hint="Leave blank if it does not expire" value={editCertForm.expiryDate} onChange={(ev) => setEditCertForm({ ...editCertForm, expiryDate: ev.target.value })} />
@@ -362,8 +362,8 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
         </div>
       ))}
       <div style={{ marginTop: 12 }}>
-        <TextField label="Certificate name" value={newCert.name} onChange={(e) => setNewCert({ ...newCert, name: e.target.value })} />
-        <TextField label="Issuing organization" value={newCert.issuingOrganization} onChange={(e) => setNewCert({ ...newCert, issuingOrganization: e.target.value })} />
+        <TextField format="title" label="Certificate name" value={newCert.name} onChange={(e) => setNewCert({ ...newCert, name: e.target.value })} />
+        <TextField format="title" label="Issuing organization" value={newCert.issuingOrganization} onChange={(e) => setNewCert({ ...newCert, issuingOrganization: e.target.value })} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
           <TextField label="Issue date" type="date" value={newCert.issueDate} onChange={(e) => setNewCert({ ...newCert, issueDate: e.target.value })} />
           <TextField label="Expiry date" type="date" hint="Leave blank if it does not expire" value={newCert.expiryDate} onChange={(e) => setNewCert({ ...newCert, expiryDate: e.target.value })} />

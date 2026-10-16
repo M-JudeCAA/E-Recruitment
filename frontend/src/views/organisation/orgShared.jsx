@@ -178,7 +178,7 @@ export function CodeAndName({ form, setForm, word, codeHint, nameLabel = 'Full n
         error={error} hint={!error ? codeHint : undefined}
         onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
         onBlur={() => setForm((f) => ({ ...f, code: normalizeCode(f.code) }))} style={{ textTransform: 'uppercase' }} />
-      <TextField label={nameLabel} required value={form.name} placeholder={namePlaceholder}
+      <TextField format="title" label={nameLabel} required value={form.name} placeholder={namePlaceholder}
         onChange={(e) => setForm({ ...form, name: e.target.value })} />
     </div>
   );

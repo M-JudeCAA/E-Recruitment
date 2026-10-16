@@ -663,6 +663,34 @@ describe('approve', () => {
     }) });
   });
 
+  test('warns the approver when the advert lists requirements but nothing is checked, and approves once they confirm', async () => {
+    const advertOnly = { id: 1, status: 'PendingApproval', createdById: 5, essentialRequirements: ['A Bachelor\'s degree in Law'], disqualifyingRequirements: [] };
+    prisma.vacancy.findUnique.mockResolvedValue(advertOnly);
+    const refused = mockRes();
+    await vacancyController.approve({ params: { id: '1' }, body: {}, user: { id: 2, role: 'Manager' } }, refused);
+    expect(refused.status).toHaveBeenCalledWith(422);
+    expect(refused.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'NO_SCREENING_CRITERIA', error: expect.stringMatching(/anyone will be able to apply/) }));
+    expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
+
+    prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+    await vacancyController.approve({ params: { id: '1' }, body: { acknowledgeNoScreening: true }, user: { id: 2, role: 'Manager' } }, mockRes());
+    expect(prisma.vacancy.updateMany).toHaveBeenCalled();
+  });
+
+  test.each([
+    ['a minimum education is set', { minimumEducationLevel: 'Bachelors' }],
+    ['a screening question is set', { disqualifyingRequirements: [{ id: 'q1', text: 'Do you hold a law degree?', requiredAnswer: 'Yes' }] }],
+    ['it is being re-opened', { status: 'Closed' }],
+    ['the advert lists no requirements', { essentialRequirements: [] }]
+  ])('no screening warning when %s', async (_, override) => {
+    prisma.vacancy.findUnique.mockResolvedValue({
+      id: 1, status: 'PendingApproval', createdById: 5, essentialRequirements: ['A Bachelor\'s degree in Law'], disqualifyingRequirements: [], ...override
+    });
+    prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+    await vacancyController.approve({ params: { id: '1' }, body: {}, user: { id: 2, role: 'Manager' } }, mockRes());
+    expect(prisma.vacancy.updateMany).toHaveBeenCalled();
+  });
+
   test('answers 409 when another approver acted first', async () => {
     prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5 });
     prisma.vacancy.updateMany.mockResolvedValue({ count: 0 });

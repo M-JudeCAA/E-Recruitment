@@ -25,6 +25,7 @@ const { ROLE_RANK } = require('../middleware/auth');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { toPublicVacancy } = require('../utils/publicVacancy');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
+const { screensApplicants } = require('../utils/screeningSuggestions');
 const {
   validateVacancyEditableFields, parseDeadline, screeningQuestionCountError,
   normalizeStringList, normalizeDesirableRequirements, normalizeDisqualifyingRequirements, normalizeRequiredExamGrades
@@ -765,6 +766,18 @@ async function approve(req, res) {
         code: 'HEADCOUNT_EXCEPTION_NOT_AUTHORISED'
       });
     }
+  }
+  // The advert lists requirements but nothing is checked when candidates
+  // apply, so anyone can: the approver is told and confirms. First approval
+  // only - a vacancy being re-opened was looked at then.
+  if (vacancy.status === 'PendingApproval' && (vacancy.essentialRequirements || []).length > 0
+    && !screensApplicants(vacancy) && req.body?.acknowledgeNoScreening !== true) {
+    return res.status(422).json({
+      error: 'The advert lists essential requirements, but none of them is checked when candidates apply - no minimum '
+        + 'education, experience or age and no screening question is set - so anyone will be able to apply. '
+        + 'Approve anyway, or return it to HR to add them.',
+      code: 'NO_SCREENING_CRITERIA'
+    });
   }
   const stamp = { authorisedById: req.user.id, authorisedByRole: req.user.role, authorisedAt: new Date().toISOString() };
 

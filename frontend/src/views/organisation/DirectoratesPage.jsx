@@ -70,7 +70,7 @@ function DirectorateForm({ editing, positions, isReviewer, onClose, onSaved }) {
       <form onSubmit={submit} noValidate>
         <CodeAndName form={form} setForm={setForm} word="directorate" showErrors={showErrors}
           codePlaceholder="DHRA" namePlaceholder="Human Resource and Administration" codeHint="As used inside UCAA" />
-        <TextField label="Director's name (optional)" value={form.directorName} onChange={(e) => setForm({ ...form, directorName: e.target.value })} />
+        <TextField format="name" label="Director's name (optional)" value={form.directorName} onChange={(e) => setForm({ ...form, directorName: e.target.value })} />
         <TextField label="Director's email (optional)" type="email" value={form.directorEmail} onChange={(e) => setForm({ ...form, directorEmail: e.target.value })} />
         {editing && (
           <>

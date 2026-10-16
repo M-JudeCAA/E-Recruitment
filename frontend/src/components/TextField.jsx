@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatAs } from '../utils/textCase';
 
 // ADDED: optional hint and required props, backward-compatible - every
 // existing caller that doesn't pass them behaves exactly as before.
@@ -6,7 +7,19 @@ import React from 'react';
 // Spacing/radius/background here match the application-wizard prototype's
 // form-field styling (Field/inputStyle in its theme.js) - adopted app-wide
 // since every form in the system already renders through this component.
-export default function TextField({ label, hint, error, required, style, ...inputProps }) {
+//
+// format ('name' | 'title' | 'email' | 'code', utils/textCase.js): when the
+// field is left, a value typed in capitals or lower case is cased the way the
+// server will store it, through the field's own onChange.
+export default function TextField({ label, hint, error, required, style, format, ...inputProps }) {
+  if (format) {
+    const { onBlur, onChange } = inputProps;
+    inputProps.onBlur = (e) => {
+      const tidy = formatAs(format, e.target.value);
+      if (onChange && tidy !== e.target.value) onChange({ target: { value: tidy, name: e.target.name, type: e.target.type } });
+      onBlur?.(e);
+    };
+  }
   return (
     <label style={{ display: 'block', marginBottom: 22, maxWidth: 640 }}>
       {label && (

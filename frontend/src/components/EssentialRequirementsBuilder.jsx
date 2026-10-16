@@ -3,7 +3,7 @@ import TextField from './TextField';
 import Select from './Select';
 import Button from './Button';
 
-const EDUCATION_LEVELS = [
+export const EDUCATION_LEVELS = [
   { value: 'OLevel', label: 'O-Level' },
   { value: 'ALevel', label: 'A-Level' },
   { value: 'Certificate', label: 'Certificate' },
@@ -13,7 +13,7 @@ const EDUCATION_LEVELS = [
   { value: 'Masters', label: "Master's" },
   { value: 'PhD', label: 'PhD' }
 ];
-const educationLabel = (value) => EDUCATION_LEVELS.find((l) => l.value === value)?.label || value;
+export const educationLabel = (value) => EDUCATION_LEVELS.find((l) => l.value === value)?.label || value;
 
 const O_LEVEL_GRADES = ['1', '2', '3', '4', '5', '6', '7', '8', '9'];
 const A_LEVEL_GRADES = ['A', 'B', 'C', 'D', 'E', 'O', 'F'];

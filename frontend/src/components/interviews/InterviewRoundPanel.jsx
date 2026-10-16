@@ -320,7 +320,7 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
     body = (
       <>
         {conflicts && <ConflictList conflicts={conflicts} />}
-        <TextField label="Name" required value={newPanelist.name} onChange={(e) => setNewPanelist({ ...newPanelist, name: e.target.value })} />
+        <TextField format="name" label="Name" required value={newPanelist.name} onChange={(e) => setNewPanelist({ ...newPanelist, name: e.target.value })} />
         <TextField label="Role / trade" value={newPanelist.trade} onChange={(e) => setNewPanelist({ ...newPanelist, trade: e.target.value })} />
         <TextField label="Email (optional)" type="email" value={newPanelist.email} onChange={(e) => setNewPanelist({ ...newPanelist, email: e.target.value })}
           hint="They get the calendar invite straight away" />
