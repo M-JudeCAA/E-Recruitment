@@ -6,6 +6,7 @@ import Button from './Button';
 import Alert from './Alert';
 import CsvDownloadButton from './CsvDownloadButton';
 import ApproveNowBox from './ApproveNowBox';
+import Pagination, { usePagination } from './Pagination';
 
 // Batch import of directorates, departments and positions from a spreadsheet
 // (backend orgImportService.js). Upload -> every row checked (nothing is
@@ -20,7 +21,6 @@ const STATUS = {
   error: { label: 'Fix this', color: 'var(--color-danger)' }
 };
 const CREATES = { directorate: 'directorate', department: 'department', position: 'position' };
-const ROWS_SHOWN = 200;
 
 const cell = { padding: '6px 10px', borderTop: '1px solid var(--color-border)', verticalAlign: 'top' };
 
@@ -90,6 +90,7 @@ export default function OrgImportCard({ onImported, canApprove = false }) {
 
   const s = preview?.summary;
   const rows = preview ? preview.rows.filter((r) => !onlyProblems || r.status === 'error' || r.status === 'warning') : [];
+  const pager = usePagination(rows);
 
   return (
     <Card accent="var(--color-primary)">
@@ -147,7 +148,7 @@ export default function OrgImportCard({ onImported, canApprove = false }) {
                 </tr>
               </thead>
               <tbody>
-                {rows.slice(0, ROWS_SHOWN).map((r) => (
+                {pager.pageRows.map((r) => (
                   <tr key={r.rowNumber}>
                     <td style={{ ...cell, fontVariantNumeric: 'tabular-nums' }}>{r.rowNumber}</td>
                     <td style={cell}><CodeName code={r.directorate} name={r.directorateName} /></td>
@@ -166,10 +167,8 @@ export default function OrgImportCard({ onImported, canApprove = false }) {
                 )}
               </tbody>
             </table>
+            <Pagination {...pager.props} />
           </div>
-          {rows.length > ROWS_SHOWN && (
-            <p style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Showing the first {ROWS_SHOWN} of {rows.length} rows.</p>
-          )}
         </div>
       )}
     </Card>

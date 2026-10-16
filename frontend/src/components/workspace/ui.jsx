@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { X, MoreHorizontal } from 'lucide-react';
+import Pagination, { usePagination } from '../Pagination';
 
 // The staff workspace's page parts (styles in workspace.css). Every staff
 // page is one of a few layouts built from these: a list page (PageTop,
@@ -102,28 +103,62 @@ export function Chips({ options, value, onChange, style }) {
 }
 
 /** Plain table: columns [{ key, label, render, align, width, className }]. */
-export function Table({ columns, rows, getRowKey, onRowClick, rowClassName, emptyText = 'Nothing to show.' }) {
-  if (!rows || rows.length === 0) return <div className="ws-empty">{emptyText}</div>;
+/**
+ * A table with pagination. By default it pages the rows it is given (see
+ * components/Pagination.jsx). For a list paged on the server pass
+ * `pagination={{ page, pageSize, total, onPageChange, onPageSizeChange?, loading? }}`
+ * - rows are then that page; `pagination={false}` shows every row.
+ */
+export function Table({ columns, rows, getRowKey, onRowClick, rowClassName, emptyText = 'Nothing to show.', pagination, noun }) {
+  const list = rows || [];
+  const server = Boolean(pagination && pagination.total !== undefined);
+  const pager = usePagination(list, {
+    pageSize: pagination?.pageSize,
+    resetKey: `${list.length}:${list.length ? getRowKey(list[0]) : ''}`
+  });
+  const top = useRef(null);
+  if (list.length === 0) return <div className="ws-empty">{emptyText}</div>;
+  const shown = server || pagination === false ? list : pager.pageRows;
+  const footer = pagination === false ? null : server ? pagination : pager.props;
+  // A new page starts at the top of the table, not where the footer was.
+  const turn = (fn) => (value) => {
+    fn(value);
+    const box = top.current?.getBoundingClientRect();
+    if (box && box.top < 0) top.current.scrollIntoView({ block: 'start' });
+  };
   return (
-    <div className="ws-table-wrap">
-      <table className="ws-table">
-        <thead>
-          <tr>{columns.map((c) => <th key={c.key} className={c.align === 'right' ? 'r' : undefined} style={{ width: c.width }}>{c.label}</th>)}</tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={getRowKey(row)} className={[onRowClick ? 'click' : '', rowClassName?.(row) || ''].join(' ').trim() || undefined}
-              onClick={onRowClick ? () => onRowClick(row) : undefined}>
-              {columns.map((c) => (
-                <td key={c.key} className={[c.align === 'right' ? 'r' : '', c.className || ''].join(' ').trim() || undefined}>
-                  {c.render ? c.render(row) : row[c.key]}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div ref={top}>
+      <div className="ws-table-wrap">
+        <TableBody columns={columns} rows={shown} getRowKey={getRowKey} onRowClick={onRowClick} rowClassName={rowClassName} />
+      </div>
+      {footer && (
+        <Pagination {...footer} noun={noun || footer.noun}
+          onPageChange={turn(footer.onPageChange)}
+          onPageSizeChange={footer.onPageSizeChange && turn(footer.onPageSizeChange)} />
+      )}
     </div>
+  );
+}
+
+function TableBody({ columns, rows, getRowKey, onRowClick, rowClassName }) {
+  return (
+    <table className="ws-table">
+      <thead>
+        <tr>{columns.map((c) => <th key={c.key} className={c.align === 'right' ? 'r' : undefined} style={{ width: c.width }}>{c.label}</th>)}</tr>
+      </thead>
+      <tbody>
+        {rows.map((row) => (
+          <tr key={getRowKey(row)} className={[onRowClick ? 'click' : '', rowClassName?.(row) || ''].join(' ').trim() || undefined}
+            onClick={onRowClick ? () => onRowClick(row) : undefined}>
+            {columns.map((c) => (
+              <td key={c.key} className={[c.align === 'right' ? 'r' : '', c.className || ''].join(' ').trim() || undefined}>
+                {c.render ? c.render(row) : row[c.key]}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

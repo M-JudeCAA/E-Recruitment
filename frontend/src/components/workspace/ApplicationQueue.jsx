@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import staffClient from '../../models/staffApiClient';
 import Alert from '../Alert';
 import Skeleton from '../Skeleton';
-import PageControls from '../PageControls';
+import { useServerPagination } from '../Pagination';
 import StatusBadge from '../StatusBadge';
 import ApplicationReviewCard from '../ApplicationReviewCard';
 import { useGeneratedCvDownload } from '../../utils/useGeneratedCvDownload';
@@ -15,7 +15,6 @@ import { Panel, Table, SidePanel, formatDay } from './ui';
 // applicants happens on that vacancy's page.
 
 const STATUS_OPTIONS = ['Submitted', 'UnderReview', 'ShortlistProposed', 'Shortlisted', 'InterviewScheduled', 'Interviewed', 'Offered', 'Rejected', 'Withdrawn'];
-const PAGE_SIZE = 25;
 const STATUS_WORDS = { UnderReview: 'Under review', ShortlistProposed: 'Shortlist proposed', InterviewScheduled: 'Interview scheduled' };
 
 export default function ApplicationQueue({ staffRole }) {
@@ -27,7 +26,7 @@ export default function ApplicationQueue({ staffRole }) {
   const [needsAction, setNeedsAction] = useState(false);
   const [input, setInput] = useState('');
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
+  const { page, setPage, pageSize, props: pageProps } = useServerPagination();
   const [departments, setDepartments] = useState([]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
@@ -41,7 +40,7 @@ export default function ApplicationQueue({ staffRole }) {
   }, [input]);
 
   const load = () => {
-    const params = { page, limit: PAGE_SIZE, sort };
+    const params = { page, limit: pageSize, sort };
     if (needsAction) params.needsAction = 'true';
     else {
       if (status) params.status = status;
@@ -57,10 +56,9 @@ export default function ApplicationQueue({ staffRole }) {
       .catch((err) => setError(err.response?.data?.error || 'Could not load applications'));
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [status, screening, department, type, sort, needsAction, search, page]);
+  useEffect(load, [status, screening, department, type, sort, needsAction, search, page, pageSize]);
 
   const set = (fn) => (e) => { fn(e.target.value); setPage(1); };
-  const totalPages = result ? Math.max(Math.ceil(result.total / result.limit), 1) : 1;
   const open = result?.data.find((a) => a.id === openId);
 
   return (
@@ -99,7 +97,8 @@ export default function ApplicationQueue({ staffRole }) {
       <Alert type="error" message={error} />
       <Panel padded={false}>
         {!result ? <div className="ws-panel-b">{[0, 1, 2].map((i) => <Skeleton key={i} height={14} width={`${70 - i * 10}%`} style={{ marginBottom: 12 }} />)}</div> : (
-          <Table rows={result.data} getRowKey={(a) => a.id} onRowClick={(a) => setOpenId(a.id)} emptyText="No applications match these filters."
+          <Table rows={result.data} getRowKey={(a) => a.id} onRowClick={(a) => setOpenId(a.id)} emptyText="No applications match these filters." noun="applications"
+            pagination={pageProps(result.total)}
             columns={[
               { key: 'name', label: 'Candidate', render: (a) => <><span className="t">{a.candidate.fullName}</span><div className="s">{a.candidate.candidateType}</div></> },
               { key: 'vacancy', label: 'Vacancy', render: (a) => (a.vacancy ? <>{a.vacancy.title}<div className="s ws-mono">{a.vacancy.jobRef}</div></> : '—') },
@@ -114,9 +113,6 @@ export default function ApplicationQueue({ staffRole }) {
             ]} />
         )}
       </Panel>
-      {result && result.total > result.limit && (
-        <PageControls page={page} totalPages={totalPages} onPrev={() => setPage((p) => p - 1)} onNext={() => setPage((p) => p + 1)} />
-      )}
       {open && (
         <SidePanel wide title={open.candidate.fullName}
           eyebrow={open.vacancy ? <>{open.vacancy.title} · <span className="ws-mono">{open.vacancy.jobRef}</span></> : null}

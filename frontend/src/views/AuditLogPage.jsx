@@ -6,6 +6,7 @@ import Button from '../components/Button';
 import Alert from '../components/Alert';
 import Skeleton from '../components/Skeleton';
 import CsvDownloadButton from '../components/CsvDownloadButton';
+import { preferredPageSize, rememberPageSize } from '../components/Pagination';
 import { PageTop, Panel, Table, Chips, SidePanel, KeyValues, Pill } from '../components/workspace/ui';
 import { browserName } from '../utils/userAgent';
 
@@ -175,6 +176,7 @@ export default function AuditLogPage() {
   const [params, setParams] = useSearchParams();
   const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'activity';
   const page = Math.max(1, Number(params.get('page')) || 1);
+  const [pageSize, setPageSize] = useState(() => preferredPageSize());
   const filters = useMemo(() => Object.fromEntries(FILTER_KEYS.map((k) => [k, params.get(k) || ''])), [params]);
   const [draft, setDraft] = useState(filters);
   const [data, setData] = useState(null);
@@ -197,10 +199,11 @@ export default function AuditLogPage() {
     setData(null); setError('');
     const q = new URLSearchParams(query);
     q.set('page', page);
+    q.set('pageSize', pageSize);
     staffClient.get(`/api/admin/audit/${tab}?${q}`)
       .then((res) => setData(res.data))
       .catch((err) => { setData({ rows: [], total: 0, page: 1, pageSize: 50 }); setError(err.response?.data?.error || 'Could not load the audit log'); });
-  }, [tab, page, query]);
+  }, [tab, page, pageSize, query]);
   useEffect(() => { load(); }, [load]);
 
   const go = (changes) => {
@@ -215,7 +218,6 @@ export default function AuditLogPage() {
   const showRequest = (requestId, toTab) => go({ ...Object.fromEntries(FILTER_KEYS.map((k) => [k, ''])), requestId, tab: toTab });
 
   const rows = data?.rows || [];
-  const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
   const filtered = FILTER_KEYS.some((k) => filters[k]);
   const field = (key, props = {}) => ({ value: draft[key], onChange: (e) => setDraft({ ...draft, [key]: e.target.type === 'checkbox' ? (e.target.checked ? 'true' : '') : e.target.value }), ...props });
 
@@ -279,17 +281,15 @@ export default function AuditLogPage() {
           {!data ? (
             <div className="ws-panel-b">{[0, 1, 2, 3].map((i) => <Skeleton key={i} width={`${80 - i * 10}%`} height={14} style={{ marginBottom: 12 }} />)}</div>
           ) : (
-            <Table rows={rows} getRowKey={(r) => r.id} onRowClick={setOpen} columns={columnsFor(tab)}
+            <Table rows={rows} getRowKey={(r) => r.id} onRowClick={setOpen} columns={columnsFor(tab)} noun="records"
+              pagination={{
+                page: data.page, pageSize: data.pageSize, total: data.total,
+                onPageChange: (p) => go({ page: String(p) }),
+                onPageSizeChange: (s) => { rememberPageSize(s); setPageSize(s); go({}); }
+              }}
               emptyText={filtered ? 'Nothing matches these filters.' : 'Nothing recorded yet.'} />
           )}
         </Panel>
-        {data && data.total > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
-            <span className="ws-note">{data.total.toLocaleString()} record{data.total === 1 ? '' : 's'} · page {data.page} of {pages}</span>
-            <Button variant="ghost" style={{ padding: '4px 10px' }} disabled={page <= 1} onClick={() => go({ page: String(page - 1) })}>Newer</Button>
-            <Button variant="ghost" style={{ padding: '4px 10px' }} disabled={page >= pages} onClick={() => go({ page: String(page + 1) })}>Older</Button>
-          </div>
-        )}
         <p className="ws-note">
           Times are shown in your computer&apos;s time zone. Activity and data-viewed records are kept for the period set under
           Settings &amp; data; the record of changes is kept. Request bodies, passwords and link tokens are never recorded.
