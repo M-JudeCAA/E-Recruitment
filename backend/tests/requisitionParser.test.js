@@ -17,7 +17,7 @@ describe('reading a whole requisition', () => {
     expect(values(parsed)).toEqual(expect.objectContaining({
       jobTitle: 'HR Analyst', directorate: 'Corporate Affairs', department: 'Human Resources', section: 'Recruitment',
       reportsTo: 'Manager Human Resources', directReports: 'None', salaryScale: 'U5', vacancies: 2,
-      advertType: 'External', contractType: 'FullTime', positionStatus: 'New', jdStatus: 'Approved',
+      advertType: 'External', contractType: 'FixedTermContract', positionStatus: 'New', jdStatus: 'Approved',
       expectedReportingDate: '1 December 2026', equipment: 'Laptop, office desk', contractDuration: 'N/A',
       age: { minimumAge: null, maximumAge: 40 }, excoReference: 'EXCO MIN 42/2026', approvalDate: '25 September 2026',
       duties: DEFAULT_SPEC.duties, knowledge: DEFAULT_SPEC.knowledge
@@ -28,9 +28,9 @@ describe('reading a whole requisition', () => {
   });
 
   test('keeps the raw wording of an interpreted value and marks it medium confidence', () => {
-    const parsed = parseRequisitionText('Contract Type: Permanent and Pensionable');
+    const parsed = parseRequisitionText('Contract Type: On full secondment');
     expect(parsed.fields.contractType).toEqual({
-      value: 'FullTime', raw: 'Permanent and Pensionable', confidence: 'medium', label: 'Contract type'
+      value: 'FullSecondment', raw: 'On full secondment', confidence: 'medium', label: 'Contract type'
     });
   });
 });
@@ -99,9 +99,11 @@ describe('interpreting values', () => {
   });
 
   test.each([
-    ['Fixed Term Contract', 'FixedTermContract'], ['Contract (2 years)', 'Contract'], ['Full time', 'FullTime']
+    ['Fixed Term Contract', 'FixedTermContract'], ['Contract (2 years)', 'FixedTermContract'], ['Secondment', 'Secondment'],
+    ['Seconded from URA', 'Secondment'], ['Full Secondment', 'FullSecondment'], ['Permanent and Pensionable', null]
   ])('contract type "%s" -> %s', (raw, expected) => {
-    expect(parseRequisitionText(`Contract Type: ${raw}`).fields.contractType.value).toBe(expected);
+    // A contract type it can't place (permanent is no longer a category) is left for HR.
+    expect(parseRequisitionText(`Contract Type: ${raw}`).fields.contractType?.value ?? null).toBe(expected);
   });
 
   test.each([

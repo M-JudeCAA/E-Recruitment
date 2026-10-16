@@ -38,7 +38,7 @@ test('HR\'s version replaces the default, sanitised, and reset brings the defaul
 test('the offer letter is filled from the offer, its candidate and vacancy', async () => {
   prisma.offer.findUnique.mockResolvedValue({
     id: 9, status: 'Approved', salaryAmount: 4500000, salaryCurrency: 'UGX', salaryPeriod: 'Monthly', allowances: null,
-    employmentCategory: 'Contract', contractMonths: 24, startDate: new Date('2026-12-01T00:00:00Z'), dutyStation: null,
+    employmentCategory: 'FixedTermContract', contractMonths: 24, startDate: new Date('2026-12-01T00:00:00Z'), dutyStation: null,
     responseDeadline: new Date('2026-11-01T00:00:00Z'), conditions: ['Medical fitness <certificate>'],
     application: {
       id: 3, vacancyId: 7, candidateId: 5,
@@ -51,7 +51,7 @@ test('the offer letter is filled from the offer, its candidate and vacancy', asy
   expect(doc.title).toBe('Offer of employment - Jane Achieng - ATC Officer');
   expect(doc.html).toContain('OFFER OF EMPLOYMENT AS ATC Officer (UCAA/ADV/EXT/001/2026)');
   expect(doc.html).toContain('UGX 4,500,000');
-  expect(doc.html).toContain('on contract for 24 months');
+  expect(doc.html).toContain('on a fixed-term contract for 24 months');
   expect(doc.html).toContain('Entebbe International Airport');
   expect(doc.html).toContain('<li>Medical fitness &lt;certificate&gt;</li>');
   expect(doc.html).toContain('1 November 2026');

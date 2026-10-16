@@ -16,10 +16,10 @@ import {
   MODES, VERDICTS, formatDateTime, timeRange, formatDay, venueLabel, toLocalInput, fromLocalInput,
   saveCalendarFile, CONFLICT_LABELS, errorMessage
 } from '../../utils/interviews';
-import { fileLink } from '../../utils/fileLink';
 import { validateSupportingDocumentFile } from '../../utils/fileValidation';
 import { printFromApi } from '../../utils/printDocument';
 import { sectionLabel, hintText, chipStyle, ROUND_LABELS } from './formStyles';
+import DocumentLink from '../DocumentLink';
 
 // Matches backend/src/middleware/auth.js's ROLE_RANK - changing an interview
 // is Senior HR Officer+; reading it, and recording the panel's results, any
@@ -350,9 +350,9 @@ export default function InterviewRoundPanel({ roundId, onClose, onChanged }) {
           <span style={{ fontSize: 22, fontWeight: 700 }}>{round.score ?? '—'}<span style={{ ...hintText, fontWeight: 400 }}> /100</span></span>
           {round.recommendation && <StatusBadge status={round.recommendation} label={round.recommendation} />}
           {round.scoreSheetUrl && (
-            <a href={fileLink(round.scoreSheetUrl)} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 14 }}>
+            <DocumentLink url={round.scoreSheetUrl} name={round.scoreSheetName || 'Signed score sheet'} style={{ display: 'inline-flex', gap: 4, alignItems: 'center', fontSize: 14 }}>
               <FileText size={14} /> Signed score sheet
-            </a>
+            </DocumentLink>
           )}
         </div>
         {round.resultNotes && <div style={{ fontSize: 14, marginTop: 8, fontStyle: 'italic' }}>"{round.resultNotes}"</div>}

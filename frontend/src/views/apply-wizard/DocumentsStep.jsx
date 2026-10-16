@@ -3,7 +3,7 @@ import { Paperclip, X } from 'lucide-react';
 import TextField from '../../components/TextField';
 import client from '../../models/apiClient';
 import { validateDocumentFile, validateSupportingDocumentFile } from '../../utils/fileValidation';
-import { candidateFileSrc } from '../../utils/fileSrc';
+import DocumentLink from '../../components/DocumentLink';
 
 function AttachmentField({ label, hint, required, name, file, onChange, onClear }) {
   // Rejected client-side (wrong type or too large) - kept local rather than
@@ -113,13 +113,13 @@ function SupportingDocumentsSection({ title, description, category, required, la
       <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0, marginBottom: 10 }}>{description}</p>
       {mine.map((doc) => (
         <div key={doc.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: 8, marginBottom: 6, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg-subtle)' }}>
-          <a href={candidateFileSrc(doc.fileUrl)} target="_blank" rel="noreferrer"
+          <DocumentLink url={doc.fileUrl} audience="candidate" name={doc.label ? `${doc.label} - ${doc.originalName}` : doc.originalName}
             style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1, color: 'var(--color-text)' }}>
             <Paperclip size={14} style={{ flexShrink: 0 }} />
             <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.originalName}>
               {doc.label ? `${doc.label} - ${doc.originalName}` : doc.originalName}
             </span>
-          </a>
+          </DocumentLink>
           <button type="button" onClick={() => remove(doc)} disabled={busy} aria-label={`Remove ${doc.originalName}`}
             style={{ background: 'none', border: 'none', cursor: busy ? 'default' : 'pointer', flexShrink: 0 }}><X size={14} /></button>
         </div>

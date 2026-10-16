@@ -43,7 +43,7 @@ async function acceptedOffer() {
   const offer = await prisma.offer.create({
     data: {
       applicationId: application.id, status: 'Accepted', recommendedById: staff.phro.id, approvedById: staff.manager.id, approvedDate: new Date(),
-      decidedAt: new Date(), salaryAmount: 4500000, salaryCurrency: 'UGX', salaryPeriod: 'Monthly', employmentCategory: 'FullTime',
+      decidedAt: new Date(), salaryAmount: 4500000, salaryCurrency: 'UGX', salaryPeriod: 'Monthly', employmentCategory: 'Secondment',
       startDate: new Date(Date.now() + 30 * 86400000), responseDays: 14
     }
   });

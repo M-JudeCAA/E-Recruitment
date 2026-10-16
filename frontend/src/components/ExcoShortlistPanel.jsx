@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Printer, Upload, FileText, Gavel } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
-import { fileLink } from '../utils/fileLink';
 import { printFromApi } from '../utils/printDocument';
 import Card from './Card';
 import Button from './Button';
 import Alert from './Alert';
 import TextField from './TextField';
 import { hintText, sectionLabel } from './interviews/formStyles';
+import DocumentLink from './DocumentLink';
 
 // EXCO approves the interview shortlist outside the system. Once a
 // Principal HR Officer has approved it here, HR prints it for EXCO, then
@@ -114,9 +114,9 @@ export default function ExcoShortlistPanel({ vacancyId, staffRole, onChanged }) 
           <span style={sectionLabel}>Attached</span>
           {data.approvals.map((a) => (
             <div key={a.id} style={{ fontSize: 13, padding: '6px 0', borderTop: '1px solid var(--color-border)' }}>
-              <a href={fileLink(a.documentUrl)} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              <DocumentLink url={a.documentUrl} name={a.documentName} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
                 <FileText size={13} /> {a.documentName}
-              </a>
+              </DocumentLink>
               {a.excoReference && <> &middot; {a.excoReference}</>}
               {a.approvedOn && <> &middot; approved {new Date(a.approvedOn).toLocaleDateString()}</>}
               <div style={hintText}>

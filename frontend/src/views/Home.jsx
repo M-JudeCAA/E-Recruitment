@@ -15,6 +15,7 @@ import { useVacancyPdfDownload } from '../utils/useVacancyPdfDownload';
 import { HEAD_OFFICE_CONTACTS } from '../components/HowToApplyBlock';
 import { FAQ_ITEMS } from '../data/faqItems';
 import FaqChatWidget from '../components/FaqChatWidget';
+import { EMPLOYMENT_LABELS } from '../utils/employmentCategories';
 
 // A vacancy whose deadline has passed is still shown here (see
 // vacancyController.listPublic's own comment - Vacancy.status is never
@@ -39,11 +40,7 @@ const isClosingSoon = (v) => Boolean(v.deadline) && !isClosed(v) && daysUntil(v.
 // match, since a visitor who searched wants all the results.
 const INITIAL_VISIBLE = 6;
 
-const CATEGORY_LABELS = {
-  FullTime: 'Full-time',
-  Contract: 'Contract',
-  FixedTermContract: 'Fixed-term contract'
-};
+const CATEGORY_LABELS = EMPLOYMENT_LABELS;
 
 // Same 10 UCAA sites HRDashboard.jsx's own LOCATIONS constant lists
 // (kept as an independent literal here rather than imported, since that

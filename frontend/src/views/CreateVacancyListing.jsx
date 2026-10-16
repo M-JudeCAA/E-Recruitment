@@ -17,6 +17,7 @@ import RequisitionPanel from '../components/RequisitionPanel';
 import HiringManagerPicker from '../components/HiringManagerPicker';
 import useVacancyDraft from '../models/useVacancyDraft';
 import { DEFAULT_DEADLINE_TIME, deadlineValue } from '../utils/deadline';
+import { EMPLOYMENT_LABELS as EMPLOYMENT_CATEGORY_LABELS } from '../utils/employmentCategories';
 
 const emptyForm = {
   departmentId: '', positionId: '', reportsToPositionId: '', hiringManager: null,
@@ -38,7 +39,6 @@ const emptyForm = {
   desirableQualifications: []
 };
 
-const EMPLOYMENT_CATEGORY_LABELS = { FullTime: 'Full-time', Contract: 'Contract', FixedTermContract: 'Fixed Term Contract' };
 // UCAA's actual sites - matches backend/src/utils/vacancyValidation.js's
 // VALID_LOCATIONS exactly (confirmed against a real reference "Create
 // Job" form).

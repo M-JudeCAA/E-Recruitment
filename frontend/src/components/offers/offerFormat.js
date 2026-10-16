@@ -1,10 +1,8 @@
 // Shared wording for offers - staff screens and the candidate's own view.
 
-export const EMPLOYMENT_LABELS = {
-  FullTime: 'Permanent, full time',
-  Contract: 'Contract',
-  FixedTermContract: 'Fixed-term contract'
-};
+import { EMPLOYMENT_LABELS } from '../../utils/employmentCategories';
+
+export { EMPLOYMENT_LABELS };
 
 // Offer statuses still waiting on someone (HR, an approver or the candidate).
 export const OPEN_OFFER_STATUSES = ['Recommended', 'Returned', 'Approved'];

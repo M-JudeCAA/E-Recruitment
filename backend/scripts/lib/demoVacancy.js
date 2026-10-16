@@ -9,7 +9,7 @@ const prisma = require('../../src/config/db');
 const { buildRequisitionDocx, buildScannedPdf, DEFAULT_SPEC } = require('./requisitionDocument');
 
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-const CONTRACT_WORDING = { FullTime: 'Permanent and Pensionable', Contract: 'Contract', FixedTermContract: 'Fixed Term Contract' };
+const CONTRACT_WORDING = { FixedTermContract: 'Fixed Term Contract', Secondment: 'Secondment', FullSecondment: 'Full Secondment' };
 
 let seq = 0;
 

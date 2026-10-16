@@ -339,9 +339,11 @@ function interpretScalar(field, value) {
       if (/\bexternal\b/i.test(v) && !/\binternal\b/i.test(v)) return { value: 'External', interpreted: v.toLowerCase() !== 'external' };
       return { value: null };
     case 'contractType':
-      if (/fixed[\s-]*term/i.test(v)) return { value: 'FixedTermContract', raw: v, interpreted: true };
-      if (/permanent|pensionable|full[\s-]*time/i.test(v)) return { value: 'FullTime', raw: v, interpreted: true };
-      if (/contract/i.test(v)) return { value: 'Contract', raw: v, interpreted: true };
+      if (/full[\s-]*secondment/i.test(v)) return { value: 'FullSecondment', raw: v, interpreted: true };
+      if (/secondment|seconded/i.test(v)) return { value: 'Secondment', raw: v, interpreted: true };
+      // Any other contract is a fixed term one. "Permanent" is no longer a
+      // category, so HR picks one.
+      if (/fixed[\s-]*term|contract/i.test(v)) return { value: 'FixedTermContract', raw: v, interpreted: true };
       return { value: null, raw: v };
     case 'age': {
       const between = /(\d{2})\s*(?:-|–|to|and)\s*(\d{2})/i.exec(v);

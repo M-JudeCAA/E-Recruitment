@@ -2,6 +2,7 @@ import React from 'react';
 import HowToApplyBlock from './HowToApplyBlock';
 import StatusBadge from './StatusBadge';
 import { formatDeadline } from '../utils/deadline';
+import { EMPLOYMENT_LABELS as EMPLOYMENT_CATEGORY_LABELS } from '../utils/employmentCategories';
 
 // Renders a vacancy in UCAA's standard job-advertisement layout (header
 // facts, Job Purpose, Person Specification, How to Apply). Shared between
@@ -16,7 +17,6 @@ import { formatDeadline } from '../utils/deadline';
 // backend/src/utils/htmlSanitizer.js) covering job purpose, principal
 // accountabilities, and anything else HR pastes in as one block, so it's
 // rendered here with dangerouslySetInnerHTML rather than as plain text.
-const EMPLOYMENT_CATEGORY_LABELS = { FullTime: 'Full-time', Contract: 'Contract', FixedTermContract: 'Fixed Term Contract' };
 
 export default function VacancyAdvert({
   jobRef, title, departmentLabel, reportsToName, salaryScale, positionsRequired, deadline,

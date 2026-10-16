@@ -57,6 +57,32 @@
 .ws-table .r { text-align: right; }
 .ws-table .t { font-weight: 500; }
 .ws-table .s { font-size: 12.5px; color: var(--color-text-muted); }
+/* Document links and the in-app viewer (components/DocumentLink.jsx, DocumentPreview.jsx). */
+.doc-link { all: unset; display: inline; cursor: pointer; color: var(--color-primary); font: inherit; text-decoration: none; overflow-wrap: anywhere; }
+.doc-link:hover { text-decoration: underline; }
+.doc-link:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: 2px; }
+.doc-viewer-overlay { position: fixed; inset: 0; z-index: 1200; background: rgba(15, 23, 42, .6); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.doc-viewer { width: min(1100px, 100%); height: min(92vh, 100%); display: flex; flex-direction: column; background: var(--color-bg); border-radius: var(--radius-md, 8px); box-shadow: 0 20px 50px rgba(0, 0, 0, .3); overflow: hidden; }
+.doc-viewer-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px 10px 18px; border-bottom: 1px solid var(--color-border); }
+.doc-viewer-h h2 { margin: 0; font-size: 16px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text); }
+.doc-viewer-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.doc-viewer-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-bg); color: var(--color-text); font-size: 13px; font-weight: 500; text-decoration: none; cursor: pointer; }
+.doc-viewer-btn:hover { background: var(--color-hover); }
+.doc-viewer-btn.primary { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.doc-viewer-b { flex: 1; min-height: 0; background: var(--color-bg-subtle); display: flex; }
+.doc-viewer-frame { flex: 1; width: 100%; height: 100%; border: 0; background: #fff; }
+.doc-viewer-image { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 16px; }
+.doc-viewer-image img { max-width: 100%; height: auto; box-shadow: 0 2px 10px rgba(0, 0, 0, .15); background: #fff; }
+.doc-viewer-msg { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px; text-align: center; color: var(--color-text-muted); }
+.doc-viewer-msg p { margin: 0; }
+.doc-viewer-msg .doc-viewer-btn { margin-top: 10px; }
+@media (max-width: 600px) {
+  .doc-viewer-overlay { padding: 0; }
+  .doc-viewer { height: 100%; border-radius: 0; }
+  .doc-viewer-btn span { display: none; }
+  .doc-viewer-btn { padding: 0 9px; }
+}
+
 /* Pagination footer (components/Pagination.jsx) - under every paged table. */
 .ws-pager { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 10px 14px; border-top: 1px solid var(--color-border); font-size: 13px; color: var(--color-text-muted); }
 .ws-pager-count { font-variant-numeric: tabular-nums; }

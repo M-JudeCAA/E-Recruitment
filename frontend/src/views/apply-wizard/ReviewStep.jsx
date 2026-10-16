@@ -4,6 +4,7 @@ import GeneratedCvPrintLayout from '../../components/GeneratedCvPrintLayout';
 import Button from '../../components/Button';
 import { downloadElementAsPdf, sanitizeFilenamePart } from '../../utils/downloadElementAsPdf';
 import { disqualifyingMet } from '../../utils/screeningQuestions';
+import DocumentLink from '../../components/DocumentLink';
 
 export default function ReviewStep({
   profile, coverLetter, documents, referees, profileDetails, questions, internalProfile, candidateType, goTo, stepIndexes,
@@ -35,10 +36,11 @@ export default function ReviewStep({
     }
   };
 
-  const documentNames = (category) => (documents || [])
-    .filter((d) => d.category === category)
-    .map((d) => d.label || d.originalName)
-    .join(', ');
+  // Each document opens in the viewer, so the candidate can check what they attached.
+  const documentLinks = (list) => (list.length ? list.map((d, i) => (
+    <span key={d.id}>{i > 0 && ', '}<DocumentLink url={d.fileUrl} audience="candidate" name={d.label || d.originalName} /></span>
+  )) : null);
+  const inCategory = (category) => (documents || []).filter((d) => d.category === category);
 
   const sections = [
     {
@@ -57,12 +59,12 @@ export default function ReviewStep({
       title: 'Documents',
       rows: [
         ['CV', 'Generated automatically from your profile and application details'],
-        ['Academic documents', documentNames('Academic') || 'None attached', !documentNames('Academic')],
+        ['Academic documents', documentLinks(inCategory('Academic')) || 'None attached', inCategory('Academic').length === 0],
         ...evidence.map((e) => {
-          const attached = (documents || []).filter((d) => d.category === 'Evidence' && d.evidenceKey === e.key).map((d) => d.originalName).join(', ');
-          return [e.label, attached || 'Not attached - required', !attached];
+          const attached = (documents || []).filter((d) => d.category === 'Evidence' && d.evidenceKey === e.key);
+          return [e.label, documentLinks(attached) || 'Not attached - required', attached.length === 0];
         }),
-        ['Other documents', documentNames('Other') || 'None attached'],
+        ['Other documents', documentLinks(inCategory('Other')) || 'None attached'],
         ['Cover letter', coverLetter ? coverLetter.name : 'Not attached'],
         ['Portfolio', profileDetails.portfolioUrl || '—'],
       ],

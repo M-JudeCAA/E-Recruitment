@@ -23,8 +23,8 @@ import { ROUND_LABELS, hintText, inputStyle, chipStyle } from '../components/int
 import {
   startOfWeek, addDays, sameDay, formatDay, timeRange, venueLabel, formatDateTime, errorMessage, resultsDue
 } from '../utils/interviews';
-import { fileLink } from '../utils/fileLink';
 import { debounce } from '../utils/debounce';
+import DocumentLink from '../components/DocumentLink';
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK.
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
@@ -314,10 +314,10 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
                     <td style={{ padding: '8px 12px' }}>{lr.recommendation ? <StatusBadge status={lr.recommendation} /> : '—'}</td>
                     <td style={{ padding: '8px 12px' }}>
                       {lr.scoreSheetUrl ? (
-                        <a href={fileLink(lr.scoreSheetUrl)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-                          style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }} title={lr.scoreSheetName || 'Signed score sheet'}>
+                        <DocumentLink url={lr.scoreSheetUrl} name={lr.scoreSheetName || `Score sheet - ${r.candidateName}`}
+                          style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
                           <FileText size={13} /> Open
-                        </a>
+                        </DocumentLink>
                       ) : '—'}
                     </td>
                     <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>

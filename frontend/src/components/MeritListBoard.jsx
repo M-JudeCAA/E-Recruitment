@@ -17,7 +17,7 @@ import CsvDownloadButton from './CsvDownloadButton';
 import OfferActions from './offers/OfferActions';
 import { hintText } from './interviews/formStyles';
 import { errorMessage } from '../utils/interviews';
-import { fileLink } from '../utils/fileLink';
+import DocumentLink from './DocumentLink';
 
 // ===========================================================================
 // Step three of selection: the post-interview merit list (backend
@@ -338,10 +338,10 @@ export default function MeritListBoard({ vacancy, staffRole, reloadKey, onChange
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
                         <ScoreBar score={row.interviewScore} />
                         {row.scoreSheetUrl && (
-                          <a href={fileLink(row.scoreSheetUrl)} target="_blank" rel="noreferrer"
-                            style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 3 }} title={row.scoreSheetName || 'Signed score sheet'}>
+                          <DocumentLink url={row.scoreSheetUrl} name={row.scoreSheetName || 'Signed score sheet'}
+                            style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                             <FileText size={12} /> Signed score sheet
-                          </a>
+                          </DocumentLink>
                         )}
                       </div>
                       {/* The offer follows straight on from the list: its

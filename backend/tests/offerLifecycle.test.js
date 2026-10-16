@@ -15,7 +15,7 @@ function mockRes() {
 }
 
 const TERMS = {
-  salaryAmount: 4500000, employmentCategory: 'FullTime', startDate: '2099-01-15', conditions: ['  Medical fitness ', ''], responseDays: 7
+  salaryAmount: 4500000, employmentCategory: 'Secondment', startDate: '2099-01-15', conditions: ['  Medical fitness ', ''], responseDays: 7
 };
 
 beforeEach(() => {
@@ -27,7 +27,7 @@ beforeEach(() => {
 describe('offerService.parseTerms', () => {
   test('fills in defaults and cleans the conditions', () => {
     expect(offerService.parseTerms(TERMS)).toMatchObject({
-      salaryAmount: 4500000, salaryCurrency: 'UGX', salaryPeriod: 'Monthly', employmentCategory: 'FullTime',
+      salaryAmount: 4500000, salaryCurrency: 'UGX', salaryPeriod: 'Monthly', employmentCategory: 'Secondment',
       contractMonths: null, conditions: ['Medical fitness'], responseDays: 7, allowances: null, dutyStation: null
     });
   });
@@ -35,7 +35,8 @@ describe('offerService.parseTerms', () => {
   test.each([
     [{ salaryAmount: 0 }, /salary/],
     [{ employmentCategory: 'Casual' }, /employment category/],
-    [{ employmentCategory: 'Contract' }, /contract length/],
+    [{ employmentCategory: 'FixedTermContract' }, /contract length/],
+    [{ employmentCategory: 'FullTime' }, /employment category/],
     [{ startDate: '2000-01-01' }, /past/],
     [{ startDate: 'soon' }, /start date/],
     [{ responseDays: 1 }, /between 3 and 30 days/],
@@ -44,8 +45,9 @@ describe('offerService.parseTerms', () => {
     expect(() => offerService.parseTerms({ ...TERMS, ...override })).toThrow(message);
   });
 
-  test('requires a contract length for a contract post', () => {
-    expect(offerService.parseTerms({ ...TERMS, employmentCategory: 'Contract', contractMonths: 24 }).contractMonths).toBe(24);
+  test('a fixed term contract has a length; a secondment has none', () => {
+    expect(offerService.parseTerms({ ...TERMS, employmentCategory: 'FixedTermContract', contractMonths: 24 }).contractMonths).toBe(24);
+    expect(offerService.parseTerms({ ...TERMS, employmentCategory: 'FullSecondment', contractMonths: 24 }).contractMonths).toBeNull();
   });
 });
 
@@ -190,7 +192,7 @@ describe('return and revise', () => {
   });
 
   test('an offer cannot be approved once every position is filled', async () => {
-    prisma.offer.findUnique.mockResolvedValue(offer({ salaryAmount: 1, startDate: new Date(), employmentCategory: 'FullTime' }));
+    prisma.offer.findUnique.mockResolvedValue(offer({ salaryAmount: 1, startDate: new Date(), employmentCategory: 'Secondment' }));
     prisma.offer.count.mockResolvedValue(1);
     const res = mockRes();
     await offerController.approve({ params: { offerId: '20' }, user: { id: 6 } }, res);

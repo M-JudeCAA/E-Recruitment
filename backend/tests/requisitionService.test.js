@@ -69,7 +69,7 @@ describe('read (step 1: upload and review)', () => {
     });
     expect(result.prefill).toEqual(expect.objectContaining({
       departmentId: 1, positionId: 100, reportsToPositionId: 102, positionsRequired: 2, postingType: 'External',
-      salaryScale: 'U5', location: 'UCAA Head Office — Entebbe', employmentCategory: 'FullTime', maximumAge: 40,
+      salaryScale: 'U5', location: 'UCAA Head Office — Entebbe', employmentCategory: 'FixedTermContract', maximumAge: 40,
       essentialRequirements: expect.arrayContaining([expect.stringMatching(/^A Bachelor's degree/)]),
       desirableQualifications: ['Membership of the Human Resource Managers Association of Uganda.'],
       generalKnowledge: ['Knowledge of the Employment Act, 2006.']
@@ -262,7 +262,7 @@ describe('forCreate (step 2: creating the vacancy)', () => {
       requisitionSignedCopy: signed,
       // As read, except the salary scale and the number of vacancies.
       departmentId: '1', positionId: '100', positionsRequired: 3, postingType: 'External', salaryScale: 'U4',
-      location: 'UCAA Head Office — Entebbe', employmentCategory: 'FullTime', maximumAge: '40'
+      location: 'UCAA Head Office — Entebbe', employmentCategory: 'FixedTermContract', maximumAge: '40'
     };
 
     const columns = await requisitionService.forCreate(body, 7);
