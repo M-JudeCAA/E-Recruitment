@@ -165,6 +165,7 @@ export default function Register() {
         <UcaaAccountSignIn returnTo={validReturnTo} highlight={useMicrosoft} />
         <form onSubmit={handleSubmit} noValidate>
           <TextField
+            format="name"
             label="Full name"
             value={form.fullName}
             onChange={(e) => setForm({ ...form, fullName: e.target.value })}

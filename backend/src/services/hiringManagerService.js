@@ -3,6 +3,7 @@ const { sendMail } = require('../utils/mailer');
 const { escapeHtml, formatDeadline } = require('../utils/interviewFormat');
 const { internalDomains } = require('./entraAuthService');
 const { applicantAmong } = require('./conflictOfInterestService');
+const { formatAs } = require('../utils/textCase');
 
 // The hiring manager: the UCAA employee the vacancy is being filled for,
 // picked from the directory when the vacancy is created (or later). They
@@ -21,7 +22,7 @@ function parseHiringManager(input) {
     return { data: { hiringManagerName: null, hiringManagerEmail: null, hiringManagerEntraId: null, hiringManagerJobTitle: null } };
   }
   if (typeof input !== 'object' || Array.isArray(input)) return { error: 'hiringManager must be an object' };
-  const name = String(input.name || '').trim().slice(0, MAX);
+  const name = formatAs('name', String(input.name || '')).slice(0, MAX);
   const email = String(input.email || '').trim().toLowerCase().slice(0, MAX);
   if (name.length < 2) return { error: 'Enter the hiring manager\'s name' };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'Enter the hiring manager\'s email' };

@@ -3,6 +3,7 @@ const prisma = require('../config/db');
 const { AppError } = require('../utils/errorResponse');
 const { POSITION_LEVELS, LEVEL_WORDS, levelFromInput, levelLabel } = require('../utils/positionLevels');
 const { clean, normalizeCode, codeError, nameError } = require('../utils/orgFields');
+const { formatAs } = require('../utils/textCase');
 
 // Batch import of the org structure - directorates, departments and
 // positions - from one spreadsheet (.xlsx or .csv), one row per position,
@@ -129,6 +130,8 @@ async function readFile(file) {
     row.directorate = normalizeCode(row.directorate);
     row.department = normalizeCode(row.department);
     row.positionCode = normalizeCode(row.positionCode);
+    // Names typed in capitals or lower case are cased like the forms do.
+    for (const f of ['directorateName', 'departmentName', 'position']) row[f] = formatAs('title', row[f]);
     if (Object.keys(COLUMNS).every((field) => !row[field])) continue;
     rows.push(row);
   }

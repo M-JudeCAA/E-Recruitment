@@ -19,6 +19,7 @@ const { endOf } = require('../utils/interviewFormat');
 const { fileUrl } = require('../middleware/upload');
 const { removeUploads } = require('../utils/uploadFiles');
 const { CLEARED_MERIT } = require('../services/meritListService');
+const { formatAs } = require('../utils/textCase');
 
 // Interviews are scheduled here and held outside the system: the panel
 // scores each candidate on a paper score sheet, and HR records what it
@@ -103,13 +104,13 @@ function parseLogistics(body, { partial = false } = {}) {
 }
 
 function parsePanelist(p) {
-  const name = cleanText(p?.name, 191);
+  const name = formatAs('name', cleanText(p?.name, 191));
   if (!name) throw new AppError('Every panelist needs a name', 400);
   const email = cleanText(p.email, 191);
   if (email && !validateEmail(email)) throw new AppError(`"${email}" is not a valid email address`, 400);
   return {
     name,
-    trade: cleanText(p.trade, 191),
+    trade: formatAs('title', cleanText(p.trade, 191)),
     email,
     staffUserId: parseId(p.staffUserId),
     isChair: !!p.isChair

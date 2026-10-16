@@ -5,12 +5,14 @@ import staffClient from '../models/staffApiClient';
 // then sent again with the matching flag:
 //   JD_EXCEPTION_NOT_AUTHORISED        a job description that isn't approved (FR-ATS-018)
 //   HEADCOUNT_EXCEPTION_NOT_AUTHORISED more posts than the approved headcount (FR-ATS-006, Directors only)
+//   NO_SCREENING_CRITERIA              the advert lists requirements but nothing is checked when candidates apply
 // Resolves to the response, or null if the approver declined.
 // Takes the vacancy as the approver saw it: its updatedAt goes along, so one
 // edited since they looked is refused (409 VACANCY_CHANGED), not approved.
 const EXCEPTIONS = {
   JD_EXCEPTION_NOT_AUTHORISED: { flag: 'authoriseJdException', title: 'Authorise job description exception' },
-  HEADCOUNT_EXCEPTION_NOT_AUTHORISED: { flag: 'authoriseHeadcountException', title: 'Authorise going above the approved headcount' }
+  HEADCOUNT_EXCEPTION_NOT_AUTHORISED: { flag: 'authoriseHeadcountException', title: 'Authorise going above the approved headcount' },
+  NO_SCREENING_CRITERIA: { flag: 'acknowledgeNoScreening', title: 'Nothing is checked when candidates apply', confirmLabel: 'Approve anyway' }
 };
 
 export async function approveVacancy(vacancy, confirm) {
@@ -22,7 +24,7 @@ export async function approveVacancy(vacancy, confirm) {
     } catch (err) {
       const exception = EXCEPTIONS[err.response?.data?.code];
       if (!exception || body[exception.flag]) throw err;
-      const ok = await confirm(err.response.data.error, { title: exception.title, confirmLabel: 'Authorise and approve' });
+      const ok = await confirm(err.response.data.error, { title: exception.title, confirmLabel: exception.confirmLabel || 'Authorise and approve' });
       if (!ok) return null;
       body[exception.flag] = true;
     }

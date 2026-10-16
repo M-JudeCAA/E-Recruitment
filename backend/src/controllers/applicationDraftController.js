@@ -24,6 +24,7 @@ const { notifyCandidate } = require('../services/candidateNotificationService');
 const { notify, notifyAllHrStaff } = require('../services/notificationService');
 const { escapeHtml } = require('../utils/interviewFormat');
 const { PRIVACY_NOTICE_VERSION } = require('../config/privacyNotice');
+const { formatAs } = require('../utils/textCase');
 
 // Answers to the vacancy's questions, as [{ id, answer }], snapshotted
 // against its questions as they stand now - server-side, never trusting the
@@ -148,11 +149,11 @@ async function saveDraft(req, res) {
     questionsData.referees = (Array.isArray(parsed) ? parsed : [])
       .slice(0, 3)
       .map((r) => ({
-        name: (r?.name || '').trim(),
+        name: formatAs('name', r?.name || ''),
         relationship: (r?.relationship || '').trim(),
-        organization: (r?.organization || '').trim(),
+        organization: formatAs('title', r?.organization || ''),
         phone: (r?.phone || '').trim(),
-        email: (r?.email || '').trim()
+        email: formatAs('email', r?.email || '')
       }))
       .filter((r) => r.name || r.relationship || r.organization || r.phone || r.email);
   }

@@ -499,7 +499,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       )}
       {(profile?.education || []).map((edu) => editingEduId === edu.id ? (
         <div key={edu.id} style={{ marginTop: 12, marginBottom: 12, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-          <TextField label="Institution" value={editEduForm.institution} onChange={(e) => setEditEduForm({ ...editEduForm, institution: e.target.value })} />
+          <TextField format="title" label="Institution" value={editEduForm.institution} onChange={(e) => setEditEduForm({ ...editEduForm, institution: e.target.value })} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <Select label="Qualification level" value={editEduForm.qualificationLevel} onChange={(e) => setEditEduForm({ ...editEduForm, qualificationLevel: e.target.value })}>
               <option value="">Select a level</option>
@@ -510,7 +510,7 @@ export default function ProfileCompletionForm({ onComplete }) {
               <option value="Masters">Master's</option>
               <option value="PhD">PhD</option>
             </Select>
-            <TextField label="Field of study" value={editEduForm.fieldOfStudy} onChange={(e) => setEditEduForm({ ...editEduForm, fieldOfStudy: e.target.value })} />
+            <TextField format="title" label="Field of study" value={editEduForm.fieldOfStudy} onChange={(e) => setEditEduForm({ ...editEduForm, fieldOfStudy: e.target.value })} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={editEduForm.yearCompleted} onChange={(e) => setEditEduForm({ ...editEduForm, yearCompleted: e.target.value })} />
@@ -534,7 +534,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       {stagedEducation.map((row) => (
         <div key={row.key} style={{ marginTop: 12, padding: 12, border: '1px dashed var(--color-primary)', borderRadius: 'var(--radius-sm)' }}>
           <p style={{ fontSize: 12, color: 'var(--color-primary)', marginTop: 0, marginBottom: 8 }}>From your CV - review and add</p>
-          <TextField label="Institution" value={row.institution} onChange={(e) => updateStagedEducation(row.key, 'institution', e.target.value)} />
+          <TextField format="title" label="Institution" value={row.institution} onChange={(e) => updateStagedEducation(row.key, 'institution', e.target.value)} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <Select label="Qualification level" value={row.qualificationLevel} onChange={(e) => updateStagedEducation(row.key, 'qualificationLevel', e.target.value)}>
               <option value="">Select a level</option>
@@ -545,7 +545,7 @@ export default function ProfileCompletionForm({ onComplete }) {
               <option value="Masters">Master's</option>
               <option value="PhD">PhD</option>
             </Select>
-            <TextField label="Field of study" value={row.fieldOfStudy} onChange={(e) => updateStagedEducation(row.key, 'fieldOfStudy', e.target.value)} />
+            <TextField format="title" label="Field of study" value={row.fieldOfStudy} onChange={(e) => updateStagedEducation(row.key, 'fieldOfStudy', e.target.value)} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={row.yearCompleted} onChange={(e) => updateStagedEducation(row.key, 'yearCompleted', e.target.value)} />
@@ -559,7 +559,7 @@ export default function ProfileCompletionForm({ onComplete }) {
       ))}
 
       <div style={{ marginTop: 12, marginBottom: 24 }}>
-        <TextField label="Institution" value={newEdu.institution} onChange={(e) => setNewEdu({ ...newEdu, institution: e.target.value })} onBlur={blur('education')} />
+        <TextField format="title" label="Institution" value={newEdu.institution} onChange={(e) => setNewEdu({ ...newEdu, institution: e.target.value })} onBlur={blur('education')} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
           <Select label="Qualification level" value={newEdu.qualificationLevel} onChange={(e) => setNewEdu({ ...newEdu, qualificationLevel: e.target.value })}>
             <option value="">Select a level</option>
@@ -570,7 +570,7 @@ export default function ProfileCompletionForm({ onComplete }) {
             <option value="Masters">Master's</option>
             <option value="PhD">PhD</option>
           </Select>
-          <TextField label="Field of study" value={newEdu.fieldOfStudy} onChange={(e) => setNewEdu({ ...newEdu, fieldOfStudy: e.target.value })} />
+          <TextField format="title" label="Field of study" value={newEdu.fieldOfStudy} onChange={(e) => setNewEdu({ ...newEdu, fieldOfStudy: e.target.value })} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
           <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={newEdu.yearCompleted} onChange={(e) => setNewEdu({ ...newEdu, yearCompleted: e.target.value })} />
@@ -585,8 +585,8 @@ export default function ProfileCompletionForm({ onComplete }) {
       )}
       {(profile?.workExperience || []).map((w) => editingExpId === w.id ? (
         <div key={w.id} style={{ marginTop: 12, marginBottom: 12, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-          <TextField label="Employer" value={editExpForm.employer} onChange={(e) => setEditExpForm({ ...editExpForm, employer: e.target.value })} />
-          <TextField label="Job title" value={editExpForm.jobTitle} onChange={(e) => setEditExpForm({ ...editExpForm, jobTitle: e.target.value })} />
+          <TextField format="title" label="Employer" value={editExpForm.employer} onChange={(e) => setEditExpForm({ ...editExpForm, employer: e.target.value })} />
+          <TextField format="title" label="Job title" value={editExpForm.jobTitle} onChange={(e) => setEditExpForm({ ...editExpForm, jobTitle: e.target.value })} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Start date" type="date" value={editExpForm.startDate} onChange={(e) => setEditExpForm({ ...editExpForm, startDate: e.target.value })} />
             <TextField label="End date" type="date" hint="Leave blank if this is your current role" value={editExpForm.endDate} onChange={(e) => setEditExpForm({ ...editExpForm, endDate: e.target.value })} />
@@ -618,8 +618,8 @@ export default function ProfileCompletionForm({ onComplete }) {
       {stagedWorkExperience.map((row) => (
         <div key={row.key} style={{ marginTop: 12, padding: 12, border: '1px dashed var(--color-primary)', borderRadius: 'var(--radius-sm)' }}>
           <p style={{ fontSize: 12, color: 'var(--color-primary)', marginTop: 0, marginBottom: 8 }}>From your CV - review and add</p>
-          <TextField label="Employer" value={row.employer} onChange={(e) => updateStagedWorkExperience(row.key, 'employer', e.target.value)} />
-          <TextField label="Job title" value={row.jobTitle} onChange={(e) => updateStagedWorkExperience(row.key, 'jobTitle', e.target.value)} />
+          <TextField format="title" label="Employer" value={row.employer} onChange={(e) => updateStagedWorkExperience(row.key, 'employer', e.target.value)} />
+          <TextField format="title" label="Job title" value={row.jobTitle} onChange={(e) => updateStagedWorkExperience(row.key, 'jobTitle', e.target.value)} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Start date" type="date" value={row.startDate} onChange={(e) => updateStagedWorkExperience(row.key, 'startDate', e.target.value)} />
             <TextField label="End date" type="date" hint="Leave blank if this is your current role" value={row.endDate} onChange={(e) => updateStagedWorkExperience(row.key, 'endDate', e.target.value)} />
@@ -682,8 +682,8 @@ export default function ProfileCompletionForm({ onComplete }) {
       })()}
 
       <div style={{ marginTop: 12, marginBottom: 24 }}>
-        <TextField label="Employer" value={newExp.employer} onChange={(e) => setNewExp({ ...newExp, employer: e.target.value })} onBlur={blur('workExperience')} />
-        <TextField label="Job title" value={newExp.jobTitle} onChange={(e) => setNewExp({ ...newExp, jobTitle: e.target.value })} />
+        <TextField format="title" label="Employer" value={newExp.employer} onChange={(e) => setNewExp({ ...newExp, employer: e.target.value })} onBlur={blur('workExperience')} />
+        <TextField format="title" label="Job title" value={newExp.jobTitle} onChange={(e) => setNewExp({ ...newExp, jobTitle: e.target.value })} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
           <TextField label="Start date" type="date" value={newExp.startDate} onChange={(e) => setNewExp({ ...newExp, startDate: e.target.value })} />
           <TextField label="End date" type="date" hint="Leave blank if this is your current role" value={newExp.endDate} onChange={(e) => setNewExp({ ...newExp, endDate: e.target.value })} />
@@ -699,8 +699,8 @@ export default function ProfileCompletionForm({ onComplete }) {
       )}
       {(profile?.certificates || []).map((c) => editingCertId === c.id ? (
         <div key={c.id} style={{ marginTop: 12, marginBottom: 12, padding: 12, border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)' }}>
-          <TextField label="Certificate name" value={editCertForm.name} onChange={(e) => setEditCertForm({ ...editCertForm, name: e.target.value })} />
-          <TextField label="Issuing organization" value={editCertForm.issuingOrganization} onChange={(e) => setEditCertForm({ ...editCertForm, issuingOrganization: e.target.value })} />
+          <TextField format="title" label="Certificate name" value={editCertForm.name} onChange={(e) => setEditCertForm({ ...editCertForm, name: e.target.value })} />
+          <TextField format="title" label="Issuing organization" value={editCertForm.issuingOrganization} onChange={(e) => setEditCertForm({ ...editCertForm, issuingOrganization: e.target.value })} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Issue date" type="date" value={editCertForm.issueDate} onChange={(e) => setEditCertForm({ ...editCertForm, issueDate: e.target.value })} />
             <TextField label="Expiry date" type="date" hint="Leave blank if it does not expire" value={editCertForm.expiryDate} onChange={(e) => setEditCertForm({ ...editCertForm, expiryDate: e.target.value })} />
@@ -726,8 +726,8 @@ export default function ProfileCompletionForm({ onComplete }) {
       {stagedCertificates.map((row) => (
         <div key={row.key} style={{ marginTop: 12, padding: 12, border: '1px dashed var(--color-primary)', borderRadius: 'var(--radius-sm)' }}>
           <p style={{ fontSize: 12, color: 'var(--color-primary)', marginTop: 0, marginBottom: 8 }}>From your CV - review and add</p>
-          <TextField label="Certificate name" value={row.name} onChange={(e) => updateStagedCertificate(row.key, 'name', e.target.value)} />
-          <TextField label="Issuing organization" value={row.issuingOrganization} onChange={(e) => updateStagedCertificate(row.key, 'issuingOrganization', e.target.value)} />
+          <TextField format="title" label="Certificate name" value={row.name} onChange={(e) => updateStagedCertificate(row.key, 'name', e.target.value)} />
+          <TextField format="title" label="Issuing organization" value={row.issuingOrganization} onChange={(e) => updateStagedCertificate(row.key, 'issuingOrganization', e.target.value)} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Issue date" type="date" value={row.issueDate} onChange={(e) => updateStagedCertificate(row.key, 'issueDate', e.target.value)} />
             <TextField label="Expiry date" type="date" hint="Leave blank if it does not expire" value={row.expiryDate} onChange={(e) => updateStagedCertificate(row.key, 'expiryDate', e.target.value)} />
@@ -740,8 +740,8 @@ export default function ProfileCompletionForm({ onComplete }) {
       ))}
 
       <div style={{ marginTop: 12, marginBottom: 24 }}>
-        <TextField label="Certificate name" value={newCert.name} onChange={(e) => setNewCert({ ...newCert, name: e.target.value })} />
-        <TextField label="Issuing organization" value={newCert.issuingOrganization} onChange={(e) => setNewCert({ ...newCert, issuingOrganization: e.target.value })} />
+        <TextField format="title" label="Certificate name" value={newCert.name} onChange={(e) => setNewCert({ ...newCert, name: e.target.value })} />
+        <TextField format="title" label="Issuing organization" value={newCert.issuingOrganization} onChange={(e) => setNewCert({ ...newCert, issuingOrganization: e.target.value })} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
           <TextField label="Issue date" type="date" value={newCert.issueDate} onChange={(e) => setNewCert({ ...newCert, issueDate: e.target.value })} />
           <TextField label="Expiry date" type="date" hint="Leave blank if it does not expire" value={newCert.expiryDate} onChange={(e) => setNewCert({ ...newCert, expiryDate: e.target.value })} />
@@ -765,7 +765,7 @@ export default function ProfileCompletionForm({ onComplete }) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Department" required value={internalForm.department} onChange={setInternalField('department')} onBlur={blurInternal('department')} error={showInternalError('department')} />
-            <TextField label="Position" required value={internalForm.position} onChange={setInternalField('position')} onBlur={blurInternal('position')} error={showInternalError('position')} />
+            <TextField format="title" label="Position" required value={internalForm.position} onChange={setInternalField('position')} onBlur={blurInternal('position')} error={showInternalError('position')} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Supervisor name" required value={internalForm.supervisorName} onChange={setInternalField('supervisorName')} onBlur={blurInternal('supervisorName')} error={showInternalError('supervisorName')} />

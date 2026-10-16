@@ -10,6 +10,7 @@ const { parseRequisitionText, normalizeLabel } = require('../utils/requisitionPa
 const { AppError } = require('../utils/errorResponse');
 const { escapeHtml, zonedDateTime, formatDeadline } = require('../utils/interviewFormat');
 const { DEFAULT_DEADLINE_TIME } = require('../utils/vacancyValidation');
+const { suggestScreening } = require('../utils/screeningSuggestions');
 
 // A vacancy is created only from an EXCO-approved, signed requisition that
 // HR uploads (there is no requisition workflow inside this system - the
@@ -199,8 +200,10 @@ function deadlineWarning(fields) {
   return `The closing date in the document (${formatDeadline(closes)}) has passed - set the deadline for this advert.`;
 }
 
-// The vacancy form, pre-filled from what was read. Only what the document
-// states - screening criteria and questions are HR's to add.
+// The vacancy form, pre-filled from what was read: what the document states,
+// and the screening its Essential Requirements suggest (minimum education and
+// experience, and a question on the field - utils/screeningSuggestions.js),
+// which HR confirms or changes on the form.
 function prefillFrom(fields, organogram) {
   const v = (key) => fields[key]?.value;
   const prefill = {};
@@ -221,6 +224,11 @@ function prefillFrom(fields, organogram) {
   const html = jobPurposeHtml(fields);
   if (html) prefill.jobPurpose = html;
   if (v('essential')) prefill.essentialRequirements = v('essential');
+  const screening = suggestScreening(v('essential'));
+  if (screening.minimumEducationLevel) prefill.minimumEducationLevel = screening.minimumEducationLevel;
+  if (screening.minimumExperienceYears) prefill.minimumExperienceYears = screening.minimumExperienceYears;
+  if (screening.preferredFieldOfStudy) prefill.preferredFieldOfStudy = screening.preferredFieldOfStudy;
+  if (screening.disqualifyingQuestion) prefill.disqualifyingRequirements = [screening.disqualifyingQuestion];
   if (v('desirable')) prefill.desirableQualifications = v('desirable');
   if (v('knowledge')) prefill.generalKnowledge = v('knowledge');
   if (v('specialSkills')) prefill.specialSkills = v('specialSkills');
@@ -301,6 +309,9 @@ async function read(file) {
       ...(deadlineWarning(stored.parsed.fields) ? [deadlineWarning(stored.parsed.fields)] : [])
     ],
     jdStatus: jdApproval(stored.parsed.fields),
+    // What the Essential Requirements suggest screening should check, and the
+    // requirement each came from - shown to HR beside the form.
+    screening: suggestScreening(stored.parsed.fields.essential?.value),
     prefill: prefillFrom(stored.parsed.fields, organogram)
   };
 }
@@ -312,7 +323,8 @@ async function read(file) {
 // the markup without changing a word; a field the form didn't send isn't
 // a change.
 const COMPARED_FIELDS = ['positionId', 'reportsToPositionId', 'positionsRequired', 'postingType', 'salaryScale', 'deadline',
-  'location', 'employmentCategory', 'minimumAge', 'maximumAge', 'jobPurpose', 'essentialRequirements',
+  'location', 'employmentCategory', 'minimumAge', 'maximumAge', 'minimumEducationLevel', 'minimumExperienceYears',
+  'preferredFieldOfStudy', 'jobPurpose', 'essentialRequirements',
   'desirableQualifications', 'generalKnowledge', 'specialSkills'];
 
 function comparable(key, value) {

@@ -2,6 +2,7 @@ const express = require('express');
 const controller = require('../controllers/shortlistCommitteeController');
 const { authenticate, requireStaffRole } = require('../middleware/auth');
 const { guardVacancy, vacancyFrom } = require('../middleware/applicantConflict');
+const { casing } = require('../utils/textCase');
 
 const router = express.Router();
 
@@ -22,8 +23,8 @@ router.post('/vacancies/:vacancyId/nomination/return', ...dhra, guardVacancy(vac
 router.get('/vacancies/:vacancyId', ...read, guardVacancy(vacancyFrom.param('vacancyId')), controller.get);
 router.post('/vacancies/:vacancyId', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.create);
 router.patch('/vacancies/:vacancyId', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.update);
-router.post('/vacancies/:vacancyId/members', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.addMember);
-router.patch('/vacancies/:vacancyId/members/:memberId', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.updateMember);
+router.post('/vacancies/:vacancyId/members', ...write, guardVacancy(vacancyFrom.param('vacancyId')), casing({ name: 'name' }), controller.addMember);
+router.patch('/vacancies/:vacancyId/members/:memberId', ...write, guardVacancy(vacancyFrom.param('vacancyId')), casing({ name: 'name' }), controller.updateMember);
 router.delete('/vacancies/:vacancyId/members/:memberId', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.removeMember);
 router.post('/vacancies/:vacancyId/members/:memberId/link', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.reissueLink);
 router.post('/vacancies/:vacancyId/open', ...write, guardVacancy(vacancyFrom.param('vacancyId')), controller.openRating);

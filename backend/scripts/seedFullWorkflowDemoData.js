@@ -337,7 +337,9 @@ const alevel = (subject, grade) => ({ level: 'ALevel', subject, grade });
 async function createVacancy(body, approver = 'manager') {
   // From an uploaded EXCO requisition, the only way a vacancy can be created.
   const v = await createVacancyFromRequisition(api, T.hro, body);
-  if (approver) await api('PATCH', `/api/vacancies/${v.id}/approve`, { token: T[approver] });
+  // Demo vacancies set their own screening (or deliberately none) - the
+  // approver's "nothing is checked" warning is acknowledged.
+  if (approver) await api('PATCH', `/api/vacancies/${v.id}/approve`, { token: T[approver], json: { acknowledgeNoScreening: true } });
   return v;
 }
 

@@ -1,12 +1,13 @@
 const express = require('express');
 const controller = require('../controllers/candidateAuthController');
 const { authLimiters } = require('../middleware/rateLimit');
+const { casing } = require('../utils/textCase');
 
 const router = express.Router();
 // Limits attempts per network address and per account - see middleware/rateLimit.js.
 const limit = authLimiters('candidate');
 
-router.post('/register', limit.register, controller.register);
+router.post('/register', limit.register, casing({ fullName: 'name', email: 'email' }), controller.register);
 router.get('/confirm-email', controller.confirmEmail);
 router.post('/login', limit.login, controller.login);
 // Internal candidates: sign in with a UCAA Microsoft account.

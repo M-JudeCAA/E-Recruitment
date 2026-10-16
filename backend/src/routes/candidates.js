@@ -11,6 +11,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const documentController = require('../controllers/documentController');
 const dataProtectionController = require('../controllers/dataProtectionController');
 const directoryController = require('../controllers/directoryController');
+const { casing } = require('../utils/textCase');
 const router = express.Router();
 
 // asyncHandler wraps every action here so a rejected promise (e.g. a
@@ -20,20 +21,20 @@ const router = express.Router();
 // server.js catches - which keeps the server alive but leaves this one
 // request hanging with no response at all.
 router.get('/me', authenticate, requireCandidate, asyncHandler(controller.me));
-router.put('/me', authenticate, requireCandidate, asyncHandler(controller.updateProfile));
-router.post('/me/work-experience', authenticate, requireCandidate, asyncHandler(controller.addWorkExperience));
-router.put('/me/work-experience/:id', authenticate, requireCandidate, asyncHandler(controller.updateWorkExperience));
+router.put('/me', authenticate, requireCandidate, casing({ location: 'title', districtOfOrigin: 'title' }), asyncHandler(controller.updateProfile));
+router.post('/me/work-experience', authenticate, requireCandidate, casing({ employer: 'title', jobTitle: 'title' }), asyncHandler(controller.addWorkExperience));
+router.put('/me/work-experience/:id', authenticate, requireCandidate, casing({ employer: 'title', jobTitle: 'title' }), asyncHandler(controller.updateWorkExperience));
 router.delete('/me/work-experience/:id', authenticate, requireCandidate, asyncHandler(controller.deleteWorkExperience));
-router.post('/me/education', authenticate, requireCandidate, asyncHandler(controller.addEducation));
-router.put('/me/education/:id', authenticate, requireCandidate, asyncHandler(controller.updateEducation));
+router.post('/me/education', authenticate, requireCandidate, casing({ institution: 'title', fieldOfStudy: 'title' }), asyncHandler(controller.addEducation));
+router.put('/me/education/:id', authenticate, requireCandidate, casing({ institution: 'title', fieldOfStudy: 'title' }), asyncHandler(controller.updateEducation));
 router.delete('/me/education/:id', authenticate, requireCandidate, asyncHandler(controller.deleteEducation));
-router.post('/me/certificates', authenticate, requireCandidate, asyncHandler(controller.addCertificate));
-router.put('/me/certificates/:id', authenticate, requireCandidate, asyncHandler(controller.updateCertificate));
+router.post('/me/certificates', authenticate, requireCandidate, casing({ name: 'title', issuingOrganization: 'title' }), asyncHandler(controller.addCertificate));
+router.put('/me/certificates/:id', authenticate, requireCandidate, casing({ name: 'title', issuingOrganization: 'title' }), asyncHandler(controller.updateCertificate));
 router.delete('/me/certificates/:id', authenticate, requireCandidate, asyncHandler(controller.deleteCertificate));
 router.post('/me/exam-grades', authenticate, requireCandidate, asyncHandler(controller.addExamGrade));
 router.put('/me/exam-grades/:id', authenticate, requireCandidate, asyncHandler(controller.updateExamGrade));
 router.delete('/me/exam-grades/:id', authenticate, requireCandidate, asyncHandler(controller.deleteExamGrade));
-router.put('/me/internal-profile', authenticate, requireCandidate, asyncHandler(controller.updateInternalProfile));
+router.put('/me/internal-profile', authenticate, requireCandidate, casing({ department: 'title', position: 'title', supervisorName: 'name' }), asyncHandler(controller.updateInternalProfile));
 // Internal Careers: picking a supervisor from the UCAA directory.
 router.get('/me/directory/people', authenticate, requireCandidate, asyncHandler(directoryController.searchColleagues));
 router.put('/me/photo', authenticate, requireCandidate, uploadPhoto.single('photo'), asyncHandler(controller.updatePhoto));

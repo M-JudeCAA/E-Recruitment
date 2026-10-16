@@ -181,6 +181,17 @@ describe('approving a vacancy', () => {
     expect(body(sent[2])).toEqual(expect.objectContaining({ authoriseJdException: true, authoriseHeadcountException: true }));
   });
 
+  test('warns that nothing is checked when candidates apply, and approves anyway once confirmed', async () => {
+    answers((config, call) => (call === 1
+      ? { status: 422, data: { error: 'Anyone will be able to apply.', code: 'NO_SCREENING_CRITERIA' } }
+      : { status: 200, data: { id: 7, status: 'Open' } }));
+    const confirm = vi.fn().mockResolvedValue(true);
+    await approveVacancy(vacancy, confirm);
+    expect(confirm).toHaveBeenCalledWith('Anyone will be able to apply.',
+      expect.objectContaining({ title: 'Nothing is checked when candidates apply', confirmLabel: 'Approve anyway' }));
+    expect(body(sent[1])).toEqual({ expectedUpdatedAt: vacancy.updatedAt, acknowledgeNoScreening: true });
+  });
+
   test('declining leaves the vacancy unapproved', async () => {
     answers(() => ({ status: 422, data: { error: 'JD', code: 'JD_EXCEPTION_NOT_AUTHORISED' } }));
     expect(await approveVacancy(vacancy, vi.fn().mockResolvedValue(false))).toBeNull();
