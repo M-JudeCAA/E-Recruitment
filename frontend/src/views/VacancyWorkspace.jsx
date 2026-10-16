@@ -23,9 +23,10 @@ import { PageTop, Meta, Panel, KeyValues, Pill, SidePanel, formatDay, rankOf, RO
 import { useConfirm } from '../components/ConfirmDialog';
 import { approveVacancy } from '../utils/approveVacancy';
 import { useGeneratedCvDownload } from '../utils/useGeneratedCvDownload';
-import { fileLink } from '../utils/fileLink';
 import { debounce } from '../utils/debounce';
 import { canShareJob } from '../utils/jobShareLink';
+import { employmentLabel } from '../utils/employmentCategories';
+import DocumentLink from '../components/DocumentLink';
 
 // One page per vacancy (/hr/vacancy/:id?tab=...): the header carries every
 // action on it (VacancyActions), the Next step box says what happens next
@@ -73,7 +74,6 @@ const EDITED_LABELS = {
   maximumAge: 'maximum age', jobPurpose: 'job purpose', essentialRequirements: 'essential requirements',
   desirableQualifications: 'desirable requirements', generalKnowledge: 'knowledge', specialSkills: 'special skills'
 };
-const EMPLOYMENT = { FullTime: 'Permanent, full time', Contract: 'Contract', FixedTermContract: 'Fixed-term contract' };
 
 function RequisitionPanel({ vacancy }) {
   if (!vacancy.requisitionDocumentUrl) {
@@ -87,13 +87,13 @@ function RequisitionPanel({ vacancy }) {
     <Panel title="Requisition">
       <div style={{ display: 'grid', gap: 10 }}>
         <div>
-          <a href={fileLink(vacancy.requisitionDocumentUrl)} target="_blank" rel="noreferrer" style={{ overflowWrap: 'anywhere' }}>{vacancy.requisitionDocumentName || 'Requisition document'}</a>
+          <DocumentLink url={vacancy.requisitionDocumentUrl} name={vacancy.requisitionDocumentName || 'Requisition document'} />
           {vacancy.requisitionUploadedAt && <span className="ws-note"> · uploaded {formatDay(vacancy.requisitionUploadedAt)}</span>}
         </div>
         <div>
           Signed copy:{' '}
           {vacancy.requisitionSignedCopyUrl
-            ? <a href={fileLink(vacancy.requisitionSignedCopyUrl)} target="_blank" rel="noreferrer" style={{ overflowWrap: 'anywhere' }}>{vacancy.requisitionSignedCopyName || 'Signed requisition'}</a>
+            ? <DocumentLink url={vacancy.requisitionSignedCopyUrl} name={vacancy.requisitionSignedCopyName || 'Signed requisition'} />
             : <span className="ws-note">none - created before the signed scan was required</span>}
         </div>
         {facts.length > 0 && <KeyValues rows={facts.map(([key, label]) => [label, String(fields[key].value)])} />}
@@ -245,7 +245,7 @@ export default function VacancyWorkspace() {
             ['Reports to', v.reportsToPosition?.name || null],
             ['Salary scale', v.salaryScale || null],
             ['Duty station', v.location || null],
-            ['Employment', EMPLOYMENT[v.employmentCategory] || v.employmentCategory || null],
+            ['Employment', employmentLabel(v.employmentCategory) || null],
             ['Posts', v.positionsRequired],
             ['Posting', v.postingType],
             ['Applications', v.deadline ? `${deadlinePassed ? 'Closed' : 'Close'} ${formatDay(v.deadline)}` : null],

@@ -136,9 +136,9 @@ enum DepartmentStatus {
 }
 
 enum EmploymentCategory {
-  FullTime
-  Contract
   FixedTermContract
+  Secondment
+  FullSecondment
 }
 
 model StaffUser {
@@ -1318,7 +1318,7 @@ model Offer {
   salaryPeriod           String? // Monthly | Annual
   allowances             String?             @db.Text
   employmentCategory     EmploymentCategory?
-  contractMonths         Int? // for Contract / FixedTermContract
+  contractMonths         Int? // for FixedTermContract only; a secondment has no length
   startDate              DateTime?
   dutyStation            String?
   // Pre-employment conditions the offer depends on, as shown to the

@@ -38,7 +38,7 @@ const inDays = (d) => new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString
 
 // What every offer here is recommended with.
 const OFFER_TERMS = {
-  salaryAmount: 4500000, salaryPeriod: 'Monthly', employmentCategory: 'FullTime', startDate: inDays(45).slice(0, 10),
+  salaryAmount: 4500000, salaryPeriod: 'Monthly', employmentCategory: 'Secondment', startDate: inDays(45).slice(0, 10),
   dutyStation: 'Entebbe', conditions: ['A certificate of medical fitness'], responseDays: 10
 };
 

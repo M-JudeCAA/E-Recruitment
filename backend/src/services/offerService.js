@@ -3,6 +3,7 @@ const { AppError } = require('../utils/errorResponse');
 const meritList = require('./meritListService');
 const { notifyAllWithRole } = require('./notificationService');
 const { localDay } = require('../utils/interviewFormat');
+const { EMPLOYMENT_CATEGORIES, hasContractLength } = require('../utils/employmentCategories');
 
 // ===========================================================================
 // Offer management - step four of selection, fed by the merit list:
@@ -22,7 +23,6 @@ const { localDay } = require('../utils/interviewFormat');
 // the merit list moves up to Primary (workflowService.closeOffer).
 // ===========================================================================
 
-const EMPLOYMENT_CATEGORIES = ['FullTime', 'Contract', 'FixedTermContract'];
 const SALARY_PERIODS = ['Monthly', 'Annual'];
 const MIN_RESPONSE_DAYS = 3;
 const MAX_RESPONSE_DAYS = 30;
@@ -63,7 +63,7 @@ function parseTerms(body = {}, now = new Date()) {
   const employmentCategory = body.employmentCategory;
   if (!EMPLOYMENT_CATEGORIES.includes(employmentCategory)) throw new AppError('Choose the employment category', 400);
   let contractMonths = null;
-  if (employmentCategory !== 'FullTime') {
+  if (hasContractLength(employmentCategory)) {
     contractMonths = Number(body.contractMonths);
     if (!Number.isInteger(contractMonths) || contractMonths < 1 || contractMonths > 120) {
       throw new AppError('Enter the contract length in months (1-120)', 400);
@@ -159,8 +159,8 @@ async function draftContext(applicationId, now = new Date()) {
     suggested: {
       salaryCurrency: 'UGX',
       salaryPeriod: 'Monthly',
-      employmentCategory: vacancy.employmentCategory || 'FullTime',
-      contractMonths: vacancy.employmentCategory && vacancy.employmentCategory !== 'FullTime' ? 24 : null,
+      employmentCategory: vacancy.employmentCategory || 'FixedTermContract',
+      contractMonths: hasContractLength(vacancy.employmentCategory || 'FixedTermContract') ? 24 : null,
       startDate: start.toISOString().slice(0, 10),
       // Where the job is based (the advert's location) - not the department.
       dutyStation: vacancy.location || null,

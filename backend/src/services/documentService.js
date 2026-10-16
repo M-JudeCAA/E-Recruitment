@@ -12,7 +12,7 @@ const { AppError } = require('../utils/errorResponse');
 
 const TZ = () => process.env.APP_TIMEZONE || 'Africa/Kampala';
 const SIGNATORY = 'Director Human Resource & Administration';
-const EMPLOYMENT = { FullTime: 'permanent and pensionable', Contract: 'on contract', FixedTermContract: 'on a fixed-term contract' };
+const EMPLOYMENT = { FixedTermContract: 'on a fixed-term contract', Secondment: 'on secondment', FullSecondment: 'on full secondment' };
 const EDUCATION = { PhD: 'PhD', Masters: "Master's", Postgraduate: 'Postgraduate', Bachelors: "Bachelor's", Diploma: 'Diploma', Certificate: 'Certificate', ALevel: 'A Level', OLevel: 'O Level' };
 
 const longDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: TZ() }) : '');

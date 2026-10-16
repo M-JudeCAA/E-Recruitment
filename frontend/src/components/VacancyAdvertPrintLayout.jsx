@@ -1,5 +1,6 @@
 import React from 'react';
 import { formatDeadlineDay, formatDeadlineTime } from '../utils/deadline';
+import { EMPLOYMENT_LABELS as EMPLOYMENT_CATEGORY_LABELS } from '../utils/employmentCategories';
 
 // Matches UCAA's actual printed/PDF job-advertisement layout (plain
 // letterhead, colon-style facts, Person Specification table) as closely
@@ -50,7 +51,6 @@ function NumberedList({ items, style, getKey }) {
 const tableCellStyle = { border: `1px solid ${TABLE_BORDER}`, padding: '10px 14px', verticalAlign: 'top' };
 const tableLabelCellStyle = { ...tableCellStyle, fontWeight: 700, color: SUBLABEL_COLOR, width: '30%' };
 
-const EMPLOYMENT_CATEGORY_LABELS = { FullTime: 'Full-time', Contract: 'Contract', FixedTermContract: 'Fixed Term Contract' };
 
 export default function VacancyAdvertPrintLayout({
   jobRef, title, reportsToName, salaryScale, positionsRequired, deadline,

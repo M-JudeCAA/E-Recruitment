@@ -17,13 +17,13 @@ beforeEach(() => {
 
 // The terms every offer is recommended with.
 const TERMS = {
-  salaryAmount: 4500000, salaryCurrency: 'UGX', salaryPeriod: 'Monthly', employmentCategory: 'FullTime',
+  salaryAmount: 4500000, salaryCurrency: 'UGX', salaryPeriod: 'Monthly', employmentCategory: 'Secondment',
   startDate: '2099-01-15', dutyStation: 'Entebbe', conditions: ['Medical fitness'], responseDays: 10
 };
 // An offer as the approver sees it: terms present, vacancy with room.
 const recommendedOffer = (overrides = {}) => ({
   id: 20, status: 'Recommended', recommendedById: 5, applicationId: 44,
-  salaryAmount: 4500000, salaryCurrency: 'UGX', salaryPeriod: 'Monthly', employmentCategory: 'FullTime',
+  salaryAmount: 4500000, salaryCurrency: 'UGX', salaryPeriod: 'Monthly', employmentCategory: 'Secondment',
   startDate: new Date('2099-01-15'), responseDays: 10,
   application: { candidateId: 7, vacancyId: 3, vacancy: { id: 3, jobRef: 'REF/1', title: 'Air Traffic Controller', positionsRequired: 1 } },
   ...overrides
@@ -129,7 +129,7 @@ describe('recommendOffer', () => {
     expect(prisma.offer.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         applicationId: 1, status: 'Recommended', recommendedById: 5, recommendedDate: expect.any(Date),
-        salaryAmount: 4500000, employmentCategory: 'FullTime', startDate: new Date('2099-01-15'), responseDays: 10,
+        salaryAmount: 4500000, employmentCategory: 'Secondment', startDate: new Date('2099-01-15'), responseDays: 10,
         conditions: ['Medical fitness'], interviewScoreAtOffer: 78
       })
     });

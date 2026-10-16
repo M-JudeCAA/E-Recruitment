@@ -572,7 +572,7 @@ const CONDITIONS = [
   'Verification of academic certificates by the awarding institutions',
   'A certificate of medical fitness from a UCAA-approved medical examiner'
 ];
-const OFFER_DEFAULTS = { salaryPeriod: 'Monthly', employmentCategory: 'FullTime', conditions: CONDITIONS, responseDays: 14 };
+const OFFER_DEFAULTS = { salaryPeriod: 'Monthly', employmentCategory: 'FixedTermContract', contractMonths: 24, conditions: CONDITIONS, responseDays: 14 };
 
 const recommendOffer = (applicationId, terms) => api('POST', `/api/applications/${applicationId}/recommend-offer`, {
   token: T.phro, json: { ...OFFER_DEFAULTS, startDate: dateOnly(35), ...terms }
@@ -739,7 +739,7 @@ async function scenarioFilled() {
   log('=== Senior Accountant (External) - Filled ===');
   const v = await createVacancy({
     positionId: POS.seniorAccountant.id, reportsToPositionId: POS.financeManager.id,
-    postingType: 'External', positionsRequired: 1, deadline: dateOnly(20), employmentCategory: 'FullTime', location: 'UCAA Head Office — Entebbe',
+    postingType: 'External', positionsRequired: 1, deadline: dateOnly(20), employmentCategory: 'FixedTermContract', location: 'UCAA Head Office — Entebbe',
     salaryScale: 'U4 (UGX 4,200,000 - 5,600,000 per month)', internalSalaryRange: 'UGX 4.6M - 5.1M budgeted',
     minimumEducationLevel: 'Bachelors', minimumExperienceYears: 4, preferredFieldOfStudy: 'Accounting', minimumCGPA: 3.0,
     jobPurpose: purpose('To prepare and review the Authority\'s financial statements and management accounts in line with IFRS and the PFMA.', [
@@ -802,7 +802,7 @@ async function scenarioDeclineExpire() {
   log('=== Fire Officer (External) - decline + expiry cascade ===');
   const v = await createVacancy({
     positionId: POS.fireOfficer.id,
-    postingType: 'External', positionsRequired: 2, deadline: dateOnly(20), employmentCategory: 'FullTime', location: 'Entebbe International Airport',
+    postingType: 'External', positionsRequired: 2, deadline: dateOnly(20), employmentCategory: 'FixedTermContract', location: 'Entebbe International Airport',
     salaryScale: 'U5 (UGX 2,700,000 - 3,500,000 per month)', minimumEducationLevel: 'Diploma', minimumExperienceYears: 3, maximumAge: 40,
     jobPurpose: purpose('To lead a watch of the Aerodrome Rescue and Fire Fighting Service, keeping Entebbe at ICAO Category 9 readiness.', [
       'Command a fire and rescue watch during aircraft incidents', 'Plan and run live-fire and extrication drills', 'Inspect and maintain fire tenders and rescue equipment', 'Keep incident and training records'
@@ -885,7 +885,7 @@ async function scenarioOffers() {
   log('=== Air Traffic Control Officer I (External) - offers in progress ===');
   const v = await createVacancy({
     positionId: POS.atc1.id, reportsToPositionId: POS.atcSenior.id,
-    postingType: 'External', positionsRequired: 4, deadline: dateOnly(20), employmentCategory: 'FullTime', location: 'Entebbe International Airport',
+    postingType: 'External', positionsRequired: 4, deadline: dateOnly(20), employmentCategory: 'FixedTermContract', location: 'Entebbe International Airport',
     salaryScale: 'U4 (UGX 4,000,000 - 5,200,000 per month)', internalSalaryRange: 'Budget approved for 4 posts at U4 entry point',
     recruiterNotes: 'Appointees must pass the ICAO Class 3 medical before starting - flag known medical issues early.',
     minimumEducationLevel: 'Bachelors', minimumExperienceYears: 1, maximumAge: 32, minimumCGPA: 3.0,
@@ -985,7 +985,7 @@ async function scenarioMeritProposed() {
   log('=== Systems Administrator (External) - merit list awaiting approval ===');
   const v = await createVacancy({
     positionId: POS.sysadmin.id, reportsToPositionId: POS.itManager.id,
-    postingType: 'External', positionsRequired: 1, deadline: dateOnly(20), employmentCategory: 'Contract', location: 'UCAA Head Office — Entebbe',
+    postingType: 'External', positionsRequired: 1, deadline: dateOnly(20), employmentCategory: 'Secondment', location: 'UCAA Head Office — Entebbe',
     salaryScale: 'U5 (UGX 3,000,000 - 3,900,000 per month)', minimumEducationLevel: 'Bachelors', minimumExperienceYears: 3, preferredFieldOfStudy: 'Computer Science',
     jobPurpose: purpose('To administer the Authority\'s server, virtualisation and identity infrastructure, including systems that support air navigation services.', [
       'Administer Windows and Linux servers and the VMware cluster', 'Manage Active Directory, Microsoft 365 and backup schedules', 'Patch and harden systems against the UCAA security baseline', 'Document configurations and support disaster-recovery tests'
@@ -1053,7 +1053,7 @@ async function scenarioInterviews() {
   log('=== Aviation Security Officer (External) - interviews in progress ===');
   const v = await createVacancy({
     positionId: POS.avsec.id, reportsToPositionId: POS.avsecSenior.id,
-    postingType: 'External', positionsRequired: 3, deadline: dateOnly(20), employmentCategory: 'FullTime', location: 'Entebbe International Airport',
+    postingType: 'External', positionsRequired: 3, deadline: dateOnly(20), employmentCategory: 'FixedTermContract', location: 'Entebbe International Airport',
     salaryScale: 'U6 (UGX 1,900,000 - 2,500,000 per month)', minimumEducationLevel: 'Diploma', minimumExperienceYears: 1, minimumAge: 21, maximumAge: 35,
     requiredExamGrades: [{ level: 'OLevel', subject: 'English Language', minGrade: '6' }],
     jobPurpose: purpose('To protect civil aviation against acts of unlawful interference by screening passengers, baggage, cargo and staff at Entebbe International Airport.', [
@@ -1174,7 +1174,7 @@ async function scenarioInternalShortlist() {
   log('=== Senior Air Traffic Control Officer (Internal) - shortlist awaiting approval ===');
   const v = await createVacancy({
     positionId: POS.atcSenior.id,
-    postingType: 'Internal', positionsRequired: 1, deadline: dateOnly(20), employmentCategory: 'FullTime', location: 'Entebbe International Airport',
+    postingType: 'Internal', positionsRequired: 1, deadline: dateOnly(20), employmentCategory: 'FixedTermContract', location: 'Entebbe International Airport',
     salaryScale: 'U3 (UGX 6,200,000 - 7,800,000 per month)', minimumEducationLevel: 'Diploma', minimumExperienceYears: 5,
     jobPurpose: purpose('To supervise a watch of the Entebbe approach and aerodrome control units and act as On-the-Job Training Instructor.', [
       'Supervise watch operations and staffing', 'Conduct on-the-job training and competency checks', 'Investigate and report ATS occurrences', 'Contribute to ATM safety cases'
@@ -1231,7 +1231,7 @@ async function scenarioModeration() {
   log('=== Senior Aviation Security Officer (External) - committee at moderation ===');
   const v = await createVacancy({
     positionId: POS.avsecSenior.id, reportsToPositionId: POS.avsecManager.id,
-    postingType: 'External', positionsRequired: 1, deadline: dateOnly(20), employmentCategory: 'FullTime', location: 'Entebbe International Airport',
+    postingType: 'External', positionsRequired: 1, deadline: dateOnly(20), employmentCategory: 'FixedTermContract', location: 'Entebbe International Airport',
     salaryScale: 'U5 (UGX 2,900,000 - 3,700,000 per month)', minimumEducationLevel: 'Bachelors', minimumExperienceYears: 5,
     jobPurpose: purpose('To supervise an aviation security shift and the screening checkpoints at Entebbe International Airport.', [
       'Supervise screeners and access-control staff on shift', 'Run quality-control tests on screening checkpoints', 'Report and follow up security occurrences', 'Train and certify screeners'
@@ -1281,7 +1281,7 @@ async function scenarioRating(sysadminCandidates) {
   log('=== IT Support Officer (External) - committee rating in progress ===');
   const v = await createVacancy({
     positionId: POS.itSupport.id, reportsToPositionId: POS.sysadmin.id,
-    postingType: 'External', positionsRequired: 2, deadline: dateOnly(20), employmentCategory: 'FullTime', location: 'Entebbe International Airport',
+    postingType: 'External', positionsRequired: 2, deadline: dateOnly(20), employmentCategory: 'FixedTermContract', location: 'Entebbe International Airport',
     salaryScale: 'U7 (UGX 1,500,000 - 2,100,000 per month)', minimumEducationLevel: 'Bachelors', minimumExperienceYears: 1,
     preferredFieldOfStudy: 'Information Technology', minimumCGPA: 3.0,
     jobPurpose: purpose('To provide first- and second-line ICT support to UCAA staff at Entebbe International Airport and the Head Office.', [
@@ -1330,7 +1330,7 @@ async function scenarioRating(sysadminCandidates) {
 async function scenarioClosedReadvertised() {
   log('=== Aeronautical Information Officer - closed and readvertised ===');
   const body = {
-    postingType: 'External', positionsRequired: 1, employmentCategory: 'FullTime', location: 'Entebbe International Airport',
+    postingType: 'External', positionsRequired: 1, employmentCategory: 'FixedTermContract', location: 'Entebbe International Airport',
     salaryScale: 'U6 (UGX 2,000,000 - 2,600,000 per month)', minimumEducationLevel: 'Diploma', minimumExperienceYears: 2,
     jobPurpose: purpose('To collect, verify and publish aeronautical information (AIP, NOTAMs, charts) for Ugandan airspace.', [
       'Process and issue NOTAMs', 'Maintain the Uganda AIP and its amendments', 'Provide pre-flight information briefings', 'Support the AIM quality management system'
@@ -1363,7 +1363,7 @@ async function scenarioOpen() {
   log('=== Fire Fighter (External) - open, committee being set up ===');
   const v = await createVacancy({
     positionId: POS.fireFighter.id, reportsToPositionId: POS.fireOfficer.id,
-    postingType: 'External', positionsRequired: 4, deadline: dateOnly(18), employmentCategory: 'FullTime', location: 'Entebbe International Airport',
+    postingType: 'External', positionsRequired: 4, deadline: dateOnly(18), employmentCategory: 'FixedTermContract', location: 'Entebbe International Airport',
     salaryScale: 'U8 (UGX 1,100,000 - 1,500,000 per month)', minimumEducationLevel: 'Certificate', minimumAge: 18, maximumAge: 28,
     jobPurpose: purpose('To provide aerodrome rescue and fire-fighting cover so that aircraft operations at Entebbe meet ICAO Category 9 requirements.', [
       'Respond to aircraft and domestic fire emergencies', 'Operate and maintain fire tenders and rescue equipment', 'Take part in daily drills and physical training', 'Carry out fire-safety inspections of airport premises'
@@ -1424,7 +1424,7 @@ async function scenarioPendingApproval() {
   log('=== Vacancies awaiting approval ===');
   const acc = await createVacancy({
     positionId: POS.accountant.id, reportsToPositionId: POS.seniorAccountant.id,
-    postingType: 'External', positionsRequired: 2, deadline: dateOnly(28), employmentCategory: 'FullTime', location: 'UCAA Head Office — Entebbe',
+    postingType: 'External', positionsRequired: 2, deadline: dateOnly(28), employmentCategory: 'FixedTermContract', location: 'UCAA Head Office — Entebbe',
     salaryScale: 'U6 (UGX 2,000,000 - 2,600,000 per month)', minimumEducationLevel: 'Bachelors', minimumExperienceYears: 2,
     jobPurpose: purpose('To process payments, receipts and reconciliations for the Finance department.', ['Process supplier payments', 'Reconcile aeronautical revenue', 'Prepare VAT and PAYE returns']),
     essentialRequirements: ['CPA or ACCA (at least part-qualified)'],
@@ -1434,7 +1434,7 @@ async function scenarioPendingApproval() {
   await prisma.vacancy.update({ where: { id: acc.id }, data: { createdAt: ago(3) } });
   const hr = await createVacancy({
     positionId: POS.hrOfficer.id,
-    postingType: 'Internal', positionsRequired: 1, deadline: dateOnly(21), employmentCategory: 'FullTime', location: 'UCAA Head Office — Entebbe',
+    postingType: 'Internal', positionsRequired: 1, deadline: dateOnly(21), employmentCategory: 'FixedTermContract', location: 'UCAA Head Office — Entebbe',
     salaryScale: 'U6 (UGX 2,000,000 - 2,600,000 per month)', minimumEducationLevel: 'Bachelors', minimumExperienceYears: 2,
     jobPurpose: purpose('To support recruitment, onboarding and staff records for the Directorate of Human Resource and Administration.', ['Coordinate recruitment logistics', 'Maintain personnel files', 'Support the performance-management cycle']),
     essentialRequirements: ['Currently employed by UCAA'],

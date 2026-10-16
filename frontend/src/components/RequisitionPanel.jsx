@@ -2,11 +2,12 @@ import React, { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { FileCheck2, Upload, RefreshCw, PenLine } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
-import { fileLink } from '../utils/fileLink';
 import Button from './Button';
 import Alert from './Alert';
 import StatusBadge from './StatusBadge';
 import TextArea from './TextArea';
+import { EMPLOYMENT_LABELS } from '../utils/employmentCategories';
+import DocumentLink from './DocumentLink';
 
 // Step 1 of a new vacancy: the EXCO-approved, signed requisition. HR uploads
 // it (POST /api/vacancies/requisition); the server reads the job details out
@@ -23,7 +24,6 @@ const CONFIDENCE_BADGE = {
   medium: ['MediumConfidence', 'Check'],
   low: ['LowConfidence', 'Doubtful']
 };
-const EMPLOYMENT_LABELS = { FullTime: 'Full-time', Contract: 'Contract', FixedTermContract: 'Fixed term contract' };
 const MAX_SHOWN = 140;
 const SIGNED_ACCEPT = '.pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png';
 
@@ -64,7 +64,7 @@ function SignedCopy({ value, onChange }) {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <PenLine size={16} color="var(--color-accent)" />
-            <a href={fileLink(value.url)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{value.originalName}</a>
+            <DocumentLink url={value.url} name={value.originalName} style={{ fontWeight: 600 }} />
           </span>
           <Button type="button" variant="ghost" onClick={() => inputRef.current?.click()} loading={busy} loadingText="Uploading..." style={{ padding: '4px 10px', fontSize: 13 }}>
             <RefreshCw size={14} /> Replace scan
@@ -189,7 +189,7 @@ export default function RequisitionPanel({
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
           <FileCheck2 size={18} color="var(--color-accent)" />
-          <a href={fileLink(document.url)} target="_blank" rel="noreferrer" style={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{document.originalName}</a>
+          <DocumentLink url={document.url} name={document.originalName} style={{ fontWeight: 600 }} />
         </div>
         <Button type="button" variant="ghost" onClick={() => { onReplace(); inputRef.current?.click(); }} style={{ padding: '4px 10px', fontSize: 13 }}>
           <RefreshCw size={14} /> Replace document

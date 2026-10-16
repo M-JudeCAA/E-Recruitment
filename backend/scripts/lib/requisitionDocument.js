@@ -21,7 +21,7 @@ const DEFAULT_SPEC = {
   advertType: 'External',
   vacancies: 2,
   salaryScale: 'U5',
-  contractType: 'Permanent and Pensionable',
+  contractType: 'Fixed Term Contract',
   contractDuration: 'N/A',
   positionStatus: 'New',
   jdStatus: 'Approved',

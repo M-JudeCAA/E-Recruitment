@@ -13,6 +13,7 @@ import LoadingState from '../LoadingState';
 import { hintText } from '../interviews/formStyles';
 import { errorMessage } from '../../utils/interviews';
 import { EMPLOYMENT_LABELS, MIN_RESPONSE_DAYS, MAX_RESPONSE_DAYS, formatDate } from './offerFormat';
+import { hasContractLength } from '../../utils/employmentCategories';
 
 // Drafts an offer for a Primary candidate on the approved merit list, or
 // revises one that is awaiting approval or was returned. The terms are what
@@ -27,7 +28,7 @@ function termsFrom(source) {
     salaryCurrency: source.salaryCurrency || 'UGX',
     salaryPeriod: source.salaryPeriod || 'Monthly',
     allowances: source.allowances || '',
-    employmentCategory: source.employmentCategory || 'FullTime',
+    employmentCategory: source.employmentCategory || 'FixedTermContract',
     contractMonths: source.contractMonths ? String(source.contractMonths) : '',
     startDate: toDateInput(source.startDate),
     dutyStation: source.dutyStation || '',
@@ -53,7 +54,7 @@ export default function OfferComposer({ applicationId, onClose, onSaved }) {
 
   const existing = context?.offer;
   const set = (key) => (e) => setTerms((t) => ({ ...t, [key]: e.target.value }));
-  const isContract = terms && terms.employmentCategory !== 'FullTime';
+  const isContract = Boolean(terms) && hasContractLength(terms.employmentCategory);
   const days = Number(terms?.responseDays) || 0;
   const deadlinePreview = days ? new Date(Date.now() + days * 86400000) : null;
 

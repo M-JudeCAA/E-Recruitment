@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, CheckCircle2, Circle, Paperclip, Crown, Gavel } from 'lucide-react';
-import client, { API_URL } from '../models/apiClient';
+import client from '../models/apiClient';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -11,6 +11,7 @@ import Skeleton from '../components/Skeleton';
 import StatusBadge from '../components/StatusBadge';
 import { useConfirm } from '../components/ConfirmDialog';
 import { ESSENTIAL_OPTIONS, DESIRABLE_LABELS, ratingLabel } from '../utils/shortlistCommittee';
+import DocumentLink from '../components/DocumentLink';
 
 // Public page - a shortlisting committee member's private link (no account;
 // committee members are never HR staff). They rate each applicant assigned
@@ -55,14 +56,14 @@ function Profile({ applicant }) {
       <strong style={{ fontSize: 14 }}>Documents</strong>
       <div style={{ display: 'grid', gap: 4, marginTop: 4 }}>
         {applicant.documents.map((d) => (
-          <a key={d.id} href={`${API_URL}${d.fileUrl}`} target="_blank" rel="noreferrer" style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
+          <DocumentLink key={d.id} url={d.fileUrl} audience="committee" name={`${c.fullName} - ${d.label || d.originalName}`} style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
             <Paperclip size={13} /> {{ Academic: 'Academic', Evidence: 'Evidence', Other: 'Other' }[d.category] || 'Other'}: {d.label || d.originalName}
-          </a>
+          </DocumentLink>
         ))}
         {applicant.coverLetterUrl && (
-          <a href={`${API_URL}${applicant.coverLetterUrl}`} target="_blank" rel="noreferrer" style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
+          <DocumentLink url={applicant.coverLetterUrl} audience="committee" name={`${c.fullName} - Cover letter`} style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
             <Paperclip size={13} /> Cover letter
-          </a>
+          </DocumentLink>
         )}
         {applicant.documents.length === 0 && !applicant.coverLetterUrl && <span style={muted}>No documents attached.</span>}
       </div>

@@ -1,7 +1,7 @@
 const model = require('../models/shortlistCommitteeModel');
 const committee = require('../services/shortlistCommitteeService');
 const { computeRanking } = require('./shortlistCommitteeController');
-const { sendUploadedFile } = require('./fileController');
+const { sendUploadedFile, sendPreview, downloadOptions } = require('./fileController');
 const accessLog = require('../services/accessLogService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 
@@ -242,18 +242,34 @@ async function decide(req, res) {
   res.json({ message: 'Ruling recorded.' });
 }
 
-// GET a document of one of the member's own applicants.
-async function file(req, res) {
+// Whether the member may open this document - one of their own applicants'
+// (answering when not) - recording that they did.
+async function mayOpenFile(req, res) {
   const member = await loadMember(req, res);
-  if (!member) return;
+  if (!member) return false;
   const { filename } = req.params;
   const owned = await model.findAssignmentOwningFile(member.id, `/api/files/${filename}`);
-  if (!owned) return res.status(403).json({ error: 'You do not have access to this file' });
+  if (!owned) {
+    res.status(403).json({ error: 'You do not have access to this file' });
+    return false;
+  }
   await accessLog.record(req, {
     action: 'Opened a document (shortlisting committee)', vacancyId: owned.application.vacancyId, applicationId: owned.applicationId,
     candidateIds: [owned.application.candidateId], detail: { document: filename }, committeeMember: member
   });
-  sendUploadedFile(res, filename);
+  return true;
 }
 
-module.exports = { view, applicant, saveRatings, declareConflict, submit, decide, file };
+// GET a document of one of the member's own applicants (?download=1&name= to save it).
+async function file(req, res) {
+  if (!(await mayOpenFile(req, res))) return;
+  sendUploadedFile(res, req.params.filename, downloadOptions(req));
+}
+
+// GET what the document viewer shows for it.
+async function filePreview(req, res) {
+  if (!(await mayOpenFile(req, res))) return;
+  await sendPreview(res, req.params.filename);
+}
+
+module.exports = { view, applicant, saveRatings, declareConflict, submit, decide, file, filePreview };

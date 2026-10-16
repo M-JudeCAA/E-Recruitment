@@ -4,7 +4,7 @@ import client, {
 } from '../../src/models/apiClient';
 import staffClient from '../../src/models/staffApiClient';
 import { approveVacancy } from '../../src/utils/approveVacancy';
-import { fileLink } from '../../src/utils/fileLink';
+import { documentUrls } from '../../src/components/DocumentPreview';
 
 // No network: each test says how "the server" answers.
 let sent;
@@ -202,10 +202,17 @@ describe('approving a vacancy', () => {
   });
 });
 
-// File downloads are the one place a token goes in the address (CLAUDE.md,
-// File access): a plain link can't set a header.
-test('a link to an uploaded file points at the API and carries the staff token', () => {
+// The file itself is the one place a token goes in the address (CLAUDE.md,
+// File access): a frame, an image or a download link can't set a header.
+// The viewer's preview is fetched with the header instead.
+test('a document is shown and downloaded from the API with the session\'s token, its preview fetched without one', () => {
   localStorage.setItem('staffToken', 'staff-jwt');
-  expect(fileLink('/api/files/cover-letter-1.pdf')).toBe(`${API_URL}/api/files/cover-letter-1.pdf?token=staff-jwt`);
-  expect(fileLink(null)).toBeNull();
+  localStorage.setItem('candidateToken', 'candidate-jwt');
+  const staff = documentUrls('/api/files/cover-letter-1.pdf', { name: 'Cover letter' });
+  expect(staff.view).toBe(`${API_URL}/api/files/cover-letter-1.pdf?token=staff-jwt`);
+  expect(staff.download).toBe(`${API_URL}/api/files/cover-letter-1.pdf?download=1&name=Cover+letter&token=staff-jwt`);
+  expect(staff.preview).toBe('/api/files/cover-letter-1.pdf/preview');
+  expect(documentUrls('/api/files/a.pdf', { audience: 'candidate' }).view).toBe(`${API_URL}/api/files/a.pdf?token=candidate-jwt`);
+  // A committee member's link already carries their access.
+  expect(documentUrls('/api/shortlist-panel/t1/files/a.pdf', { audience: 'committee' }).view).toBe(`${API_URL}/api/shortlist-panel/t1/files/a.pdf`);
 });

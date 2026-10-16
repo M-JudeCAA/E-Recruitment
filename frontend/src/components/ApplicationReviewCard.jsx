@@ -11,7 +11,6 @@ import AccessLog from './AccessLog';
 import TagEditor from './TagEditor';
 import TextArea from './TextArea';
 import ReasonDialog from './ReasonDialog';
-import { fileLink } from '../utils/fileLink';
 import { safeJsonParse } from '../utils/safeJsonParse';
 import InterviewScheduler from './interviews/InterviewScheduler';
 import InterviewRoundPanel from './interviews/InterviewRoundPanel';
@@ -20,6 +19,7 @@ import OfferSummary from './offers/OfferSummary';
 import OfferActions from './offers/OfferActions';
 import { ROUND_LABELS } from './interviews/formStyles';
 import { formatDateTime, venueLabel } from '../utils/interviews';
+import DocumentLink from './DocumentLink';
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK - used so
 // "Recommend for offer" (Principal HR Officer+), "Approve offer"
@@ -181,7 +181,7 @@ export default function ApplicationReviewCard({
           </button>
         </span>
         <span>
-          Cover letter: {app.coverLetterUrl ? <a href={fileLink(app.coverLetterUrl)} target="_blank" rel="noreferrer">view</a> : 'none'}
+          Cover letter: {app.coverLetterUrl ? <DocumentLink url={app.coverLetterUrl} name={`Cover letter - ${app.candidate?.fullName || 'applicant'}`}>view</DocumentLink> : 'none'}
         </span>
       </div>
       {[['Academic', 'Academic documents'], ['Evidence', 'Evidence for screening'], ['Other', 'Other documents']].map(([category, heading]) => {
@@ -192,7 +192,7 @@ export default function ApplicationReviewCard({
             <span>{heading}:</span>
             {docs.map((d, i) => (
               <span key={d.id}>
-                <a href={fileLink(d.fileUrl)} target="_blank" rel="noreferrer" title={d.originalName}>{d.label || d.originalName}</a>
+                <DocumentLink url={d.fileUrl} name={d.label ? `${d.label} - ${d.originalName}` : d.originalName}>{d.label || d.originalName}</DocumentLink>
                 {i < docs.length - 1 && ','}
               </span>
             ))}

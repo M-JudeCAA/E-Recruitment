@@ -22,7 +22,7 @@ function parseDeadline(value) {
 }
 
 const VALID_POSTING_TYPES = ['Internal', 'External']; // 'Open' REMOVED - a vacancy is always exactly one or the other now
-const VALID_EMPLOYMENT_CATEGORIES = ['FullTime', 'Contract', 'FixedTermContract'];
+const { EMPLOYMENT_CATEGORIES: VALID_EMPLOYMENT_CATEGORIES } = require('./employmentCategories');
 // UCAA's actual sites - confirmed against a real reference "Create Job"
 // form, same source as VALID_EMPLOYMENT_CATEGORIES/the qualification
 // level list. A plain validated string, not a DB enum, since a new

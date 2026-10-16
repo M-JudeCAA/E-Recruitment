@@ -18,10 +18,10 @@ describe('how an offer is worded', () => {
     expect(formatContract({})).toBeNull();
   });
 
-  test('the kind of contract, with its length', () => {
-    expect(formatContract({ employmentCategory: 'FullTime' })).toBe('Permanent, full time');
-    expect(formatContract({ employmentCategory: 'FixedTermContract', contractMonths: 24 })).toBe('Fixed-term contract, 24 months');
+  test('the kind of employment, with its length for a fixed term contract', () => {
+    expect(formatContract({ employmentCategory: 'FixedTermContract', contractMonths: 24 })).toBe('Fixed term contract, 24 months');
     expect(formatContract({ employmentCategory: 'Secondment' })).toBe('Secondment');
+    expect(formatContract({ employmentCategory: 'FullSecondment' })).toBe('Full secondment');
   });
 
   test('dates', () => {

@@ -13,6 +13,7 @@ import { useConfirm } from '../ConfirmDialog';
 import { approveVacancy } from '../../utils/approveVacancy';
 import { MenuButton, rankOf, ROLE_RANK } from './ui';
 import { DEFAULT_DEADLINE_TIME, deadlineFields, deadlineValue } from '../../utils/deadline';
+import { EMPLOYMENT_LABELS as EMPLOYMENT_CATEGORY_LABELS } from '../../utils/employmentCategories';
 
 // Every action on one vacancy, for the header of its workspace page:
 // View advert, Edit, and a "⋯" menu (resubmit, return/reject for an
@@ -22,7 +23,6 @@ import { DEFAULT_DEADLINE_TIME, deadlineFields, deadlineValue } from '../../util
 // closing is Principal HR Officer+; a returned vacancy is resubmitted by HR.
 // `primary` is the page's main button, placed last.
 
-const EMPLOYMENT_CATEGORY_LABELS = { FullTime: 'Full-time', Contract: 'Contract', FixedTermContract: 'Fixed Term Contract' };
 // Matches backend/src/utils/vacancyValidation.js's VALID_LOCATIONS.
 const LOCATIONS = [
   'Entebbe International Airport', 'UCAA Head Office — Entebbe', 'Kampala HQ',
