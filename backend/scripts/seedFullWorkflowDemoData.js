@@ -35,6 +35,7 @@ const app = require('../src/app');
 const { runJob } = require('../src/utils/jobRunner');
 const { frontendUrl } = require('../src/config/frontendUrl');
 const { createVacancyFromRequisition } = require('./lib/demoVacancy');
+const { withEmployment } = require('./lib/demoEmployment');
 
 const PASSWORD = 'DemoPass123!';
 const STAFF_PASSWORD = 'ChangeMe123!';
@@ -275,7 +276,7 @@ async function makeCandidate(spec) {
   for (const w of spec.work) await api('POST', '/api/candidates/me/work-experience', { token, json: w });
   for (const g of spec.exams || []) await api('POST', '/api/candidates/me/exam-grades', { token, json: g });
   for (const c of spec.certs || []) await api('POST', '/api/candidates/me/certificates', { token, json: c });
-  if (spec.internal) await api('PUT', '/api/candidates/me/internal-profile', { token, json: spec.internalProfile });
+  if (spec.internal) await api('PUT', '/api/candidates/me/internal-profile', { token, json: await withEmployment(api, token, spec.internalProfile) });
 
   const row = await prisma.candidate.findUnique({ where: { email } });
   return { ...spec, n, id: row.id, email, token, ip };

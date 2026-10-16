@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import client from '../models/apiClient';
 import { useAuth } from '../models/AuthContext';
 import TextField from './TextField';
@@ -10,6 +10,7 @@ import CvAutofillPanel from './CvAutofillPanel';
 import PhotoUploadPanel from './PhotoUploadPanel';
 import BulletListEditor from './BulletListEditor';
 import ExamGradesEditor from './ExamGradesEditor';
+import { EmploymentForm } from '../views/careers/forms';
 import Modal from './Modal';
 import { useConfirm } from './ConfirmDialog';
 import { validateNationalId, NATIONAL_ID_ERROR } from '../utils/validators';
@@ -36,7 +37,9 @@ export default function ProfileCompletionForm({ onComplete }) {
     nationalId: '', location: '', districtOfOrigin: '', linkedinUrl: '', portfolioUrl: '',
     dateOfBirth: '', flyingHours: ''
   });
-  const [internalForm, setInternalForm] = useState({ employeeId: '', department: '', position: '', dateJoined: '', supervisorName: '', supervisorEmail: '' });
+  // An internal candidate's employment: the same form as Internal Careers
+  // (department and position picked from the organisation structure).
+  const saveEmployment = useRef(null);
   const [newEdu, setNewEdu] = useState(emptyEducation);
   const [newExp, setNewExp] = useState(emptyExperience);
   const [newCert, setNewCert] = useState(emptyCertificate);
@@ -106,14 +109,6 @@ export default function ProfileCompletionForm({ onComplete }) {
       dateOfBirth: data.dateOfBirth ? data.dateOfBirth.slice(0, 10) : '',
       flyingHours: data.flyingHours ?? ''
     });
-    if (data.internalProfile) {
-      const p = data.internalProfile;
-      setInternalForm({
-        employeeId: p.employeeId || '', department: p.department || '', position: p.position || '',
-        dateJoined: p.dateJoined ? p.dateJoined.slice(0, 10) : '',
-        supervisorName: p.supervisorName || '', supervisorEmail: p.supervisorEmail || ''
-      });
-    }
     setLoading(false);
     return data;
   });
@@ -132,15 +127,11 @@ export default function ProfileCompletionForm({ onComplete }) {
       default: return '';
     }
   };
-  const internalFieldError = (field) => (internalForm[field] ? '' : 'This field is required.');
 
   const showError = (field) => (touched[field] || submitted) ? fieldError(field) : '';
-  const showInternalError = (field) => (touched[`internal.${field}`] || submitted) ? internalFieldError(field) : '';
   const blur = (field) => () => setTouched((t) => ({ ...t, [field]: true }));
-  const blurInternal = (field) => () => setTouched((t) => ({ ...t, [`internal.${field}`]: true }));
 
   const setField = (key) => (e) => setForm({ ...form, [key]: e.target.value });
-  const setInternalField = (key) => (e) => setInternalForm({ ...internalForm, [key]: e.target.value });
 
   // Shared by the manual "Add education entry" button, each staged
   // CV-suggestion card's own "Add this entry" button, and editing an
@@ -389,9 +380,7 @@ export default function ProfileCompletionForm({ onComplete }) {
 
     const candidateFields = ['nationalId', 'location', 'districtOfOrigin'];
     const hasCandidateError = candidateFields.some((f) => fieldError(f));
-    const internalFields = ['employeeId', 'department', 'position', 'dateJoined', 'supervisorName', 'supervisorEmail'];
-    const hasInternalError = isInternal && internalFields.some((f) => internalFieldError(f));
-    if (hasCandidateError || hasInternalError) {
+    if (hasCandidateError) {
       setError('Please fix the highlighted fields before saving.');
       return;
     }
@@ -399,8 +388,9 @@ export default function ProfileCompletionForm({ onComplete }) {
     setSaving(true);
     try {
       await client.put('/api/candidates/me', form);
-      if (isInternal) {
-        await client.put('/api/candidates/me/internal-profile', internalForm);
+      if (isInternal && !(await saveEmployment.current?.())) {
+        setError('Check your employment details below.');
+        return;
       }
       const fresh = await load();
       if (isProfileComplete(fresh)) {
@@ -759,18 +749,7 @@ export default function ProfileCompletionForm({ onComplete }) {
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 12 }}>
             Required for any internal application to proceed past initial review. HR must verify this before shortlisting.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
-            <TextField label="Employee ID" required value={internalForm.employeeId} onChange={setInternalField('employeeId')} onBlur={blurInternal('employeeId')} error={showInternalError('employeeId')} />
-            <TextField label="Date joined" type="date" required value={internalForm.dateJoined} onChange={setInternalField('dateJoined')} onBlur={blurInternal('dateJoined')} error={showInternalError('dateJoined')} />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
-            <TextField label="Department" required value={internalForm.department} onChange={setInternalField('department')} onBlur={blurInternal('department')} error={showInternalError('department')} />
-            <TextField format="title" label="Position" required value={internalForm.position} onChange={setInternalField('position')} onBlur={blurInternal('position')} error={showInternalError('position')} />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
-            <TextField label="Supervisor name" required value={internalForm.supervisorName} onChange={setInternalField('supervisorName')} onBlur={blurInternal('supervisorName')} error={showInternalError('supervisorName')} />
-            <TextField label="Supervisor email" required value={internalForm.supervisorEmail} onChange={setInternalField('supervisorEmail')} onBlur={blurInternal('supervisorEmail')} error={showInternalError('supervisorEmail')} />
-          </div>
+          <EmploymentForm me={profile} bind={(fn) => { saveEmployment.current = fn; }} />
         </>
       )}
 

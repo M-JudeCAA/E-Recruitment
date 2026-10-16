@@ -12,6 +12,7 @@ const { toPublicVacancy } = require('../utils/publicVacancy');
 const { toCandidateOffer } = require('../services/offerService');
 const { internalDomains } = require('../services/entraAuthService');
 const { toCandidateInterview } = require('../utils/candidateInterview');
+const internalEmployment = require('../services/internalEmploymentService');
 
 // Candidate rows carry passwordHash - fine for the internal auth-check
 // reads in candidateAuthController, but every response here goes straight
@@ -325,7 +326,10 @@ async function updateInternalProfile(req, res) {
   if (req.user.candidateType !== 'Internal') {
     return res.status(403).json({ error: 'Only internal candidates have an internal profile' });
   }
-  const { employeeId, department, position, dateJoined, supervisorName } = req.body;
+  const { employeeId, dateJoined, supervisorName } = req.body;
+  // Department and position are picked from the organisation structure, by
+  // id; the names stored beside them come from those rows, never the request.
+  const employment = await internalEmployment.pickedEmployment(req.body);
   const supervisorEmail = req.body.supervisorEmail == null ? req.body.supervisorEmail : String(req.body.supervisorEmail).trim().toLowerCase();
   // The supervisor is told about each application at this address, so it has
   // to be a UCAA mailbox (Internal Careers picks it from the UCAA directory).
@@ -334,7 +338,7 @@ async function updateInternalProfile(req, res) {
     return res.status(400).json({ error: "Your supervisor's email must be a UCAA address.", code: 'SUPERVISOR_NOT_UCAA' });
   }
   const data = {
-    employeeId, department, position,
+    employeeId, ...employment,
     dateJoined: dateJoined ? new Date(dateJoined) : null,
     supervisorName, supervisorEmail
   };
@@ -348,6 +352,15 @@ async function updateInternalProfile(req, res) {
   const profile = await internalProfileModel.updateByCandidateId(req.user.id, data);
   await checkAndFireCompletionEvent(req.user.id);
   res.json(profile);
+}
+
+// GET /api/candidates/me/organisation - the departments and positions an
+// internal candidate picks their own from (Internal Careers' employment form).
+async function organisationChoices(req, res) {
+  if (req.user.candidateType !== 'Internal') {
+    return res.status(403).json({ error: 'Only internal candidates have an internal profile' });
+  }
+  res.json(await internalEmployment.choices());
 }
 
 // The application's status as its candidate may know it. Two things are
@@ -411,5 +424,5 @@ module.exports = {
   updateEducation, deleteEducation, updateWorkExperience, deleteWorkExperience,
   addCertificate, updateCertificate, deleteCertificate,
   addExamGrade, updateExamGrade, deleteExamGrade,
-  updatePhoto, removePhoto
+  updatePhoto, removePhoto, organisationChoices
 };

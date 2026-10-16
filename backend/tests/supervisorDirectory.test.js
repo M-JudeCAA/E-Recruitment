@@ -50,14 +50,16 @@ describe('internal candidates searching for their supervisor', () => {
 
 describe('the supervisor email on the internal profile', () => {
   const body = {
-    employeeId: 'UCAA/2017/0412', department: 'IT', position: 'Systems Officer',
+    employeeId: 'UCAA/2017/0412', departmentId: 4, positionId: 40,
     dateJoined: '2017-03-01', supervisorName: 'Ben Tumwine'
   };
+  const approved = { status: 'Approved', directorateId: 1, directorate: { status: 'Approved' } };
   const realDomain = process.env.INTERNAL_EMAIL_DOMAIN;
   beforeEach(() => {
     process.env.INTERNAL_EMAIL_DOMAIN = 'caa.co.ug';
     prisma.internalProfile.findUnique.mockResolvedValue(null);
     prisma.internalProfile.update.mockImplementation(({ data }) => Promise.resolve({ ...data }));
+    prisma.position.findUnique.mockResolvedValue({ id: 40, name: 'Systems Officer', departmentId: 4, status: 'Approved', department: { id: 4, name: 'IT', ...approved } });
   });
   afterAll(() => { process.env.INTERNAL_EMAIL_DOMAIN = realDomain; });
 

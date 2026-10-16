@@ -34,7 +34,9 @@ router.delete('/me/certificates/:id', authenticate, requireCandidate, asyncHandl
 router.post('/me/exam-grades', authenticate, requireCandidate, asyncHandler(controller.addExamGrade));
 router.put('/me/exam-grades/:id', authenticate, requireCandidate, asyncHandler(controller.updateExamGrade));
 router.delete('/me/exam-grades/:id', authenticate, requireCandidate, asyncHandler(controller.deleteExamGrade));
-router.put('/me/internal-profile', authenticate, requireCandidate, casing({ department: 'title', position: 'title', supervisorName: 'name' }), asyncHandler(controller.updateInternalProfile));
+router.put('/me/internal-profile', authenticate, requireCandidate, casing({ supervisorName: 'name' }), asyncHandler(controller.updateInternalProfile));
+// The departments and positions an internal candidate picks their own from.
+router.get('/me/organisation', authenticate, requireCandidate, asyncHandler(controller.organisationChoices));
 // Internal Careers: picking a supervisor from the UCAA directory.
 router.get('/me/directory/people', authenticate, requireCandidate, asyncHandler(directoryController.searchColleagues));
 router.put('/me/photo', authenticate, requireCandidate, uploadPhoto.single('photo'), asyncHandler(controller.updatePhoto));
