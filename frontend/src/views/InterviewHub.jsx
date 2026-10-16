@@ -16,6 +16,7 @@ import Alert from '../components/Alert';
 import Select from '../components/Select';
 import StatusBadge from '../components/StatusBadge';
 import LoadingState from '../components/LoadingState';
+import Pagination, { usePagination } from '../components/Pagination';
 import InterviewScheduler from '../components/interviews/InterviewScheduler';
 import InterviewRoundPanel from '../components/interviews/InterviewRoundPanel';
 import { ROUND_LABELS, hintText, inputStyle, chipStyle } from '../components/interviews/formStyles';
@@ -239,6 +240,7 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
   const [params, setParams] = useSearchParams();
   const vacancyId = params.get('vacancyId') || '';
   const [rows, setRows] = useState(null);
+  const pager = usePagination(rows);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -286,11 +288,11 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => {
+              {pager.pageRows.map((r, i) => {
                 const lr = r.latestRound;
                 return (
                   <tr key={r.applicationId} className="list-row" onClick={() => onOpen(lr.id)} style={{ cursor: 'pointer', borderBottom: '1px solid var(--color-border)' }}>
-                    <td style={{ padding: '8px 12px' }}>{lr.score != null ? i + 1 : '—'}</td>
+                    <td style={{ padding: '8px 12px' }}>{lr.score != null ? pager.offset + i + 1 : '—'}</td>
                     <td style={{ padding: '8px 12px' }}>
                       <strong>{r.candidateName}</strong>
                       <div style={hintText}>{r.candidateType}{r.noShows ? ` · ${r.noShows} no-show` : ''}</div>
@@ -329,6 +331,7 @@ function Scorecards({ vacancies, onOpen, reloadKey }) {
               })}
             </tbody>
           </table>
+          <Pagination {...pager.props} noun="candidates" />
           <p style={{ ...hintText, padding: '8px 12px', margin: 0 }}>Scores and verdicts are as recorded from the panels' signed score sheets.</p>
         </Card>
       )}

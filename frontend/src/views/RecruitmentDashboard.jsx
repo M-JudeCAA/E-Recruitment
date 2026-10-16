@@ -12,6 +12,7 @@ import Select from '../components/Select';
 import TextField from '../components/TextField';
 import LoadingState from '../components/LoadingState';
 import CsvDownloadButton from '../components/CsvDownloadButton';
+import Pagination, { usePagination } from '../components/Pagination';
 import { POSITION_LEVELS } from '../utils/positionLevels';
 import { printDocument, escapeHtml } from '../utils/printDocument';
 
@@ -29,6 +30,7 @@ function display(m) {
 }
 
 function MetricTable({ metric }) {
+  const pager = usePagination(metric.rows);
   if (!metric.rows.length) return <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No records behind this yet.</p>;
   return (
     <div style={{ overflowX: 'auto' }}>
@@ -37,11 +39,12 @@ function MetricTable({ metric }) {
           <tr>{metric.columns.map((c) => <th key={c.key} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid var(--color-border)', whiteSpace: 'nowrap' }}>{c.label}</th>)}</tr>
         </thead>
         <tbody>
-          {metric.rows.map((r, i) => (
-            <tr key={i}>{metric.columns.map((c) => <td key={c.key} style={{ padding: '6px 8px', borderBottom: '1px solid var(--color-border)' }}>{r[c.key] ?? '-'}</td>)}</tr>
+          {pager.pageRows.map((r, i) => (
+            <tr key={pager.offset + i}>{metric.columns.map((c) => <td key={c.key} style={{ padding: '6px 8px', borderBottom: '1px solid var(--color-border)' }}>{r[c.key] ?? '-'}</td>)}</tr>
           ))}
         </tbody>
       </table>
+      <Pagination {...pager.props} />
     </div>
   );
 }

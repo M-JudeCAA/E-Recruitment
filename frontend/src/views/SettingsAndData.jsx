@@ -11,6 +11,7 @@ import TextField from '../components/TextField';
 import TextArea from '../components/TextArea';
 import Modal from '../components/Modal';
 import StatusBadge from '../components/StatusBadge';
+import Pagination, { usePagination } from '../components/Pagination';
 import { useConfirm } from '../components/ConfirmDialog';
 
 // Settings (a system administrator or HR Manager+) and candidates' data:
@@ -59,6 +60,7 @@ export default function SettingsAndData() {
   const [settingsList, setSettingsList] = useState(null);
   const [requests, setRequests] = useState([]);
   const [purges, setPurges] = useState([]);
+  const purgePager = usePagination(purges);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [refusing, setRefusing] = useState(null);
@@ -156,10 +158,11 @@ export default function SettingsAndData() {
               <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>Erasure log</h3>
               <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>Every candidate whose personal data was erased - on request, or by the retention schedule.</p>
               {purges.length === 0 ? <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Nothing erased yet.</p> : (
+                <>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead><tr>{['When', 'Candidate', 'Why', 'Removed'].map((h) => <th key={h} style={{ textAlign: 'left', padding: '6px 8px', borderBottom: '1px solid var(--color-border)' }}>{h}</th>)}</tr></thead>
                   <tbody>
-                    {purges.map((p) => (
+                    {purgePager.pageRows.map((p) => (
                       <tr key={p.id}>
                         <td style={{ padding: '6px 8px' }}>{new Date(p.at).toLocaleString()}</td>
                         <td style={{ padding: '6px 8px' }}>#{p.candidateId}</td>
@@ -172,6 +175,8 @@ export default function SettingsAndData() {
                     ))}
                   </tbody>
                 </table>
+                <Pagination {...purgePager.props} noun="erasures" />
+                </>
               )}
             </Card>
           </>

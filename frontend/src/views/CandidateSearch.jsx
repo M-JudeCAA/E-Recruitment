@@ -8,7 +8,7 @@ import Alert from '../components/Alert';
 import Button from '../components/Button';
 import Skeleton from '../components/Skeleton';
 import StatusBadge from '../components/StatusBadge';
-import PageControls from '../components/PageControls';
+import { useServerPagination, PAGE_SIZE_OPTIONS } from '../components/Pagination';
 import TagEditor, { TagChips } from '../components/TagEditor';
 import BulkEmailComposer from '../components/BulkEmailComposer';
 import ApplicationQueue from '../components/workspace/ApplicationQueue';
@@ -34,7 +34,7 @@ export default function CandidateSearch() {
   const [q, setQ] = useState(params.get('q') || '');
   const [tagFilter, setTagFilter] = useState([]);
   const [type, setType] = useState('');
-  const [page, setPage] = useState(1);
+  const { page, setPage, pageSize, props: pageProps } = useServerPagination();
   const [tags, setTags] = useState([]);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
@@ -50,7 +50,7 @@ export default function CandidateSearch() {
     const t = setTimeout(() => { setQ(input.trim()); setPage(1); }, 400);
     return () => clearTimeout(t);
   }, [input]);
-  const search = () => staffClient.get('/api/talent/candidates', { params: { q: q || undefined, tags: tagFilter.join(',') || undefined, candidateType: type || undefined, page } })
+  const search = () => staffClient.get('/api/talent/candidates', { params: { q: q || undefined, tags: tagFilter.join(',') || undefined, candidateType: type || undefined, page, limit: pageSize } })
     .then((r) => setResult(r.data))
     .catch((err) => setError(err.response?.data?.error || 'Could not search'));
   useEffect(() => {
@@ -58,11 +58,10 @@ export default function CandidateSearch() {
     setResult(null); setError('');
     search();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, tagFilter, type, page, view]);
+  }, [q, tagFilter, type, page, pageSize, view]);
 
   const toggle = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   const toggleTag = (id) => { setTagFilter((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id])); setPage(1); };
-  const totalPages = result ? Math.max(1, Math.ceil(result.total / result.limit)) : 1;
   const open = result?.data.find((c) => c.id === openId);
   const background = (c) => [
     ...c.education.map((e) => `${e.qualificationLevelText}${e.fieldOfStudy ? ` in ${e.fieldOfStudy}` : ''}`),
@@ -108,7 +107,8 @@ export default function CandidateSearch() {
             </div>
             <Panel padded={false}>
               {!result && !error ? <div className="ws-panel-b">{[0, 1, 2].map((i) => <Skeleton key={i} height={14} width={`${70 - i * 10}%`} style={{ marginBottom: 12 }} />)}</div> : (
-                <Table rows={result?.data || []} getRowKey={(c) => c.id} onRowClick={(c) => setOpenId(c.id)}
+                <Table rows={result?.data || []} getRowKey={(c) => c.id} onRowClick={(c) => setOpenId(c.id)} noun="candidates"
+                  pagination={pageProps(result?.total || 0)}
                   emptyText={q || tagFilter.length ? 'Nobody matches this search.' : 'Nobody has applied yet.'}
                   columns={[
                     ...(canEmail ? [{
@@ -128,10 +128,8 @@ export default function CandidateSearch() {
                   ]} />
               )}
             </Panel>
-            {result && <div className="ws-note">{result.total} candidate{result.total === 1 ? '' : 's'}</div>}
-            {result && result.total > result.limit && (
-              <PageControls page={page} totalPages={totalPages} onPrev={() => setPage((p) => p - 1)} onNext={() => setPage((p) => p + 1)} />
-            )}
+            {/* The pager counts them once there is more than one short page. */}
+            {result && result.total <= PAGE_SIZE_OPTIONS[0] && <div className="ws-note">{result.total} candidate{result.total === 1 ? '' : 's'}</div>}
           </>
         )}
       </div>

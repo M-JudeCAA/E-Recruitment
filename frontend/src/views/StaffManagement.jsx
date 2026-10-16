@@ -147,7 +147,7 @@ function DelegationsSection({ view }) {
           <Card style={{ padding: 0 }}>
             <DataTable
               getRowKey={(d) => d.id}
-              rows={delegations.slice(0, visibleCount)}
+              rows={delegations} noun="delegations"
               columns={[
                 { key: 'delegate', label: 'Delegate', render: (d) => <span style={{ fontWeight: 600 }}>{d.delegate.name}</span> },
                 { key: 'delegator', label: 'Acting for', render: (d) => d.delegator.name },
@@ -162,7 +162,6 @@ function DelegationsSection({ view }) {
               ]}
             />
           </Card>
-          <LoadMoreControl total={delegations.length} visibleCount={visibleCount} onLoadMore={() => setVisibleCount((c) => c + PAGE_SIZE)} />
         </>
       ) : view === 'board' ? (
         <>

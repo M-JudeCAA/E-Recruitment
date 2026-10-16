@@ -5,6 +5,7 @@ import Card from './Card';
 import Button from './Button';
 import Alert from './Alert';
 import StatusBadge from './StatusBadge';
+import Pagination, { usePagination } from './Pagination';
 import LoadingState from './LoadingState';
 import { useConfirm } from './ConfirmDialog';
 import ReasonDialog from './ReasonDialog';
@@ -156,6 +157,7 @@ function CoverageList({ coverage, onAdd, busy }) {
 
 function ResultsTable({ exercise, canEdit, onActingChair, busy }) {
   const [open, setOpen] = useState(null);
+  const pager = usePagination(exercise.results);
   const criteria = exercise.criteria;
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', marginBottom: 12, overflowX: 'auto' }}>
@@ -166,7 +168,7 @@ function ResultsTable({ exercise, canEdit, onActingChair, busy }) {
           </tr>
         </thead>
         <tbody>
-          {exercise.results.map((r) => (
+          {pager.pageRows.map((r) => (
             <React.Fragment key={r.applicationId}>
               <tr style={{ borderTop: '1px solid var(--color-border)' }}>
                 <td style={{ padding: '8px 10px', fontVariantNumeric: 'tabular-nums' }}>{['Unanimous', 'Majority'].includes(r.band) ? r.rank : '—'}</td>
@@ -221,6 +223,7 @@ function ResultsTable({ exercise, canEdit, onActingChair, busy }) {
           ))}
         </tbody>
       </table>
+      <Pagination {...pager.props} noun="applicants" />
     </div>
   );
 }

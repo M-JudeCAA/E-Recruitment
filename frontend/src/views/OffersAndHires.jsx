@@ -7,7 +7,7 @@ import { refreshInbox } from '../models/useInbox';
 import HRSidebar from '../components/HRSidebar';
 import Alert from '../components/Alert';
 import Skeleton from '../components/Skeleton';
-import PageControls from '../components/PageControls';
+import { useServerPagination } from '../components/Pagination';
 import LiveIndicator from '../components/LiveIndicator';
 import CsvDownloadButton from '../components/CsvDownloadButton';
 import OfferSummary from '../components/offers/OfferSummary';
@@ -23,7 +23,6 @@ import { debounce } from '../utils/debounce';
 // mark as hired). The vacancy's own Merit list & offers tab shows the same
 // offers for one vacancy.
 
-const PAGE_SIZE = 25;
 const FILTERS = [
   { key: '', label: 'All' },
   { key: 'Recommended', label: 'Awaiting approval' },
@@ -55,21 +54,21 @@ export default function OffersAndHires() {
   const { staff } = useAuth();
   const navigate = useNavigate();
   const [filter, setFilter] = useState('');
-  const [page, setPage] = useState(1);
+  const { page, setPage, pageSize, props: pageProps } = useServerPagination();
   const [result, setResult] = useState(null);
   const [hires, setHires] = useState(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState(null);
 
   const load = useCallback(() => {
-    const params = { page, limit: PAGE_SIZE };
+    const params = { page, limit: pageSize };
     if (filter === 'expiring') params.expiringSoon = 'true';
     else if (filter && filter !== 'hired') params.status = filter;
     staffClient.get('/api/applications/offers', { params })
       .then((res) => setResult(res.data))
       .catch((err) => setError(err.response?.data?.error || 'Could not load offers'));
     staffClient.get('/api/applications/hires').then((res) => setHires(res.data)).catch(() => setHires([]));
-  }, [filter, page]);
+  }, [filter, page, pageSize]);
   useEffect(() => { load(); }, [load]);
   const loadRef = useRef(load);
   useEffect(() => { loadRef.current = load; }, [load]);
@@ -83,7 +82,6 @@ export default function OffersAndHires() {
     if (key === 'expiring') return result.expiringSoon;
     return result.counts?.[key] || 0;
   };
-  const totalPages = result ? Math.max(Math.ceil(result.total / PAGE_SIZE), 1) : 1;
   const openOffer = result?.data.find((o) => o.id === open);
   // The export follows the chip that is selected (access-logged on the server).
   const exportUrl = filter === 'hired' ? '/api/applications/hires/export'
@@ -105,7 +103,7 @@ export default function OffersAndHires() {
         {filter === 'hired' ? (
           <Panel padded={false}>
             {!hires ? <div className="ws-panel-b"><Skeleton height={14} width="60%" /></div> : (
-              <Table rows={hires} getRowKey={(h) => h.id}
+              <Table rows={hires} getRowKey={(h) => h.id} noun="hires"
                 onRowClick={(h) => navigate(`/hr/vacancy/${h.vacancyId}?tab=merit`)}
                 emptyText="Nobody has been marked as hired yet. Mark an accepted offer as hired from the offer."
                 columns={[
@@ -120,7 +118,8 @@ export default function OffersAndHires() {
         ) : (
           <Panel padded={false}>
             {!result ? <div className="ws-panel-b">{[0, 1, 2].map((i) => <Skeleton key={i} height={14} width={`${70 - i * 10}%`} style={{ marginBottom: 12 }} />)}</div> : (
-              <Table rows={result.data} getRowKey={(o) => o.id} onRowClick={(o) => setOpen(o.id)}
+              <Table rows={result.data} getRowKey={(o) => o.id} onRowClick={(o) => setOpen(o.id)} noun="offers"
+                pagination={pageProps(result.total)}
                 emptyText={filter ? 'No offers match this filter.' : 'No offers yet. Offers are recommended from a vacancy\'s approved merit list.'}
                 columns={[
                   { key: 'name', label: 'Candidate', render: (o) => <><span className="t">{o.application.candidate.fullName}</span><div className="s">{o.application.candidate.candidateType}</div></> },
@@ -131,9 +130,6 @@ export default function OffersAndHires() {
                 ]} />
             )}
           </Panel>
-        )}
-        {filter !== 'hired' && result && result.total > PAGE_SIZE && (
-          <PageControls page={page} totalPages={totalPages} onPrev={() => setPage((p) => p - 1)} onNext={() => setPage((p) => p + 1)} />
         )}
       </div>
 

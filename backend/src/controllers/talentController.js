@@ -13,6 +13,7 @@ const audit = require('../services/auditService');
 
 const MAX_TAG = 60;
 const PAGE = 25;
+const MAX_PAGE_SIZE = 100;
 
 // --- tags ---
 
@@ -86,13 +87,14 @@ async function removeTag(req, res) {
 
 // --- search ---
 
-// GET /api/talent/candidates?q=&tags=1,2&candidateType=&page=
+// GET /api/talent/candidates?q=&tags=1,2&candidateType=&page=&limit=
 // q matches words anywhere in the name, email, phone, residence, district,
 // education, employers and job titles, or certificates - every word must match somewhere.
 async function search(req, res) {
   const words = String(req.query.q || '').trim().split(/\s+/).filter((w) => w.length >= 2).slice(0, 6);
   const tagIds = String(req.query.tags || '').split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0);
   const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(Math.max(1, Number.parseInt(req.query.limit, 10) || PAGE), MAX_PAGE_SIZE);
   const conflicted = await conflictOfInterest.conflictedVacancyIds(req);
 
   const wordMatch = (w) => ({
@@ -114,7 +116,7 @@ async function search(req, res) {
   const [total, rows] = await Promise.all([
     prisma.candidate.count({ where }),
     prisma.candidate.findMany({
-      where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * PAGE, take: PAGE,
+      where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * limit, take: limit,
       select: {
         id: true, fullName: true, email: true, phone: true, candidateType: true, location: true, districtOfOrigin: true,
         education: { select: { qualificationLevelText: true, fieldOfStudy: true, institution: true }, take: 3 },
@@ -134,7 +136,7 @@ async function search(req, res) {
     });
   }
   res.json({
-    total, page, limit: PAGE,
+    total, page, limit,
     data: rows.map(({ tags, ...c }) => ({ ...c, tags: tags.map((t) => t.tag) }))
   });
 }
