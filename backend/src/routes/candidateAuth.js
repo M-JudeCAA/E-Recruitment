@@ -8,11 +8,11 @@ const router = express.Router();
 const limit = authLimiters('candidate');
 
 router.post('/register', limit.register, casing({ fullName: 'name', email: 'email' }), controller.register);
-router.get('/confirm-email', controller.confirmEmail);
+router.get('/confirm-email', limit.tokenUse, controller.confirmEmail);
 router.post('/login', limit.login, controller.login);
 // Internal candidates: sign in with a UCAA Microsoft account.
 router.post('/entra', limit.entra, controller.entraLogin);
 router.post('/forgot-password', limit.forgotPassword, controller.forgotPassword);
-router.post('/reset-password', controller.resetPassword);
+router.post('/reset-password', limit.tokenUse, controller.resetPassword);
 
 module.exports = router;

@@ -68,13 +68,15 @@ to the careers site.
    ```ini
    NODE_ENV=production
    PORT=4100
+   HOST=127.0.0.1
    DATABASE_URL="mysql://erec_uat:<password>@localhost:<mysql port>/erecruitment_uat"
    FRONTEND_URL="https://<host>,https://<host>:4174,https://<host>:4175"
    UPLOAD_DIR="C:\ProgramData\UCAA-eRecruitment-UAT\uploads"
    TRUST_PROXY=loopback
    JWT_SECRET=<a new long random string, not the development one>
    ```
-   No `DEV_PASSWORD_LOGIN`. `FRONTEND_URL` order matters: careers, staff,
+   `HOST=127.0.0.1`: the API answers only the `vite preview` proxy on this
+   machine, never the network directly. No `DEV_PASSWORD_LOGIN`. `FRONTEND_URL` order matters: careers, staff,
    Internal Careers (links in emails are built from it).
 5. **`frontend\.env`** in the deployment folder:
    ```ini

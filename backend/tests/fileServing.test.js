@@ -42,6 +42,13 @@ describe('serving uploads', () => {
     expect(res.headers['content-disposition']).toBeUndefined();
   });
 
+  it("lets only the app's own sites frame a PDF, without the API's default-src 'none'", async () => {
+    write('framed.pdf', '%PDF-1.4');
+    const res = await request(app()).get('/files/framed.pdf');
+    expect(res.headers['content-security-policy']).toMatch(/^frame-ancestors 'self'/);
+    expect(res.headers['content-security-policy']).not.toMatch(/default-src/);
+  });
+
   it('only ever downloads a file stored as a web page', async () => {
     write('old.html', '<script>alert(1)</script>');
     const res = await request(app()).get('/files/old.html');

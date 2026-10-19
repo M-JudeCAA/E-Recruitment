@@ -86,7 +86,10 @@ export default function Inbox() {
     const item = (inbox.items || []).find((i) => i.key === wanted);
     const fallback = params.get('fallback');
     setParams({}, { replace: true });
-    if (item) { setGone(null); open(item); } else setGone({ fallback: fallback && fallback.startsWith('/hr') ? fallback : null });
+    // Only a page of this app: "/hr", "/hr/..." or "/hr?...", with no
+    // backslash (which some routers read as "//", another site).
+    const safeFallback = fallback && /^\/hr(?:[/?#]|$)/.test(fallback) && !fallback.includes('\\') ? fallback : null;
+    if (item) { setGone(null); open(item); } else setGone({ fallback: safeFallback });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wanted, inbox]);
 

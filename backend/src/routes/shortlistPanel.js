@@ -1,10 +1,13 @@
 const express = require('express');
 const controller = require('../controllers/shortlistPanelController');
 
+const { panelLimiters } = require('../middleware/rateLimit');
+
 const router = express.Router();
 
 // Public - a shortlisting committee member's private link (see
-// shortlistPanelController.js).
+// shortlistPanelController.js). Rate limited, see middleware/rateLimit.js.
+router.use('/:token', panelLimiters);
 router.get('/:token', controller.view);
 router.get('/:token/applicants/:applicationId', controller.applicant);
 router.put('/:token/applicants/:applicationId/ratings', controller.saveRatings);

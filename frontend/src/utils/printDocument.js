@@ -20,7 +20,7 @@ export function escapeHtml(value) {
 // The page a document is shown or printed in (also the preview's srcDoc).
 export function documentPage(title, bodyHtml, { printButton = true } = {}) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${PRINT_STYLES}</style></head>`
-    + `<body>${printButton ? '<p class="no-print"><button onclick="window.print()">Print or save as PDF</button></p>' : ''}${bodyHtml}</body></html>`;
+    + `<body>${printButton ? '<p class="no-print"><button type="button" data-print>Print or save as PDF</button></p>' : ''}${bodyHtml}</body></html>`;
 }
 
 // Fetches a document from the API ({ title, html }) and opens it to print.
@@ -40,6 +40,9 @@ export function printDocument(title, bodyHtml) {
   win.document.open();
   win.document.write(documentPage(title, bodyHtml));
   win.document.close();
+  // Wired from here rather than an inline onclick, which the site's
+  // Content-Security-Policy (inherited by this blank window) would block.
+  win.document.querySelector('[data-print]')?.addEventListener('click', () => win.print());
   win.focus();
   return true;
 }
