@@ -139,6 +139,11 @@ function sendUploadedFile(res, filename, { download = false, name } = {}) {
     // Only who may frame it - the API's default-src 'none' (app.js) could
     // stop a browser's built-in PDF viewer from drawing the file.
     res.set('Content-Security-Policy', `frame-ancestors 'self' ${allowedOrigins.join(' ')}`.trim());
+    // The browser's PDF viewer fetches the file again from its own origin
+    // when its download button is used; helmet's same-site CORP (app.js)
+    // makes that fail as a "network error". Access is already checked here
+    // (a session or the committee's link), so this gives nothing away.
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
     return res.sendFile(filePath);
   }
   res.set('Content-Type', 'application/octet-stream');

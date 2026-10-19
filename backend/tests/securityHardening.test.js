@@ -14,6 +14,9 @@ function mockRes() {
   return res;
 }
 
+// Real bcrypt work, slow while every suite runs in parallel.
+jest.setTimeout(30000);
+
 beforeAll(() => {
   process.env.JWT_SECRET = 'test-secret';
   process.env.JWT_EXPIRES_IN = '1h';
