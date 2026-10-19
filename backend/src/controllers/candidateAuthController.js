@@ -17,11 +17,16 @@ const USE_MICROSOFT = {
   error: 'UCAA staff sign in with their UCAA Microsoft account - use "Sign in with your UCAA account" instead.'
 };
 
+// A bcrypt hash of nothing anyone can type, compared against when no
+// account matches (login).
+const DUMMY_HASH = bcrypt.hashSync(require('crypto').randomBytes(16).toString('hex'), 10);
+
 const isInternalEmail = (email) => internalDomains().includes(String(email).split('@')[1]?.toLowerCase());
 
 function candidateSession(candidate, firstLogin) {
   const token = jwt.sign(
-    { type: 'candidate', id: candidate.id, candidateType: candidate.candidateType, fullName: candidate.fullName },
+    // tv: the account's tokenVersion - a password reset ends this session (middleware/auth.js).
+    { type: 'candidate', id: candidate.id, candidateType: candidate.candidateType, fullName: candidate.fullName, tv: candidate.tokenVersion ?? 0 },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN }
   );
@@ -185,14 +190,18 @@ async function confirmEmail(req, res) {
 async function login(req, res) {
   const { email, password } = req.body;
   const candidate = await candidateModel.findByEmail(email);
-  if (!candidate) return res.status(401).json({ error: 'Invalid credentials' });
-  // An internal candidate's account has no password.
-  if (!candidate.passwordHash) return res.status(401).json(USE_MICROSOFT);
+  // An internal candidate's account has no password. Said for any UCAA
+  // address with no password account, so the answer doesn't reveal which
+  // UCAA addresses have an account here.
+  if (candidate ? !candidate.passwordHash : isInternalEmail(email)) return res.status(401).json(USE_MICROSOFT);
+  // Compared even when there is no account, so how long the answer takes
+  // doesn't tell anyone whether an address is registered.
+  const valid = await bcrypt.compare(String(password || ''), candidate ? candidate.passwordHash : DUMMY_HASH);
+  if (!candidate || !valid) return res.status(401).json({ error: 'Invalid credentials' });
+  // Only after the password, so it can't be used to find registered addresses.
   if (!candidate.emailConfirmed) {
     return res.status(403).json({ error: 'Please confirm your email before logging in' });
   }
-  const valid = await bcrypt.compare(password || '', candidate.passwordHash);
-  if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
   // Read before overwriting - "first login" only exists in the one
   // request where lastLoginAt is about to transition from null to a real
@@ -287,8 +296,10 @@ async function forgotPassword(req, res) {
   if (candidate && candidate.passwordHash) {
     const token = await createToken({ type: 'PasswordReset', candidateId: candidate.id });
     const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
-    await sendMail({
-      to: email,
+    // Not awaited (sendMail never throws): waiting on the mail server only
+    // when the account exists would tell anyone timing it that it does.
+    sendMail({
+      to: candidate.email,
       subject: 'Reset your e-Recruitment password',
       html: `<p>Click the link below to reset your password. This link expires in 30 minutes.</p><p><a href="${resetUrl}">${resetUrl}</a></p>`
     });
@@ -304,7 +315,8 @@ async function resetPassword(req, res) {
   try {
     const record = await consumeToken(token, 'PasswordReset');
     const passwordHash = await bcrypt.hash(newPassword, 10);
-    await candidateModel.update(record.candidateId, { passwordHash });
+    // Every session from before - someone else's included - ends now.
+    await candidateModel.update(record.candidateId, { passwordHash, tokenVersion: { increment: 1 } });
     res.json({ message: 'Password updated. You can now log in.' });
   } catch (err) {
     sendError(res, err, 400);

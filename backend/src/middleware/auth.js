@@ -123,15 +123,29 @@ function requireSystemAdminOrRole(minRole) {
 // is erased their open sessions end at once rather than at token expiry
 // (which would leave the anonymised account writable). Refreshes
 // req.user.candidateType, which can change at a first Microsoft sign-in.
+// A session issued before the password was last reset (tokenVersion moved
+// on, `tv` in the token) is over too. Returns the account, or null after
+// answering 401. Shared with the file route (fileController).
+async function loadCurrentCandidate(req, res) {
+  const candidateModel = require('../models/candidateModel');
+  const current = await candidateModel.findAuthState(req.user.id);
+  if (!current || current.purgedAt) {
+    res.status(401).json({ error: 'This account has been closed' });
+    return null;
+  }
+  if ((current.tokenVersion ?? 0) !== (req.user.tv ?? 0)) {
+    res.status(401).json({ error: 'Your session has ended - please sign in again' });
+    return null;
+  }
+  return current;
+}
+
 async function requireCandidate(req, res, next) {
   if (req.user.type !== 'candidate') {
     return res.status(403).json({ error: 'Candidate access required' });
   }
-  const candidateModel = require('../models/candidateModel');
-  const current = await candidateModel.findAuthState(req.user.id);
-  if (!current || current.purgedAt) {
-    return res.status(401).json({ error: 'This account has been closed' });
-  }
+  const current = await loadCurrentCandidate(req, res);
+  if (!current) return;
   req.user.candidateType = current.candidateType;
   next();
 }
@@ -150,4 +164,4 @@ function optionalAuthenticate(req, res, next) {
   next();
 }
 
-module.exports = { authenticate, optionalAuthenticate, requireStaffRole, hasRankOrDelegation, requireSystemAdmin, requireSystemAdminOrRole, requireCandidate, ROLE_RANK };
+module.exports = { authenticate, optionalAuthenticate, requireStaffRole, hasRankOrDelegation, requireSystemAdmin, requireSystemAdminOrRole, requireCandidate, loadCurrentCandidate, ROLE_RANK };

@@ -749,6 +749,9 @@ model Candidate {
   // row stays, anonymised, so their applications still count in the
   // recruitment history.
   purgedAt           DateTime?
+  // Goes up when the password is reset: every session issued before (its
+  // JWT carries the number as `tv`) stops working at once (middleware/auth.js).
+  tokenVersion       Int       @default(0)
 
   workExperience     WorkExperience[]
   education          Education[]

@@ -75,6 +75,11 @@ function authLimiters(scope) {
       createRateLimiter({ name: `${scope} password reset per address`, windowMs: 60 * MINUTE, max: 20, keyFrom: byIp }),
       createRateLimiter({ name: `${scope} password reset per account`, windowMs: 60 * MINUTE, max: 5, keyFrom: byEmail })
     ],
+    // Using an emailed link (reset password, confirm email): the token is
+    // the secret, so only per address.
+    tokenUse: [
+      createRateLimiter({ name: `${scope} link use per address`, windowMs: 15 * MINUTE, max: 30, keyFrom: byIp })
+    ],
     register: [
       createRateLimiter({ name: `${scope} registration per address`, windowMs: 60 * MINUTE, max: 20, keyFrom: byIp }),
       createRateLimiter({ name: `${scope} registration per account`, windowMs: 60 * MINUTE, max: 5, keyFrom: byEmail })
@@ -82,4 +87,13 @@ function authLimiters(scope) {
   };
 }
 
-module.exports = { createRateLimiter, authLimiters, byIp, byEmail };
+// A shortlisting committee member's private link (/api/shortlist-panel/:token):
+// a few hundred requests a quarter-hour is a busy rater, far below what
+// guessing a link would need. Counted per address and per link, so one
+// member rating hard never locks out the rest of an office.
+const panelLimiters = [
+  createRateLimiter({ name: 'committee link per address', windowMs: 15 * MINUTE, max: 1500, keyFrom: byIp }),
+  createRateLimiter({ name: 'committee link per link', windowMs: 15 * MINUTE, max: 600, keyFrom: (req) => `link:${req.params.token}` })
+];
+
+module.exports = { createRateLimiter, authLimiters, panelLimiters, byIp, byEmail };

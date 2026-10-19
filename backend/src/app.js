@@ -63,6 +63,20 @@ function parseTrustProxy(value) {
 app.set('trust proxy', parseTrustProxy(process.env.TRUST_PROXY));
 
 const { allowedOrigins } = require('./config/frontendUrl');
+// Browser security headers on every answer. The API sends JSON and files,
+// never pages, so its CSP allows nothing to load - except that the app's own
+// sites may frame it (the document viewer shows PDFs from /api/files in a
+// frame, from another port in development). Resources are same-site so the
+// app on another port can still show a profile photo from here.
+app.use(require('helmet')({
+  contentSecurityPolicy: {
+    useDefaults: false,
+    directives: { defaultSrc: ["'none'"], frameAncestors: ["'self'", ...allowedOrigins] }
+  },
+  xFrameOptions: false, // frame-ancestors above decides, and allows the app's other ports
+  crossOriginResourcePolicy: { policy: 'same-site' },
+  strictTransportSecurity: { maxAge: 31536000, includeSubDomains: false }
+}));
 // Content-Disposition is exposed so the SPA (another origin) can save a CSV
 // export under the filename the server gave it (CsvDownloadButton.jsx).
 app.use(cors({ origin: allowedOrigins, exposedHeaders: ['Content-Disposition'] }));

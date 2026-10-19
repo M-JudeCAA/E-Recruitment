@@ -6,6 +6,8 @@ const candidateModel = require('../models/candidateModel');
 const staffModel = require('../models/staffModel');
 const accessLog = require('../services/accessLogService');
 const { previewOf } = require('../utils/documentPreview');
+const { allowedOrigins } = require('../config/frontendUrl');
+const { loadCurrentCandidate } = require('../middleware/auth');
 
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || './uploads');
 
@@ -53,6 +55,9 @@ async function mayOpen(req, res) {
     return true;
   }
   if (req.user.type === 'candidate') {
+    // An erased account, or a session from before a password reset, ends
+    // here as everywhere else (requireCandidate).
+    if (!(await loadCurrentCandidate(req, res))) return false;
     // A file is either attached to one of the candidate's own
     // applications (cvUrl/coverLetterUrl/a supporting document) or is their own profile photo -
     // either is sufficient.
@@ -131,6 +136,9 @@ function sendUploadedFile(res, filename, { download = false, name } = {}) {
   res.set('X-Content-Type-Options', 'nosniff');
   if (inlineType && !download) {
     res.type(inlineType);
+    // Only who may frame it - the API's default-src 'none' (app.js) could
+    // stop a browser's built-in PDF viewer from drawing the file.
+    res.set('Content-Security-Policy', `frame-ancestors 'self' ${allowedOrigins.join(' ')}`.trim());
     return res.sendFile(filePath);
   }
   res.set('Content-Type', 'application/octet-stream');

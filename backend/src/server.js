@@ -1,4 +1,12 @@
 require('dotenv').config();
+
+// Every session and the scheduler's signal are signed with JWT_SECRET; a
+// short or missing one in production is refused outright rather than
+// signing sessions anyone could forge.
+if (process.env.NODE_ENV === 'production' && String(process.env.JWT_SECRET || '').length < 32) {
+  console.error('JWT_SECRET must be set to a random string of at least 32 characters in production. Not starting.');
+  process.exit(1);
+}
 // Express 4 does not forward a rejected promise from an async route
 // handler to the error middleware below on its own - an uncaught
 // rejection there (e.g. a transient database blip) is a plain unhandled
@@ -19,7 +27,10 @@ const app = require('./app');
 const { verifyMailTransport } = require('./utils/mailer');
 
 const PORT = process.env.PORT || 4000;
-const httpServer = app.listen(PORT, () => console.log(`e-Recruitment API listening on port ${PORT}`));
+// HOST=127.0.0.1 keeps the API off the network where a proxy on the same
+// machine is the only way in (deploy/lan/); unset, every interface as before.
+const HOST = process.env.HOST || undefined;
+const httpServer = app.listen(PORT, HOST, () => console.log(`e-Recruitment API listening on ${HOST || 'all interfaces'}, port ${PORT}`));
 
 // Push channel for the HR dashboards (see realtime/dashboardSocket.js) -
 // attached to the same HTTP server/port rather than a separate one, so

@@ -13,7 +13,7 @@ module.exports = {
   // What every candidate request re-checks (middleware/auth.js requireCandidate).
   findAuthState: (id) => prisma.candidate.findUnique({
     where: { id },
-    select: { id: true, candidateType: true, purgedAt: true }
+    select: { id: true, candidateType: true, purgedAt: true, tokenVersion: true }
   }),
   create: (data) => prisma.candidate.create({ data }),
   update: (id, data) => prisma.candidate.update({ where: { id }, data }),

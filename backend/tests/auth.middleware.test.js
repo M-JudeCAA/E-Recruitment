@@ -294,3 +294,34 @@ describe('requireCandidate', () => {
     expect(next).not.toHaveBeenCalled();
   });
 });
+
+describe('requireCandidate - sessions from before a password reset', () => {
+  test('a token carrying the current tokenVersion passes', async () => {
+    candidateModel.findAuthState.mockResolvedValue({ id: 7, candidateType: 'External', purgedAt: null, tokenVersion: 2 });
+    const next = jest.fn();
+
+    await requireCandidate({ user: { type: 'candidate', id: 7, tv: 2 } }, mockRes(), next);
+
+    expect(next).toHaveBeenCalled();
+  });
+
+  test('a token from before the last reset is refused', async () => {
+    candidateModel.findAuthState.mockResolvedValue({ id: 7, candidateType: 'External', purgedAt: null, tokenVersion: 1 });
+    const res = mockRes();
+    const next = jest.fn();
+
+    await requireCandidate({ user: { type: 'candidate', id: 7, tv: 0 } }, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('a token issued before tokenVersion existed counts as version 0', async () => {
+    candidateModel.findAuthState.mockResolvedValue({ id: 7, candidateType: 'External', purgedAt: null, tokenVersion: 0 });
+    const next = jest.fn();
+
+    await requireCandidate({ user: { type: 'candidate', id: 7 } }, mockRes(), next);
+
+    expect(next).toHaveBeenCalled();
+  });
+});
