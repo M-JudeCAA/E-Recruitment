@@ -2,7 +2,8 @@ const prisma = require('../config/db');
 
 const ADMIN_LIST_FIELDS = {
   id: true, name: true, email: true, role: true, department: true,
-  isSystemAdmin: true, active: true, lastLoginAt: true, entraObjectId: true, createdAt: true
+  isSystemAdmin: true, active: true, lastLoginAt: true, entraObjectId: true, createdAt: true,
+  entraGroupState: true, entraGroupError: true, entraGroupCheckedAt: true
 };
 
 module.exports = {
@@ -34,6 +35,10 @@ module.exports = {
     const rows = await prisma.staffUser.findMany({ select: ADMIN_LIST_FIELDS, orderBy: { name: 'asc' } });
     return rows.map(({ entraObjectId, ...row }) => ({ ...row, linked: Boolean(entraObjectId) }));
   },
+
+  // Who is told when a staff account's Entra group change fails
+  // (staffGroupService).
+  findActiveAdmins: () => prisma.staffUser.findMany({ where: { isSystemAdmin: true, active: true }, select: { id: true, name: true, email: true } }),
 
   countActiveAdmins: () => prisma.staffUser.count({ where: { isSystemAdmin: true, active: true } }),
 

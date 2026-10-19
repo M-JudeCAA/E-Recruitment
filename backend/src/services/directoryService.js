@@ -155,4 +155,78 @@ async function staffAppAssignments() {
   return [...people.values()].sort((a, b) => new Date(b.assignedAt) - new Date(a.assignedAt));
 }
 
-module.exports = { isConfigured, searchPeople, cleanQuery, staffAppAssignments };
+// --- The staff app's group (services/staffGroupService.js) --------------
+// Writes membership of ONE group. The app is meant to hold no Graph
+// permission for this: an Entra administrator gives it a role over an
+// administrative unit holding only that group (docs/entra-staff-group-setup.md).
+
+async function graphSend(method, path, token, body) {
+  const res = await fetch(`${GRAPH}${path}`, {
+    method,
+    headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (res.ok) return;
+  const payload = await res.json().catch(() => ({}));
+  const err = new Error(`Graph ${res.status}: ${payload.error?.code || ''} ${payload.error?.message || ''}`.trim());
+  err.status = res.status;
+  err.graphMessage = String(payload.error?.message || '');
+  throw err;
+}
+
+/** Adds a user to a group; already a member counts as done. */
+async function addGroupMember(groupId, userId) {
+  const token = await accessToken();
+  try {
+    await graphSend('POST', `/groups/${encodeURIComponent(groupId)}/members/$ref`, token,
+      { '@odata.id': `${GRAPH}/directoryObjects/${userId}` });
+  } catch (err) {
+    if (err.status === 400 && /already exist/i.test(err.graphMessage)) return;
+    throw err;
+  }
+}
+
+/** Removes a user from a group; not a member counts as done. */
+async function removeGroupMember(groupId, userId) {
+  const token = await accessToken();
+  try {
+    await graphSend('DELETE', `/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}/$ref`, token);
+  } catch (err) {
+    // Graph says 404 both for someone who isn't a member and for a group
+    // that doesn't exist - only the first is done.
+    if (err.status === 404 && await groupExists(groupId, token)) return;
+    throw err;
+  }
+}
+
+async function groupExists(groupId, token) {
+  try {
+    await graphGet(`/groups/${encodeURIComponent(groupId)}?$select=id`, token);
+    return true;
+  } catch (err) {
+    if (err.status === 404) return false;
+    throw err;
+  }
+}
+
+/** The Microsoft object id for a UCAA address (mail or sign-in name), or null. */
+async function findUserIdByEmail(email) {
+  const token = await accessToken();
+  const value = String(email || '').toLowerCase().replace(/'/g, "''");
+  const filter = encodeURIComponent(`mail eq '${value}' or userPrincipalName eq '${value}'`);
+  const body = await graphGet(`/users?$filter=${filter}&$select=id`, token);
+  return body.value?.[0]?.id || null;
+}
+
+/** The object ids of a group's direct members (users). */
+async function groupMemberIds(groupId) {
+  const token = await accessToken();
+  const members = await graphAll(`/groups/${encodeURIComponent(groupId)}/members/microsoft.graph.user?$select=id&$top=999`,
+    token, { ConsistencyLevel: 'eventual' });
+  return new Set(members.map((m) => m.id));
+}
+
+module.exports = {
+  isConfigured, searchPeople, cleanQuery, staffAppAssignments,
+  addGroupMember, removeGroupMember, findUserIdByEmail, groupMemberIds
+};

@@ -156,8 +156,9 @@ export default function Navbar() {
             {/* Staff accounts / Delegations moved off the top nav - both
                 now live under the "Staff Management" sidebar entry
                 (HRSidebar.jsx) on one combined page (StaffManagement.jsx). */}
-            {/* An accounts-only system administrator (no HR role) gets no HR notifications. */}
-            {staff.role && <NotificationBell />}
+            {/* An accounts-only system administrator (no HR role) gets no HR
+                notifications, but is told about staff app access problems. */}
+            {(staff.role || staff.isSystemAdmin) && <NotificationBell />}
 
             {/* Account panel - carries "logged in as <name> (<role>)" plus
                 email, moved here from the HR dashboard's page header so

@@ -141,43 +141,58 @@ enum EmploymentCategory {
   FullSecondment
 }
 
+// Where a staff account stands with the staff app's Entra group (StaffUser.entraGroupState).
+enum StaffGroupAccess {
+  InGroup
+  NotInGroup
+  Failed
+}
+
 model StaffUser {
-  id            Int         @id @default(autoincrement())
-  name          String
-  email         String      @unique
+  id                  Int               @id @default(autoincrement())
+  name                String
+  email               String            @unique
   // Staff sign in with their UCAA Microsoft (Entra ID) account. The object
   // id (the `oid` claim) is linked on their first sign-in, matched by
   // email, and from then on only the oid counts - a renamed or reused
   // mailbox can't take an account over. Entra only proves who someone is;
   // whether they may sign in here, and with what role, is decided by this
   // row (staffAuthController.entraLogin).
-  entraObjectId String?     @unique
+  entraObjectId       String?           @unique
   // Null for everyone except a system administrator's break-glass account,
   // usable only while BREAK_GLASS_LOGIN=true (staffAuthController.login).
-  passwordHash  String?
+  passwordHash        String?
   // Null for an accounts-only system administrator (isSystemAdmin with no
   // HR role) - with no role, no requireStaffRole gate passes.
-  role          StaffRole?
+  role                StaffRole?
   // Manages staff accounts (staffUserController) and nothing else unless
   // also given an HR role - account control is kept apart from hiring.
-  isSystemAdmin Boolean     @default(false)
+  isSystemAdmin       Boolean           @default(false)
   // A deactivated account can't sign in, and requireStaffRole refuses the
   // sessions it already has.
-  active        Boolean     @default(true)
-  lastLoginAt   DateTime?
-  department    String
+  active              Boolean           @default(true)
+  lastLoginAt         DateTime?
+  department          String
   // Authoritative department scoping for admin vacancy visibility, replacing
   // the free-text `department` string above for that purpose - matching by
   // name alone would be ambiguous for a department like "CWG" that exists
   // under five different directorates. Nullable because existing staff
   // predate this field; a null value means "not yet assigned" and is
   // treated as seeing nothing in admin listings, never everything.
-  departmentId  Int?
-  departmentRef Department? @relation("StaffDepartment", fields: [departmentId], references: [id])
-  actingAsId    Int?
-  actingAs      StaffUser?  @relation("Delegation", fields: [actingAsId], references: [id])
-  delegates     StaffUser[] @relation("Delegation")
-  createdAt     DateTime    @default(now())
+  departmentId        Int?
+  departmentRef       Department?       @relation("StaffDepartment", fields: [departmentId], references: [id])
+  // Membership of the staff app's Entra group (ENTRA_STAFF_GROUP_ID,
+  // services/staffGroupService.js): an active account is added to it, a
+  // deactivated one removed. Null until the group is first managed for this
+  // account; Failed when the last attempt didn't go through (Retry on Staff
+  // accounts), with the reason in plain words.
+  entraGroupState     StaffGroupAccess?
+  entraGroupError     String?           @db.VarChar(300)
+  entraGroupCheckedAt DateTime?
+  actingAsId          Int?
+  actingAs            StaffUser?        @relation("Delegation", fields: [actingAsId], references: [id])
+  delegates           StaffUser[]       @relation("Delegation")
+  createdAt           DateTime          @default(now())
 
   vacanciesCreated               Vacancy[]               @relation("VacancyCreatedBy")
   vacanciesApproved              Vacancy[]               @relation("VacancyApprovedBy")
@@ -1600,6 +1615,10 @@ enum SlaTaskType {
   // The daily reminder of approvals still waiting for someone, one per
   // person per working day (scripts/sendApprovalReminders.js). taskId is 0.
   PendingApprovalsDigest
+  // A staff account couldn't be added to (or removed from) the staff app's
+  // Entra group - to every active system administrator (staffGroupService).
+  // taskId is the StaffUser id.
+  StaffGroupSyncFailed
 }
 
 model SlaPolicy {

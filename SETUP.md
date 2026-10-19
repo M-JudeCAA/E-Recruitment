@@ -165,6 +165,20 @@ Without them the list says so, and accounts are created by name as before.
 Assigning someone in Entra gives them no access by itself - only the role
 given here does.
 
+**Adding new staff to the staff app's group (optional).** Set
+`ENTRA_STAFF_GROUP_ID` in `backend/.env` to the object id of the security
+group assigned to the staff app, and creating a staff account adds the person
+to that group - so they can open the staff portal straight away -
+deactivating removes them and reactivating adds them back. The Create form
+then only accepts someone picked from the directory. A change that doesn't go
+through is shown on Staff accounts with **Retry**, and the system
+administrators are told by email and in-app. It uses the directory connection
+above, but the app gets **no Graph permission to write groups**: an Entra
+administrator gives it a role over an administrative unit holding only that
+group - the steps are in [docs/entra-staff-group-setup.md](docs/entra-staff-group-setup.md).
+After setting it, restart the API and run `node scripts/syncStaffGroup.js`
+(then `--yes`) to bring existing accounts in line. Unset, nothing changes.
+
 Create staff accounts with the person's **sign-in name** (UPN) — that is
 what Entra reports when the `email` claim is empty. The first sign-in links
 the account to the person's Microsoft object id; from then on only that id

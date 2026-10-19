@@ -68,6 +68,8 @@ async function linkFor(taskType, taskId) {
       return vacancyTab(await vacancyIdOf('offer', taskId), 'merit');
     case 'VacancyFilledWithOpenOffers':
       return '/hr/offers';
+    case 'StaffGroupSyncFailed':
+      return '/hr/staff-accounts';
     case 'InterviewRescheduleRequested':
     case 'InterviewResultsOverdue':
     case 'InterviewReadyToFinalize':
