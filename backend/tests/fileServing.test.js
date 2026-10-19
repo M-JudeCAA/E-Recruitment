@@ -47,6 +47,8 @@ describe('serving uploads', () => {
     const res = await request(app()).get('/files/framed.pdf');
     expect(res.headers['content-security-policy']).toMatch(/^frame-ancestors 'self'/);
     expect(res.headers['content-security-policy']).not.toMatch(/default-src/);
+    // So the PDF viewer's own download button can fetch it again.
+    expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
   });
 
   it('only ever downloads a file stored as a web page', async () => {
