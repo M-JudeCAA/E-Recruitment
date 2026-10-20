@@ -5,6 +5,7 @@ const { sendMail } = require('../utils/mailer');
 const { staffFrontendUrl } = require('../config/frontendUrl');
 const { internalDomains } = require('../services/entraAuthService');
 const directory = require('../services/directoryService');
+const staffGroup = require('../services/staffGroupService');
 const { ROLE_RANK } = require('../middleware/auth');
 const { STAFF_DEPARTMENTS, HR_DEPARTMENT, parseStaffDepartment, isHrDepartment } = require('../utils/staffDepartments');
 
@@ -14,7 +15,10 @@ const { STAFF_DEPARTMENTS, HR_DEPARTMENT, parseStaffDepartment, isHrDepartment }
 // sign in with their UCAA Microsoft account, so an account is just a name, a
 // UCAA email, a role and a department: there is no password to set or send.
 // The account links itself to the person's Microsoft identity the first time
-// they sign in.
+// they sign in. Where the staff app's Entra group is managed from here
+// (staffGroupService), an account is made only for someone picked from the
+// directory, and creating / deactivating / reactivating it adds the person
+// to or removes them from that group.
 //
 // An HR Manager (their own role Manager or Director - not a delegation - in
 // the HR department) also sees the HR department's accounts and changes
@@ -44,18 +48,13 @@ async function departmentIdFor(name) {
   return department ? department.id : null;
 }
 
-function signInEmail(staff) {
-  const what = [
-    staff.role ? staff.role.replace(/_/g, ' ') : null,
-    staff.isSystemAdmin ? 'system administrator' : null
-  ].filter(Boolean).join(' and ');
-  return {
-    to: staff.email,
-    subject: 'Your UCAA e-Recruitment staff account',
-    html: `<p>Hi ${staff.name},</p><p>A staff account has been created for you on the UCAA e-Recruitment system, as ${what}.</p>`
-      + `<p>Sign in with your UCAA Microsoft account (${staff.email}) at <a href="${staffFrontendUrl}/staff/login">${staffFrontendUrl}/staff/login</a>. There is no separate password.</p>`
-  };
-}
+// What the Staff accounts page shows about the staff app's group.
+const groupView = (result) => ({ configured: result.configured, state: result.state, error: result.error });
+
+const accountView = (staff) => ({
+  id: staff.id, name: staff.name, email: staff.email, role: staff.role,
+  department: staff.department, isSystemAdmin: staff.isSystemAdmin, active: staff.active
+});
 
 async function create(req, res) {
   const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
@@ -87,6 +86,15 @@ async function create(req, res) {
     }
   }
 
+  // The group takes a Microsoft account, so the person must come from the
+  // directory, not be typed in.
+  if (!entraObjectId && staffGroup.isConfigured()) {
+    return res.status(400).json({
+      error: "Pick the person from the UCAA directory - it is their Microsoft account that is added to the staff app's group in Entra.",
+      code: 'PICK_FROM_DIRECTORY'
+    });
+  }
+
   const existing = await staffModel.findByEmail(email);
   if (existing) return res.status(409).json({ error: 'A staff account with this email already exists' });
 
@@ -97,12 +105,13 @@ async function create(req, res) {
     entityType: 'StaffUser', entityId: staff.id, action: 'Created', actor: audit.actorFrom(req),
     before: {}, after: staff, fields: AUDIT_FIELDS
   });
-  await sendMail(signInEmail(staff));
+  // Into the staff app's group, and emailed once they can sign in. Without
+  // the group managed here, emailed straight away as before.
+  let group = { configured: false, state: null, error: null };
+  if (staffGroup.isConfigured()) group = await staffGroup.sync(staff, { req, welcome: true });
+  else await sendMail(staffGroup.welcomeEmail(staff));
 
-  res.status(201).json({
-    id: staff.id, name: staff.name, email: staff.email, role: staff.role,
-    department: staff.department, isSystemAdmin: staff.isSystemAdmin, active: staff.active
-  });
+  res.status(201).json({ ...accountView(staff), entraGroup: groupView(group) });
 }
 
 // Change an account's role, department, administrator flag or active state.
@@ -147,10 +156,12 @@ async function update(req, res) {
     entityType: 'StaffUser', entityId: staffId, action: 'Updated', actor: audit.actorFrom(req),
     before: staff, after: updated, fields: AUDIT_FIELDS, comment: req.body.comment
   });
-  res.json({
-    id: updated.id, name: updated.name, email: updated.email, role: updated.role,
-    department: updated.department, isSystemAdmin: updated.isSystemAdmin, active: updated.active
-  });
+  // Deactivated: out of the staff app's group; reactivated: back in.
+  let group;
+  if (updated.active !== staff.active && staffGroup.isConfigured()) {
+    group = groupView(await staffGroup.sync(updated, { req }));
+  }
+  res.json({ ...accountView(updated), ...(group ? { entraGroup: group } : {}) });
 }
 
 // Forget the Microsoft identity an account was linked to, so it links again
@@ -171,6 +182,24 @@ async function unlink(req, res) {
     comment: req.body?.comment
   });
   res.json({ id: staffId, linked: false });
+}
+
+// POST /api/staff-users/:id/entra-group - try again to put the account where
+// it belongs in the staff app's group (in while active, out once
+// deactivated), after a failure.
+async function retryEntraGroup(req, res) {
+  if (!staffGroup.isConfigured()) {
+    return res.status(501).json({ error: "The staff app's Entra group is not managed from here (ENTRA_STAFF_GROUP_ID).", code: 'STAFF_GROUP_NOT_CONFIGURED' });
+  }
+  const staff = await staffModel.findById(Number(req.params.id));
+  if (!staff) return res.status(404).json({ error: 'Staff account not found' });
+  res.json({ ...accountView(staff), entraGroup: groupView(await staffGroup.sync(staff, { req })) });
+}
+
+// GET /api/staff-users/entra-group - whether the staff app's group is
+// managed from here (the Create form then insists on a directory pick).
+function entraGroupSettings(req, res) {
+  res.json({ configured: staffGroup.isConfigured() });
 }
 
 // --- The HR Manager's team ----------------------------------------------
@@ -279,4 +308,4 @@ async function entraAssignments(req, res) {
   res.json(assigned.filter((p) => !oids.has(p.entraObjectId) && !emails.has(p.email)));
 }
 
-module.exports = { create, update, unlink, list, listAccounts, entraAssignments, hrTeam, updateHrTeamRole };
+module.exports = { create, update, unlink, list, listAccounts, entraAssignments, retryEntraGroup, entraGroupSettings, hrTeam, updateHrTeamRole };

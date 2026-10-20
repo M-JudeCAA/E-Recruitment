@@ -36,6 +36,8 @@ export const STATUS_COLORS = {
   Active: 'var(--color-accent)', Deactivated: 'var(--color-text-muted)',
   // Assigned to the staff app in Entra within the last week (StaffAccounts)
   New: 'var(--color-primary)',
+  // The account's place in the staff app's Entra group (StaffGroupAccess)
+  InGroup: 'var(--color-accent)', NotInGroup: 'var(--color-text-muted)', Failed: 'var(--color-danger)',
   // Verification
   Pending: 'var(--color-warning)', HR_Verified: 'var(--color-accent)',
   Discrepancy_Flagged: 'var(--color-danger)',

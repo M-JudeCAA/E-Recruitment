@@ -13,6 +13,10 @@ router.get('/entra-assignments', authenticate, requireSystemAdmin(), controller.
 router.post('/', authenticate, requireSystemAdmin(), casing({ name: 'name', email: 'email' }), controller.create);
 router.patch('/:id', authenticate, requireSystemAdmin(), casing({ name: 'name', email: 'email' }), controller.update);
 router.post('/:id/unlink', authenticate, requireSystemAdmin(), controller.unlink);
+// The staff app's Entra group (staffGroupService): whether it is managed
+// from here, and trying again after a failure.
+router.get('/entra-group', authenticate, requireSystemAdmin(), controller.entraGroupSettings);
+router.post('/:id/entra-group', authenticate, requireSystemAdmin(), controller.retryEntraGroup);
 // An HR Manager's team: the HR department's accounts and their HR roles -
 // Manager+ by their own role, in the HR department (checked in the
 // controller; a delegation isn't enough). No creating accounts.

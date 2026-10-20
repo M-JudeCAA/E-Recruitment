@@ -51,6 +51,12 @@ const ourDepartment = (text) => STAFF_DEPARTMENTS.find((d) => d === String(text 
 // There are no passwords to set; an account links itself to the person's
 // Microsoft identity on their first sign-in. Nobody can change their own
 // account - so an administrator can't hand themselves an HR role.
+//
+// Where the staff app's Entra group is managed from here (backend
+// staffGroupService), the person must be picked from the directory, and
+// creating / deactivating / reactivating the account adds them to or
+// removes them from that group; "Staff app access" shows where each account
+// stands, with Retry when it didn't go through.
 export default function StaffAccounts() {
   const { staff: me } = useAuth();
   const confirm = useConfirm();
@@ -67,6 +73,9 @@ export default function StaffAccounts() {
   // { people } | { unavailable: message } | null while loading.
   const [waiting, setWaiting] = useState(null);
   const [waitingRoles, setWaitingRoles] = useState({});
+  // Whether the staff app's Entra group is managed from here.
+  const [groupManaged, setGroupManaged] = useState(false);
+  const [warning, setWarning] = useState('');
 
   // Your own row is read-only (the API refuses changes to it anyway).
   const isMe = (a) => a.email?.toLowerCase() === me?.email?.toLowerCase();
@@ -83,13 +92,25 @@ export default function StaffAccounts() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    staffClient.get('/api/staff-users/entra-group')
+      .then((res) => setGroupManaged(Boolean(res.data.configured)))
+      .catch(() => setGroupManaged(false));
+  }, []);
+
+  // A group change that didn't go through, said next to the action's own message.
+  const groupProblem = (name, entraGroup, adding) => (entraGroup?.state === 'Failed'
+    ? `${name} could not be ${adding ? 'added to' : 'removed from'} the staff app's group in Microsoft Entra: ${entraGroup.error} Use Retry in the list below - the system administrators have been notified.`
+    : '');
 
   const createAccount = async (body, done) => {
-    setMessage(''); setError('');
+    setMessage(''); setError(''); setWarning('');
     try {
-      await staffClient.post('/api/staff-users', body);
-      setMessage(done);
+      const { data } = await staffClient.post('/api/staff-users', body);
+      const problem = groupProblem(body.name, data.entraGroup, true);
+      if (problem) setWarning(`Account created for ${body.name}, but they can't sign in yet. ${problem}`);
+      else setMessage(done);
       load();
       return true;
     } catch (err) {
@@ -102,7 +123,9 @@ export default function StaffAccounts() {
     e.preventDefault();
     setCreating(true);
     const ok = await createAccount({ ...form, role: form.role || null },
-      `Account created for ${form.name}. They have been emailed to sign in with their UCAA Microsoft account.`);
+      groupManaged
+        ? `Account created for ${form.name} and added to the staff app in Microsoft Entra. They have been emailed to sign in with their UCAA Microsoft account.`
+        : `Account created for ${form.name}. They have been emailed to sign in with their UCAA Microsoft account.`);
     if (ok) setForm(emptyForm);
     setCreating(false);
   };
@@ -122,11 +145,12 @@ export default function StaffAccounts() {
   const recent = (when) => Date.now() - new Date(when).getTime() < RECENT_DAYS * 86400000;
 
   const change = async (account, data, done) => {
-    setMessage(''); setError('');
+    setMessage(''); setError(''); setWarning('');
     setBusy((b) => ({ ...b, [account.id]: true }));
     try {
-      await staffClient.patch(`/api/staff-users/${account.id}`, data);
+      const { data: updated } = await staffClient.patch(`/api/staff-users/${account.id}`, data);
       setMessage(done);
+      setWarning(groupProblem(account.name, updated.entraGroup, updated.active));
       setRoleEdits((r) => { const next = { ...r }; delete next[account.id]; return next; });
       load();
     } catch (err) {
@@ -157,6 +181,22 @@ export default function StaffAccounts() {
     }
     change(account, { isSystemAdmin: !account.isSystemAdmin },
       account.isSystemAdmin ? `${account.name} is no longer a system administrator.` : `${account.name} is now a system administrator.`);
+  };
+
+  const retryGroup = async (account) => {
+    setMessage(''); setError(''); setWarning('');
+    setBusy((b) => ({ ...b, [`group-${account.id}`]: true }));
+    try {
+      const { data } = await staffClient.post(`/api/staff-users/${account.id}/entra-group`, {});
+      const problem = groupProblem(account.name, data.entraGroup, data.active);
+      if (problem) setWarning(problem);
+      else setMessage(data.active ? `${account.name} now has the staff app in Microsoft Entra.` : `${account.name} has been removed from the staff app in Microsoft Entra.`);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Could not retry');
+    } finally {
+      setBusy((b) => ({ ...b, [`group-${account.id}`]: false }));
+    }
   };
 
   const unlink = async (account) => {
@@ -216,6 +256,24 @@ export default function StaffAccounts() {
     },
     { key: 'admin', label: 'System admin', render: (a) => (a.isSystemAdmin ? 'Yes' : 'No') },
     { key: 'status', label: 'Status', render: (a) => <StatusBadge status={a.active ? 'Active' : 'Deactivated'} /> },
+    ...(groupManaged ? [{
+      key: 'access', label: 'Staff app access', render: (a) => (
+        a.entraGroupState === 'Failed' ? (
+          <div style={{ maxWidth: 260 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <StatusBadge status="Failed" label={a.active ? 'Not added' : 'Not removed'} />
+              <Button variant="secondary" style={{ padding: '2px 8px', fontSize: 12 }} loading={!!busy[`group-${a.id}`]} loadingText="…"
+                onClick={() => retryGroup(a)}>Retry</Button>
+            </div>
+            {a.entraGroupError && <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>{a.entraGroupError}</div>}
+          </div>
+        ) : a.entraGroupState ? (
+          <StatusBadge status={a.entraGroupState} label={a.entraGroupState === 'InGroup' ? 'Has access' : 'Removed'} />
+        ) : (
+          <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }} title="Made before the staff app's group was managed here - see scripts/syncStaffGroup.js">Not checked</span>
+        )
+      )
+    }] : []),
     {
       key: 'signin', label: 'Last sign-in', render: (a) => (
         <span title={a.linked ? 'Linked to a Microsoft account' : 'Not signed in yet'}>
@@ -249,6 +307,7 @@ export default function StaffAccounts() {
 
         <Alert type="success" message={message} />
         <Alert type="error" message={error} />
+        <Alert type="warning" message={warning} />
 
         <Card style={{ marginBottom: 'var(--spacing-lg)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--spacing-sm)' }}>
@@ -307,14 +366,19 @@ export default function StaffAccounts() {
           </div>
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
             Start typing the person's name and pick them from the UCAA directory - their email comes with them, and it is the
-            Microsoft account they sign in with. There is no password; they are emailed a link to the staff portal. Any UCAA
+            Microsoft account they sign in with. There is no password; they are emailed a link to the staff portal.
+            {groupManaged && ' Creating the account also gives them the staff app in Microsoft Entra.'} Any UCAA
             employee can apply for jobs on the candidate site without an account here.
           </p>
           <form onSubmit={create}>
             <DirectoryPersonField label="Full name" required value={form.name}
               picked={Boolean(form.entraObjectId)} unavailable={directoryDown} search={searchDirectory}
               onUnavailable={() => setDirectoryDown(true)}
-              hint={directoryDown ? 'The UCAA directory can\'t be searched here - type the name and UCAA email.' : undefined}
+              hint={directoryDown
+                ? (groupManaged
+                  ? 'The UCAA directory can\'t be searched just now, and an account needs someone picked from it. Try again shortly.'
+                  : 'The UCAA directory can\'t be searched here - type the name and UCAA email.')
+                : (groupManaged && form.name && !form.entraObjectId ? 'Pick the person from the list.' : undefined)}
               onType={(name) => setForm((f) => ({ ...f, name, ...(f.entraObjectId ? { email: '', entraObjectId: null } : {}) }))}
               onPick={(person) => setForm((f) => ({
                 ...f, name: person.name, email: person.email, entraObjectId: person.entraObjectId || null,
@@ -339,7 +403,8 @@ export default function StaffAccounts() {
                 onChange={(e) => setForm({ ...form, isSystemAdmin: e.target.checked })} />
               System administrator - can manage staff accounts
             </label>
-            <Button type="submit" loading={creating} loadingText="Creating...">Create account</Button>
+            <Button type="submit" loading={creating} loadingText="Creating..."
+              disabled={groupManaged && !form.entraObjectId}>Create account</Button>
           </form>
         </Card>
 
