@@ -15,6 +15,7 @@ require('dotenv').config();
 const prisma = require('../src/config/db');
 const hiringManagers = require('../src/services/hiringManagerService');
 const { notify } = require('../src/services/notificationService');
+const conflictOfInterest = require('../src/services/conflictOfInterestService');
 const { formatDeadline } = require('../src/utils/interviewFormat');
 
 async function run() {
@@ -46,7 +47,13 @@ async function run() {
       + `${formatDeadline(vacancy.deadline)}. ${applicationCount} application${applicationCount === 1 ? '' : 's'} `
       + `${applicationCount === 1 ? 'was' : 'were'} received. ${reviewNote}`;
 
-    await notify(vacancy.createdById, 'VacancyDeadlinePassed', vacancy.id, message);
+    // To the creator - or, when they applied for it, the Principal HR
+    // Officers instead: an applicant isn't told how many others applied.
+    const { ids, redirected } = await conflictOfInterest.noticeRecipients(vacancy.id, [vacancy.createdById]);
+    for (const staffId of ids) {
+      await notify(staffId, 'VacancyDeadlinePassed', vacancy.id,
+        message + (redirected ? ' (Sent to you because whoever created this vacancy has applied for it.)' : ''));
+    }
     await hiringManagers.notify(vacancy, 'applicationsClosed', { count: applicationCount });
     await prisma.vacancy.update({ where: { id: vacancy.id }, data: { deadlineNotifiedAt: now } });
   }

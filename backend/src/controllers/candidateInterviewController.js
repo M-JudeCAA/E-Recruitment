@@ -1,5 +1,6 @@
 const interviewModel = require('../models/interviewModel');
 const { notify } = require('../services/notificationService');
+const conflictOfInterest = require('../services/conflictOfInterestService');
 const invitations = require('../services/interviewInvitationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { toCandidateInterview } = require('../utils/candidateInterview');
@@ -45,12 +46,18 @@ async function respond(req, res) {
   });
 
   if (response === 'RescheduleRequested') {
-    const recipient = round.scheduledById || round.application.vacancy.createdById;
+    // Whoever scheduled it (else the creator) - unless they have applied for
+    // the vacancy, when the Principal HR Officers get it: they can't act on
+    // it, and it names the candidate.
+    const named = round.scheduledById || round.application.vacancy.createdById;
     try {
-      await notify(recipient, 'InterviewRescheduleRequested', round.id,
-        `${round.application.candidate.fullName} has asked to move their interview for ${round.application.vacancy.jobRef} `
-        + `(${round.application.vacancy.title}, round ${round.roundNumber}, ${describeSlot(round)}). `
-        + `Their note: "${note.replace(/</g, '&lt;').replace(/>/g, '&gt;')}"`);
+      const { ids } = await conflictOfInterest.noticeRecipients(round.application.vacancy.id, [named]);
+      for (const recipient of ids) {
+        await notify(recipient, 'InterviewRescheduleRequested', round.id,
+          `${round.application.candidate.fullName} has asked to move their interview for ${round.application.vacancy.jobRef} `
+          + `(${round.application.vacancy.title}, round ${round.roundNumber}, ${describeSlot(round)}). `
+          + `Their note: "${note.replace(/</g, '&lt;').replace(/>/g, '&gt;')}"`);
+      }
     } catch (err) {
       console.error('Could not send the reschedule-request notice:', err);
     }
