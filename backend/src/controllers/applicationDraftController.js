@@ -351,10 +351,16 @@ async function submit(req, res) {
     req.user.id, 'ApplicationSubmitted',
     `Your application for "${vacancy.title}" (${vacancy.jobRef}) has been received. We'll notify you of any updates.`
   );
-  await notify(
-    vacancy.createdById, 'NewApplicationSubmitted', applicationId,
-    `${candidate.fullName} applied for "${vacancy.title}" (${vacancy.jobRef}).`
-  );
+  // To the vacancy's creator - unless they have applied for it themselves,
+  // when it goes to the Principal HR Officers instead.
+  const { ids: toldIds, redirected } = await conflictOfInterest.noticeRecipients(vacancy.id, [vacancy.createdById]);
+  for (const staffId of toldIds) {
+    await notify(
+      staffId, 'NewApplicationSubmitted', applicationId,
+      `${candidate.fullName} applied for "${vacancy.title}" (${vacancy.jobRef}).`
+        + (redirected ? ' (Sent to you because whoever created this vacancy has applied for it.)' : '')
+    );
+  }
 
   // A UCAA staff member applying - the conflict-of-interest rule shuts them
   // out of the vacancy; this tells HR so someone else runs it.

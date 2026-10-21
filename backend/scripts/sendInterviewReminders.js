@@ -18,6 +18,7 @@
 require('dotenv').config();
 const interviewModel = require('../src/models/interviewModel');
 const { notify } = require('../src/services/notificationService');
+const conflictOfInterest = require('../src/services/conflictOfInterestService');
 const { notifyCandidate } = require('../src/services/candidateNotificationService');
 const invitations = require('../src/services/interviewInvitationService');
 
@@ -43,11 +44,19 @@ async function sendReminders(now) {
 async function sendResultsReminders(now) {
   const overdue = await interviewModel.overdueForResults(new Date(now.getTime() - RESULTS_AFTER_MS));
   const byRecipient = new Map(); // staff id -> [round]
+  const chosen = new Map(); // "vacancy:staff" -> recipient ids, worked out once
   for (const round of overdue) {
-    const recipient = round.scheduledById || round.application.vacancy.createdById;
-    if (!recipient) continue;
-    if (!byRecipient.has(recipient)) byRecipient.set(recipient, []);
-    byRecipient.get(recipient).push(round);
+    const named = round.scheduledById || round.application.vacancy.createdById;
+    if (!named) continue;
+    // Whoever scheduled it (else the creator) - unless they have applied for
+    // the vacancy, when the Principal HR Officers are reminded instead: the
+    // reminder names the candidates.
+    const key = `${round.application.vacancy.id}:${named}`;
+    if (!chosen.has(key)) chosen.set(key, (await conflictOfInterest.noticeRecipients(round.application.vacancy.id, [named])).ids);
+    for (const recipient of chosen.get(key)) {
+      if (!byRecipient.has(recipient)) byRecipient.set(recipient, []);
+      byRecipient.get(recipient).push(round);
+    }
   }
 
   const describe = (round) => `${round.application.candidate.fullName} (${round.application.vacancy.jobRef}, round ${round.roundNumber})`;

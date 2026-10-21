@@ -55,7 +55,7 @@ async function staffIdsAppliedFor(vacancyId) {
   if (!candidates?.length) return [];
   const or = candidates.flatMap((c) => [{ email: c.email }, ...(c.entraObjectId ? [{ entraObjectId: c.entraObjectId }] : [])]);
   const staff = await prisma.staffUser.findMany({ where: { OR: or }, select: { id: true } });
-  return staff.map((s) => s.id);
+  return (staff || []).map((s) => s.id);
 }
 
 // The vacancies the requester is shut out of: their own applications, and
@@ -165,8 +165,30 @@ async function flagHiringManagerApplicant(candidate, vacancy, applicationId) {
   return true;
 }
 
+// Who should get a notice about a vacancy that is addressed to particular
+// staff (its creator, whoever scheduled an interview): those people, less
+// anyone who has applied for it - an applicant hears nothing about the
+// other applicants. When that leaves nobody, the notice goes instead to the
+// Principal HR Officers who haven't applied (Managers if there are none),
+// so the work still reaches someone. Returns { ids, redirected }.
+async function noticeRecipients(vacancyId, staffIds) {
+  const wanted = [...new Set((staffIds || []).filter(Boolean))];
+  if (!vacancyId || !wanted.length) return { ids: wanted, redirected: false };
+  const applicants = new Set(await staffIdsAppliedFor(vacancyId));
+  const ids = wanted.filter((id) => !applicants.has(id));
+  if (ids.length) return { ids, redirected: false };
+
+  const others = (role) => prisma.staffUser.findMany({
+    where: { role, active: true, id: { notIn: [...applicants] } }, select: { id: true }
+  });
+  let replacements = await others('Principal_HR_Officer');
+  if (!replacements.length) replacements = await others('Manager');
+  return { ids: replacements.map((r) => r.id), redirected: true };
+}
+
 module.exports = {
   ApplicantConflictError,
+  noticeRecipients,
   applicantAmong,
   flagHiringManagerApplicant,
   flagStaffApplicant,
