@@ -11,7 +11,7 @@ import { CareerShell, WizardRail, useCareer, profileGaps } from './careers';
 
 // First sign-in on Internal Careers (/careers/welcome): the profile in four
 // short steps instead of one long form - employment first, since that is
-// what HR verifies before shortlisting. The current UCAA job is added to
+// what HR verifies before they can apply. The current UCAA job is added to
 // work experience from the employment details. Every step saves on
 // Continue; the employee can stop and come back.
 const STEPS = [

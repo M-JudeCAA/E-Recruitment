@@ -747,7 +747,7 @@ export default function ProfileCompletionForm({ onComplete }) {
         <>
           <h3 style={{ fontSize: 15, marginBottom: 8 }}>Internal employment details</h3>
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 12 }}>
-            Required for any internal application to proceed past initial review. HR must verify this before shortlisting.
+            HR verifies these details before you can submit an application for an internal vacancy.
           </p>
           <EmploymentForm me={profile} bind={(fn) => { saveEmployment.current = fn; }} />
         </>
