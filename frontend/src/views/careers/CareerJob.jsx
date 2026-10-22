@@ -65,7 +65,7 @@ export default function CareerJob() {
       <ol>
         <li>You are signed in with your UCAA account, so there is nothing to register.</li>
         <li>Check your profile is up to date. The application only asks for what this vacancy needs.</li>
-        <li>Confirm your employment details. HR verifies them before shortlisting.</li>
+        <li>Confirm your employment details on your profile. HR verifies them before you can submit an application.</li>
         <li>Answer the questions, name three referees, add your academic documents, and submit by {formatDeadlineTime(vacancy.deadline)} on {formatDay(vacancy.deadline)}.</li>
         <li>Your supervisor{supervisor ? `, ${supervisor},` : ''} is told that you have applied.</li>
       </ol>
@@ -107,7 +107,8 @@ export default function CareerJob() {
             </Panel>
             <div className="ws-sticky">
               <Panel padded={false} title="Your fit"
-                actions={fit && (fit.eligible ? <Pill tone="ok">You can apply</Pill> : <Pill tone="neutral">Not eligible</Pill>)}>
+                actions={fit && (fit.employmentCheck && !fit.employmentCheck.verified ? <Pill tone="warn">Waiting for HR</Pill>
+                  : fit.eligible ? <Pill tone="ok">You can apply</Pill> : <Pill tone="neutral">Not eligible</Pill>)}>
                 <div className="ws-panel-b" style={{ paddingBlock: 4 }}>
                   {!fit && <div className="ws-note" style={{ padding: '10px 0' }}>Checking your profile…</div>}
                   {fit && fit.eligible && (minimumsOf(vacancy).length ? minimumsOf(vacancy) : ['No minimum requirements set']).map((m) => (
@@ -117,6 +118,9 @@ export default function CareerJob() {
                     <div key={r} className="ws-check"><span className="mark bad">✕</span><div><b>{r}</b></div></div>
                   ))}
                   {SITE.internal && <div className="ws-check"><span className="mark ok">✓</span><div><b>UCAA employee</b><div className="d">Internal vacancies are open to you</div></div></div>}
+                  {fit?.employmentCheck?.required && (fit.employmentCheck.verified
+                    ? <div className="ws-check"><span className="mark ok">✓</span><div><b>Employment verified by HR</b></div></div>
+                    : <div className="ws-check"><span className="mark miss">!</span><div><b>Employment not yet verified</b><div className="d">{fit.employmentCheck.message}</div></div></div>)}
                 </div>
                 <div className="ws-panel-b" style={{ borderTop: '1px solid var(--color-border)', display: 'grid', gap: 8 }}>
                   {needed.length > 0 && !closed && !(mine && mine.status !== 'Draft') && <div className="ws-note">You will also need: {needed.join('; ')}.</div>}

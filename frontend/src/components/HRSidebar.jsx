@@ -1,5 +1,5 @@
 import React from 'react';
-import { Inbox, Briefcase, Users, CalendarClock, Award, BarChart3, Network, FileSignature, Share2, Settings, UserCog, ScrollText, UsersRound } from 'lucide-react';
+import { Inbox, Briefcase, Users, CalendarClock, Award, BarChart3, Network, FileSignature, Share2, Settings, UserCog, ScrollText, UsersRound, BadgeCheck } from 'lucide-react';
 import { isHrDepartment } from '../utils/staffDepartments';
 import Sidebar from './Sidebar';
 import { useAuth } from '../models/AuthContext';
@@ -56,6 +56,7 @@ export default function HRSidebar({ active }) {
     { key: 'inbox', label: 'Inbox', icon: Inbox, to: '/hr/inbox', section: 'My work', badge: actionable.length, badgeTone: overdue ? 'alert' : 'count' },
     { key: 'vacancies', label: 'Vacancies', icon: Briefcase, to: '/hr', section: 'Recruitment' },
     { key: 'candidates', label: 'Candidates', icon: Users, to: '/hr/candidates', section: 'Recruitment' },
+    { key: 'verification', label: 'Employment checks', icon: BadgeCheck, to: '/hr/verification', section: 'Recruitment' },
     { key: 'interviews', label: 'Interviews', icon: CalendarClock, to: '/hr/interviews', section: 'Recruitment' },
     { key: 'offers', label: 'Offers & hires', icon: Award, to: '/hr/offers', section: 'Recruitment' },
     ...(rank >= ROLE_RANK.Manager ? [{ key: 'dashboard', label: 'Dashboard', icon: BarChart3, to: '/hr/dashboard', section: 'Reports' }] : []),

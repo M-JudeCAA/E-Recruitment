@@ -94,6 +94,13 @@ export default function CareerHome() {
       />
       <Alert type="error" message={error} />
       <Alert type="success" message={message} />
+      {/* Applying waits for HR's check of their employment (backend utils/employmentCheck.js). */}
+      {SITE.internal && me?.internalProfile && check.tone === 'warn' && (
+        <Alert type="info" message="HR is checking your employment details. You can submit applications once they are verified - we'll email you. You can prepare applications in the meantime." />
+      )}
+      {SITE.internal && check.tone === 'bad' && (
+        <Alert type="warning" message={<>HR found a problem with your employment details, so you can't submit applications yet. <Link to={SITE.profile}>Check your profile</Link> (changing them sends them back to HR) or contact HR.</>} />
+      )}
 
       {!me ? <Skeleton height={120} /> : tasks.length > 0 && (
         <section className="ws-group"><h3>Needs you</h3><div className="ws-panel">{tasks}</div></section>

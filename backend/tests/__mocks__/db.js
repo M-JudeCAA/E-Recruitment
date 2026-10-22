@@ -16,7 +16,7 @@ const mockDb = {
   jobRefSequence: { findUnique: jest.fn() },
   vacancyDraft: { findMany: jest.fn(), findFirst: jest.fn(), create: jest.fn(), updateMany: jest.fn(), deleteMany: jest.fn() },
   candidate: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), create: jest.fn() },
-  internalProfile: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+  internalProfile: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
   panelMember: { create: jest.fn(), createMany: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn(), delete: jest.fn() },
   interviewRound: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
   excoShortlistApproval: { create: jest.fn(), findMany: jest.fn() },

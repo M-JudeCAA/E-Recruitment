@@ -3,6 +3,7 @@ const { ROLE_RANK } = require('../middleware/auth');
 const delegationModel = require('../models/delegationModel');
 const conflictOfInterest = require('./conflictOfInterestService');
 const vacancyProgress = require('./vacancyProgressService');
+const internalVerification = require('./internalVerificationService');
 const { computeStatus } = require('./slaStatusService');
 const { POSITION_LEVELS } = require('../utils/positionLevels');
 
@@ -284,6 +285,26 @@ async function forStaff(req, now = new Date()) {
         context: `${r.application.vacancy.title}${r.candidateResponseNote ? ` · “${r.candidateResponseNote}”` : ''}`,
         link: `/hr/interviews?round=${r.id}`,
         waiting: waitingLabel(r.candidateRespondedAt, now)
+      });
+    }
+  }
+
+  // Internal candidates can't apply until HR has checked their UCAA
+  // employment details - one item for all of them, for whoever decides
+  // (Senior HR Officer) and the tier above.
+  if (rank >= ROLE_RANK.Senior_HR_Officer && rank <= ROLE_RANK.Principal_HR_Officer) {
+    const waiting = await internalVerification.waitingSummary(req);
+    if (waiting.count) {
+      items.push({
+        key: 'employment-checks',
+        kind: 'Employment checks',
+        title: `${waiting.count} internal candidate${waiting.count === 1 ? '' : 's'} waiting for an employment check`,
+        context: waiting.withApplications
+          ? `${waiting.withApplications} applied before checks were required - they can't be shortlisted until verified.`
+          : "They can't submit applications until their employment is verified.",
+        link: '/hr/verification',
+        waiting: waitingLabel(waiting.oldest, now),
+        since: waiting.oldest
       });
     }
   }

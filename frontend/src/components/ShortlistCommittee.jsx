@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Users, Crown, Trash2, Plus, Send, Link2, ChevronDown, ChevronUp, Gavel, Lock, ListChecks, ShieldCheck, Undo2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
 import Card from './Card';
 import Button from './Button';
@@ -271,6 +272,25 @@ function NominationPanel({ exercise, canEdit, isDhra, busy, onSubmit, onApprove,
   );
 }
 
+// Internal applicants whose UCAA employment HR hasn't verified - they applied
+// before that was required. The committee may rate them, but a shortlist that
+// includes them is refused until they are verified (or rejected).
+function UnverifiedApplicants({ people }) {
+  if (!people?.length) return null;
+  return (
+    <Alert type="warning" message={<>
+      <strong>{people.length} internal applicant{people.length === 1 ? '' : 's'} not yet verified by HR.</strong>{' '}
+      They can't be put on the interview shortlist until their employment is checked:{' '}
+      {people.map((p, i) => (
+        <React.Fragment key={p.applicationId}>
+          {i > 0 && ', '}
+          <Link to={`/hr/verification?open=${p.candidateId}`}>{p.name}</Link>{p.status === 'Discrepancy_Flagged' ? ' (discrepancy)' : ''}
+        </React.Fragment>
+      ))}.
+    </>} />
+  );
+}
+
 export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onManagedChange, reloadKey }) {
   const confirm = useConfirm();
   const canEdit = (ROLE_RANK[staffRole] || 0) >= ROLE_RANK.Senior_HR_Officer;
@@ -307,6 +327,7 @@ export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onMa
 
   if (!data) return error ? <Alert type="error" message={error} /> : <LoadingState label="Loading the shortlisting committee..." />;
   const { exercise } = data;
+  const unverified = <UnverifiedApplicants people={data.unverifiedInternal} />;
 
   if (!exercise) {
     return (
@@ -327,6 +348,7 @@ export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onMa
             </Button>
           )}
         </div>
+        {unverified}
         <Alert type="error" message={error} />
       </Card>
     );
@@ -412,6 +434,7 @@ export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onMa
       </div>
       <Alert type="error" message={error} />
       <Alert type="success" message={message} />
+      {stage !== 'Closed' && unverified}
       {links.length > 0 && (
         <div style={{ background: 'var(--color-bg-subtle)', borderRadius: 'var(--radius-sm)', padding: '8px 12px', marginBottom: 12 }}>
           <span style={sectionLabel}>Links to share by hand (private to each member)</span>

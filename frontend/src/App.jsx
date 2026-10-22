@@ -40,6 +40,7 @@ import StaffManagement from "./views/StaffManagement";
 import StaffAccounts from "./views/StaffAccounts";
 import AuditLogPage from "./views/AuditLogPage";
 import HrTeam from "./views/HrTeam";
+import EmploymentChecks from "./views/EmploymentChecks";
 import DocumentTemplates from "./views/DocumentTemplates";
 import SettingsAndData from "./views/SettingsAndData";
 import VacancyWorkspace from "./views/VacancyWorkspace";
@@ -204,6 +205,16 @@ export default function App() {
           {/* Analytics and the recruitment dashboard are one page now. */}
           <Route path="/hr/analytics" element={<Navigate to="/hr/dashboard" replace />} />
           <Route path="/hr/analytics/recruitment" element={<Navigate to="/hr/dashboard" replace />} />
+          {/* Employment checks - internal candidates waiting for HR to verify
+              their UCAA employment before they can apply (EmploymentChecks.jsx). */}
+          <Route
+            path="/hr/verification"
+            element={
+              <RequireStaff minRole="HR_Officer">
+                <EmploymentChecks />
+              </RequireStaff>
+            }
+          />
           <Route
             path="/hr/candidates"
             element={

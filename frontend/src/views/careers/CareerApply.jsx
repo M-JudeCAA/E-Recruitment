@@ -177,10 +177,13 @@ export default function CareerApply() {
                 {gaps.personal.length > 0 && (
                   <Alert type="warning" message={<>Your profile needs {gaps.personal.join(', ').toLowerCase()} before you can apply. <Link to={SITE.profile}>Update your profile</Link>, then come back.</>} />
                 )}
+                {eligibility?.employmentCheck && !eligibility.employmentCheck.verified && (
+                  <Alert type="warning" message={<>{eligibility.employmentCheck.message} <Link to={SITE.profile}>Your profile</Link></>} />
+                )}
                 {eligibility && !eligibility.eligible && eligibility.reasons.length > 0 && (
                   <Alert type="warning" message={<>Based on your profile you don’t meet: {eligibility.reasons.join('; ')}. You won’t be able to submit unless your profile shows you do.</>} />
                 )}
-                {eligibility?.eligible && gaps.personal.length === 0 && <Alert type="success" message={`Your profile meets this ${SITE.jobWord}’s minimum requirements.`} />}
+                {eligibility?.eligible && gaps.personal.length === 0 && eligibility.employmentCheck?.verified !== false && <Alert type="success" message={`Your profile meets this ${SITE.jobWord}’s minimum requirements.`} />}
                 <div>
                   {evidence.length > 0 ? evidence.map((e) => (
                     <div key={e.key} className="ws-check"><span className="mark miss">!</span><div><b>{e.label}</b><div className="d">This {SITE.jobWord} asks for it. You add it on the Documents step.</div></div></div>

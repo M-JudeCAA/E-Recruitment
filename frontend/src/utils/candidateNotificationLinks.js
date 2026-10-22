@@ -4,7 +4,7 @@ import { SITE } from '../views/careers/careers';
 // (public careers or Internal Careers - SITE). Applications, interviews and
 // offers are all on My applications; the profile and data notices on My
 // profile.
-const TO_PROFILE = new Set(['ProfileCompleted', 'DataRequestRefused']);
+const TO_PROFILE = new Set(['ProfileCompleted', 'DataRequestRefused', 'EmploymentVerified', 'EmploymentDiscrepancy']);
 
 export function candidateNotificationLink(type) {
   if (TO_PROFILE.has(type)) return SITE.profile;

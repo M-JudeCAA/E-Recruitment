@@ -17,6 +17,7 @@ const delegationModel = require('../models/delegationModel');
 const { notify } = require('../services/notificationService');
 const conflictOfInterest = require('../services/conflictOfInterestService');
 const approvalNotices = require('../services/approvalNotificationService');
+const internalVerification = require('../services/internalVerificationService');
 
 // HR's side of the shortlisting committee (shortlistCommitteeService.js has
 // the ranking rules). HR builds the assessment sheet, invites the committee,
@@ -201,7 +202,11 @@ async function get(req, res) {
 
   const base = {
     vacancy: { id: vacancy.id, jobRef: vacancy.jobRef, title: vacancy.title, positionsRequired: vacancy.positionsRequired, deadline: vacancy.deadline },
-    poolCount: pool.length
+    poolCount: pool.length,
+    // Internal applicants whose employment HR hasn't verified - they applied
+    // before that was required, and proposing a shortlist that includes them
+    // is refused (workflowService.assertCanShortlist). Warned about up front.
+    unverifiedInternal: await internalVerification.unverifiedApplicants(vacancyId, ['UnderReview', 'ShortlistProposed'])
   };
   if (!exercise) return res.json({ ...base, exercise: null, defaultCriteria: committee.defaultCriteria(vacancy) });
 

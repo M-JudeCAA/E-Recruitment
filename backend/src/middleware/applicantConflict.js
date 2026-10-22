@@ -76,6 +76,8 @@ const vacancyFrom = {
       case 'Application': return vacancyFrom.application('entityId')(req);
       case 'Offer': return vacancyFrom.offer('entityId')(req);
       case 'InterviewRound': return vacancyFrom.interview('entityId')(req);
+      // An internal candidate's employment checks (keyed by candidate id).
+      case 'InternalProfile': return vacancyFrom.candidate('entityId')(req);
       default: return null;
     }
   }

@@ -1,6 +1,7 @@
 const prisma = require('../config/db');
 const candidateModel = require('../models/candidateModel');
 const internalProfileModel = require('../models/internalProfileModel');
+const audit = require('../services/auditService');
 const applicationModel = require('../models/applicationModel');
 const profileEntriesModel = require('../models/profileEntriesModel');
 const { validateNationalId, normalizeNationalId } = require('../utils/validators');
@@ -343,13 +344,26 @@ async function updateInternalProfile(req, res) {
     supervisorName, supervisorEmail
   };
   // HR verified the details as they were. Changing any of them sends the
-  // profile back to Pending, so HR checks the new details before shortlisting
+  // profile back to Pending, so HR checks the new details before the
+  // candidate applies again (utils/employmentCheck.js) or is shortlisted
   // (workflowService.assertCanShortlist) - the earlier evidence stays on file.
+  // detailsUpdatedAt is how long they have waited for that check.
   const current = await internalProfileModel.findByCandidateId(req.user.id);
-  if (current && current.verificationStatus !== 'Pending' && internalDetailsChanged(current, data)) {
+  const changed = Boolean(current) && internalDetailsChanged(current, data);
+  // First given (or first picked from the lists) starts the wait too.
+  if (!current || changed || (!current.departmentId && data.departmentId)) data.detailsUpdatedAt = new Date();
+  const backToHr = changed && current.verificationStatus !== 'Pending';
+  if (backToHr) {
     Object.assign(data, { verificationStatus: 'Pending', verifiedById: null, verifiedDate: null });
   }
   const profile = await internalProfileModel.updateByCandidateId(req.user.id, data);
+  if (backToHr) {
+    await audit.record({
+      entityType: 'InternalProfile', entityId: req.user.id, actor: audit.actorFrom(req),
+      action: 'Employment details changed - back to HR for checking',
+      before: current, after: profile, fields: ['department', 'position', 'employeeId', 'dateJoined', 'supervisorName', 'supervisorEmail', 'verificationStatus']
+    });
+  }
   await checkAndFireCompletionEvent(req.user.id);
   res.json(profile);
 }
