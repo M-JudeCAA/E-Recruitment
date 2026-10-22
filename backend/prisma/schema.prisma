@@ -872,6 +872,10 @@ model InternalProfile {
   verifiedById             Int?
   verifiedBy               StaffUser?                @relation("VerifiedBy", fields: [verifiedById], references: [id])
   verifiedDate             DateTime?
+  // When the employment details were last given or changed - how long they
+  // have waited for HR's check (the Employment checks queue,
+  // services/internalVerificationService.js).
+  detailsUpdatedAt         DateTime?
 }
 
 model Application {
@@ -1701,6 +1705,11 @@ enum CandidateNotificationType {
   // in progress (vacancyClosureService) - not a judgement on the candidate,
   // so not ApplicationRejected.
   RecruitmentDiscontinued
+  // HR's check of an internal candidate's UCAA employment details
+  // (internalVerificationService): verified - they may now apply - or a
+  // discrepancy found.
+  EmploymentVerified
+  EmploymentDiscrepancy
 }
 
 // A separate model rather than reusing Notification above: recipientId

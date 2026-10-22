@@ -1,43 +1,39 @@
-const internalProfileModel = require('../models/internalProfileModel');
 const { fileUrl } = require('../middleware/upload');
+const { removeUploads } = require('../utils/uploadFiles');
+const { sendError } = require('../utils/errorResponse');
+const verification = require('../services/internalVerificationService');
 
-// The two decisions this endpoint is actually for - 'Pending' is the
-// default/reset state, never something HR explicitly submits here.
-const VALID_DECISIONS = ['HR_Verified', 'Discrepancy_Flagged'];
+// HR's check of internal candidates' UCAA employment details
+// (services/internalVerificationService.js). Internal candidates submit
+// applications only once verified, so HR works from the Employment checks
+// queue rather than from an application.
 
+// PATCH /api/verification/candidates/:candidateId/verify
+// { decision: HR_Verified | Discrepancy_Flagged, comments } + optional
+// recommendationLetter file. 'Pending' is the starting state, never a decision.
 async function verify(req, res) {
   const candidateId = Number(req.params.candidateId);
-  if (!Number.isInteger(candidateId)) return res.status(400).json({ error: 'Invalid candidate id' });
-  const { decision, comments } = req.body;
-  if (!VALID_DECISIONS.includes(decision)) {
-    return res.status(400).json({ error: `decision must be one of: ${VALID_DECISIONS.join(', ')}` });
+  const documentUrl = fileUrl(req.file);
+  if (!Number.isInteger(candidateId)) {
+    await removeUploads(documentUrl);
+    return res.status(400).json({ error: 'Invalid candidate id' });
   }
-  const supportingDocumentUrl = fileUrl(req.file);
-
-  const hasComments = comments && comments.trim().length >= 20;
-  const hasDocument = !!supportingDocumentUrl;
-
-  if (!hasComments && !hasDocument) {
-    return res.status(422).json({
-      error: 'Verification requires comments (min 20 chars) or a manager recommendation letter'
+  try {
+    const profile = await verification.decide(req, candidateId, {
+      decision: req.body.decision, comments: req.body.comments, documentUrl
     });
+    res.json(profile);
+  } catch (err) {
+    // A refused decision keeps no upload.
+    await removeUploads(documentUrl);
+    sendError(res, err, 400);
   }
-
-  const existing = await internalProfileModel.findByCandidateId(candidateId);
-  if (!existing) return res.status(404).json({ error: 'No internal profile found for this candidate' });
-
-  const evidenceType = hasDocument ? 'ManagerRecommendationLetter' : 'Comments';
-
-  const profile = await internalProfileModel.updateByCandidateId(candidateId, {
-    verificationStatus: decision,
-    verificationEvidenceType: evidenceType,
-    verificationComments: comments || null,
-    supportingDocumentUrl: supportingDocumentUrl || null,
-    verifiedById: req.user.id,
-    verifiedDate: new Date()
-  });
-
-  res.json(profile);
 }
 
-module.exports = { verify };
+// GET /api/verification/pending[?include=all] - internal candidates waiting
+// for HR's check (or every internal profile with include=all).
+async function pending(req, res) {
+  res.json(await verification.queue(req, { include: req.query.include === 'all' ? 'all' : 'waiting' }));
+}
+
+module.exports = { verify, pending };

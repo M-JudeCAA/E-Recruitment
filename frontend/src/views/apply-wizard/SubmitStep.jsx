@@ -122,11 +122,18 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
 
   const missingAcademic = eligibility && eligibility.academicDocuments === 0;
   const missingEvidence = (eligibility?.evidence || []).filter((e) => !e.provided);
-  const blocked = missingAcademic || missingEvidence.length > 0;
+  // An internal candidate submits only once HR has verified their employment
+  // (backend EMPLOYMENT_NOT_VERIFIED) - the draft is kept for then.
+  const notVerified = eligibility?.employmentCheck && !eligibility.employmentCheck.verified;
+  const blocked = missingAcademic || missingEvidence.length > 0 || notVerified;
 
   return (
     <div className="text-center py-6">
-      {missingAcademic ? (
+      {notVerified ? (
+        <p style={{ fontSize: 14, color: 'var(--color-warning)', maxWidth: 460, margin: '0 auto 24px' }}>
+          {eligibility.employmentCheck.message} Your draft is saved.
+        </p>
+      ) : missingAcademic ? (
         <p style={{ fontSize: 14, color: 'var(--color-danger)', maxWidth: 420, margin: '0 auto 24px' }}>
           Please attach at least one academic document before sending.{' '}
           <button type="button" onClick={() => goToStep('documents')}

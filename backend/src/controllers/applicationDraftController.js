@@ -25,6 +25,7 @@ const { notify, notifyAllHrStaff } = require('../services/notificationService');
 const { escapeHtml } = require('../utils/interviewFormat');
 const { PRIVACY_NOTICE_VERSION } = require('../config/privacyNotice');
 const { formatAs } = require('../utils/textCase');
+const { employmentCheck } = require('../utils/employmentCheck');
 
 // Answers to the vacancy's questions, as [{ id, answer }], snapshotted
 // against its questions as they stand now - server-side, never trusting the
@@ -258,6 +259,13 @@ async function submit(req, res) {
   if (!isProfileComplete(candidate)) {
     return res.status(422).json({ error: 'Please complete your profile before submitting an application' });
   }
+  // An internal candidate applies only once HR has verified their UCAA
+  // employment details (utils/employmentCheck.js) - the draft stays, ready
+  // for when they are.
+  const employment = employmentCheck(candidate);
+  if (!employment.verified) {
+    return res.status(422).json({ error: employment.message, code: 'EMPLOYMENT_NOT_VERIFIED', employmentCheck: employment });
+  }
 
   // The answers re-snapshotted against the questions as they are now - what
   // this application is screened on, and stored with it.
@@ -484,6 +492,9 @@ async function eligibility(req, res) {
   res.json({
     ...result,
     academicDocuments: documents.filter((d) => d.category === 'Academic').length,
+    // Whether HR has verified an internal candidate's employment - submitting
+    // waits for it (submit, EMPLOYMENT_NOT_VERIFIED).
+    employmentCheck: employmentCheck(candidate),
     evidence: requirements.map((r) => ({ ...r, provided: !missing.has(r.key) }))
   });
 }

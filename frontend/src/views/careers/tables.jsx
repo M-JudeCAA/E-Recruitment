@@ -32,6 +32,7 @@ export function VacancyFitTable({ vacancies, fit, applications, limit }) {
             key: 'fit', label: 'Your fit', render: (v) => {
               const f = fit?.[v.id];
               if (!f) return <span className="s">Checking…</span>;
+              if (f.employmentCheck && !f.employmentCheck.verified) return <Pill tone="warn">Waiting for HR's check</Pill>;
               return f.eligible ? <Pill tone="ok">You meet the minimums</Pill> : <Pill tone="neutral">Not eligible</Pill>;
             }
           },

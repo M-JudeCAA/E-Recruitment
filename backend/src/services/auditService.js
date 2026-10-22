@@ -66,7 +66,7 @@ async function recordMany(entries) {
 }
 
 // The entity types staff can read a history for, via GET /api/audit.
-const HISTORY_ENTITY_TYPES = ['Vacancy', 'Application', 'Offer', 'InterviewRound', 'Directorate', 'Department', 'Position', 'OrgImport'];
+const HISTORY_ENTITY_TYPES = ['Vacancy', 'Application', 'Offer', 'InterviewRound', 'Directorate', 'Department', 'Position', 'OrgImport', 'InternalProfile'];
 
 async function history(entityType, entityId) {
   const rows = await prisma.auditLog.findMany({
