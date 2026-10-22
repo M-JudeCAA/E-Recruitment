@@ -141,7 +141,6 @@ export function stageOf(app) {
 
 /** HR's check of the employee's employment details (one per person, InternalProfile). */
 export function employmentCheck(me, app) {
-  if (app && app.status === 'Draft') return { label: 'Checked when you submit', tone: null };
   const p = me?.internalProfile;
   if (!p) return { label: '—', tone: null };
   if (p.verificationStatus === 'HR_Verified') return { label: p.verifiedDate ? `Verified ${formatDay(p.verifiedDate, true)}` : 'Verified', tone: 'ok' };
