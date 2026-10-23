@@ -109,9 +109,9 @@ async function saveDraft(req, res) {
   // application) - sent alongside the multipart draft-save request so a
   // single "Save as draft" persists everything the candidate has entered
   // so far, matching how coverLetter already works.
-  const { desiredSalary, openToRelocate, earliestStartDate, whyThisRole, desirableResponses, disqualifyingResponses, referees } = req.body;
+  // (A desired salary is no longer asked for; the column keeps older answers.)
+  const { openToRelocate, earliestStartDate, whyThisRole, desirableResponses, disqualifyingResponses, referees } = req.body;
   const questionsData = {};
-  if (desiredSalary !== undefined) questionsData.desiredSalary = desiredSalary || null;
   if (openToRelocate !== undefined) questionsData.openToRelocate = openToRelocate || null;
   if (earliestStartDate !== undefined) questionsData.earliestStartDate = earliestStartDate ? new Date(earliestStartDate) : null;
   if (whyThisRole !== undefined) questionsData.whyThisRole = whyThisRole || null;
@@ -209,10 +209,11 @@ async function saveDraft(req, res) {
 
 // The real gate - all three eligibility checks apply here, plus the one
 // check that's specific to submission itself: a CV must actually be on
-// file. This is the only place ApplicationSnapshot gets captured and the
-// supervisor gets notified, matching the existing principle that those
-// two things represent "what was true when the candidate committed to
-// applying," not a work in progress.
+// file. This is the only place ApplicationSnapshot gets captured, matching
+// the principle that it represents "what was true when the candidate
+// committed to applying," not a work in progress. Nobody outside HR hears
+// about a single application: the hiring manager is told at each stage of
+// the vacancy instead (hiringManagerService).
 async function submit(req, res) {
   const applicationId = Number(req.params.id);
   if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
@@ -345,16 +346,8 @@ async function submit(req, res) {
   await workflow.captureSnapshot({
     entityType: 'ApplicationSnapshot', entityId: applicationId, candidateId: req.user.id
   });
-  // Internal-only, unaffected by the two notifications below - notifies
-  // the candidate's declared supervisor, a different audience than either.
-  await workflow.notifySupervisor(applicationId);
-
-  // Closes two gaps found in the same audit: (1) SubmitStep.jsx has always
-  // promised "a confirmation has been sent to your email" - nothing ever
-  // sent one until now; (2) an External candidate's submission previously
-  // notified literally no one on the HR side (notifySupervisor above
-  // no-ops for anyone who isn't Internal) - this fires for both posting
-  // types, to whoever created the vacancy, regardless.
+  // The candidate's confirmation, and a notice to whoever created the
+  // vacancy - for both posting types.
   await notifyCandidate(
     req.user.id, 'ApplicationSubmitted',
     `Your application for "${vacancy.title}" (${vacancy.jobRef}) has been received. We'll notify you of any updates.`
@@ -499,7 +492,9 @@ async function eligibility(req, res) {
   });
 }
 
-const DOCUMENT_CATEGORIES = ['Academic', 'Other', 'Evidence'];
+// CV: the candidate's own CV - optional, one per application; a new one
+// replaces the one before.
+const DOCUMENT_CATEGORIES = ['Academic', 'Other', 'Evidence', 'CV'];
 const MAX_DOCUMENTS_PER_CATEGORY = 10;
 const MAX_DOCUMENTS_PER_EVIDENCE = 5;
 
@@ -547,13 +542,22 @@ async function addDocument(req, res) {
       return refuse(422, { error: `You can attach at most ${MAX_DOCUMENTS_PER_EVIDENCE} documents for one requirement` });
     }
     label = requirement.label.slice(0, evidence.MAX_LABEL);
+  } else if (category === 'CV') {
+    label = 'CV';
   } else if (await applicationDocumentModel.countByApplication(application.id, category) >= MAX_DOCUMENTS_PER_CATEGORY) {
     return refuse(422, { error: `You can attach at most ${MAX_DOCUMENTS_PER_CATEGORY} documents of this kind` });
   }
+  const earlierCvs = category === 'CV'
+    ? (await applicationDocumentModel.findByApplication(application.id)).filter((d) => d.category === 'CV')
+    : [];
   const document = await applicationDocumentModel.create({
     applicationId: application.id, category, label, evidenceKey,
     fileUrl: fileUrl(req.file), originalName: req.file.originalname.slice(0, 190)
   });
+  for (const old of earlierCvs) {
+    await applicationDocumentModel.remove(old.id);
+    await removeUploads(old.fileUrl);
+  }
   res.status(201).json(document);
 }
 

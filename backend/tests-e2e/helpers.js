@@ -119,6 +119,16 @@ async function uploadSignedCopy(token) {
   return expectStatus(res, 200).body;
 }
 
+// Attaches evidence that the vacancy was advertised (a scan), which closing
+// a published vacancy needs.
+async function addAdvertEvidence(token, vacancyId) {
+  const res = await request(app).post(`/api/vacancies/${vacancyId}/advert-evidence`)
+    .set('Authorization', `Bearer ${token}`)
+    .field('evidenceNote', 'New Vision')
+    .attach('evidence', buildScannedPdf(1), { filename: 'Newspaper advert.pdf', contentType: 'application/pdf' });
+  return expectStatus(res, 201).body;
+}
+
 // Creates a vacancy the only way the API allows - from an uploaded
 // requisition and its signed scan - with `body` as the reviewed form.
 // Returns the raw response.
@@ -159,5 +169,5 @@ function expectStatus(res, status) {
 
 module.exports = {
   prisma, app, PASSWORD, resetDatabase, createStaff, createOrg, createCandidate, staffToken, candidateToken, api, REFEREES,
-  expectStatus, attachAcademicDocument, uploadRequisition, uploadSignedCopy, createVacancyFromRequisition, recordInterviewResults, attachExcoApproval
+  expectStatus, attachAcademicDocument, uploadRequisition, uploadSignedCopy, addAdvertEvidence, createVacancyFromRequisition, recordInterviewResults, attachExcoApproval
 };

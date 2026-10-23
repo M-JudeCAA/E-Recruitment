@@ -216,4 +216,4 @@ function buildScannedPdf(pageCount = 2) {
   return buildPdf(Array.from({ length: pageCount }, () => '0.5 g 40 400 515 400 re f'));
 }
 
-module.exports = { DEFAULT_SPEC, buildRequisitionDocx, buildRequisitionPdf, buildScannedPdf };
+module.exports = { DEFAULT_SPEC, buildRequisitionDocx, buildRequisitionPdf, buildScannedPdf, buildPdf, escapePdfText };

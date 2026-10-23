@@ -50,7 +50,7 @@ describe('approving an import', () => {
     expect(result).toEqual({ directorates: 1, departments: 2, positions: 1, departmentIds: [20, 21] });
     expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
       entityType: 'OrgImport', entityId: 7, action: 'Approved import', performedById: 3,
-      payload: expect.objectContaining({ comment: expect.stringMatching(/1 directorate\(s\), 2 department\(s\) and 1 position\(s\) from org\.xlsx/) })
+      payload: expect.objectContaining({ comment: expect.stringMatching(/1 directorate\(s\), 2 department\(s\) and 1 title\(s\) from org\.xlsx/) })
     }) });
   });
 

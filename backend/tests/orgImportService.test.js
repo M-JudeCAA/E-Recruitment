@@ -82,7 +82,7 @@ describe('checking the rows', () => {
     ]);
 
     expect(result.rows.map((r) => [r.status, r.creates.join('+'), r.messages.join('; ')])).toEqual([
-      ['exists', '', 'Position already exists'],
+      ['exists', '', 'Title already exists'],
       ['new', 'position', ''],
       ['new', 'department+position', ''],
       ['exists', '', ''],
@@ -115,13 +115,13 @@ describe('checking the rows', () => {
     expect(errors[0]).toMatch(/Directorate DANS doesn't exist\. Only a Principal HR Officer/);
     expect(errors[1]).toMatch(/"Clerk" isn't a level - use one of Assistant, Assistant Officer, Officer, Senior Officer, Principal, Chief, Manager, Director/);
     expect(errors[2]).toMatch(/Level is missing/);
-    expect(errors[3]).toMatch(/Position is empty but a position code or level is given/);
+    expect(errors[3]).toMatch(/Title is empty but a title code or level is given/);
     expect(errors[4]).toMatch(/Department PAY under DF was rejected \(Merged into FINANCE\)/);
     expect(errors[5]).toBeNull();
-    expect(errors[6]).toMatch(/Row 7 has the same position as Senior/);
+    expect(errors[6]).toMatch(/Row 7 has the same title as Senior/);
     expect(errors[7]).toMatch(/Directorate code is missing/);
     expect(errors[8]).toMatch(/Department ADMIN is new - give its full name/);
-    expect(errors[9]).toMatch(/Position code is missing/);
+    expect(errors[9]).toMatch(/Title code is missing/);
     expect(errors[10]).toMatch(/The code HRA is already used by "HR Analyst"/);
     expect(errors[11]).toMatch(/The code TL is also given to "Talent Lead"/);
     expect(errors[12]).toMatch(/short code can only have/);
@@ -145,8 +145,8 @@ describe('checking the rows', () => {
       'DHRA,,HR,,COA,Coach,Officer'
     ]);
     expect(result.rows[0].messages[0]).toMatch(/Directorate DOLD was rejected \(Abolished\)/);
-    expect(result.rows[1].messages[0]).toMatch(/Position "Clerk" was rejected \(Not on the establishment\)/);
-    expect(result.rows[2].messages).toEqual(['Position is awaiting approval', 'Position already exists']);
+    expect(result.rows[1].messages[0]).toMatch(/Title "Clerk" was rejected \(Not on the establishment\)/);
+    expect(result.rows[2].messages).toEqual(['Title is awaiting approval', 'Title already exists']);
     expect(result.rows[3]).toEqual(expect.objectContaining({ status: 'new', messages: ['Directorate is awaiting approval'] }));
     expect(result.rows[4]).toEqual(expect.objectContaining({ status: 'warning', messages: [expect.stringMatching(/DHRA is "Human Resource and Administration" in the system/)] }));
     expect(result.rows[5]).toEqual(expect.objectContaining({ status: 'warning', messages: expect.arrayContaining([expect.stringMatching(/without a code/)]) }));
@@ -184,7 +184,7 @@ describe('checking the rows', () => {
     expect(result.rows.map((r) => [r.status, r.creates.join('+')])).toEqual([
       ['new', 'directorate+department+position'], ['new', 'position'], ['warning', ''], ['error', ''], ['error', '']
     ]);
-    expect(result.rows[2].messages[0]).toBe('Position already exists as Officer - not changed');
+    expect(result.rows[2].messages[0]).toBe('Title already exists as Officer - not changed');
     expect(result.rows[3].messages[0]).toMatch(/Directorate DAAS is new - give its full name/);
     expect(result.rows[4].messages[0]).toMatch(/Directorate "Finance" already exists with the code DF - use that code/);
     expect(result.toCreate.directorates).toEqual([{ code: 'DANS', name: 'Air Navigation Services', rowNumber: 2 }]);

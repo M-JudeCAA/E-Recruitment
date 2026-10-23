@@ -74,7 +74,7 @@ function DepartmentForm({ editing, presetDirectorate, directorates, isReviewer, 
           <option value={NO_DIRECTORATE}>No directorate (e.g. the Director General's Office)</option>
         </Select>
         {editing && directorateChoice(editing.directorateId) !== form.directorateId && (
-          <p className="ws-note">Moving it takes its positions with it. Vacancies already raised keep their department.</p>
+          <p className="ws-note">Moving it takes its titles with it. Vacancies already raised keep their department.</p>
         )}
         {!editing && isReviewer && <ApproveNowBox checked={autoApprove} onChange={setAutoApprove} what="department" />}
         {editing && <p className="ws-note">Changes are recorded in the audit log.</p>}
@@ -135,13 +135,13 @@ export default function DepartmentsPage() {
     { header: 'Name', value: (d) => d.name },
     { header: 'Directorate code', value: (d) => d.directorate?.code },
     { header: 'Directorate', value: (d) => d.directorate?.name },
-    { header: 'Positions', value: (d) => d.positionCount },
+    { header: 'Titles', value: (d) => d.positionCount },
     { header: 'Staff accounts', value: (d) => d.staffCount },
     { header: 'Vacancies', value: (d) => d.vacancyCount },
     { header: 'Status', value: (d) => d.status }
   ], shown);
 
-  const inUse = open && [open.positionCount && countLabel(open.positionCount, 'position'), open.vacancyCount && countLabel(open.vacancyCount, 'vacancy', 'vacancies'),
+  const inUse = open && [open.positionCount && countLabel(open.positionCount, 'title'), open.vacancyCount && countLabel(open.vacancyCount, 'vacancy', 'vacancies'),
     open.staffCount && countLabel(open.staffCount, 'staff account')].filter(Boolean);
 
   return (
@@ -184,7 +184,7 @@ export default function DepartmentsPage() {
                 { key: 'code', label: 'Code', width: 110, className: 'ws-mono', render: (d) => d.code },
                 { key: 'name', label: 'Name', render: (d) => <span className="t">{d.name}</span> },
                 { key: 'dir', label: 'Directorate', render: (d) => (d.directorate ? <span title={d.directorate.name}>{d.directorate.code}</span> : <span className="s">None</span>) },
-                { key: 'positions', label: 'Positions', align: 'right', className: 'ws-num', render: (d) => d.positionCount },
+                { key: 'positions', label: 'Titles', align: 'right', className: 'ws-num', render: (d) => d.positionCount },
                 { key: 'staff', label: 'Staff', align: 'right', className: 'ws-num', render: (d) => d.staffCount },
                 { key: 'vacancies', label: 'Vacancies', align: 'right', className: 'ws-num', render: (d) => d.vacancyCount },
                 {
@@ -219,10 +219,10 @@ export default function DepartmentsPage() {
           ]} />
           <RecordFacts row={open} />
           {open.directorate && open.directorate.status !== 'Approved' && (
-            <Alert type="warning" message={`Its directorate is ${open.directorate.status === 'Pending' ? 'still waiting for approval' : 'rejected'} - its positions can't be used on a vacancy until the directorate is approved.`} />
+            <Alert type="warning" message={`Its directorate is ${open.directorate.status === 'Pending' ? 'still waiting for approval' : 'rejected'} - its titles can't be used on a vacancy until the directorate is approved.`} />
           )}
 
-          <h3 style={{ fontSize: 14, margin: '20px 0 8px' }}>Positions</h3>
+          <h3 style={{ fontSize: 14, margin: '20px 0 8px' }}>Titles</h3>
           {openPositions.length === 0 ? <p className="ws-note">None yet.</p> : (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {[...openPositions].sort((a, b) => b.level - a.level || a.name.localeCompare(b.name)).map((p) => (
@@ -236,8 +236,8 @@ export default function DepartmentsPage() {
             </ul>
           )}
           <p style={{ marginTop: 10, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            <Link to={`/hr/organisation/positions?department=${open.id}`}>Open its positions</Link>
-            {open.status === 'Approved' && <Link to={`/hr/organisation/positions?department=${open.id}&add=1`}>Add a position here</Link>}
+            <Link to={`/hr/organisation/positions?department=${open.id}`}>Open its titles</Link>
+            {open.status === 'Approved' && <Link to={`/hr/organisation/positions?department=${open.id}&add=1`}>Add a title here</Link>}
           </p>
           {inUse.length > 0 && rights.isReviewer && (
             <p className="ws-note">It can be deleted only when nothing uses it - it has {inUse.join(', ')}.</p>

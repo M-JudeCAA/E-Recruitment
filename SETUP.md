@@ -295,20 +295,11 @@ Before it works:
   build time. Without them the same host is assumed (the public site on
   `5173` when running locally).
 - **Directory details (optional):** on first sign-in the employment form is
-  filled from the employee's Microsoft profile (`/me` and `/me/manager` with
-  the default `User.Read` permission) where the directory has job title,
-  department, employee ID or manager. Nothing is needed for this; where the
-  directory is empty the employee types the details in.
-- **Picking the supervisor:** the Supervisor field suggests UCAA staff from
-  the directory as the employee types, and picking one fills the name and the
-  email (the email can't be typed while the directory works, and the API
-  refuses a supervisor email outside `INTERNAL_EMAIL_DOMAIN`). The browser
-  searches with the employee's own session: give the **candidate** app
-  registration the delegated Microsoft Graph permission **User.ReadBasic.All**
-  and grant admin consent for the organisation (the search never opens a
-  consent window). Failing that it uses the API's directory connection
-  (`ENTRA_DIRECTORY_CLIENT_SECRET`, above). With neither, the employee types
-  the name and UCAA email.
+  filled from the employee's Microsoft profile (`/me` with the default
+  `User.Read` permission) where the directory has job title, department or
+  employee ID. Nothing is needed for this; where the directory is empty the
+  employee types the details in. No supervisor is asked for (the candidate
+  app no longer needs User.ReadBasic.All for that).
 
 ## Scheduled maintenance
 

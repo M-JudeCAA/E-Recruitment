@@ -5,7 +5,6 @@ import Skeleton from '../Skeleton';
 import { useServerPagination } from '../Pagination';
 import StatusBadge from '../StatusBadge';
 import ApplicationReviewCard from '../ApplicationReviewCard';
-import { useGeneratedCvDownload } from '../../utils/useGeneratedCvDownload';
 import { Panel, Table, SidePanel, formatDay } from './ui';
 
 // Every application across every vacancy (GET /api/applications), filtered
@@ -31,7 +30,6 @@ export default function ApplicationQueue({ staffRole }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [openId, setOpenId] = useState(null);
-  const { download, hiddenPrintArea, downloadingId } = useGeneratedCvDownload();
 
   useEffect(() => { staffClient.get('/api/departments/approved').then((r) => setDepartments(r.data)).catch(() => {}); }, []);
   useEffect(() => {
@@ -117,11 +115,9 @@ export default function ApplicationQueue({ staffRole }) {
         <SidePanel wide title={open.candidate.fullName}
           eyebrow={open.vacancy ? <>{open.vacancy.title} · <span className="ws-mono">{open.vacancy.jobRef}</span></> : null}
           onClose={() => setOpenId(null)}>
-          <ApplicationReviewCard app={open} vacancy={open.vacancy} staffRole={staffRole} onUpdated={load}
-            onDownloadCv={download} downloadingId={downloadingId} showVacancyContext defaultExpanded />
+          <ApplicationReviewCard app={open} vacancy={open.vacancy} staffRole={staffRole} onUpdated={load} showVacancyContext defaultExpanded />
         </SidePanel>
       )}
-      {hiddenPrintArea}
     </>
   );
 }

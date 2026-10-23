@@ -6,7 +6,7 @@ import staffClient from '../models/staffApiClient';
 // the person who added it.
 
 const BASE = { directorate: '/api/directorates', department: '/api/departments', position: '/api/positions' };
-export const ORG_WORD = { directorate: 'Directorate', department: 'Department', position: 'Position', import: 'Import' };
+export const ORG_WORD = { directorate: 'Directorate', department: 'Department', position: 'Title', import: 'Import' };
 
 export const approveOrg = (entity, id) => (entity === 'import'
   ? staffClient.patch(`/api/departments/imports/${id}/approve`)

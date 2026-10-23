@@ -125,6 +125,25 @@ const uploadSignedAppointment = multer({
   limits: { fileSize: MAX_FILE_SIZE }
 });
 
+// Evidence that a vacancy was advertised, attached when it is closed
+// (vacancyController.close / addAdvertEvidence): a scanned newspaper advert,
+// a job board screenshot, a noticeboard scan or the HR Pulse email saved as
+// PDF. Stored as advert-evidence-<uuid>.
+const ADVERT_EVIDENCE_EXT = { ...SIGNED_COPY_EXT, 'image/webp': '.webp' };
+const uploadAdvertEvidence = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, uploadDir),
+    filename: (req, file, cb) => cb(null, `advert-evidence-${uuidv4()}${ADVERT_EVIDENCE_EXT[file.mimetype]}`)
+  }),
+  fileFilter: (req, file, cb) => {
+    if (!ADVERT_EVIDENCE_EXT[file.mimetype]) {
+      return cb(new AppError('Upload the advert evidence as a PDF, or a JPG, PNG or WEBP image.', 422));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: MAX_FILE_SIZE, files: 5 }
+});
+
 // Returns a URL path the frontend can use to reference the uploaded file,
 // via the authenticated /api/files route rather than a plain static mount.
 function fileUrl(file) {
@@ -136,5 +155,5 @@ function fileUrl(file) {
 module.exports = {
   upload: keepContext(upload), uploadPhoto: keepContext(uploadPhoto), uploadSupportingDocument: keepContext(uploadSupportingDocument),
   uploadRequisition: keepContext(uploadRequisition), uploadSignedRequisition: keepContext(uploadSignedRequisition),
-  uploadSignedAppointment: keepContext(uploadSignedAppointment), fileUrl
+  uploadSignedAppointment: keepContext(uploadSignedAppointment), uploadAdvertEvidence: keepContext(uploadAdvertEvidence), fileUrl
 };

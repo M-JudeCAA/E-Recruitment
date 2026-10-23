@@ -5,7 +5,7 @@
 // Compliance to confirm (TBD-ATS-06). When the wording changes, bump
 // PRIVACY_NOTICE_VERSION here AND in backend/src/config/privacyNotice.js -
 // each application records the version its candidate consented to.
-export const PRIVACY_NOTICE_VERSION = '2026-09-draft';
+export const PRIVACY_NOTICE_VERSION = '2026-10-draft';
 export const PRIVACY_NOTICE_IS_DRAFT = true;
 export const PRIVACY_NOTICE_UPDATED = '30 September 2026';
 
@@ -20,8 +20,8 @@ export const PRIVACY_NOTICE_SECTIONS = [
   {
     heading: 'What we collect',
     body: [
-      'Your account details (name, email address, phone number), your National Identification Number (NIN), date of birth, '
-        + 'place of residence and district of origin.',
+      'Your account details (name, email address, phone number), your National Identification Number (NIN) or, for UCAA '
+        + 'employees, your employee number, date of birth, place of residence and district of origin.',
       'Your education, work experience, certificates, exam grades and any other qualifications you add, and the documents '
         + 'you upload (CV, cover letter, academic documents).',
       'For each application: your answers to the application questions, your referees\' contact details, and the '
@@ -41,7 +41,8 @@ export const PRIVACY_NOTICE_SECTIONS = [
     heading: 'Who sees it',
     body: [
       'UCAA human resources staff; the members of the shortlisting committee and interview panel for the positions you '
-        + 'apply to, who see only the applicants assigned to them; and, for internal applicants, the supervisor you name.',
+        + 'apply to, who see only the applicants assigned to them; and the hiring manager for the position, who is told the names '
+        + 'of the candidates shortlisted and recommended.',
       'We do not sell your data or share it with anyone outside UCAA except where the law requires it.'
     ]
   },

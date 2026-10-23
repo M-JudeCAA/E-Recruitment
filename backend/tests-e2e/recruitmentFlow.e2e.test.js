@@ -2,7 +2,8 @@ const request = require('supertest');
 const {
   prisma, app, resetDatabase, createStaff, createOrg, createCandidate,
   staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition, recordInterviewResults,
-  attachExcoApproval
+  attachExcoApproval,
+  addAdvertEvidence
 } = require('./helpers');
 
 // The whole recruitment lifecycle through the real API and a real database:
@@ -264,6 +265,7 @@ test('hides vacancies from the wrong audience but keeps them open to their own a
 
   // ...and a Closed one from the public, but not from someone who applied.
   // With an applicant in it, closing has to say what becomes of them.
+  await addAdvertEvidence(tokens.phro, vacancy.id);
   const asked = await api(tokens.phro).patch(`/api/vacancies/${vacancy.id}/close`, { reason: 'Position frozen' });
   expect(asked.status).toBe(409);
   expect(asked.body).toEqual(expect.objectContaining({ code: 'VACANCY_HAS_WORK_IN_PROGRESS', inProgress: expect.objectContaining({ applications: 1 }) }));

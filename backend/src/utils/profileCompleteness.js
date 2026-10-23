@@ -6,7 +6,7 @@
 // pieces of state (Candidate fields, Education[], InternalProfile).
 const { validateNationalId } = require('./validators');
 
-const INTERNAL_PROFILE_FIELDS = ['employeeId', 'department', 'position', 'dateJoined', 'supervisorName', 'supervisorEmail'];
+const INTERNAL_PROFILE_FIELDS = ['employeeId', 'department', 'position', 'dateJoined'];
 
 function getMissingProfileFields(candidate) {
   const missing = [];
@@ -14,10 +14,11 @@ function getMissingProfileFields(candidate) {
   if (!candidate.location) missing.push('location');
   if (!candidate.districtOfOrigin) missing.push('districtOfOrigin');
 
-  // The NIN is the only identity document accepted - a missing or invalid
-  // one (including a passport number from before passports were dropped)
-  // leaves the profile incomplete until a valid NIN is entered.
-  if (!validateNationalId(candidate.nationalId)) missing.push('nationalId');
+  // External candidates: the NIN is the only identity document accepted - a
+  // missing or invalid one (including a passport number from before passports
+  // were dropped) leaves the profile incomplete. Internal candidates give
+  // their employee number instead (internalProfile.employeeId, below).
+  if (candidate.candidateType !== 'Internal' && !validateNationalId(candidate.nationalId)) missing.push('nationalId');
 
   if (!(candidate.education || []).length) missing.push('education');
   if (!(candidate.workExperience || []).length) missing.push('workExperience');

@@ -7,9 +7,12 @@ const { formatAs } = require('../utils/textCase');
 
 // The hiring manager: the UCAA employee the vacancy is being filled for,
 // picked from the directory when the vacancy is created (or later). They
-// have no access to the system - they are kept informed by email at each
-// milestone of their recruitment, and nothing else. notify() never throws:
-// a failed email must not fail the action that triggered it.
+// have no access to the system - they are kept informed by email as the
+// vacancy moves from stage to stage (advertised, applications closed, review,
+// committee shortlisting, EXCO approval, interviews, merit list, offers,
+// hire), and nothing else: never about a single application as it arrives.
+// notify() never throws: a failed email must not fail the action that
+// triggered it.
 
 const MAX = 191;
 
@@ -51,7 +54,19 @@ const MESSAGES = {
   }),
   applicationsClosed: (v, d) => ({
     subject: 'applications closed',
-    body: `<p>Applications have closed: <strong>${d.count}</strong> application${d.count === 1 ? ' was' : 's were'} received. HR will now shortlist candidates for interview.</p>`
+    body: `<p>Applications have closed: <strong>${d.count}</strong> application${d.count === 1 ? ' was' : 's were'} received. HR will now review them.</p>`
+  }),
+  reviewStarted: () => ({
+    subject: 'review started',
+    body: '<p>HR has started reviewing the applications against the requirements of the job.</p>'
+  }),
+  shortlistingStarted: (v, d) => ({
+    subject: 'shortlisting started',
+    body: `<p>The shortlisting committee has started assessing the ${d.count} applicant${d.count === 1 ? '' : 's'} who met the requirements.</p>`
+  }),
+  shortlistingComplete: () => ({
+    subject: 'shortlisting complete',
+    body: '<p>The shortlisting committee has finished its assessment. HR will propose the interview shortlist, which then goes to EXCO for approval.</p>'
   }),
   shortlistApproved: (v, d) => ({
     subject: 'interview shortlist approved',
@@ -64,6 +79,10 @@ const MESSAGES = {
   meritListApproved: (v, d) => ({
     subject: 'merit list approved',
     body: `<p>The merit list has been approved. Recommended for appointment:</p>${list(d.primary)}${d.reserve.length ? `<p>In reserve:</p>${list(d.reserve)}` : ''}<p>HR will now prepare the offer${d.primary.length === 1 ? '' : 's'}.</p>`
+  }),
+  offerMade: (v, d) => ({
+    subject: 'offer made',
+    body: `<p>An offer of appointment has been made to <strong>${escapeHtml(d.candidateName || 'the recommended candidate')}</strong>. HR will let you know when they answer.</p>`
   }),
   offerAccepted: (v, d) => ({
     subject: d.filled ? 'filled' : 'offer accepted',

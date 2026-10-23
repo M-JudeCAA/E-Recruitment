@@ -217,6 +217,7 @@ model StaffUser {
   applicationsShortlistProposed  Application[]           @relation("ApplicationShortlistProposedBy")
   applicationsShortlistApproved  Application[]           @relation("ApplicationShortlistApprovedBy")
   excoShortlistApprovalsUploaded ExcoShortlistApproval[] @relation("ExcoShortlistApprovalUploadedBy")
+  advertEvidenceUploaded         VacancyAdvertEvidence[] @relation("VacancyAdvertEvidenceUploadedBy")
   documentTemplatesUpdated       DocumentTemplate[]      @relation("DocumentTemplateUpdatedBy")
   settingsUpdated                Setting[]               @relation("SettingUpdatedBy")
   hiresRecorded                  Hire[]                  @relation("HireRecordedBy")
@@ -479,6 +480,7 @@ model Vacancy {
   hires                  Hire[]
   shortlistExercise      ShortlistExercise?
   excoShortlistApprovals ExcoShortlistApproval[]
+  advertEvidence         VacancyAdvertEvidence[]
 
   // Declaring pre-existing drift, not adding new columns: approvedAt,
   // approvedById (with its FK already live), and rejectionReason already
@@ -1067,6 +1069,7 @@ enum ApplicationDocumentCategory {
   Academic // certificates, transcripts, result slips
   Other // professional certificates, licences, testimonials, anything else relevant
   Evidence // proof of a claim screening relies on (utils/screeningEvidence.js) - see evidenceKey
+  CV // the candidate's own CV - optional, at most one per application
 }
 
 // One uploaded file attached to an application (see Application.documents).
@@ -1771,6 +1774,25 @@ model ExcoShortlistApproval {
   uploadedBy    StaffUser     @relation("ExcoShortlistApprovalUploadedBy", fields: [uploadedById], references: [id])
   uploadedAt    DateTime      @default(now())
   applications  Application[]
+
+  @@index([vacancyId])
+}
+
+// Evidence that a vacancy was advertised - a scanned newspaper advert, a
+// screenshot from a job board, for an internal one a scan of the noticeboard
+// advert or the HR Pulse email. Closing a vacancy that was published needs
+// at least one; more can be added after. Files stored as
+// advert-evidence-<uuid>, served through /api/files (staff only).
+model VacancyAdvertEvidence {
+  id           Int       @id @default(autoincrement())
+  vacancyId    Int
+  vacancy      Vacancy   @relation(fields: [vacancyId], references: [id])
+  fileUrl      String
+  originalName String
+  note         String?   @db.VarChar(500)
+  uploadedById Int
+  uploadedBy   StaffUser @relation("VacancyAdvertEvidenceUploadedBy", fields: [uploadedById], references: [id])
+  uploadedAt   DateTime  @default(now())
 
   @@index([vacancyId])
 }

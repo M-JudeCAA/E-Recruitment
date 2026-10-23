@@ -12,6 +12,7 @@ import VacancyAdvertFields from '../VacancyAdvertFields';
 import { useConfirm } from '../ConfirmDialog';
 import { approveVacancy } from '../../utils/approveVacancy';
 import { MenuButton, rankOf, ROLE_RANK } from './ui';
+import { AdvertEvidenceFields, appendEvidence } from './AdvertEvidence';
 import { DEFAULT_DEADLINE_TIME, deadlineFields, deadlineValue } from '../../utils/deadline';
 import { EMPLOYMENT_LABELS as EMPLOYMENT_CATEGORY_LABELS } from '../../utils/employmentCategories';
 
@@ -148,6 +149,7 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
   const [preview, setPreview] = useState(null);
   const [transition, setTransition] = useState(null);
   const [closing, setClosing] = useState(null); // { reason, inProgress } once the API asks what becomes of the applicants
+  const [closeForm, setCloseForm] = useState({ reason: '', files: [], note: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -168,9 +170,38 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
 
   const openForm = (kind) => { setForm(vacancyToFormFields(v)); setError(''); setDialog(kind); };
 
-  // Closing a vacancy with people still in it: 'continue' or 'end' (see the dialog).
+  // Closing sends the reason with the evidence of the advert (multipart);
+  // with people still in it, 'continue' or 'end' too (see the dialog).
+  const closeRequest = (inFlight) => {
+    const body = appendEvidence(new FormData(), closeForm.files, closeForm.note);
+    body.append('reason', closeForm.reason.trim());
+    if (inFlight) body.append('inFlight', inFlight);
+    return staffClient.patch(`/api/vacancies/${v.id}/close`, body);
+  };
+  // A vacancy awaiting approval was never advertised; one with evidence on file
+  // (closed before and re-opened) needs no more.
+  const evidenceRequired = v.status !== 'PendingApproval' && !(v.advertEvidence || []).length;
+  const submitClose = async () => {
+    if (closeForm.reason.trim().length < 3) { setError('Please give a reason.'); return; }
+    if (evidenceRequired && !closeForm.files.length) { setError('Attach evidence that the vacancy was advertised.'); return; }
+    setBusy(true); setError('');
+    try {
+      await closeRequest();
+      done('Vacancy closed.');
+    } catch (err) {
+      // People are still in it: the API wants to know what becomes of them.
+      if (err.response?.data?.code === 'VACANCY_HAS_WORK_IN_PROGRESS') {
+        setClosing({ inProgress: err.response.data.inProgress || {} });
+        setDialog('closeChoice');
+      } else {
+        setError(errorText(err, 'Could not close the vacancy'));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
   const closeWith = (inFlight) => run(
-    () => staffClient.patch(`/api/vacancies/${v.id}/close`, { reason: closing.reason, inFlight }),
+    () => closeRequest(inFlight),
     inFlight === 'end' ? 'Vacancy closed and the recruitment ended - the applicants have been told.' : 'Vacancy closed. Selection continues with the applicants already in.',
     'Could not close the vacancy'
   );
@@ -190,7 +221,7 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
       ? { label: 'Posting type locked', disabled: true, hint: 'The posting type was changed after the deadline had passed, so it is now fixed.', onClick: () => {} }
       : { label: `Change to ${v.postingType === 'Internal' ? 'External' : 'Internal'}…`, onClick: () => { setTransition({ target: v.postingType === 'Internal' ? 'External' : 'Internal', deadline: deadlineFields(v.deadline).date, deadlineTime: deadlineFields(v.deadline).time }); setError(''); setDialog('transition'); } }),
     !['Closed', 'Returned', 'Rejected'].includes(v.status) && rank >= ROLE_RANK.Principal_HR_Officer && { divider: true },
-    !['Closed', 'Returned', 'Rejected'].includes(v.status) && rank >= ROLE_RANK.Principal_HR_Officer && { label: 'Close vacancy…', danger: true, onClick: () => setDialog('close') }
+    !['Closed', 'Returned', 'Rejected'].includes(v.status) && rank >= ROLE_RANK.Principal_HR_Officer && { label: 'Close vacancy…', danger: true, onClick: () => { setCloseForm({ reason: '', files: [], note: '' }); setError(''); setDialog('close'); } }
   ];
 
   return (
@@ -262,23 +293,26 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
       )}
 
       {dialog === 'close' && (
-        <ReasonDialog title={`Close vacancy — ${v.jobRef}`}
-          intro="Closing takes the vacancy off the jobs board and stops new applications. It can be re-opened later. The reason is kept in its history."
-          label="Reason for closing" confirmLabel="Close vacancy" busyLabel="Closing..." danger
-          onClose={() => setDialog(null)}
-          onSubmit={async (reason) => {
-            try {
-              await staffClient.patch(`/api/vacancies/${v.id}/close`, { reason });
-            } catch (err) {
-              // People are still in it: the API wants to know what becomes of them.
-              if (err.response?.data?.code !== 'VACANCY_HAS_WORK_IN_PROGRESS') throw err;
-              setClosing({ reason, inProgress: err.response.data.inProgress || {} });
-              setError('');
-              setDialog('closeChoice');
-              return;
-            }
-            done('Vacancy closed.');
-          }} />
+        <Modal title={`Close vacancy — ${v.jobRef}`} onClose={busy ? undefined : () => setDialog(null)}
+          footer={<>
+            <Button variant="ghost" disabled={busy} onClick={() => setDialog(null)}>Cancel</Button>
+            <Button disabled={busy} onClick={submitClose} style={{ background: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}>
+              {busy ? 'Closing...' : 'Close vacancy'}
+            </Button>
+          </>}>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
+            Closing takes the vacancy off the jobs board and stops new applications. It can be re-opened later. The reason
+            {v.status === 'PendingApproval' ? '' : ' and the evidence of the advert'} are kept in its history.
+          </p>
+          <Alert type="error" message={error} />
+          {v.status !== 'PendingApproval' && (
+            <AdvertEvidenceFields vacancy={v} required={evidenceRequired}
+              files={closeForm.files} onFilesChange={(files) => { setCloseForm((f) => ({ ...f, files })); if (files.length) setError(''); }}
+              note={closeForm.note} onNoteChange={(note) => setCloseForm((f) => ({ ...f, note }))} />
+          )}
+          <TextArea label="Reason for closing" required value={closeForm.reason} maxLength={2000}
+            onChange={(e) => setCloseForm((f) => ({ ...f, reason: e.target.value }))} />
+        </Modal>
       )}
 
       {dialog === 'closeChoice' && closing && (

@@ -58,7 +58,7 @@ test('SuggestField hands the picked option over, by click or Enter', async () =>
 });
 
 describe('the employment form', () => {
-  const me = { fullName: 'Jane Nakato', email: 'jane@caa.co.ug', internalProfile: { employeeId: 'E1', dateJoined: '2017-03-01', supervisorName: 'Ben', supervisorEmail: 'ben@caa.co.ug' } };
+  const me = { fullName: 'Jane Nakato', email: 'jane@caa.co.ug', internalProfile: { employeeId: 'E1', dateJoined: '2017-03-01' } };
   const renderForm = () => {
     let save;
     render(<EmploymentForm me={me} bind={(fn) => { save = fn; }} />);
@@ -67,7 +67,7 @@ describe('the employment form', () => {
 
   test('department first, then only that department\'s positions; the ids are saved', async () => {
     const save = renderForm();
-    const position = screen.getByRole('combobox', { name: /Current position/ });
+    const position = screen.getByRole('combobox', { name: /Job title/ });
     await waitFor(() => expect(screen.getByRole('combobox', { name: /Department/ })).not.toBeDisabled());
     expect(position).toBeDisabled();
 
@@ -99,7 +99,7 @@ describe('the employment form', () => {
     let save;
     render(<EmploymentForm me={{ ...me, internalProfile: { ...me.internalProfile, department: 'IT', position: 'Systems Officer' } }} bind={(fn) => { save = fn; }} />);
     await waitFor(() => expect(screen.getByRole('combobox', { name: /Department/ })).toHaveValue('Information Technology'));
-    expect(screen.getByRole('combobox', { name: /Current position/ })).toHaveValue('Systems Officer');
+    expect(screen.getByRole('combobox', { name: /Job title/ })).toHaveValue('Systems Officer');
     expect(await save()).toBe(true);
     expect(JSON.parse(sent.find((c) => c.method === 'put').data)).toEqual(expect.objectContaining({ departmentId: 4, positionId: 40 }));
   });

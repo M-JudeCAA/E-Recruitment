@@ -10,6 +10,8 @@ import Skeleton from '../components/Skeleton';
 import StatusBadge from '../components/StatusBadge';
 import { useServerPagination, PAGE_SIZE_OPTIONS } from '../components/Pagination';
 import TagEditor, { TagChips } from '../components/TagEditor';
+import DocumentLink from '../components/DocumentLink';
+import GeneratedCvLink from '../components/GeneratedCvLink';
 import BulkEmailComposer from '../components/BulkEmailComposer';
 import ApplicationQueue from '../components/workspace/ApplicationQueue';
 import { PageTop, Panel, Table, SidePanel, KeyValues, rankOf, ROLE_RANK } from '../components/workspace/ui';
@@ -22,6 +24,34 @@ import { PageTop, Panel, Table, SidePanel, KeyValues, rankOf, ROLE_RANK } from '
 //   Applications every application across vacancies, filtered (ApplicationQueue).
 // A row opens the person (or the application) in a side panel.
 // ?q= pre-fills the search (the app bar's search sends people here).
+
+// Their own CV (from their latest application that has one) and the CV the
+// system generates from their profile and latest application - the full
+// profile is fetched when the panel opens (GET /api/talent/candidates/:id).
+function CandidateCvs({ candidateId }) {
+  const [data, setData] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setData(null); setFailed(false);
+    staffClient.get(`/api/talent/candidates/${candidateId}`).then((r) => setData(r.data)).catch(() => setFailed(true));
+  }, [candidateId]);
+  return (
+    <div>
+      <h3>CV</h3>
+      {failed ? <span className="ws-note">Could not load the CVs.</span>
+        : !data ? <Skeleton height={18} />
+          : (
+            <KeyValues rows={[
+              ['Their CV', data.cv
+                ? <DocumentLink url={data.cv.fileUrl} name={`CV - ${data.candidate.fullName} - ${data.cv.originalName}`}>{data.cv.originalName}</DocumentLink>
+                : 'None uploaded'],
+              ['Generated CV', <GeneratedCvLink candidate={data.candidate} application={data.latestApplication}
+                vacancyTitle={data.latestApplication?.vacancy?.title} vacancyJobRef={data.latestApplication?.vacancy?.jobRef}>View or download</GeneratedCvLink>]
+            ]} />
+          )}
+    </div>
+  );
+}
 
 export default function CandidateSearch() {
   const { staff } = useAuth();
@@ -139,8 +169,9 @@ export default function CandidateSearch() {
           footer={canEmail && <Button onClick={() => { setSelected([open.id]); setComposing(true); }}><Mail size={14} /> Email</Button>}>
           <div>
             <h3>Contact</h3>
-            <KeyValues rows={[['Email', open.email], ['Phone', open.phone || null], ['Lives in', open.location || null]]} />
+            <KeyValues rows={[['Email', open.email], ['Phone', open.phone || null], ['Place of residence', open.location || null]]} />
           </div>
+          <CandidateCvs candidateId={open.id} />
           <div>
             <h3>Background</h3>
             {background(open).length ? <ul style={{ margin: 0, paddingLeft: 18 }}>{background(open).map((b) => <li key={b}>{b}</li>)}</ul> : <span className="ws-note">Nothing recorded.</span>}

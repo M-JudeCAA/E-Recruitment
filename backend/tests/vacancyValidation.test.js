@@ -94,9 +94,12 @@ describe('validateVacancyEditableFields - deadline', () => {
     expect(errors).toEqual([]);
   });
 
-  test('accepts today, which runs to the end of the day in Kampala', () => {
+  // A plain day closes at 5:00pm, so "today" alone fails every evening; a
+  // closing time later today is still ahead whenever the test runs (bar the
+  // last minute of the day).
+  test('accepts today with a closing time still ahead, in Kampala', () => {
     const today = localDay(new Date());
-    expect(validateVacancyEditableFields({ deadline: today })).toEqual([]);
+    expect(validateVacancyEditableFields({ deadline: `${today}T23:59` })).toEqual([]);
   });
 });
 

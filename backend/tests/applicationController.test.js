@@ -568,13 +568,33 @@ describe('supporting documents', () => {
     let res = mockRes();
     await applicationDraftController.addDocument({ params: { id: '1' }, user: { id: 5 }, file, body: { category: 'Evidence', evidenceKey: 'nationalId' } }, res);
     expect(prisma.applicationDocument.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      category: 'Evidence', evidenceKey: 'nationalId', label: 'Copy of your National ID'
+      category: 'Evidence', evidenceKey: 'nationalId', label: 'Proof of your date of birth'
     }) });
 
     // Something this vacancy doesn't ask for is refused.
     res = mockRes();
     await applicationDraftController.addDocument({ params: { id: '1' }, user: { id: 5 }, file, body: { category: 'Evidence', evidenceKey: 'flyingHours' } }, res);
     expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  test('keeps one CV per application - a new one replaces the one before', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, status: 'Draft', vacancyId: 10 });
+    prisma.applicationDocument.findMany.mockResolvedValue([
+      { id: 3, category: 'CV', fileUrl: '/api/files/old-cv.pdf' },
+      { id: 4, category: 'Academic', fileUrl: '/api/files/degree.pdf' }
+    ]);
+    prisma.applicationDocument.create.mockResolvedValue({ id: 9, category: 'CV' });
+    const res = mockRes();
+
+    await applicationDraftController.addDocument({
+      params: { id: '1' }, user: { id: 5 }, file: { filename: 'cv.pdf', originalname: 'My CV.pdf' }, body: { category: 'CV', label: 'ignored' }
+    }, res);
+
+    expect(prisma.applicationDocument.create).toHaveBeenCalledWith({ data: expect.objectContaining({ category: 'CV', label: 'CV' }) });
+    expect(prisma.applicationDocument.delete).toHaveBeenCalledTimes(1);
+    expect(prisma.applicationDocument.delete).toHaveBeenCalledWith({ where: { id: 3 } });
+    expect(prisma.applicationDocument.count).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(201);
   });
 
   test('refuses changes once the application has been submitted', async () => {

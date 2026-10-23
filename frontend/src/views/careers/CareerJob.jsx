@@ -56,7 +56,6 @@ export default function CareerJob() {
   const mine = (applications || []).find((a) => a.vacancyId === Number(id));
   const left = daysLeft(vacancy?.deadline);
   const closed = left != null && left < 0;
-  const supervisor = me?.internalProfile?.supervisorName;
 
   const needed = evidenceRequirements(vacancy).map((e) => e.label);
   const howToApply = vacancy && (SITE.internal ? (
@@ -67,7 +66,6 @@ export default function CareerJob() {
         <li>Check your profile is up to date. The application only asks for what this vacancy needs.</li>
         <li>Confirm your employment details on your profile. HR verifies them before you can submit an application.</li>
         <li>Answer the questions, name three referees, add your academic documents, and submit by {formatDeadlineTime(vacancy.deadline)} on {formatDay(vacancy.deadline)}.</li>
-        <li>Your supervisor{supervisor ? `, ${supervisor},` : ''} is told that you have applied.</li>
       </ol>
     </div>
   ) : (

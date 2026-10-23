@@ -144,7 +144,7 @@ export default function RecruitmentDashboard() {
               <option value="">All</option>
               {shownDepartments.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </Select>
-            <Select label="Position" value={filters.positionId} onChange={(e) => setFilter('positionId', e.target.value)} disabled={!filters.departmentId}>
+            <Select label="Title" value={filters.positionId} onChange={(e) => setFilter('positionId', e.target.value)} disabled={!filters.departmentId}>
               <option value="">{filters.departmentId ? 'All' : 'Choose a department'}</option>
               {positions.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </Select>

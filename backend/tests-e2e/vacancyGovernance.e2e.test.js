@@ -1,7 +1,8 @@
 const request = require('supertest');
 const {
   prisma, app, resetDatabase, createStaff, createOrg, staffToken, api, expectStatus, createVacancyFromRequisition, uploadRequisition,
-  uploadSignedCopy
+  uploadSignedCopy,
+  addAdvertEvidence
 } = require('./helpers');
 
 // Vacancy-level rules from the September 2026 UCAA requirements: job
@@ -82,6 +83,11 @@ test('an approver returns a vacancy with a comment; HR revises and resubmits it;
   // Closing needs a reason; moving a published deadline needs one too.
   expect((await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}`, { deadline: new Date(Date.now() + 30 * 86400000).toISOString() })).status).toBe(400);
   expect((await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/close`, {})).status).toBe(400);
+  // ...and, once it was advertised, evidence of the advert.
+  const noEvidence = await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/close`, { reason: 'Position frozen' });
+  expect(noEvidence.status).toBe(400);
+  expect(noEvidence.body.code).toBe('ADVERT_EVIDENCE_REQUIRED');
+  await addAdvertEvidence(tokens.manager, vacancy.id);
   const closed = expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/close`, { reason: 'Position frozen' }), 200).body;
   expect(closed).toEqual(expect.objectContaining({ status: 'Closed', closeReason: 'Position frozen' }));
 
@@ -155,6 +161,7 @@ describe('creating a vacancy from the EXCO-approved requisition', () => {
     expect(publicView.desirableQualifications).toHaveLength(1);
 
     // A readvertisement runs on the same requisition.
+    await addAdvertEvidence(tokens.manager, vacancy.id);
     expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/close`, { reason: 'No suitable candidates' }), 200);
     const re = expectStatus(await api(tokens.hro).post(`/api/vacancies/${vacancy.id}/readvertise`, {
       postingType: 'External', positionsRequired: 2, deadline: new Date(Date.now() + 20 * 86400000).toISOString()

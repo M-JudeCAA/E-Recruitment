@@ -5,7 +5,7 @@
 // the evidence HR described for any question marked "needs evidence" that
 // the candidate answered Yes (or with a number above 0).
 const FIXED = {
-  nationalId: { label: 'Copy of your National ID', hint: 'Shows your date of birth for the age requirement.' },
+  nationalId: { label: 'Proof of your date of birth', hint: 'A copy of your National ID or birth certificate, for the age requirement.' },
   flyingHours: { label: 'Pilot logbook - the pages showing your total flying hours', hint: 'For the minimum flying hours.' },
   examResults: { label: 'UCE / UACE result slips or certificates', hint: 'For the O-Level / A-Level grades this role requires.' },
   experience: { label: 'Proof of work experience', hint: 'Appointment letters or certificates of service covering the years of experience required.' },

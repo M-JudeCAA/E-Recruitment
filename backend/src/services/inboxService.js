@@ -203,9 +203,9 @@ async function forStaff(req, now = new Date()) {
     const pending = { where: { status: 'Pending', createdById: { not: me } } };
     const importSelect = { select: { id: true, fileName: true, createdAt: true, createdBy: { select: { name: true } } } };
     const [directorates, departments, positions] = await Promise.all([
-      prisma.directorate.findMany({ ...pending, select: { id: true, name: true, createdAt: true, importId: true, import: importSelect, createdBy: { select: { name: true } } } }),
-      prisma.department.findMany({ ...pending, select: { id: true, name: true, createdAt: true, importId: true, import: importSelect, createdBy: { select: { name: true } }, directorate: { select: { name: true, code: true } } } }),
-      prisma.position.findMany({ ...pending, select: { id: true, name: true, level: true, createdAt: true, importId: true, import: importSelect, createdBy: { select: { name: true } }, department: { select: { name: true, directorate: { select: { name: true, code: true } } } } } })
+      prisma.directorate.findMany({ ...pending, select: { id: true, code: true, name: true, createdAt: true, importId: true, import: importSelect, createdBy: { select: { name: true } } } }),
+      prisma.department.findMany({ ...pending, select: { id: true, code: true, name: true, createdAt: true, importId: true, import: importSelect, createdBy: { select: { name: true } }, directorate: { select: { name: true, code: true } } } }),
+      prisma.position.findMany({ ...pending, select: { id: true, code: true, name: true, level: true, createdAt: true, importId: true, import: importSelect, createdBy: { select: { name: true } }, department: { select: { name: true, directorate: { select: { name: true, code: true } } } } } })
     ]).then((lists) => lists.map((l) => l || []));
 
     const imports = new Map();
@@ -245,9 +245,9 @@ async function forStaff(req, now = new Date()) {
       if (p.importId) { fromImport(p, 'position'); continue; }
       const where = `${p.department?.name || ''}${p.department?.directorate?.code ? `, ${p.department.directorate.code}` : ''}`;
       items.push({
-        key: `position-${p.id}`, kind: 'Position approval', title: `${p.name}${p.code ? ` (${p.code})` : ''} · ${where}`,
+        key: `position-${p.id}`, kind: 'Title approval', title: `${p.name}${p.code ? ` (${p.code})` : ''} · ${where}`,
         context: `Added by ${p.createdBy?.name || 'HR'}.`, link: '/hr/organisation/positions',
-        review: { type: 'org', entity: 'position', id: p.id, name: p.name, rows: [['Code', p.code || '-'], ['Position', p.name], ['Department', where], ['Level', LEVEL_NAMES[p.level] || p.level]] },
+        review: { type: 'org', entity: 'position', id: p.id, name: p.name, rows: [['Code', p.code || '-'], ['Title', p.name], ['Department', where], ['Level', LEVEL_NAMES[p.level] || p.level]] },
         waiting: waitingLabel(p.createdAt, now),
         since: p.createdAt,
         notice: { taskType: 'PositionApproval', taskId: p.id },

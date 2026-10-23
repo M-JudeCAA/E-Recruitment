@@ -1,7 +1,8 @@
 const {
   prisma, resetDatabase, createStaff, createOrg, createCandidate,
   staffToken, candidateToken, api, REFEREES, expectStatus, attachAcademicDocument, createVacancyFromRequisition,
-  recordInterviewResults, attachExcoApproval
+  recordInterviewResults, attachExcoApproval,
+  addAdvertEvidence
 } = require('./helpers');
 
 // The Interview Hub against a real database: a bulk-scheduled session with
@@ -225,6 +226,7 @@ test('closing a vacancy with people in it: HR says whether selection continues o
   const round = expectStatus(await api(tokens.shro).post(`/api/interviews/applications/${ian.applicationId}/interviews`, {
     scheduledDate: inDays(4), mode: 'In person', panelMembers: [{ name: 'P One', email: 'p1@caa.co.ug' }]
   }), 201).body;
+  await addAdvertEvidence(tokens.phro, vacancy.id);
   const close = (body) => api(tokens.phro).patch(`/api/vacancies/${vacancy.id}/close`, body);
 
   const asked = await close({ reason: 'The post was abolished' });

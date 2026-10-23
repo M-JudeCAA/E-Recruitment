@@ -63,7 +63,8 @@ function AttachmentField({ label, hint, required, name, file, onChange, onClear 
 // save, so the list shown is always what's actually on the application.
 // With an evidenceKey, the section collects the evidence for one screening
 // requirement (category Evidence) - labelled by the server, no description.
-function SupportingDocumentsSection({ title, description, category, required, labelPlaceholder, applicationId, documents, onDocumentsChange, evidenceKey }) {
+// single: one file only (the CV) - a new one replaces it, PDF or Word only.
+function SupportingDocumentsSection({ title, description, category, required, labelPlaceholder, applicationId, documents, onDocumentsChange, evidenceKey, single = false }) {
   const [label, setLabel] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -81,10 +82,10 @@ function SupportingDocumentsSection({ title, description, category, required, la
       const formData = new FormData();
       formData.append('category', category);
       if (evidenceKey) formData.append('evidenceKey', evidenceKey);
-      else formData.append('label', label);
+      else if (!single) formData.append('label', label);
       formData.append('file', selected);
       const res = await client.post(`/api/applications/${applicationId}/documents`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-      onDocumentsChange((current) => [...current, res.data]);
+      onDocumentsChange((current) => [...(single ? current.filter((d) => d.category !== category) : current), res.data]);
       setLabel('');
     } catch (err) {
       setError(err.response?.data?.error || 'Could not upload this document');
@@ -124,11 +125,11 @@ function SupportingDocumentsSection({ title, description, category, required, la
             style={{ background: 'none', border: 'none', cursor: busy ? 'default' : 'pointer', flexShrink: 0 }}><X size={14} /></button>
         </div>
       ))}
-      <div className={evidenceKey ? '' : 'grid grid-cols-1 md:grid-cols-2 gap-x-4'} style={{ alignItems: 'end' }}>
-        {!evidenceKey && <TextField label="Description" hint="Optional" placeholder={labelPlaceholder} value={label} onChange={(e) => setLabel(e.target.value)} />}
+      <div className={evidenceKey || single ? '' : 'grid grid-cols-1 md:grid-cols-2 gap-x-4'} style={{ alignItems: 'end' }}>
+        {!evidenceKey && !single && <TextField label="Description" hint="Optional" placeholder={labelPlaceholder} value={label} onChange={(e) => setLabel(e.target.value)} />}
         <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: 11, marginBottom: 20, border: '1px dashed var(--color-border)', borderRadius: 'var(--radius-sm)', color: 'var(--color-text-muted)', cursor: busy ? 'default' : 'pointer' }}>
-          <Paperclip size={14} /> {busy ? 'Uploading...' : 'Attach a file'}
-          <input type="file" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" onChange={handleFile} disabled={busy} style={{ display: 'none' }} />
+          <Paperclip size={14} /> {busy ? 'Uploading...' : single && mine.length ? 'Replace it with another file' : 'Attach a file'}
+          <input type="file" accept={single ? '.pdf,.doc,.docx' : '.pdf,.doc,.docx,.jpg,.jpeg,.png'} onChange={handleFile} disabled={busy} style={{ display: 'none' }} />
         </label>
       </div>
       {error && <span style={{ display: 'block', fontSize: 12, color: 'var(--color-danger)', marginTop: -12 }}>{error}</span>}
@@ -136,23 +137,25 @@ function SupportingDocumentsSection({ title, description, category, required, la
   );
 }
 
-// No CV upload here - a candidate no longer attaches their own CV file.
-// HR instead generates one on demand from the structured profile/
-// application data already captured across the wizard (education, work
-// experience, exam grades, certificates, the Questions step answers, the
-// Referees step) - see GeneratedCvPrintLayout.jsx and
-// useGeneratedCvDownload.jsx. Academic documents are required (submit
-// refuses an application without one); other documents are optional.
+// The candidate's own CV is optional (one file, PDF or Word): HR also gets a
+// CV the system generates from the profile and application details captured
+// across the wizard - see GeneratedCvPrintLayout.jsx and GeneratedCvLink.jsx -
+// and sees both wherever the applicant's details are shown. Academic
+// documents are required (submit refuses an application without one); other
+// documents are optional.
 export default function DocumentsStep({
   coverLetter, setCoverLetter, portfolioUrl, setPortfolioUrl, applicationId, documents, onDocumentsChange, evidence = []
 }) {
   return (
     <div>
       <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 16 }}>
-        Your CV is generated automatically from the profile and application details you provide elsewhere in
-        this form. Attach copies of your academic documents, and anything else relevant to this role. PDF, Word,
-        JPG or PNG, up to 10MB each.
+        A CV is generated automatically from the profile and application details you provide in this form, and you
+        can also attach your own. Attach copies of your academic documents, and anything else relevant to this role.
+        PDF, Word, JPG or PNG, up to 10MB each.
       </p>
+      <SupportingDocumentsSection title="Your CV" category="CV" single
+        description="Optional - your own CV, PDF or Word. HR sees it alongside the CV generated from your profile."
+        applicationId={applicationId} documents={documents} onDocumentsChange={onDocumentsChange} />
       <SupportingDocumentsSection title="Academic documents" category="Academic" required
         description="Certificates, transcripts and result slips for the qualifications on your profile - at least one is required."
         labelPlaceholder="e.g. BSc transcript" applicationId={applicationId} documents={documents} onDocumentsChange={onDocumentsChange} />

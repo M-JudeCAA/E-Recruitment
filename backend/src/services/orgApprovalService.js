@@ -24,9 +24,11 @@ const { AppError } = require('../utils/errorResponse');
 // whether "Approve now" was used.
 
 const ENTITY = {
-  Directorate: { model: 'directorate', word: 'directorate' },
-  Department: { model: 'department', word: 'department' },
-  Position: { model: 'position', word: 'position' }
+  // word: the approval kind (approvalNotificationService); label: what people
+  // read. A Position row is a job title - its headcount is the positions.
+  Directorate: { model: 'directorate', word: 'directorate', label: 'directorate' },
+  Department: { model: 'department', word: 'department', label: 'department' },
+  Position: { model: 'position', word: 'position', label: 'title' }
 };
 const ORG_ENTITY_TYPES = ['Directorate', 'Department', 'Position', 'OrgImport'];
 
@@ -85,11 +87,11 @@ async function recordCreated(req, entityType, row, state) {
   // Sent for approval: the Principal HR Officers and Managers who didn't add
   // it are told by email and in-app (never fails the creation).
   if (!state.autoApproved) {
-    const word = ENTITY[entityType].word;
+    const { word, label } = ENTITY[entityType];
     await require('./approvalNotificationService').notifyApprovers(word, {
       taskId: row.id,
       excludeIds: [req.user.id],
-      message: `${req.user.name || 'HR'} added the ${word} ${row.name}${row.code ? ` (${row.code})` : ''}, waiting for your approval.`
+      message: `${req.user.name || 'HR'} added the ${label} ${row.name}${row.code ? ` (${row.code})` : ''}, waiting for your approval.`
     });
   }
 }
@@ -103,7 +105,7 @@ async function notifyImportPending(req, result) {
     || await prisma.department.findFirst({ where, orderBy: { id: 'asc' }, select: { id: true } }).then((r) => r && ['department', r.id])
     || await prisma.position.findFirst({ where, orderBy: { id: 'asc' }, select: { id: true } }).then((r) => r && ['position', r.id]);
   if (!first) return;
-  const parts = [[result.directorates, 'directorate'], [result.departments, 'department'], [result.positions, 'position']]
+  const parts = [[result.directorates, 'directorate'], [result.departments, 'department'], [result.positions, 'title']]
     .filter(([n]) => n > 0).map(([n, word]) => `${n} ${word}${n === 1 ? '' : 's'}`);
   const { notifyApprovers } = require('./approvalNotificationService');
   const { inboxItem } = require('../utils/notificationLinks');
@@ -124,7 +126,7 @@ const PARENT = {
 // included); here: still pending, not the approver's own, a reason to reject,
 // and a rejected parent can't have children approved.
 async function decide(req, entityType, id, decision, reason) {
-  const { model, word } = ENTITY[entityType];
+  const { model, label: word } = ENTITY[entityType];
   if (!Number.isInteger(id)) throw new AppError(`Invalid ${word}`, 400);
   const row = await prisma[model].findUnique({ where: { id } });
   if (!row) throw new AppError(`${word[0].toUpperCase()}${word.slice(1)} not found`, 404);
@@ -208,7 +210,7 @@ async function approveImport(req, importId) {
   await audit.record({
     entityType: 'OrgImport', entityId: importId, action: 'Approved import',
     actor: audit.actorFrom(req),
-    comment: `Approved ${d1.count} directorate(s), ${d2.count} department(s) and ${d3.count} position(s) from ${record.fileName}.`,
+    comment: `Approved ${d1.count} directorate(s), ${d2.count} department(s) and ${d3.count} title(s) from ${record.fileName}.`,
     details: { name: record.fileName, directorates: d1.count, departments: d2.count, positions: d3.count }
   });
   return result;

@@ -56,14 +56,13 @@ describe('profile completeness', () => {
     expect(getProfileCompletionPercent(null)).toBe(0);
   });
 
-  test('an Internal candidate also needs their employment details', () => {
-    const internal = { ...complete, candidateType: 'Internal', internalProfile: { employeeId: 'E1', department: 'HR', position: 'Officer' } };
-    expect(getMissingProfileFields(internal)).toEqual([
-      'internalProfile.dateJoined', 'internalProfile.supervisorName', 'internalProfile.supervisorEmail'
-    ]);
-    // 8 of 11 fields.
-    expect(getProfileCompletionPercent(internal)).toBe(73);
-    expect(getMissingProfileFields({ ...complete, candidateType: 'Internal' })).toHaveLength(6);
+  test('an Internal candidate needs their employment details, not a NIN or a supervisor', () => {
+    const internal = { ...complete, nationalId: null, candidateType: 'Internal', internalProfile: { employeeId: 'E1', department: 'HR', position: 'Officer' } };
+    expect(getMissingProfileFields(internal)).toEqual(['internalProfile.dateJoined']);
+    // 7 of 8 fields.
+    expect(getProfileCompletionPercent(internal)).toBe(88);
+    expect(getMissingProfileFields({ ...complete, candidateType: 'Internal' })).toHaveLength(4);
+    expect(isProfileComplete({ ...internal, internalProfile: { ...internal.internalProfile, dateJoined: '2017-03-01' } })).toBe(true);
   });
 });
 

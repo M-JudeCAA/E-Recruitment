@@ -16,7 +16,7 @@ import { CareerShell, WizardRail, useCareer, profileGaps } from './careers';
 // Continue; the employee can stop and come back.
 const STEPS = [
   { label: 'Your UCAA employment', note: 'What HR verifies' },
-  { label: 'Personal details', note: 'National ID and where you are from' },
+  { label: 'Personal details', note: 'Where you are from and live' },
   { label: 'Education and experience', note: 'Used to check you against each job' },
   { label: 'Ready', note: 'Start applying' }
 ];
@@ -71,7 +71,7 @@ export default function InternalWelcome() {
           <div className="ws-panel-b">
             {step === 0 && (
               <>
-                <Alert type="info" message="HR checks these details before you can be shortlisted. Your supervisor is told when you submit an application." />
+                <Alert type="info" message="HR checks these details before you can apply for a vacancy." />
                 <EmploymentForm me={me} bind={(fn) => { save.current = fn; }} />
               </>
             )}
@@ -89,9 +89,8 @@ export default function InternalWelcome() {
                     : 'Your profile is ready.'} />
                 )}
                 <p style={{ margin: 0 }}>
-                  When you apply, HR checks your employment details and your supervisor
-                  {me.internalProfile?.supervisorName ? `, ${me.internalProfile.supervisorName},` : ''} is told.
-                  You can update your profile at any time under My profile.
+                  HR checks your employment details before you can apply. You can update your
+                  profile at any time under My profile.
                 </p>
               </div>
             )}

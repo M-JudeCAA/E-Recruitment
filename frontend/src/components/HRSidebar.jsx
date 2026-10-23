@@ -40,7 +40,7 @@ export default function HRSidebar({ active }) {
       children: [
         { key: 'org-directorates', label: 'Directorates', to: '/hr/organisation/directorates' },
         { key: 'org-departments', label: 'Departments', to: '/hr/organisation/departments' },
-        { key: 'org-positions', label: 'Positions', to: '/hr/organisation/positions' }
+        { key: 'org-positions', label: 'Titles', to: '/hr/organisation/positions' }
       ]
     },
     staff?.role && { key: 'templates', label: 'Document templates', icon: FileSignature, to: '/hr/templates', section: 'Setup' },

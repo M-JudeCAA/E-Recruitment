@@ -1,25 +1,12 @@
 const directory = require('../services/directoryService');
-const candidateModel = require('../models/candidateModel');
 
 // GET /api/directory/people?q= - UCAA employees matching a name or email,
-// from Microsoft Entra (for picking a vacancy's hiring manager, or an internal
-// candidate's supervisor). 501
+// from Microsoft Entra (for picking a vacancy's hiring manager or a staff
+// account's person). 501
 // DIRECTORY_NOT_CONFIGURED until the directory permission is set up; the
 // page then asks for the name and email instead.
 async function searchPeople(req, res) {
   return search(req, res, () => true);
-}
-
-// GET /api/candidates/me/directory/people?q= - the same search for an internal
-// candidate picking their supervisor on Internal Careers (the browser tries
-// Graph with their own Microsoft session first). Themselves left out.
-async function searchColleagues(req, res) {
-  if (req.user.candidateType !== 'Internal') {
-    return res.status(403).json({ error: 'Only UCAA employees can search the staff directory' });
-  }
-  const me = await candidateModel.findById(req.user.id);
-  const own = String(me?.email || '').toLowerCase();
-  return search(req, res, (p) => !own || p.email !== own);
 }
 
 async function search(req, res, keep) {
@@ -34,4 +21,4 @@ async function search(req, res, keep) {
   }
 }
 
-module.exports = { searchPeople, searchColleagues };
+module.exports = { searchPeople };

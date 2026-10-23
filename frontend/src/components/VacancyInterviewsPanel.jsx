@@ -23,6 +23,10 @@ function latestHeld(rounds = []) {
   return [...rounds].filter((r) => !['Cancelled', 'NoShow'].includes(r.status)).sort((a, b) => b.roundNumber - a.roundNumber)[0] || null;
 }
 
+// Still waiting for EXCO's signed approval of the shortlist: a first
+// interview can't be booked yet (same rule as InterviewScheduler).
+const awaitingExco = (a) => !a.excoApprovalId && (a.interviewRounds || []).length === 0;
+
 // Where one candidate's interview stands, as a single phrase + badge.
 function stageOf(app) {
   const round = latestHeld(app.interviewRounds);
@@ -66,7 +70,7 @@ export default function VacancyInterviewsPanel({ vacancy, applications, staffRol
             <Link to={`/hr/interviews?tab=scorecards&vacancyId=${vacancy.id}`} style={{ fontSize: 13, alignSelf: 'center', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               Scorecard in Interview Hub <ExternalLink size={12} />
             </Link>
-            {canEdit && counts.unscheduled > 0 && (
+            {canEdit && apps.some((a) => stageOf(a).key === 'unscheduled' && !awaitingExco(a)) && (
               <Button onClick={() => setScheduler(true)}><CalendarPlus size={14} /> Schedule interviews</Button>
             )}
           </div>

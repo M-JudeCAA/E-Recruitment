@@ -1,5 +1,4 @@
 const prisma = require('../config/db');
-const { sendMail } = require('../utils/mailer');
 
 // Mirrors applicationController.NOT_SHORTLISTABLE - kept here too (not
 // imported from a controller, which services never depend on) since this
@@ -350,50 +349,6 @@ async function captureSnapshot({ entityType, entityId, candidateId, performedByI
 }
 
 /**
- * Informational supervisor notification on application submission.
- * Never blocks or conditions progression - purely informational.
- */
-async function notifySupervisor(applicationId) {
-  const application = await prisma.application.findUnique({
-    where: { id: applicationId },
-    include: {
-      candidate: { include: { internalProfile: true } },
-      vacancy: true
-    }
-  });
-
-  if (application.candidate.candidateType !== 'Internal') return;
-  const profile = application.candidate.internalProfile;
-  const supervisorEmail = profile?.supervisorEmail;
-
-  if (!supervisorEmail) {
-    await prisma.auditLog.create({
-      data: {
-        entityType: 'SupervisorNotification',
-        entityId: applicationId,
-        action: 'Supervisor notification skipped - no supervisor email on record'
-      }
-    });
-    return;
-  }
-
-  await sendMail({
-    to: supervisorEmail,
-    subject: 'Notification: staff application submitted',
-    html: `<p>${application.candidate.fullName} has applied for ${application.vacancy.title} in ${application.vacancy.department}. This is an informational notice only and requires no action.</p>`
-  });
-
-  await prisma.auditLog.create({
-    data: {
-      entityType: 'SupervisorNotification',
-      entityId: applicationId,
-      action: 'Supervisor notified of internal application',
-      payload: { supervisorEmail }
-    }
-  });
-}
-
-/**
  * Audits an Internal <-> External posting-type transition. Reuses the
  * existing AuditLog table rather than inventing a new dedicated one -
  * the same pattern already used for ApplicationSnapshot/HireSnapshot.
@@ -425,6 +380,5 @@ module.exports = {
   rebalancePositions,
   releasePrimary,
   captureSnapshot,
-  notifySupervisor,
   logVacancyPostingTypeTransition
 };

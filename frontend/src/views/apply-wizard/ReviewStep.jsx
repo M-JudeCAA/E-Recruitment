@@ -1,8 +1,4 @@
-import { useRef, useState } from 'react';
-import { Download } from 'lucide-react';
-import GeneratedCvPrintLayout from '../../components/GeneratedCvPrintLayout';
-import Button from '../../components/Button';
-import { downloadElementAsPdf, sanitizeFilenamePart } from '../../utils/downloadElementAsPdf';
+import GeneratedCvLink from '../../components/GeneratedCvLink';
 import { disqualifyingMet } from '../../utils/screeningQuestions';
 import DocumentLink from '../../components/DocumentLink';
 
@@ -12,33 +8,14 @@ export default function ReviewStep({
 }) {
   const RELOCATE_LABELS = { Yes: 'Yes', No: 'No', Depends: 'Depends on the offer' };
 
-  // Reuses the exact GeneratedCvPrintLayout/downloadElementAsPdf pipeline
-  // HR already has (see useGeneratedCvDownload.jsx) - built from the
-  // wizard's own current form state rather than a server round-trip, so a
-  // candidate can preview it before ever submitting, something previously
-  // only HR could do (after the fact, from the submitted application).
-  const printRef = useRef(null);
-  const [downloadingCv, setDownloadingCv] = useState(false);
-  const [cvError, setCvError] = useState('');
-  const cvCandidate = { ...profile, ...profileDetails };
+  // The same generated CV HR sees (GeneratedCvLink), built from the wizard's
+  // own current form state, so the candidate can check it before submitting.
+  const cvCandidate = { ...profile, ...profileDetails, candidateType, internalProfile };
   const cvApplication = { ...questions, referees };
-  const downloadCv = async () => {
-    setCvError(''); setDownloadingCv(true);
-    try {
-      const filename = `${sanitizeFilenamePart(profile?.fullName) || 'my'}-cv.pdf`;
-      await downloadElementAsPdf(printRef.current, filename, {
-        footerLeft: `Generated CV — ${profile?.fullName || ''}`
-      });
-    } catch {
-      setCvError('Could not generate the PDF. Please try again.');
-    } finally {
-      setDownloadingCv(false);
-    }
-  };
 
   // Each document opens in the viewer, so the candidate can check what they attached.
   const documentLinks = (list) => (list.length ? list.map((d, i) => (
-    <span key={d.id}>{i > 0 && ', '}<DocumentLink url={d.fileUrl} audience="candidate" name={d.label || d.originalName} /></span>
+    <span key={d.id}>{i > 0 && ', '}<DocumentLink url={d.fileUrl} audience="candidate" name={d.category === 'CV' ? d.originalName : d.label || d.originalName} /></span>
   )) : null);
   const inCategory = (category) => (documents || []).filter((d) => d.category === category);
 
@@ -49,7 +26,7 @@ export default function ReviewStep({
       rows: [
         ['Place of residence', profileDetails.location || '—'],
         ['District of origin', profileDetails.districtOfOrigin || '—'],
-        ['National ID (NIN)', profileDetails.nationalId || '—'],
+        ...(candidateType === 'Internal' ? [] : [['National ID (NIN)', profileDetails.nationalId || '—']]),
         ['Education entries', (profile?.education || []).length],
         ['Work experience entries', (profile?.workExperience || []).length],
       ],
@@ -58,7 +35,8 @@ export default function ReviewStep({
       i: stepIndexes.documents,
       title: 'Documents',
       rows: [
-        ['CV', 'Generated automatically from your profile and application details'],
+        ['Your CV', documentLinks(inCategory('CV')) || 'None attached (optional)'],
+        ['Generated CV', <GeneratedCvLink candidate={cvCandidate} application={cvApplication} vacancyTitle={vacancy?.title} vacancyJobRef={vacancy?.jobRef}>View or download</GeneratedCvLink>],
         ['Academic documents', documentLinks(inCategory('Academic')) || 'None attached', inCategory('Academic').length === 0],
         ...evidence.map((e) => {
           const attached = (documents || []).filter((d) => d.category === 'Evidence' && d.evidenceKey === e.key);
@@ -81,7 +59,6 @@ export default function ReviewStep({
       title: 'Questions',
       rows: [
         ['Open to relocating', RELOCATE_LABELS[questions.openToRelocate] || '—'],
-        ['Desired salary', questions.desiredSalary || '—'],
         ['Earliest start', questions.earliestStartDate || '—'],
         ['Why this role', questions.whyThisRole || '—'],
         ...(disqualifyingRequirements || []).map((req) => {
@@ -103,10 +80,9 @@ export default function ReviewStep({
       i: stepIndexes.internal,
       title: 'Internal Profile',
       rows: [
-        ['Employee ID', internalProfile.employeeId || '—'],
+        ['Employee number', internalProfile.employeeId || '—'],
         ['Department', internalProfile.department || '—'],
-        ['Position', internalProfile.position || '—'],
-        ['Supervisor', internalProfile.supervisorName || '—'],
+        ['Job title', internalProfile.position || '—'],
       ],
     });
   }
@@ -141,26 +117,8 @@ export default function ReviewStep({
               </span>
             </div>
           ))}
-          {section.title === 'Documents' && (
-            <div style={{ marginTop: 10 }}>
-              <Button type="button" variant="secondary" onClick={downloadCv} disabled={downloadingCv}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <Download size={14} /> {downloadingCv ? 'Preparing PDF...' : 'Preview / download my CV'}
-              </Button>
-              {cvError && <p style={{ fontSize: 12, color: 'var(--color-danger)', marginTop: 6 }}>{cvError}</p>}
-            </div>
-          )}
         </div>
       ))}
-
-      {/* Off-screen (not display:none - html2canvas needs it actually laid
-          out) - same convention as JobDetailsStep's advert PDF and
-          useGeneratedCvDownload.jsx's HR-side hook. */}
-      <div style={{ position: 'fixed', top: 0, left: -10000, zIndex: -1 }} aria-hidden="true">
-        <div ref={printRef}>
-          <GeneratedCvPrintLayout candidate={cvCandidate} application={cvApplication} vacancyTitle={vacancy?.title} vacancyJobRef={vacancy?.jobRef} />
-        </div>
-      </div>
     </div>
   );
 }

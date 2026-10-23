@@ -33,7 +33,7 @@ const TABLES = [
   'DelegationUsage', 'Delegation',
   'ShortlistDecision', 'ShortlistRating', 'ShortlistAssignment', 'ShortlistMember', 'ShortlistExercise',
   'PanelMember', 'InterviewRound',
-  'Hire', 'Offer', 'ApplicationDocument', 'Application', 'ExcoShortlistApproval',
+  'Hire', 'Offer', 'ApplicationDocument', 'Application', 'ExcoShortlistApproval', 'VacancyAdvertEvidence',
   'BulkEmailRecipient', 'BulkEmail', 'CandidateTagging', 'CandidateTag',
   'CandidateNotification', 'VerificationToken', 'PendingCandidateRegistration', 'DataSubjectRequest', 'DataPurgeLog',
   'InternalProfile', 'WorkExperience', 'Education', 'ExamGrade', 'Certificate', 'Candidate',
@@ -47,7 +47,7 @@ const DELEGATE = {
   ShortlistMember: 'shortlistMember', ShortlistExercise: 'shortlistExercise',
   ApplicationDocument: 'applicationDocument',
   PanelMember: 'panelMember', InterviewRound: 'interviewRound',
-  Hire: 'hire', Offer: 'offer', Application: 'application', ExcoShortlistApproval: 'excoShortlistApproval',
+  Hire: 'hire', Offer: 'offer', Application: 'application', ExcoShortlistApproval: 'excoShortlistApproval', VacancyAdvertEvidence: 'vacancyAdvertEvidence',
   BulkEmailRecipient: 'bulkEmailRecipient', BulkEmail: 'bulkEmail', CandidateTagging: 'candidateTagging', CandidateTag: 'candidateTag',
   CandidateNotification: 'candidateNotification', VerificationToken: 'verificationToken',
   PendingCandidateRegistration: 'pendingCandidateRegistration', DataSubjectRequest: 'dataSubjectRequest', DataPurgeLog: 'dataPurgeLog',
@@ -64,9 +64,9 @@ const NO_ID_COUNTER = ['SystemHealth', 'JobRefSequence'];
 // Every upload belongs to a candidate, application or vacancy (CVs,
 // documents, photos, requisitions) - never to a staff account - so none
 // survives the reset. Only names the app gives uploads (middleware/upload.js:
-// <uuid>.<ext>, requisition-<uuid>.<ext>, requisition-signed-<uuid>.<ext> or appointment-signed-<uuid>.<ext>) are touched, so a misconfigured
+// <uuid>.<ext>, requisition-<uuid>.<ext>, requisition-signed-<uuid>.<ext>, appointment-signed-<uuid>.<ext> or advert-evidence-<uuid>.<ext>) are touched, so a misconfigured
 // UPLOAD_DIR never loses anything else.
-const UPLOAD_NAME_RE = /^(requisition-(signed-)?|appointment-signed-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[A-Za-z0-9]{1,8}$/;
+const UPLOAD_NAME_RE = /^(requisition-(signed-)?|appointment-signed-|advert-evidence-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.[A-Za-z0-9]{1,8}$/;
 
 function uploadDir() {
   return path.resolve(process.env.UPLOAD_DIR || './uploads');

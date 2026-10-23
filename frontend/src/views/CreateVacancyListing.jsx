@@ -225,7 +225,7 @@ export default function CreateVacancyListing() {
     try {
       await loadOrganogramLists(p.departmentId, p.positionId);
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not load the positions for the matched department');
+      setError(err.response?.data?.error || 'Could not load the titles for the matched department');
     }
     setForm(next);
   };
@@ -339,8 +339,8 @@ export default function CreateVacancyListing() {
 
         {requisition && (<>
         <Card style={{ padding: 'var(--spacing-lg)' }}>
-          <SectionHeader icon={Building2} title="Position"
-            description="Where this role sits in the organization, and how many openings it has." />
+          <SectionHeader icon={Building2} title="Job"
+            description="Where this job sits in the organisation, and how many positions this recruitment fills." />
 
           {/* Department first, grouped by Directorate - true single-level
               grouping, since each Department row belongs to exactly one
@@ -358,19 +358,19 @@ export default function CreateVacancyListing() {
           <div style={fieldGrid}>
             <div>
               <Select label="Title" required value={form.positionId} onChange={(e) => handlePositionChange(e.target.value)} disabled={!form.departmentId || loadingPositions}>
-                <option value="">{loadingPositions ? 'Loading positions...' : form.departmentId ? 'Select a position' : 'Select a department first'}</option>
+                <option value="">{loadingPositions ? 'Loading titles...' : form.departmentId ? 'Select a title' : 'Select a department first'}</option>
                 {departmentPositions.map((p) => <option key={p.id} value={p.id}>{p.name}{p.code ? ` (${p.code})` : ''}</option>)}
               </Select>
               {form.departmentId && !loadingPositions && departmentPositions.length === 0 && (
                 <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: -14 }}>
-                  No positions yet. <Link to={`/hr/organisation/positions?department=${form.departmentId}&add=1`}>Add one</Link>.
+                  No titles yet. <Link to={`/hr/organisation/positions?department=${form.departmentId}&add=1`}>Add one</Link>.
                 </p>
               )}
             </div>
             <div>
               <Select label="Reports to" value={form.reportsToPositionId}
                 onChange={(e) => setForm({ ...form, reportsToPositionId: e.target.value })} disabled={!form.positionId || loadingReportsTo}>
-                <option value="">{loadingReportsTo ? 'Loading...' : form.positionId ? 'Select a position (optional)' : 'Select a title first'}</option>
+                <option value="">{loadingReportsTo ? 'Loading...' : form.positionId ? 'Select a title (optional)' : 'Select a title first'}</option>
                 {reportsToOptions.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}{p.outsideDepartment ? ` (${p.department?.name})` : ''}{p.directorateHead ? ' - head of directorate' : ''}
@@ -391,7 +391,7 @@ export default function CreateVacancyListing() {
                 onChange={(e) => setForm({ ...form, positionsRequired: Number(e.target.value) })} />
               {headcountInfo?.headcount != null && (
                 <div style={{ fontSize: 12, color: overHeadcount ? 'var(--color-danger)' : 'var(--color-text-muted)', marginTop: -8, marginBottom: 8 }}>
-                  Headcount: {headcountInfo.headcount} approved, {headcountInfo.occupied} filled, {headcountInfo.inRecruitment} being recruited - {headcountInfo.available} free.
+                  This title: {headcountInfo.headcount} positions, {headcountInfo.occupied} filled, {headcountInfo.inRecruitment} being recruited for - {headcountInfo.available} vacancies not yet advertised.
                 </div>
               )}
               {overHeadcount && (

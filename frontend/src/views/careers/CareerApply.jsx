@@ -52,7 +52,7 @@ export default function CareerApply() {
   const [application, setApplication] = useState(null);
   const [loaded, setLoaded] = useState(false);
   const [eligibility, setEligibility] = useState(null);
-  const [questions, setQuestions] = useState({ desiredSalary: '', openToRelocate: '', earliestStartDate: '', whyThisRole: '' });
+  const [questions, setQuestions] = useState({ openToRelocate: '', earliestStartDate: '', whyThisRole: '' });
   const [desirable, setDesirable] = useState({});
   const [disqualifying, setDisqualifying] = useState({});
   const [referees, setReferees] = useState([{ ...emptyReferee }, { ...emptyReferee }, { ...emptyReferee }]);
@@ -77,7 +77,7 @@ export default function CareerApply() {
       if (existing) {
         setApplication(existing);
         setQuestions({
-          desiredSalary: existing.desiredSalary || '', openToRelocate: existing.openToRelocate || '',
+          openToRelocate: existing.openToRelocate || '',
           earliestStartDate: existing.earliestStartDate ? existing.earliestStartDate.slice(0, 10) : '', whyThisRole: existing.whyThisRole || ''
         });
         setDesirable(answersOf(existing.desirableResponses));
@@ -158,7 +158,6 @@ export default function CareerApply() {
     }
   };
 
-  const supervisor = me.internalProfile?.supervisorName;
   return (
     <CareerShell active="vacancies">
       <PageTop
@@ -193,7 +192,7 @@ export default function CareerApply() {
             )}
             {stepKey === 'employment' && (
               <>
-                <Alert type="info" message={`HR verifies these details before you can submit - changing them sends them back to HR.${supervisor ? ` ${supervisor}, your supervisor,` : ' Your supervisor'} is told when you submit.`} />
+                <Alert type="info" message="HR verifies these details before you can submit - changing them sends them back to HR." />
                 <EmploymentForm me={me} bind={(fn) => { saveEmployment.current = fn; }} />
                 <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input type="checkbox" checked={employmentOk} onChange={(e) => setEmploymentOk(e.target.checked)} /> These details are correct
@@ -230,7 +229,7 @@ export default function CareerApply() {
                   goToStep={(k) => setStep(STEP_INDEX[k] ?? STEP_INDEX.documents)}
                   onSubmitted={() => setApplication({ ...application, status: 'Submitted' })}
                   onWithdrawn={() => navigate(SITE.applications)} />
-                {!decided && <div className="ws-note">{SITE.internal ? <>After you submit, a confirmation is emailed to you{supervisor ? ` and ${supervisor} is told` : ''}. Follow progress under My applications.</> : 'After you submit, a confirmation is emailed to you. Follow progress under My applications.'}</div>}
+                {!decided && <div className="ws-note">After you submit, a confirmation is emailed to you. Follow progress under My applications.</div>}
               </>
             )}
             {missing.length > 0 && stepKey !== 'check' && <div className="ws-note" style={{ color: 'var(--color-danger)' }}>Before continuing, please complete: {missing.join(', ')}</div>}
