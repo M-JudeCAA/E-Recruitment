@@ -447,7 +447,55 @@ describe('close', () => {
     prisma.interviewRound.count.mockResolvedValue(scheduled);
     prisma.offer.count.mockImplementation(async ({ where }) => (where.status === 'Accepted' ? accepted : open));
   };
-  beforeEach(() => inProgress());
+  // Evidence of the advert already on file unless a test says otherwise.
+  beforeEach(() => { inProgress(); prisma.vacancyAdvertEvidence.count.mockResolvedValue(1); });
+
+  describe('evidence of the advert', () => {
+    const evidence = [{ filename: 'advert-evidence-1.png', originalname: 'New Vision 12 May.png' }];
+
+    test('is required to close a vacancy that was advertised', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open' });
+      prisma.vacancyAdvertEvidence.count.mockResolvedValue(0);
+      const res = mockRes();
+      await vacancyController.close({ params: { id: '1' }, body: { reason: 'Post filled' }, user: { id: 2 } }, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ADVERT_EVIDENCE_REQUIRED' }));
+      expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
+    });
+
+    test('is not asked for a vacancy that never left approval', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval' });
+      prisma.vacancyAdvertEvidence.count.mockResolvedValue(0);
+      prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+      const res = mockRes();
+      await vacancyController.close({ params: { id: '1' }, body: { reason: 'Not needed now' }, user: { id: 2 } }, res);
+      expect(prisma.vacancy.updateMany).toHaveBeenCalled();
+    });
+
+    test('is kept with the note when the vacancy closes', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open' });
+      prisma.vacancyAdvertEvidence.count.mockResolvedValue(0);
+      prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+      await vacancyController.close({
+        params: { id: '1' }, body: { reason: 'Post filled', evidenceNote: ' New Vision, 12 May ' }, files: evidence, user: { id: 2 }
+      }, mockRes());
+      expect(prisma.vacancyAdvertEvidence.createMany).toHaveBeenCalledWith({ data: [{
+        vacancyId: 1, fileUrl: '/api/files/advert-evidence-1.png', originalName: 'New Vision 12 May.png', note: 'New Vision, 12 May', uploadedById: 2
+      }] });
+      expect(prisma.auditLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({
+        action: 'Vacancy closed', payload: expect.objectContaining({ advertEvidence: ['New Vision 12 May.png'] })
+      }) });
+    });
+
+    test('is not kept when closing is refused', async () => {
+      prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Open' });
+      inProgress({ applications: 3 });
+      const res = mockRes();
+      await vacancyController.close({ params: { id: '1' }, body: { reason: 'Post filled' }, files: evidence, user: { id: 2 } }, res);
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(prisma.vacancyAdvertEvidence.createMany).not.toHaveBeenCalled();
+    });
+  });
 
   describe('with applicants still in progress', () => {
     const open = { id: 1, status: 'Open', title: 'Officer', jobRef: 'UCAA/ADV/EXT/001/2026' };

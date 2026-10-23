@@ -45,6 +45,7 @@ const ACTIONS = {
   'POST /api/vacancies': 'Vacancy created',
   'PATCH /api/vacancies/:id': 'Vacancy edited',
   'PATCH /api/vacancies/:id/close': 'Vacancy closed',
+  'POST /api/vacancies/:id/advert-evidence': 'Advert evidence added',
   'PATCH /api/vacancies/:id/begin-review': 'Review of applications begun',
   'PATCH /api/vacancies/:id/approve': 'Vacancy approved',
   'PATCH /api/vacancies/:id/return': 'Vacancy returned for revision',

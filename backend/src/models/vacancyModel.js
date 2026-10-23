@@ -56,7 +56,8 @@ module.exports = {
       reportsToPosition: true,
       createdBy: { select: { id: true, name: true } },
       approvedBy: { select: { id: true, name: true } },
-      postingTypeChangedBy: { select: { id: true, name: true } }
+      postingTypeChangedBy: { select: { id: true, name: true } },
+      advertEvidence: { orderBy: { uploadedAt: 'asc' }, include: { uploadedBy: { select: { id: true, name: true } } } }
     }
   }),
 

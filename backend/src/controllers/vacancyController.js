@@ -20,6 +20,9 @@ const accessLog = require('../services/accessLogService');
 const { sendRequisitionError } = require('./requisitionController');
 const headcount = require('../services/headcountService');
 const closure = require('../services/vacancyClosureService');
+const advertEvidence = require('../models/vacancyAdvertEvidenceModel');
+const { fileUrl } = require('../middleware/upload');
+const { removeUploads } = require('../utils/uploadFiles');
 const vacancyProgress = require('../services/vacancyProgressService');
 const { ROLE_RANK } = require('../middleware/auth');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
@@ -601,7 +604,30 @@ async function resubmit(req, res) {
 // approve(). The reason is required and kept on the row and in the history.
 const CLOSABLE_STATUSES = ['PendingApproval', 'Open', 'PartiallyFilled', 'Filled'];
 
+// Closing a vacancy that was published needs evidence it was advertised
+// (multipart `evidence`, up to 5 files, optional `evidenceNote`): a scanned
+// newspaper advert, a job board screenshot, for an internal one the
+// noticeboard advert or the HR Pulse email - 400 ADVERT_EVIDENCE_REQUIRED
+// without, unless some is already on file (a vacancy closed before and
+// re-opened). One awaiting approval was never advertised, so needs none.
+// The files are kept only if the vacancy closes; otherwise they are removed
+// (the browser sends them again with the answer to a 409).
 async function close(req, res) {
+  const files = (req.files || []).map((f) => ({ fileUrl: fileUrl(f), originalName: f.originalname.slice(0, 190) }));
+  const stored = { done: false };
+  try {
+    await closeVacancy(req, res, files, stored);
+  } finally {
+    if (!stored.done) await removeUploads(files.map((f) => f.fileUrl));
+  }
+}
+
+function evidenceNoteFrom(body) {
+  const note = typeof body?.evidenceNote === 'string' ? body.evidenceNote.trim() : '';
+  return note ? note.slice(0, 500) : null;
+}
+
+async function closeVacancy(req, res, files, stored) {
   const vacancyId = Number(req.params.id);
   const vacancy = await vacancyModel.findById(vacancyId);
   if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
@@ -614,6 +640,13 @@ async function close(req, res) {
   }
   const reason = reasonFrom(req.body);
   if (!reason) return res.status(400).json({ error: 'A reason is required to close a vacancy' });
+  const advertised = vacancy.status !== 'PendingApproval';
+  if (advertised && !files.length && !(await advertEvidence.countByVacancy(vacancyId))) {
+    return res.status(400).json({
+      error: 'Attach evidence that the vacancy was advertised - a scanned newspaper advert, a job board screenshot, or for an internal vacancy the noticeboard advert or the HR Pulse email',
+      code: 'ADVERT_EVIDENCE_REQUIRED'
+    });
+  }
 
   // People still in it? Then closing has to say what becomes of them
   // (vacancyClosureService): `inFlight` 'continue' only takes the advert
@@ -643,13 +676,20 @@ async function close(req, res) {
     const result = await vacancyModel.updateIfStatus(vacancyId, vacancy.status, { status: 'Closed', closedAt: new Date(), closeReason: reason });
     if (result.count === 0) return res.status(409).json({ error: 'This vacancy was already updated - please refresh and try again' });
   }
+  if (files.length) {
+    await advertEvidence.createMany(vacancyId, files, evidenceNoteFrom(req.body), req.user.id);
+    stored.done = true;
+  }
   if (vacancy.status === 'PendingApproval') await slaModel.resolveEscalations('VacancyApproval', vacancyId);
   await audit.record({
     entityType: 'Vacancy', entityId: vacancyId,
     action: ending ? 'Vacancy closed and recruitment ended' : inProgress.any ? 'Vacancy closed (selection continues)' : 'Vacancy closed',
     actor: audit.actorFrom(req),
     before: vacancy, after: { status: 'Closed' }, fields: ['status'], comment: reason,
-    ...(ended ? { details: { applicationsClosed: ended.applications.length, offersWithdrawn: ended.offers.length } } : {})
+    ...(ended || files.length ? { details: {
+      ...(ended ? { applicationsClosed: ended.applications.length, offersWithdrawn: ended.offers.length } : {}),
+      ...(files.length ? { advertEvidence: files.map((f) => f.originalName) } : {})
+    } } : {})
   });
   if (ended) await closure.afterEnded(vacancy, ended, reason, audit.actorFrom(req));
   await hiringManagers.notify(vacancy, ending ? 'recruitmentEnded' : 'closed', { reason });
@@ -658,6 +698,32 @@ async function close(req, res) {
     ...(await vacancyModel.findById(vacancyId)),
     ...(ended ? { recruitmentEnded: { applicationsClosed: ended.applications.length, offersWithdrawn: ended.offers.length } } : {})
   });
+}
+
+// POST /api/vacancies/:id/advert-evidence - more evidence of the advert
+// (another newspaper, another job board), on a vacancy that was published.
+// Multipart `evidence` (1-5 files) + optional `evidenceNote`.
+async function addAdvertEvidence(req, res) {
+  const files = (req.files || []).map((f) => ({ fileUrl: fileUrl(f), originalName: f.originalname.slice(0, 190) }));
+  let kept = false;
+  try {
+    const vacancyId = Number(req.params.id);
+    const vacancy = await vacancyModel.findById(vacancyId);
+    if (!vacancy) return res.status(404).json({ error: 'Vacancy not found' });
+    if (['PendingApproval', 'Returned', 'Rejected'].includes(vacancy.status)) {
+      return res.status(422).json({ error: 'This vacancy was never advertised' });
+    }
+    if (!files.length) return res.status(400).json({ error: 'Attach at least one file', code: 'ADVERT_EVIDENCE_REQUIRED' });
+    await advertEvidence.createMany(vacancyId, files, evidenceNoteFrom(req.body), req.user.id);
+    kept = true;
+    await audit.record({
+      entityType: 'Vacancy', entityId: vacancyId, action: 'Advert evidence added', actor: audit.actorFrom(req),
+      comment: evidenceNoteFrom(req.body), details: { advertEvidence: files.map((f) => f.originalName) }
+    });
+    res.status(201).json(await vacancyModel.findByIdForStaff(vacancyId));
+  } finally {
+    if (!kept) await removeUploads(files.map((f) => f.fileUrl));
+  }
 }
 
 // SIMPLIFIED from the 5-tier flow (create -> Senior HR Officer review ->
@@ -1103,4 +1169,4 @@ async function saveRanking(req, res) {
   res.json(results);
 }
 
-module.exports = { create, update, close, approve, returnForRevision, reject, resubmit, transitionPostingType, readvertise, listPublic, listForAdmin, progress, getOne, listApplications, saveRanking };
+module.exports = { create, update, close, addAdvertEvidence, approve, returnForRevision, reject, resubmit, transitionPostingType, readvertise, listPublic, listForAdmin, progress, getOne, listApplications, saveRanking };

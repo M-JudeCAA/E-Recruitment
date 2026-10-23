@@ -19,7 +19,9 @@ const STAFF_ONLY_VACANCY_FIELDS = [
   'requisitionDocumentUrl', 'requisitionDocumentName', 'requisitionDocumentHash',
   'requisitionUploadedAt', 'requisitionUploadedById', 'requisitionDetails',
   'requisitionSignedCopyUrl', 'requisitionSignedCopyName',
-  'hiringManagerName', 'hiringManagerEmail', 'hiringManagerEntraId', 'hiringManagerJobTitle'
+  'hiringManagerName', 'hiringManagerEmail', 'hiringManagerEntraId', 'hiringManagerJobTitle',
+  // Evidence the vacancy was advertised, attached when it was closed.
+  'advertEvidence'
 ];
 
 function toPublicVacancy(vacancy) {

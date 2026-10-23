@@ -2,7 +2,7 @@ const express = require('express');
 const controller = require('../controllers/vacancyController');
 const exportController = require('../controllers/exportController');
 const requisitionController = require('../controllers/requisitionController');
-const { uploadRequisition, uploadSignedRequisition, uploadSupportingDocument } = require('../middleware/upload');
+const { uploadRequisition, uploadSignedRequisition, uploadSupportingDocument, uploadAdvertEvidence } = require('../middleware/upload');
 const excoShortlistController = require('../controllers/excoShortlistController');
 const batchController = require('../controllers/vacancyReviewBatchController');
 const { authenticate, optionalAuthenticate, requireStaffRole } = require('../middleware/auth');
@@ -17,7 +17,9 @@ router.post('/requisition', authenticate, requireStaffRole('HR_Officer'), upload
 router.post('/requisition/signed-copy', authenticate, requireStaffRole('HR_Officer'), uploadSignedRequisition.single('document'), requisitionController.uploadSignedCopy);
 router.post('/', authenticate, requireStaffRole('HR_Officer'), controller.create);
 router.patch('/:id', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.update);
-router.patch('/:id/close', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.close);
+// Multipart: evidence of the advert (`evidence`, up to 5 files) with the reason.
+router.patch('/:id/close', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.param('id')), uploadAdvertEvidence.array('evidence', 5), controller.close);
+router.post('/:id/advert-evidence', authenticate, requireStaffRole('Senior_HR_Officer'), guardVacancy(vacancyFrom.param('id')), uploadAdvertEvidence.array('evidence', 5), controller.addAdvertEvidence);
 // REMOVED: the /:id/review route (and its Senior HR Officer check-by
 // gate) - the vacancy workflow simplified from 5-tier to 2-tier, and the
 // new flow has no review step. This scoping is deliberately narrow: only

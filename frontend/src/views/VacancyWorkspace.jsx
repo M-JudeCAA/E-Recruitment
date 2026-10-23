@@ -17,6 +17,7 @@ import ShortlistPipelineBoard from '../components/ShortlistPipelineBoard';
 import VacancyInterviewsPanel from '../components/VacancyInterviewsPanel';
 import MeritListBoard from '../components/MeritListBoard';
 import VacancyActions from '../components/workspace/VacancyActions';
+import { AdvertEvidencePanel } from '../components/workspace/AdvertEvidence';
 import ApplicantsTable from '../components/workspace/ApplicantsTable';
 import ShareJobButton from '../components/workspace/ShareJobButton';
 import { PageTop, Meta, Panel, KeyValues, Pill, SidePanel, formatDay, rankOf, ROLE_RANK, currentStaffId } from '../components/workspace/ui';
@@ -255,6 +256,7 @@ export default function VacancyWorkspace() {
         </Panel>
         <div className="ws-stack">
           <RequisitionPanel vacancy={v} />
+          <AdvertEvidencePanel vacancy={v} staffRole={staff?.role} onChanged={changed} />
           <Panel title="Hiring manager" note="Emailed at each step: advertised, shortlist, interviews, merit list, offers.">
             <HiringManagerPicker
               value={v.hiringManagerEmail ? { name: v.hiringManagerName, email: v.hiringManagerEmail, jobTitle: v.hiringManagerJobTitle } : null}
