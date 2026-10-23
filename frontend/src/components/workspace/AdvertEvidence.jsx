@@ -89,7 +89,7 @@ export function AdvertEvidencePanel({ vacancy, staffRole, onChanged }) {
   };
 
   return (
-    <Panel title="Evidence of the advert" note="Needed to close the vacancy."
+    <Panel title="Evidence of the advert" note={vacancy.status === 'Closed' ? null : 'Needed to close the vacancy.'}
       actions={canAdd && <Button variant="ghost" onClick={() => { setError(''); setAdding(true); }}>Add</Button>}>
       {evidence.length === 0
         ? <div className="ws-note">None yet - attach it when closing the vacancy, or add it here.</div>

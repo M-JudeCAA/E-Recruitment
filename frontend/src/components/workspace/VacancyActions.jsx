@@ -307,7 +307,7 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
           <Alert type="error" message={error} />
           {v.status !== 'PendingApproval' && (
             <AdvertEvidenceFields vacancy={v} required={evidenceRequired}
-              files={closeForm.files} onFilesChange={(files) => setCloseForm((f) => ({ ...f, files }))}
+              files={closeForm.files} onFilesChange={(files) => { setCloseForm((f) => ({ ...f, files })); if (files.length) setError(''); }}
               note={closeForm.note} onNoteChange={(note) => setCloseForm((f) => ({ ...f, note }))} />
           )}
           <TextArea label="Reason for closing" required value={closeForm.reason} maxLength={2000}
