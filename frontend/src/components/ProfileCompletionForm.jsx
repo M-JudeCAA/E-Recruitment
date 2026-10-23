@@ -133,8 +133,15 @@ export default function ProfileCompletionForm({ onComplete }) {
         onChange={(photoUrl) => setProfile((p) => (p ? { ...p, photoUrl } : p))}
       />
 
-      <CvAutofillPanel
+      <CvAutofillPanel withNationalId={!isInternal}
         onLinkedinSuggested={(url) => setForm((f) => ({ ...f, linkedinUrl: url }))}
+        onPersonalSuggested={(found) => setForm((f) => ({
+          ...f, ...Object.fromEntries(Object.entries(found).filter(([k]) => k in f && !f[k]))
+        }))}
+        onExamGradesSuggested={async (grades) => {
+          for (const g of grades) await client.post('/api/candidates/me/exam-grades', g).catch(() => {});
+          refreshEntries();
+        }}
         onEducationSuggested={fromCv('education', 'education entry')}
         onWorkExperienceSuggested={fromCv('workExperience', 'work experience entry')}
         onCertificateSuggested={fromCv('certificates', 'certificate')}

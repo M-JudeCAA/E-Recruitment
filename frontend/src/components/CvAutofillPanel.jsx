@@ -11,7 +11,18 @@ import Alert from './Alert';
 // The uploaded file itself is never stored (see backend's parse-cv route).
 // uploadOnly: just the upload, without the manual/upload switch (a page that
 // opens this on purpose, e.g. My profile's "Fill in from your CV").
-export default function CvAutofillPanel({ onLinkedinSuggested, onEducationSuggested, onWorkExperienceSuggested, onCertificateSuggested, uploadOnly = false }) {
+// onPersonalSuggested gets the personal details read (place of residence,
+// district of origin, date of birth, NIN unless withNationalId is false,
+// website); onExamGradesSuggested the O-Level / A-Level results.
+const PERSONAL = [
+  ['location', 'Place of residence'], ['districtOfOrigin', 'District of origin'], ['dateOfBirth', 'Date of birth'],
+  ['nationalId', 'NIN'], ['portfolioUrl', 'Website']
+];
+
+export default function CvAutofillPanel({
+  onLinkedinSuggested, onEducationSuggested, onWorkExperienceSuggested, onCertificateSuggested,
+  onPersonalSuggested, onExamGradesSuggested, withNationalId = true, uploadOnly = false
+}) {
   const [mode, setMode] = useState(uploadOnly ? 'upload' : 'manual');
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState(null);
@@ -40,17 +51,25 @@ export default function CvAutofillPanel({ onLinkedinSuggested, onEducationSugges
     }
   };
 
+  const personal = result && onPersonalSuggested
+    ? Object.fromEntries(PERSONAL.filter(([k]) => result[k] && (withNationalId || k !== 'nationalId')).map(([k]) => [k, result[k]]))
+    : {};
+  const hasPersonal = Object.keys(personal).length > 0;
+  const grades = onExamGradesSuggested ? result?.examGrades || [] : [];
+
   // Every suggestion not yet taken, in one go.
   const addAll = () => {
     const taken = { ...applied };
     if (result.linkedinUrl && !taken.linkedin) { onLinkedinSuggested(result.linkedinUrl); taken.linkedin = true; }
+    if (hasPersonal && !taken.personal) { onPersonalSuggested(personal); taken.personal = true; }
+    if (grades.length && !taken.grades) { onExamGradesSuggested(grades); taken.grades = true; }
     (result.education || []).forEach((e, i) => { if (!taken[`edu-${i}`]) { onEducationSuggested(e); taken[`edu-${i}`] = true; } });
     (result.workExperience || []).forEach((w, i) => { if (!taken[`work-${i}`]) { onWorkExperienceSuggested(w); taken[`work-${i}`] = true; } });
     (result.certificates || []).forEach((c, i) => { if (!taken[`cert-${i}`]) { onCertificateSuggested(c); taken[`cert-${i}`] = true; } });
     setApplied(taken);
   };
 
-  const hasSuggestions = result && (result.linkedinUrl || result.education?.length || result.workExperience?.length || result.certificates?.length);
+  const hasSuggestions = result && (result.linkedinUrl || hasPersonal || grades.length || result.education?.length || result.workExperience?.length || result.certificates?.length);
 
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 24 }}>
@@ -80,6 +99,27 @@ export default function CvAutofillPanel({ onLinkedinSuggested, onEducationSugges
               )}
               {result.warnings?.length > 0 && (
                 <Alert type="info" message={result.warnings.join(' ')} />
+              )}
+
+              {hasPersonal && !applied.personal && (
+                <div style={{ fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span>Found {PERSONAL.filter(([k]) => personal[k]).map(([k, label]) => `${label}: ${personal[k]}`).join(' · ')}</span>
+                  <Button type="button" variant="ghost" onClick={() => { onPersonalSuggested(personal); setApplied((a) => ({ ...a, personal: true })); }}>
+                    Use these
+                  </Button>
+                </div>
+              )}
+
+              {grades.length > 0 && !applied.grades && (
+                <div style={{ fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span>
+                    Found {grades.length} O-Level / A-Level result{grades.length === 1 ? '' : 's'}:{' '}
+                    {grades.map((g) => `${g.level === 'ALevel' ? 'A' : 'O'}-Level ${g.subject} ${g.grade}`).join(', ')}
+                  </span>
+                  <Button type="button" variant="ghost" onClick={() => { onExamGradesSuggested(grades); setApplied((a) => ({ ...a, grades: true })); }}>
+                    Add
+                  </Button>
+                </div>
               )}
 
               {result.linkedinUrl && !applied.linkedin && (
