@@ -114,7 +114,7 @@ export default function CareerProfile() {
           {editing === 'personal' && <PersonalForm me={me} links={!SITE.internal} bind={(fn) => { save.current = fn; }} />}
           {editing === 'photo' && <PhotoUploadPanel photoUrl={me.photoUrl} onChange={() => reload()} />}
           {editing === 'entries' && <ProfileStep profile={me} onProfileChange={reload} showPersonalDetails={false} profileDetails={{}} setProfileDetail={() => () => {}} />}
-          {editing === 'cv' && <CvImport onAdded={reload} />}
+          {editing === 'cv' && <CvImport profile={me} onAdded={reload} />}
         </SidePanel>
       )}
     </CareerShell>
