@@ -539,7 +539,7 @@ export default function ShortlistPipelineBoard({ vacancy, applications, staffRol
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13 }}>
               <Sparkles size={14} style={{ verticalAlign: -2, marginRight: 4, color: 'var(--color-warning)' }} />
-              A proposed interview shortlist is awaiting your approval before candidates are notified and interviews can be scheduled.
+              A proposed interview shortlist is awaiting your approval. After you approve it, it goes to EXCO; candidates are told and interviews booked once EXCO's signed approval is attached.
             </span>
             <Button onClick={approveShortlist} disabled={approving}>{approving ? 'Approving...' : 'Approve shortlist'}</Button>
           </div>
