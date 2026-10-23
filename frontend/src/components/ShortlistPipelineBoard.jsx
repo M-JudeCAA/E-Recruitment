@@ -302,10 +302,7 @@ function CompareDrawer({ apps, onClose }) {
 // every application for this vacancy (findByVacancy shape - candidate,
 // interviewRounds, offer, rejectedBy included). staffRole: current staff
 // user's role string. onUpdated: parent's refetch (loadVacancyMode).
-// onDownloadCv/downloadingId: passed through from the parent's single
-// useGeneratedCvDownload instance, so this board doesn't spin up a second
-// hidden print area of its own.
-export default function ShortlistPipelineBoard({ vacancy, applications, staffRole, onUpdated, onDownloadCv, downloadingId, onGoToStage, committeeManaged = false }) {
+export default function ShortlistPipelineBoard({ vacancy, applications, staffRole, onUpdated, onGoToStage, committeeManaged = false }) {
   const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
   const rank = ROLE_RANK[staffRole] || 0;
   // A committee-run vacancy takes its shortlist from the committee's ranking
@@ -721,7 +718,6 @@ export default function ShortlistPipelineBoard({ vacancy, applications, staffRol
           <ApplicationReviewCard
             app={byId[detailApp.id] || detailApp} vacancy={vacancy} staffRole={staffRole}
             onUpdated={() => { onUpdated(); setDetailApp(null); }}
-            onDownloadCv={onDownloadCv} downloadingId={downloadingId}
           />
         </Modal>
       )}

@@ -20,6 +20,7 @@ import OfferActions from './offers/OfferActions';
 import { ROUND_LABELS } from './interviews/formStyles';
 import { formatDateTime, venueLabel } from '../utils/interviews';
 import DocumentLink from './DocumentLink';
+import GeneratedCvLink, { uploadedCv } from './GeneratedCvLink';
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK - used so
 // "Recommend for offer" (Principal HR Officer+), "Approve offer"
@@ -48,7 +49,7 @@ const NOT_REJECTABLE = ['Draft', 'Offered', 'Rejected', 'Withdrawn'];
 // belongs to, which only makes sense when applications from several
 // vacancies are mixed together in one list (the cross-vacancy queue).
 export default function ApplicationReviewCard({
-  app, vacancy, staffRole, onUpdated, onDownloadCv, downloadingId, showVacancyContext = false,
+  app, vacancy, staffRole, onUpdated, showVacancyContext = false,
   defaultExpanded = true
 }) {
   const rank = ROLE_RANK[staffRole] || 0;
@@ -175,10 +176,11 @@ export default function ApplicationReviewCard({
       <div style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '6px 0', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
         <span>
           CV:{' '}
-          <button type="button" onClick={() => onDownloadCv(app, vacancy)} disabled={downloadingId === app.id}
-            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--color-primary)', cursor: downloadingId === app.id ? 'default' : 'pointer', textDecoration: 'underline', fontSize: 'inherit' }}>
-            {downloadingId === app.id ? 'Generating...' : 'Download generated CV'}
-          </button>
+          {uploadedCv(app.documents)
+            ? <DocumentLink url={uploadedCv(app.documents).fileUrl} name={`CV - ${app.candidate?.fullName || 'applicant'} - ${uploadedCv(app.documents).originalName}`}>their CV</DocumentLink>
+            : <span>none uploaded</span>}
+          {' · '}
+          <GeneratedCvLink candidate={app.candidate} application={app} vacancyTitle={vacancy?.title || app.vacancy?.title} vacancyJobRef={vacancy?.jobRef || app.vacancy?.jobRef}>generated CV</GeneratedCvLink>
         </span>
         <span>
           Cover letter: {app.coverLetterUrl ? <DocumentLink url={app.coverLetterUrl} name={`Cover letter - ${app.candidate?.fullName || 'applicant'}`}>view</DocumentLink> : 'none'}

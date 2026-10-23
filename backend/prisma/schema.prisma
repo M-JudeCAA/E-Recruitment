@@ -1067,6 +1067,7 @@ enum ApplicationDocumentCategory {
   Academic // certificates, transcripts, result slips
   Other // professional certificates, licences, testimonials, anything else relevant
   Evidence // proof of a claim screening relies on (utils/screeningEvidence.js) - see evidenceKey
+  CV // the candidate's own CV - optional, at most one per application
 }
 
 // One uploaded file attached to an application (see Application.documents).

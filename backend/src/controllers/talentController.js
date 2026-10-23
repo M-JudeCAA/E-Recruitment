@@ -124,7 +124,10 @@ async function search(req, res) {
         tags: { select: { tag: { select: { id: true, name: true } } } },
         applications: {
           where: { status: { not: 'Draft' } }, orderBy: { createdAt: 'desc' },
-          select: { id: true, status: true, submittedDate: true, vacancy: { select: { id: true, jobRef: true, title: true } }, offer: { select: { status: true } } }
+          select: {
+            id: true, status: true, submittedDate: true, vacancy: { select: { id: true, jobRef: true, title: true } }, offer: { select: { status: true } },
+            documents: { where: { category: 'CV' }, select: { id: true, fileUrl: true, originalName: true } }
+          }
         }
       }
     })
@@ -137,8 +140,57 @@ async function search(req, res) {
   }
   res.json({
     total, page, limit,
-    data: rows.map(({ tags, ...c }) => ({ ...c, tags: tags.map((t) => t.tag) }))
+    data: rows.map(({ tags, ...c }) => ({ ...c, tags: tags.map((t) => t.tag), cv: latestCv(c.applications) }))
   });
 }
 
-module.exports = { listTags, createTag, deleteTag, addTag, removeTag, search };
+// The candidate's own CV: the one on their latest application that has one.
+function latestCv(applications) {
+  for (const a of applications || []) {
+    const doc = (a.documents || [])[0];
+    if (doc) return { ...doc, applicationId: a.id };
+  }
+  return null;
+}
+
+// GET /api/talent/candidates/:candidateId - one candidate's full profile and
+// their latest submitted application, for viewing their uploaded CV and the
+// CV the system generates. The same candidates as the search, and access-logged.
+async function profile(req, res) {
+  const candidateId = Number(req.params.candidateId);
+  if (!Number.isInteger(candidateId)) return res.status(400).json({ error: 'Invalid candidate id' });
+  const conflicted = await conflictOfInterest.conflictedVacancyIds(req);
+  const candidate = await prisma.candidate.findFirst({
+    where: {
+      id: candidateId, purgedAt: null,
+      applications: { some: { submittedDate: { not: null } } },
+      ...(conflicted.length ? { NOT: { applications: { some: { vacancyId: { in: conflicted }, status: { not: 'Draft' } } } } } : {})
+    },
+    select: {
+      id: true, fullName: true, email: true, phone: true, candidateType: true, location: true, districtOfOrigin: true,
+      linkedinUrl: true, portfolioUrl: true, nationalId: true, dateOfBirth: true, flyingHours: true,
+      education: true, workExperience: true, examGrades: true, certificates: true,
+      internalProfile: { select: { employeeId: true, department: true, position: true, dateJoined: true } },
+      applications: {
+        where: { submittedDate: { not: null } }, orderBy: { submittedDate: 'desc' },
+        select: {
+          id: true, referees: true, openToRelocate: true, earliestStartDate: true, whyThisRole: true,
+          desirableResponses: true, disqualifyingResponses: true,
+          vacancy: { select: { id: true, jobRef: true, title: true } },
+          documents: { where: { category: 'CV' }, select: { id: true, fileUrl: true, originalName: true } }
+        }
+      }
+    }
+  });
+  if (!candidate) return res.status(404).json({ error: 'Candidate not found' });
+  await accessLog.record(req, { action: 'Viewed candidate profile', candidateIds: [candidate.id] });
+  const { applications, ...rest } = candidate;
+  const latest = applications[0];
+  res.json({
+    candidate: rest,
+    latestApplication: latest ? { ...latest, documents: undefined } : null,
+    cv: latestCv(applications)
+  });
+}
+
+module.exports = { listTags, createTag, deleteTag, addTag, removeTag, search, profile };

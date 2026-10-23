@@ -41,7 +41,7 @@ export const PRIVACY_NOTICE_SECTIONS = [
     heading: 'Who sees it',
     body: [
       'UCAA human resources staff; the members of the shortlisting committee and interview panel for the positions you '
-        + 'apply to, who see only the applicants assigned to them; and the position's hiring manager, who is told the names '
+        + 'apply to, who see only the applicants assigned to them; and the hiring manager for the position, who is told the names '
         + 'of the candidates shortlisted and recommended.',
       'We do not sell your data or share it with anyone outside UCAA except where the law requires it.'
     ]

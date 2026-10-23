@@ -13,6 +13,7 @@ router.get('/tags', ...hr, controller.listTags);
 router.post('/tags', ...hr, controller.createTag);
 router.delete('/tags/:tagId', authenticate, requireStaffRole('Senior_HR_Officer'), controller.deleteTag);
 router.get('/candidates', ...hr, controller.search);
+router.get('/candidates/:candidateId', ...hr, controller.profile);
 router.post('/candidates/:candidateId/tags', ...hr, guardVacancy(vacancyFrom.candidate('candidateId')), controller.addTag);
 router.delete('/candidates/:candidateId/tags/:tagId', ...hr, guardVacancy(vacancyFrom.candidate('candidateId')), controller.removeTag);
 

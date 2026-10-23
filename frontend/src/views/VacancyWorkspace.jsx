@@ -22,7 +22,6 @@ import ShareJobButton from '../components/workspace/ShareJobButton';
 import { PageTop, Meta, Panel, KeyValues, Pill, SidePanel, formatDay, rankOf, ROLE_RANK, currentStaffId } from '../components/workspace/ui';
 import { useConfirm } from '../components/ConfirmDialog';
 import { approveVacancy } from '../utils/approveVacancy';
-import { useGeneratedCvDownload } from '../utils/useGeneratedCvDownload';
 import { debounce } from '../utils/debounce';
 import { canShareJob } from '../utils/jobShareLink';
 import { employmentLabel } from '../utils/employmentCategories';
@@ -155,7 +154,6 @@ export default function VacancyWorkspace() {
   const [beginning, setBeginning] = useState(false);
   const [approving, setApproving] = useState(false);
   const [hmError, setHmError] = useState('');
-  const { download: downloadCv, hiddenPrintArea, downloadingId } = useGeneratedCvDownload();
 
   const requestId = useRef(0);
   const load = useCallback(() => {
@@ -282,8 +280,7 @@ export default function VacancyWorkspace() {
           <ShortlistCommittee vacancy={v} staffRole={staff?.role} reloadKey={reloadKey} onChanged={() => changed()} onManagedChange={setCommitteeManaged} />
         )}
         <Panel title="Interview shortlist" note="Who is interviewed, in what order. A Principal HR Officer approves it, then EXCO." padded>
-          <ShortlistPipelineBoard vacancy={v} applications={apps} staffRole={staff?.role} onUpdated={() => changed()}
-            onDownloadCv={downloadCv} downloadingId={downloadingId} onGoToStage={(s) => setTab(s === 'shortlist' ? 'committee' : s)} committeeManaged={committeeManaged} />
+          <ShortlistPipelineBoard vacancy={v} applications={apps} staffRole={staff?.role} onUpdated={() => changed()} onGoToStage={(s) => setTab(s === 'shortlist' ? 'committee' : s)} committeeManaged={committeeManaged} />
         </Panel>
       </>
     )),
@@ -361,14 +358,12 @@ export default function VacancyWorkspace() {
             {body()}
           </>
         )}
-        {hiddenPrintArea}
       </div>
 
       {openApp && v && (
         <SidePanel wide title={openApp.candidate.fullName} eyebrow={<>{v.title} · <span className="ws-mono">{v.jobRef}</span></>}
           onClose={() => setOpenAppId(null)}>
-          <ApplicationReviewCard app={openApp} vacancy={v} staffRole={staff?.role} onUpdated={() => changed()}
-            onDownloadCv={downloadCv} downloadingId={downloadingId} defaultExpanded />
+          <ApplicationReviewCard app={openApp} vacancy={v} staffRole={staff?.role} onUpdated={() => changed()} defaultExpanded />
         </SidePanel>
       )}
     </div>

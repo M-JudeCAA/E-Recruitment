@@ -492,7 +492,9 @@ async function eligibility(req, res) {
   });
 }
 
-const DOCUMENT_CATEGORIES = ['Academic', 'Other', 'Evidence'];
+// CV: the candidate's own CV - optional, one per application; a new one
+// replaces the one before.
+const DOCUMENT_CATEGORIES = ['Academic', 'Other', 'Evidence', 'CV'];
 const MAX_DOCUMENTS_PER_CATEGORY = 10;
 const MAX_DOCUMENTS_PER_EVIDENCE = 5;
 
@@ -540,13 +542,22 @@ async function addDocument(req, res) {
       return refuse(422, { error: `You can attach at most ${MAX_DOCUMENTS_PER_EVIDENCE} documents for one requirement` });
     }
     label = requirement.label.slice(0, evidence.MAX_LABEL);
+  } else if (category === 'CV') {
+    label = 'CV';
   } else if (await applicationDocumentModel.countByApplication(application.id, category) >= MAX_DOCUMENTS_PER_CATEGORY) {
     return refuse(422, { error: `You can attach at most ${MAX_DOCUMENTS_PER_CATEGORY} documents of this kind` });
   }
+  const earlierCvs = category === 'CV'
+    ? (await applicationDocumentModel.findByApplication(application.id)).filter((d) => d.category === 'CV')
+    : [];
   const document = await applicationDocumentModel.create({
     applicationId: application.id, category, label, evidenceKey,
     fileUrl: fileUrl(req.file), originalName: req.file.originalname.slice(0, 190)
   });
+  for (const old of earlierCvs) {
+    await applicationDocumentModel.remove(old.id);
+    await removeUploads(old.fileUrl);
+  }
   res.status(201).json(document);
 }
 

@@ -67,9 +67,9 @@ function Profile({ applicant }) {
       )}
       <strong style={{ fontSize: 14 }}>Documents</strong>
       <div style={{ display: 'grid', gap: 4, marginTop: 4 }}>
-        {applicant.documents.map((d) => (
+        {[...applicant.documents].sort((a, b) => (b.category === 'CV') - (a.category === 'CV')).map((d) => (
           <DocumentLink key={d.id} url={d.fileUrl} audience="committee" name={`${c.fullName} - ${d.label || d.originalName}`} style={{ fontSize: 13, display: 'flex', gap: 6, alignItems: 'center' }}>
-            <Paperclip size={13} /> {{ Academic: 'Academic', Evidence: 'Evidence', Other: 'Other' }[d.category] || 'Other'}: {d.label || d.originalName}
+            <Paperclip size={13} /> {d.category === 'CV' ? `Their CV: ${d.originalName}` : `${{ Academic: 'Academic', Evidence: 'Evidence', Other: 'Other' }[d.category] || 'Other'}: ${d.label || d.originalName}`}
           </DocumentLink>
         ))}
         {applicant.coverLetterUrl && (

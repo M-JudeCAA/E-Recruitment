@@ -3,10 +3,9 @@ import React from 'react';
 // A CV generated on demand for HR, straight from the same structured data
 // the candidate entered across the apply wizard (Profile step's education/
 // work experience/exam grades/certificates, the Questions step, the
-// Referees step) - there is no candidate-uploaded CV file to fall back on
-// (see the Documents step's own note). Only ever rendered off-screen and
-// captured by html2canvas, same convention as VacancyAdvertPrintLayout -
-// see useGeneratedCvDownload.jsx.
+// Referees step), shown beside the candidate's own uploaded CV if they gave
+// one. Shown in GeneratedCvLink's viewer and captured by html2canvas for its
+// Download, same convention as VacancyAdvertPrintLayout.
 const BODY_FONT = 'Calibri, Arial, sans-serif';
 const HEADING_COLOR = '#1F3B57';
 const RULE_COLOR = '#CCCCCC';
@@ -27,7 +26,8 @@ export default function GeneratedCvPrintLayout({ candidate, application, vacancy
 
   const contactLine = [c.email, c.phone, c.location].filter(Boolean).join('  |  ');
   const idLine = [
-    c.nationalId ? `NIN: ${c.nationalId}` : null,
+    c.candidateType === 'Internal' && c.internalProfile?.employeeId ? `Employee number: ${c.internalProfile.employeeId}` : null,
+    c.candidateType !== 'Internal' && c.nationalId ? `NIN: ${c.nationalId}` : null,
     c.districtOfOrigin ? `District of origin: ${c.districtOfOrigin}` : null
   ].filter(Boolean).join('  |  ') || null;
 
