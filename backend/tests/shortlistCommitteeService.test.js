@@ -115,14 +115,35 @@ describe('planAssignments', () => {
     const members = [10, 11, 12, 13, 14, 15];
     const plan = planAssignments(apps, members, { ratersPerApplicant: 3, calibrationCount: 10 });
 
-    for (const id of apps.slice(0, 10)) expect(plan.filter((p) => p.applicationId === id)).toHaveLength(6);
-    for (const id of apps.slice(10)) {
+    const calibration = [...new Set(plan.filter((p) => p.calibration).map((p) => p.applicationId))];
+    expect(calibration).toHaveLength(10);
+    for (const id of calibration) expect(plan.filter((p) => p.applicationId === id)).toHaveLength(6);
+    for (const id of apps.filter((a) => !calibration.includes(a))) {
       const raters = plan.filter((p) => p.applicationId === id).map((p) => p.memberId);
       expect(new Set(raters).size).toBe(3);
     }
     const loads = members.map((m) => plan.filter((p) => p.memberId === m).length);
     expect(Math.max(...loads) - Math.min(...loads)).toBeLessThanOrEqual(1);
     expect(loads[0]).toBe(10 + 95); // 10 calibration + 190*3/6
+  });
+
+  test('the calibration set is drawn at random, not the earliest applicants', () => {
+    const apps = Array.from({ length: 100 }, (_, i) => i + 1);
+    const members = [10, 11, 12, 13, 14];
+    const setOf = (random) => [...new Set(planAssignments(apps, members, { ratersPerApplicant: 3, calibrationCount: 5, random })
+      .filter((p) => p.calibration).map((p) => p.applicationId))].sort((a, b) => a - b);
+
+    // random() just under 1 swaps each slot with the last place: the last
+    // applicant first, then the ones it displaced.
+    expect(setOf(() => 0.999)).toEqual([1, 2, 3, 4, 100]);
+    expect(setOf(() => 0)).toEqual([1, 2, 3, 4, 5]);
+    expect(setOf(Math.random)).toHaveLength(5);
+  });
+
+  test('a calibration set larger than the pool takes everyone', () => {
+    const plan = planAssignments([1, 2], [10, 11, 12, 13, 14], { ratersPerApplicant: 3, calibrationCount: 10 });
+    expect(plan).toHaveLength(10);
+    expect(plan.every((p) => p.calibration)).toBe(true);
   });
 });
 
