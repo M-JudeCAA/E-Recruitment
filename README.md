@@ -68,7 +68,7 @@ erecruitment/
 - Multi-position vacancy fill tracking (`positionsAccepted` computed from Offers).
 - Reserve-list decline cascade (declining an offer promotes the next-ranked candidate).
 - Qualification snapshots into `AuditLog.payload` at submission and at offer acceptance.
-- Informational, non-blocking supervisor email notification on internal application submission.
+- The vacancy's hiring manager is emailed as the vacancy moves on (advertised, applications closed, review, shortlisting, interviews, merit list, offers) - never about single applications.
 
 **Auth & files**
 - JWT auth with cumulative RBAC, separate sessions for candidates and staff.
@@ -135,8 +135,7 @@ erecruitment/
 
 **Automated tests** (`backend/tests/`, Jest)
 - `workflowService.test.js` - 16 tests covering the verification gate, self-approval
-  blocking, vacancy status computation, the offer decline cascade, and supervisor
-  notification, all against a mocked Prisma client (no real database needed to run).
+  blocking, vacancy status computation and the offer decline cascade, all against a mocked Prisma client (no real database needed to run).
 - `auth.middleware.test.js` - 5 tests covering the RBAC role hierarchy.
 - `applicationController.test.js` - 6 tests covering the recommend-offer guard (requires
   a finalized interview recommendation, blocks duplicate recommendations) and the offer
