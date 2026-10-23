@@ -76,7 +76,7 @@ function DirectorateForm({ editing, positions, isReviewer, onClose, onSaved }) {
           <>
             <Select label="Head of the directorate (reports-to for its managers)" value={form.headPositionId}
               onChange={(e) => setForm({ ...form, headPositionId: e.target.value })}>
-              <option value="">{headOptions.length ? 'Not set' : 'No approved positions yet'}</option>
+              <option value="">{headOptions.length ? 'Not set' : 'No approved titles yet'}</option>
               {headOptions.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.department.name})</option>)}
             </Select>
             <p className="ws-note" style={{ marginTop: -10 }}>
@@ -140,9 +140,9 @@ export default function DirectoratesPage() {
     { header: 'Name', value: (d) => d.name },
     { header: 'Director', value: (d) => d.directorName },
     { header: "Director's email", value: (d) => d.directorEmail },
-    { header: 'Head position', value: (d) => d.headPosition?.name },
+    { header: 'Head (title)', value: (d) => d.headPosition?.name },
     { header: 'Departments', value: (d) => d.departmentCount },
-    { header: 'Positions', value: (d) => d.positionCount },
+    { header: 'Titles', value: (d) => d.positionCount },
     { header: 'Status', value: (d) => d.status }
   ], shown);
 
@@ -181,7 +181,7 @@ export default function DirectoratesPage() {
                 { key: 'code', label: 'Code', width: 110, className: 'ws-mono', render: (d) => d.code },
                 { key: 'name', label: 'Name', render: (d) => <><span className="t">{d.name}</span>{d.directorName && <div className="s">{d.directorName}</div>}</> },
                 { key: 'depts', label: 'Departments', align: 'right', className: 'ws-num', render: (d) => d.departmentCount },
-                { key: 'positions', label: 'Positions', align: 'right', className: 'ws-num', render: (d) => d.positionCount },
+                { key: 'positions', label: 'Titles', align: 'right', className: 'ws-num', render: (d) => d.positionCount },
                 {
                   key: 'status', label: 'Status', render: (d) => (
                     <><StatusPill status={d.status} />{d.status === 'Pending' && <div><Due status={deadlines.deadlineOf('directorate', d.id)} /></div>}</>
@@ -210,11 +210,11 @@ export default function DirectoratesPage() {
             ['Full name', open.name],
             ['Director', open.directorName],
             ["Director's email", open.directorEmail],
-            ['Head position', open.headPosition
+            ['Head (title)', open.headPosition
               ? <>{open.headPosition.name} <span className="ws-note">({open.headPosition.department.name})</span></>
-              : <span className="ws-note">Not set - its one Director-level position stands in, if it has exactly one</span>],
+              : <span className="ws-note">Not set - its one Director-level title stands in, if it has exactly one</span>],
             ['Departments', open.departmentCount],
-            ['Positions', open.positionCount]
+            ['Titles', open.positionCount]
           ]} />
           <RecordFacts row={open} />
 
@@ -225,7 +225,7 @@ export default function DirectoratesPage() {
                 <li key={d.id} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--color-border)' }}>
                   <span className="ws-mono" style={{ minWidth: 70 }}>{d.code}</span>
                   <Link to={`/hr/organisation/departments?open=${d.id}`} style={{ flex: 1, minWidth: 0 }}>{d.name}</Link>
-                  <span className="ws-note">{countLabel(d.positionCount, 'position')}</span>
+                  <span className="ws-note">{countLabel(d.positionCount, 'title')}</span>
                   {d.status !== 'Approved' && <StatusPill status={d.status} />}
                 </li>
               ))}

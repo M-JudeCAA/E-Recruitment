@@ -19,7 +19,7 @@ async function create(req, res) {
   const { departmentId, level } = req.body;
   const code = normalizeCode(req.body.code);
   const name = clean(req.body.name);
-  const invalid = codeError(code, 'position') || nameError(name, 'position');
+  const invalid = codeError(code, 'title') || nameError(name, 'title');
   if (invalid) return res.status(400).json({ error: invalid });
   const department = await departmentModel.findById(Number(departmentId));
   if (!department || department.status !== 'Approved' || (department.directorate ? department.directorate.status !== 'Approved' : Boolean(department.directorateId))) {
@@ -30,7 +30,7 @@ async function create(req, res) {
     return res.status(400).json({ error: `Level must be one of: ${LEVEL_WORDS.join(', ')}` });
   }
   if (await positionModel.findInDepartment(department.id, { code })) {
-    return res.status(409).json({ error: `That department already has a position with the code ${code}` });
+    return res.status(409).json({ error: `That department already has a title with the code ${code}` });
   }
 
   const state = await orgApproval.initialState(req);
@@ -41,7 +41,7 @@ async function create(req, res) {
     });
   } catch (err) {
     if (err.code !== 'P2002') throw err;
-    return res.status(409).json({ error: 'This position already exists in that department' });
+    return res.status(409).json({ error: 'This title already exists in that department' });
   }
   await orgApproval.recordCreated(req, 'Position', position, state);
   if (!state.autoApproved) broadcastDashboardEvent('OrgPendingApproval', { positionId: position.id });
@@ -95,7 +95,7 @@ async function listForDropdown(req, res) {
 // one the reporting lines point to is marked `suggested`.
 async function listSeniorOptions(req, res) {
   const position = await positionModel.findById(Number(req.params.id));
-  if (!position) return res.status(404).json({ error: 'Position not found' });
+  if (!position) return res.status(404).json({ error: 'Title not found' });
 
   const { options, suggestedId } = await reportingLines.optionsFor(position);
   res.json(options.map((o) => ({ ...o, suggested: o.id === suggestedId })));
@@ -113,7 +113,7 @@ async function listByDepartment(req, res) {
 // free of it (FR-ATS-006), for the New Listing form.
 async function getHeadcount(req, res) {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid position id' });
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid title id' });
   res.json(await headcount.availability(id));
 }
 
@@ -122,7 +122,7 @@ async function getHeadcount(req, res) {
 async function setHeadcount(req, res) {
   const id = Number(req.params.id);
   const position = Number.isInteger(id) ? await prisma.position.findUnique({ where: { id } }) : null;
-  if (!position) return res.status(404).json({ error: 'Position not found' });
+  if (!position) return res.status(404).json({ error: 'Title not found' });
   const parse = (v) => (v === null || v === '' || v === undefined ? null : Number(v));
   const hc = 'headcount' in req.body ? parse(req.body.headcount) : position.headcount;
   const occupied = 'occupied' in req.body ? parse(req.body.occupied) ?? 0 : position.occupied;

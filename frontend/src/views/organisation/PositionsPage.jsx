@@ -52,21 +52,21 @@ function PositionForm({ editing, presetDepartment, departments, isReviewer, onCl
       const res = editing
         ? await staffClient.patch(`/api/positions/${editing.id}`, body)
         : await staffClient.post('/api/positions', { ...body, departmentId: form.departmentId, ...(isReviewer ? { autoApprove } : {}) });
-      onSaved(editing ? 'Position updated.' : res.data.autoApproved ? 'Position added and approved.'
-        : `Position added. It waits for ${isReviewer ? 'another ' : 'a '}Principal HR Officer or above to approve it before it can be used.`);
+      onSaved(editing ? 'Title updated.' : res.data.autoApproved ? 'Title added and approved.'
+        : `Title added. It waits for ${isReviewer ? 'another ' : 'a '}Principal HR Officer or above to approve it before it can be used.`);
     } catch (err) {
-      setError(err.response?.data?.error || 'Could not save the position');
+      setError(err.response?.data?.error || 'Could not save the title');
       setBusy(false);
     }
   };
 
   return (
-    <Modal title={editing ? `Edit ${editing.name}` : 'Add a position'} onClose={onClose}>
-      {!editing && !isReviewer && <p className="ws-note" style={{ marginTop: 0 }}>A Principal HR Officer approves a new position before it can be used on a vacancy.</p>}
-      {editing && !editing.code && <Alert type="info" message="This position was added before short codes - give it one to save." />}
+    <Modal title={editing ? `Edit ${editing.name}` : 'Add a title'} onClose={onClose}>
+      {!editing && !isReviewer && <p className="ws-note" style={{ marginTop: 0 }}>A Principal HR Officer approves a new title before it can be used on a vacancy.</p>}
+      {editing && !editing.code && <Alert type="info" message="This title was added before short codes - give it one to save." />}
       <Alert type="error" message={error} />
       <form onSubmit={submit} noValidate>
-        <CodeAndName form={form} setForm={setForm} word="position" showErrors={showErrors} nameLabel="Full title"
+        <CodeAndName form={form} setForm={setForm} word="title" showErrors={showErrors} nameLabel="Title"
           codePlaceholder="HRO" namePlaceholder="Human Resource Officer" codeHint="Unique in its department" />
         {editing ? (
           <KeyValues rows={[['Department', `${editing.department?.name} (${editing.department?.code})${editing.department?.directorate ? ` · ${editing.department.directorate.code}` : ''}`]]} />
@@ -80,17 +80,20 @@ function PositionForm({ editing, presetDepartment, departments, isReviewer, onCl
         <Select label="Level" value={form.level} onChange={(e) => setForm({ ...form, level: Number(e.target.value) })}>
           {POSITION_LEVELS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
         </Select>
-        <p className="ws-note">From most junior (Officer) to most senior (Director). A vacancy's "Reports to" is chosen from more senior positions in the same department.</p>
-        {!editing && isReviewer && <ApproveNowBox checked={autoApprove} onChange={setAutoApprove} what="position" />}
+        <p className="ws-note">From most junior (Officer) to most senior (Director). A vacancy's "Reports to" is chosen from more senior titles in the same department.</p>
+        {!editing && isReviewer && <ApproveNowBox checked={autoApprove} onChange={setAutoApprove} what="title" />}
         {editing && <p className="ws-note">Changes are recorded in the audit log. Vacancies already raised keep the title they were advertised with.</p>}
-        <Button type="submit" loading={busy} loadingText="Saving...">{editing ? 'Save changes' : 'Add position'}</Button>
+        <Button type="submit" loading={busy} loadingText="Saving...">{editing ? 'Save changes' : 'Add title'}</Button>
       </form>
     </Modal>
   );
 }
 
-// The approved headcount of one position and what is free of it (backend
-// headcountService). A Principal HR Officer or above sets it.
+// A title's positions (the approved headcount - how many people the job is
+// for), how many are filled, and so its vacancies (backend headcountService).
+// A Principal HR Officer or above sets them.
+const vacanciesOf = (p) => (p.headcount == null ? null : Math.max(0, p.headcount - (p.occupied || 0)));
+
 function Headcount({ position, editable, onSaved }) {
   const [headcount, setHeadcount] = useState(position.headcount ?? '');
   const [occupied, setOccupied] = useState(position.occupied ?? 0);
@@ -117,23 +120,25 @@ function Headcount({ position, editable, onSaved }) {
   const input = { width: 90, height: 34, padding: '0 8px', border: '1px solid var(--color-border-strong)', borderRadius: 'var(--radius-sm)', font: 'inherit' };
   return (
     <div>
-      <h3 style={{ fontSize: 14, margin: '20px 0 8px' }}>Approved headcount</h3>
+      <h3 style={{ fontSize: 14, margin: '20px 0 8px' }}>Positions and vacancies</h3>
       <p className="ws-note" style={{ marginTop: 0 }}>
-        How many posts this position may have and how many are filled. A vacancy asking for more than are free needs a reason and a Director's
-        authorisation. Leave it empty where it isn't known - nothing is checked then. Mark as Hired adds one to "filled".
+        Positions: how many people this job is approved for. Filled: how many hold it now. Vacancies: the positions not filled.
+        A recruitment asking for more people than there are vacancies not already being recruited for needs a reason and a
+        Director's authorisation. Leave Positions empty where it isn't known - nothing is checked then. Mark as Hired adds one to Filled.
       </p>
       {editable ? (
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <label className="ws-note">Approved posts<br /><input type="number" min="0" style={input} value={headcount} placeholder="—" onChange={(e) => setHeadcount(e.target.value)} /></label>
+          <label className="ws-note">Positions<br /><input type="number" min="0" style={input} value={headcount} placeholder="—" onChange={(e) => setHeadcount(e.target.value)} /></label>
           <label className="ws-note">Filled<br /><input type="number" min="0" style={input} value={occupied} onChange={(e) => setOccupied(e.target.value)} /></label>
+          <span className="ws-note">Vacancies<br /><strong style={{ display: 'inline-block', height: 34, lineHeight: '34px' }}>{headcount === '' ? '—' : Math.max(0, Number(headcount) - (Number(occupied) || 0))}</strong></span>
           <Button variant="secondary" style={{ padding: '6px 12px', fontSize: 13 }} disabled={!changed} loading={busy} loadingText="Saving..." onClick={save}>Save</Button>
         </div>
       ) : (
-        <KeyValues rows={[['Approved posts', position.headcount ?? 'Not recorded'], ['Filled', position.occupied]]} />
+        <KeyValues rows={[['Positions', position.headcount ?? 'Not recorded'], ['Filled', position.occupied], ['Vacancies', vacanciesOf(position) ?? '—']]} />
       )}
       {error && <div role="alert" style={{ color: 'var(--color-danger)', fontSize: 13, marginTop: 6 }}>{error}</div>}
       {info && info.headcount != null && (
-        <p className="ws-note">{info.inRecruitment} being recruited for, {info.available} free.</p>
+        <p className="ws-note">Of the vacancies, {info.inRecruitment} {info.inRecruitment === 1 ? 'is' : 'are'} being recruited for and {info.available} {info.available === 1 ? 'is' : 'are'} not yet advertised.</p>
       )}
     </div>
   );
@@ -174,7 +179,7 @@ export default function PositionsPage() {
     staffClient.get('/api/positions/admin').then((res) => setRows(res.data)),
     staffClient.get('/api/departments/admin').then((res) => setDepartments(res.data)),
     staffClient.get('/api/directorates').then((res) => setDirectorates(res.data))
-  ]).catch((err) => { setRows((r) => r || []); setError(err.response?.data?.error || 'Could not load positions'); }), []);
+  ]).catch((err) => { setRows((r) => r || []); setError(err.response?.data?.error || 'Could not load titles'); }), []);
   useEffect(() => { load(); }, [load]);
 
   const done = (text) => {
@@ -199,21 +204,22 @@ export default function PositionsPage() {
   const shown = base.filter(filter.test);
   const open = list.find((p) => p.id === openId);
 
-  const exportRows = () => downloadCsv(`positions-${new Date().toISOString().slice(0, 10)}.csv`, [
+  const exportRows = () => downloadCsv(`titles-${new Date().toISOString().slice(0, 10)}.csv`, [
     { header: 'Code', value: (p) => p.code },
     { header: 'Title', value: (p) => p.name },
     { header: 'Level', value: (p) => levelLabel(p.level) },
     { header: 'Department code', value: (p) => p.department?.code },
     { header: 'Department', value: (p) => p.department?.name },
     { header: 'Directorate code', value: (p) => p.department?.directorate?.code },
-    { header: 'Approved posts', value: (p) => p.headcount ?? '' },
+    { header: 'Positions', value: (p) => p.headcount ?? '' },
     { header: 'Filled', value: (p) => p.occupied },
-    { header: 'Vacancies', value: (p) => p.vacancyCount },
+    { header: 'Vacancies', value: (p) => vacanciesOf(p) ?? '' },
+    { header: 'Adverts raised', value: (p) => p.vacancyCount },
     { header: 'Status', value: (p) => p.status }
   ], shown);
 
-  const blockedBy = open && [open.vacancyCount && countLabel(open.vacancyCount, 'vacancy', 'vacancies'),
-    open.reportingVacancyCount && `${countLabel(open.reportingVacancyCount, 'vacancy', 'vacancies')} reporting to it`].filter(Boolean);
+  const blockedBy = open && [open.vacancyCount && countLabel(open.vacancyCount, 'advert'),
+    open.reportingVacancyCount && `${countLabel(open.reportingVacancyCount, 'advert')} reporting to it`].filter(Boolean);
   const notUsable = open && open.status === 'Approved' && (open.department?.status !== 'Approved' || (open.department?.directorate && open.department.directorate.status !== 'Approved'));
 
   return (
@@ -221,20 +227,20 @@ export default function PositionsPage() {
       <HRSidebar active="org-positions" />
       <div className="ws-page" style={{ flex: 1 }}>
         <PageTop
-          crumb={[{ label: 'Organisation', to: '/hr/organisation' }, { label: 'Positions' }]}
-          title="Positions"
-          subtitle="Every job in every department, with its short code, full title, level and approved headcount"
+          crumb={[{ label: 'Organisation', to: '/hr/organisation' }, { label: 'Titles' }]}
+          title="Titles"
+          subtitle="Every job title in every department: its short code, level, how many positions it has and how many are vacant"
           actions={<>
             <Button variant="ghost" disabled={!shown.length} onClick={exportRows}>Export</Button>
             <Button variant="ghost" onClick={() => setImporting(true)}>Import</Button>
-            <Button onClick={() => setForm({ editing: null })}>+ Add position</Button>
+            <Button onClick={() => setForm({ editing: null })}>+ Add title</Button>
           </>}
         />
         <Alert type="success" message={message} />
         <Alert type="error" message={error} />
 
         <div className="ws-toolbar">
-          <input className="ws-field grow" placeholder="Code, title or department" aria-label="Search positions" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="ws-field grow" placeholder="Code, title or department" aria-label="Search titles" value={q} onChange={(e) => setQ(e.target.value)} />
           <select className="ws-field" aria-label="Directorate" value={directorate} onChange={(e) => setDirectorate(e.target.value)}>
             <option value="">All directorates</option>
             {directorates.map((d) => <option key={d.id} value={d.id}>{d.code}</option>)}
@@ -259,14 +265,16 @@ export default function PositionsPage() {
               rows={shown}
               getRowKey={(p) => p.id}
               onRowClick={(p) => setOpenId(p.id)}
-              emptyText={list.length ? 'No positions match.' : 'No positions yet. Add one, or import the organogram.'}
+              emptyText={list.length ? 'No titles match.' : 'No titles yet. Add one, or import the organogram.'}
               columns={[
                 { key: 'code', label: 'Code', width: 100, className: 'ws-mono', render: (p) => p.code || <span className="s">—</span> },
                 { key: 'name', label: 'Title', render: (p) => <span className="t">{p.name}</span> },
                 { key: 'level', label: 'Level', render: (p) => levelLabel(p.level) },
                 { key: 'dept', label: 'Department', render: (p) => <>{p.department?.name}<span className="s"> · {p.department?.directorate?.code}</span></> },
-                { key: 'headcount', label: 'Filled / posts', align: 'right', className: 'ws-num', render: (p) => (p.headcount == null ? <span className="s">—</span> : `${p.occupied} / ${p.headcount}`) },
-                { key: 'vacancies', label: 'Vacancies', align: 'right', className: 'ws-num', render: (p) => p.vacancyCount },
+                { key: 'headcount', label: 'Positions', align: 'right', className: 'ws-num', render: (p) => p.headcount ?? <span className="s">—</span> },
+                { key: 'occupied', label: 'Filled', align: 'right', className: 'ws-num', render: (p) => (p.headcount == null ? <span className="s">—</span> : p.occupied) },
+                { key: 'vacancies', label: 'Vacancies', align: 'right', className: 'ws-num', render: (p) => vacanciesOf(p) ?? <span className="s">—</span> },
+                { key: 'adverts', label: 'Adverts', align: 'right', className: 'ws-num', render: (p) => p.vacancyCount },
                 {
                   key: 'status', label: 'Status', render: (p) => (
                     <><StatusPill status={p.status} />{p.status === 'Pending' && <div><Due status={deadlines.deadlineOf('position', p.id)} /></div>}</>
@@ -276,12 +284,12 @@ export default function PositionsPage() {
             />
           )}
         </Panel>
-        {rows && <div className="ws-note">{shown.length} of {countLabel(list.length, 'position')}</div>}
+        {rows && <div className="ws-note">{shown.length} of {countLabel(list.length, 'title')}</div>}
       </div>
 
       {open && (
         <SidePanel
-          eyebrow={`Position · ${open.code || 'no code yet'}`}
+          eyebrow={`Title · ${open.code || 'no code yet'}`}
           title={open.name}
           badges={<><StatusPill status={open.status} />{open.status === 'Pending' && <Due status={deadlines.deadlineOf('position', open.id)} />}</>}
           onClose={() => setOpenId(null)}
@@ -290,23 +298,23 @@ export default function PositionsPage() {
             onDone={(text) => { if (/deleted|withdrawn/.test(text)) setOpenId(null); done(text); }}
             onError={setError} />}
         >
-          {!open.code && <Alert type="info" message="This position has no short code yet - edit it to give it one." />}
+          {!open.code && <Alert type="info" message="This title has no short code yet - edit it to give it one." />}
           {notUsable && <Alert type="warning" message="Its department or directorate isn't approved, so it can't be used on a vacancy yet." />}
           <KeyValues rows={[
             ['Short code', open.code ? <span className="ws-mono">{open.code}</span> : null],
-            ['Full title', open.name],
+            ['Title', open.name],
             ['Level', levelLabel(open.level)],
             ['Department', open.department && <Link to={`/hr/organisation/departments?open=${open.department.id}`}>{open.department.name} ({open.department.code})</Link>],
             ['Directorate', open.department?.directorate && <Link to={`/hr/organisation/directorates?open=${open.department.directorate.id}`}>{open.department.directorate.name} ({open.department.directorate.code})</Link>],
-            ['Vacancies raised', open.vacancyCount],
-            open.reportingVacancyCount > 0 && ['Vacancies reporting to it', open.reportingVacancyCount]
+            ['Adverts raised', open.vacancyCount],
+            open.reportingVacancyCount > 0 && ['Adverts reporting to it', open.reportingVacancyCount]
           ]} />
           <RecordFacts row={open} />
           {open.status !== 'Rejected' && (
             <Headcount position={open} editable={rights.isReviewer} onSaved={done} />
           )}
           {blockedBy.length > 0 && rights.isReviewer && (
-            <p className="ws-note">It can be deleted only when no vacancy uses it - it has {blockedBy.join(', ')}.</p>
+            <p className="ws-note">It can be deleted only when no advert uses it - it has {blockedBy.join(', ')}.</p>
           )}
           <AuditTrail key={`${open.id}-${version}`} entityType="Position" entityId={open.id} label="History" defaultOpen />
         </SidePanel>

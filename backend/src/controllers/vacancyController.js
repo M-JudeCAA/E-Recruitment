@@ -105,10 +105,10 @@ async function create(req, res) {
 
   const position = await positionModel.findById(Number(positionId));
   if (!position) {
-    return res.status(400).json({ error: 'Select a valid position' });
+    return res.status(400).json({ error: 'Select a valid title' });
   }
   if (!orgApproval.usablePosition(position)) {
-    return res.status(400).json({ error: 'This position, its department or its directorate is not approved yet, so it cannot be used on a vacancy' });
+    return res.status(400).json({ error: 'This title, its department or its directorate is not approved yet, so it cannot be used on a vacancy' });
   }
 
   // postingType is now required, no silent default. Removing
@@ -139,9 +139,9 @@ async function create(req, res) {
     const { options } = await reportingLines.optionsFor(position);
     if (!reportsTo || !options.some((o) => o.id === reportsTo.id)) {
       if (reportsTo && reportsTo.departmentId === position.departmentId && reportsTo.status === 'Approved' && reportsTo.level <= position.level) {
-        return res.status(400).json({ error: 'The selected "Reports To" position must be senior to the vacancy’s own position' });
+        return res.status(400).json({ error: 'The selected "Reports To" title must be senior to the vacancy’s own title' });
       }
-      return res.status(400).json({ error: 'The selected "Reports To" position must be more senior and in the same department, or the head of the directorate (or the Director General, for a Director)' });
+      return res.status(400).json({ error: 'The selected "Reports To" title must be more senior and in the same department, or the head of the directorate (or the Director General, for a Director)' });
     }
     validatedReportsToId = reportsTo.id;
   }
@@ -251,7 +251,7 @@ async function readvertise(req, res) {
   // any brand new vacancy against this same position.
   const position = await positionModel.findById(vacancy.positionId);
   if (!position) {
-    return res.status(400).json({ error: 'The position behind this vacancy no longer exists' });
+    return res.status(400).json({ error: 'The title behind this vacancy no longer exists' });
   }
 
   const carried = requisitionService.carriedOver(vacancy);

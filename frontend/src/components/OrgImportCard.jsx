@@ -20,7 +20,7 @@ const STATUS = {
   warning: { label: 'Check', color: 'var(--color-warning)' },
   error: { label: 'Fix this', color: 'var(--color-danger)' }
 };
-const CREATES = { directorate: 'directorate', department: 'department', position: 'position' };
+const CREATES = { directorate: 'directorate', department: 'department', position: 'title' };
 
 const cell = { padding: '6px 10px', borderTop: '1px solid var(--color-border)', verticalAlign: 'top' };
 
@@ -74,7 +74,7 @@ export default function OrgImportCard({ onImported, canApprove = false }) {
       const parts = [
         r.directorates && `${r.directorates} directorate(s)`,
         r.departments && `${r.departments} department(s)`,
-        r.positions && `${r.positions} position(s)`
+        r.positions && `${r.positions} title(s)`
       ].filter(Boolean);
       setDone(`Imported ${parts.join(', ')}${r.autoApproved ? ', approved' : `, awaiting approval by ${canApprove ? 'another' : 'a'} Principal HR Officer or above`}.${r.skipped ? ` ${r.skipped} row(s) were already there.` : ''}`);
       setPreview(null); setFile(null);
@@ -98,15 +98,15 @@ export default function OrgImportCard({ onImported, canApprove = false }) {
         <div style={{ minWidth: 0, flex: '1 1 320px' }}>
           <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}><FileSpreadsheet size={18} /> Import from a spreadsheet</h3>
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
-            Add many directorates, departments and positions at once from an Excel (.xlsx) or CSV file, one row per
-            position, each with its short code and full name. Nothing already in the system is changed. What it adds can be used on a vacancy once approved
+            Add many directorates, departments and job titles at once from an Excel (.xlsx) or CSV file, one row per
+            title, each with its short code and full name. Nothing already in the system is changed. What it adds can be used on a vacancy once approved
             by a Principal HR Officer or above.
           </p>
         </div>
         <CsvDownloadButton url="/api/org-import/template" label="Download template" fallbackName="org-structure-import-template.xlsx" />
       </div>
 
-      {canApprove && <ApproveNowBox checked={autoApprove} onChange={setAutoApprove} what="imported directorates, departments and positions" />}
+      {canApprove && <ApproveNowBox checked={autoApprove} onChange={setAutoApprove} what="imported directorates, departments and titles" />}
       <input ref={inputRef} type="file" accept=".xlsx,.csv" style={{ display: 'none' }} aria-label="Spreadsheet to import"
         onChange={(e) => choose(e.target.files?.[0])} />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -117,7 +117,7 @@ export default function OrgImportCard({ onImported, canApprove = false }) {
         {preview && s.errors === 0 && (
           <Button type="button" onClick={runImport} loading={busy === 'import'} loadingText="Importing..."
             disabled={!s.directorates && !s.departments && !s.positions}>
-            Import {[s.directorates && `${s.directorates} directorate(s)`, s.departments && `${s.departments} department(s)`, s.positions && `${s.positions} position(s)`].filter(Boolean).join(', ') || 'nothing new'}
+            Import {[s.directorates && `${s.directorates} directorate(s)`, s.departments && `${s.departments} department(s)`, s.positions && `${s.positions} title(s)`].filter(Boolean).join(', ') || 'nothing new'}
           </Button>
         )}
       </div>
@@ -129,7 +129,7 @@ export default function OrgImportCard({ onImported, canApprove = false }) {
         <div style={{ marginTop: 12 }}>
           <p style={{ fontSize: 14, margin: '0 0 8px' }}>
             <strong>{preview.fileName}</strong>: {s.rows} row(s) checked
-            {' - '}{s.directorates} new directorate(s), {s.departments} new department(s), {s.positions} new position(s), {s.skipped} already there
+            {' - '}{s.directorates} new directorate(s), {s.departments} new department(s), {s.positions} new title(s), {s.skipped} already there
             {s.warnings > 0 && <>, <span style={{ color: 'var(--color-warning)' }}>{s.warnings} to check</span></>}
             {s.errors > 0 && <>, <strong style={{ color: 'var(--color-danger)' }}>{s.errors} to fix</strong></>}.
           </p>
@@ -144,7 +144,7 @@ export default function OrgImportCard({ onImported, canApprove = false }) {
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: 'var(--color-bg-subtle)', textAlign: 'left' }}>
-                  {['Row', 'Directorate', 'Department', 'Position', 'Level', 'Result'].map((h) => <th key={h} style={{ padding: '6px 10px' }}>{h}</th>)}
+                  {['Row', 'Directorate', 'Department', 'Title', 'Level', 'Result'].map((h) => <th key={h} style={{ padding: '6px 10px' }}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>

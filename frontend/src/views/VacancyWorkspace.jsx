@@ -123,10 +123,10 @@ function HeadcountPanel({ vacancy }) {
   }, [vacancy.positionId]);
   if (data === undefined) return null;
   return (
-    <Panel title="Headcount">
+    <Panel title="Positions">
       {data?.headcount != null
-        ? <>{data.headcount} approved · {data.occupied ?? 0} filled · {Math.max(data.available ?? 0, 0)} free · {vacancy.positionsRequired} on this vacancy</>
-        : <span className="ws-note">No approved headcount recorded for this position (Organisation).</span>}
+        ? <>{data.headcount} positions · {data.occupied ?? 0} filled · {Math.max(data.available ?? 0, 0)} vacancies not yet advertised · {vacancy.positionsRequired} on this recruitment</>
+        : <span className="ws-note">No positions recorded for this title (Organisation, Titles).</span>}
     </Panel>
   );
 }

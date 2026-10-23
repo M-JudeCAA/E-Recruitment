@@ -65,7 +65,7 @@ export function EmploymentForm({ me, bind, onSaved }) {
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const missing = [
-    !form.departmentId && 'Department, picked from the list', !form.positionId && 'Current position, picked from the list',
+    !form.departmentId && 'Department, picked from the list', !form.positionId && 'Job title, picked from the list',
     !String(form.employeeId).trim() && 'Employee number',
     !form.dateJoined && 'Date joined UCAA'
   ].filter(Boolean);
@@ -97,13 +97,13 @@ export function EmploymentForm({ me, bind, onSaved }) {
           emptyMessage="No UCAA department matches that - check the spelling, or ask HR to add it."
           error={orgError || undefined}
           hint={form.departmentId ? (hint('department') || undefined) : form.department ? 'Pick your department from the list.' : 'Start typing, then pick it from the list'} />
-        <SuggestField label="Current position" required value={form.position} picked={Boolean(form.positionId)}
+        <SuggestField label="Job title" required value={form.position} picked={Boolean(form.positionId)}
           options={positionOptions} disabled={!form.departmentId}
-          placeholder={form.departmentId ? 'Start typing your position' : 'Pick your department first'}
+          placeholder={form.departmentId ? 'Start typing your job title' : 'Pick your department first'}
           onType={(text) => setForm((f) => ({ ...f, position: text, positionId: null }))}
           onPick={(o) => setForm((f) => ({ ...f, position: o.label, positionId: o.id }))}
-          emptyMessage="No position in this department matches that - check the department, or ask HR to add the position."
-          hint={form.positionId ? (hint('position') || undefined) : form.position && form.departmentId ? 'Pick your position from the list.' : undefined} />
+          emptyMessage="No job title in this department matches that - check the department, or ask HR to add it."
+          hint={form.positionId ? (hint('position') || undefined) : form.position && form.departmentId ? 'Pick your job title from the list.' : undefined} />
         <TextField label="Employee number" required value={form.employeeId} onChange={set('employeeId')}
           hint={hint('employeeId') || 'Your UCAA employee number - HR identifies you by it'} />
         <TextField label="Date joined UCAA" type="date" required value={form.dateJoined} onChange={set('dateJoined')} />

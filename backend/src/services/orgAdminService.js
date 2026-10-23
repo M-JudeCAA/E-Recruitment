@@ -190,10 +190,10 @@ async function editedFields(entityType, row, body) {
       data.level = level;
     }
     if (data.code !== undefined && await taken(model, { code: data.code, departmentId: row.departmentId }, row.id)) {
-      throw fail(`That department already has a position with the code ${data.code}`, 409, 'ORG_DUPLICATE');
+      throw fail(`That department already has a title with the code ${data.code}`, 409, 'ORG_DUPLICATE');
     }
     if (data.name !== undefined && await taken(model, { name: data.name, departmentId: row.departmentId }, row.id)) {
-      throw fail(`That department already has a position called ${data.name}`, 409, 'ORG_DUPLICATE');
+      throw fail(`That department already has a title called ${data.name}`, 409, 'ORG_DUPLICATE');
     }
   }
   return data;
@@ -230,7 +230,7 @@ const USES = {
   Directorate: { count: { departments: true }, say: (c) => c.departments && `${c.departments} department(s)` },
   Department: {
     count: { positions: true, vacancies: true, staff: true },
-    say: (c) => [c.positions && `${c.positions} position(s)`, c.vacancies && `${c.vacancies} vacancy(ies)`, c.staff && `${c.staff} staff account(s)`].filter(Boolean).join(', ')
+    say: (c) => [c.positions && `${c.positions} title(s)`, c.vacancies && `${c.vacancies} vacancy(ies)`, c.staff && `${c.staff} staff account(s)`].filter(Boolean).join(', ')
   },
   Position: {
     count: { vacancies: true, vacanciesReportingHere: true },

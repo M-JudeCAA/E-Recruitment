@@ -29,7 +29,7 @@ const KINDS = {
   committee: { taskType: 'CommitteeNominationSubmitted', role: 'Director', what: 'shortlisting committee' },
   directorate: { taskType: 'DirectorateApproval', role: 'Principal_HR_Officer', what: 'directorate' },
   department: { taskType: 'DepartmentApproval', role: 'Principal_HR_Officer', what: 'department' },
-  position: { taskType: 'PositionApproval', role: 'Principal_HR_Officer', what: 'position' }
+  position: { taskType: 'PositionApproval', role: 'Principal_HR_Officer', what: 'title' }
 };
 
 // The roles in a step's audience - as inboxService.inAudience.

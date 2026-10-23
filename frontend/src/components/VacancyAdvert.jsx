@@ -35,7 +35,7 @@ export default function VacancyAdvert({
   const desirableItems = (desirableQualifications || []).map((text, i) => ({ key: `q${i}`, text }));
   const facts = [
     ['Job Ref', jobRef || 'Assigned automatically when created'],
-    ['Position', title],
+    ['Job title', title],
     ['Reports To', reportsToName],
     ['Department', departmentLabel],
     ['Location', location],

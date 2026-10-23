@@ -114,7 +114,7 @@ export default function OrgOverview() {
     ...imp,
     deadline: deadlines.importDeadline(imp.id),
     mine: imp.createdById === me,
-    summary: Object.entries(imp.counts).map(([k, n]) => countLabel(n, k)).join(', ')
+    summary: Object.entries(imp.counts).map(([k, n]) => countLabel(n, k === 'position' ? 'title' : k)).join(', ')
   }));
   const pendingCount = single.length + importList.length;
   const ownNote = <span className="ws-note">You added this - another Principal HR Officer or above approves it</span>;
@@ -127,7 +127,7 @@ export default function OrgOverview() {
   const levels = counts ? [
     { key: 'directorates', label: 'Directorates', list: counts.directorates, hint: 'The top level, each with its director' },
     { key: 'departments', label: 'Departments', list: counts.departments, hint: 'Under their directorates, with their staff and vacancies' },
-    { key: 'positions', label: 'Positions', list: counts.positions, hint: 'Jobs in each department, with level and approved headcount' }
+    { key: 'positions', label: 'Titles', list: counts.positions, hint: 'Job titles in each department, with level, positions and vacancies' }
   ] : [];
   const noCode = counts ? counts.positions.filter((p) => !p.code && p.status !== 'Rejected').length : 0;
   const historyRows = (history || []).slice(0, showAllHistory ? undefined : HISTORY_SHOWN);
@@ -138,13 +138,13 @@ export default function OrgOverview() {
       <div className="ws-page" style={{ flex: 1 }}>
         <PageTop
           title="Organisation"
-          subtitle="Directorates, departments and positions - what is waiting for approval, imports and recent changes"
+          subtitle="Directorates, departments and job titles - what is waiting for approval, imports and recent changes"
           actions={<>
             <Button variant="ghost" onClick={() => setImporting(true)}>Import</Button>
             <MenuButton label="+ Add" items={[
               isReviewer && { label: 'Directorate', onClick: () => navigate('/hr/organisation/directorates?add=1') },
               { label: isReviewer ? 'Department' : 'Department (needs approval)', onClick: () => navigate('/hr/organisation/departments?add=1') },
-              { label: isReviewer ? 'Position' : 'Position (needs approval)', onClick: () => navigate('/hr/organisation/positions?add=1') }
+              { label: isReviewer ? 'Title' : 'Title (needs approval)', onClick: () => navigate('/hr/organisation/positions?add=1') }
             ]} />
           </>}
         />
@@ -155,7 +155,7 @@ export default function OrgOverview() {
           <Figures figures={[
             { label: 'Directorates', value: tally(counts.directorates).approved },
             { label: 'Departments', value: tally(counts.departments).approved },
-            { label: 'Positions', value: tally(counts.positions).approved },
+            { label: 'Titles', value: tally(counts.positions).approved },
             { label: 'Waiting for approval', value: levels.reduce((n, l) => n + tally(l.list).pending, 0) }
           ]} />
         ) : <Skeleton width="60%" height={40} />}
@@ -219,7 +219,7 @@ export default function OrgOverview() {
           )}
         </Panel>
         {noCode > 0 && (
-          <Alert type="info" message={<>{countLabel(noCode, 'position')} {noCode === 1 ? 'has' : 'have'} no short code yet (added before codes). <Link to="/hr/organisation/positions?status=nocode">Give them one</Link>.</>} />
+          <Alert type="info" message={<>{countLabel(noCode, 'title')} {noCode === 1 ? 'has' : 'have'} no short code yet (added before codes). <Link to="/hr/organisation/positions?status=nocode">Give them one</Link>.</>} />
         )}
 
         <Panel padded={false} title="Recent changes" note="Every addition, approval, edit and deletion, from the audit log">
@@ -234,7 +234,7 @@ export default function OrgOverview() {
                 { key: 'when', label: 'When', render: (r) => <span className="s">{formatDay(r.timestamp)}</span> },
                 {
                   key: 'what', label: 'What', render: (r) => {
-                    const label = `${r.entityType === 'OrgImport' ? 'Import' : r.entityType} · ${r.name || `#${r.entityId}`}${r.code ? ` (${r.code})` : ''}`;
+                    const label = `${r.entityType === 'OrgImport' ? 'Import' : r.entityType === 'Position' ? 'Title' : r.entityType} · ${r.name || `#${r.entityId}`}${r.code ? ` (${r.code})` : ''}`;
                     const page = PAGE[r.entityType];
                     return (
                       <>

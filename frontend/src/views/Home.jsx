@@ -707,7 +707,7 @@ export default function Home() {
               </h2>
             </div>
             <div className="home-figures" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px 28px' }}>
-              <HeaderFigure value={openVacancies.length} loading={loading} icon={Briefcase} label="Open positions" />
+              <HeaderFigure value={openVacancies.length} loading={loading} icon={Briefcase} label="Open vacancies" />
               <HeaderFigure value={departmentCount} loading={loading} icon={Building2} label="Departments hiring" />
               <HeaderFigure value={positionsCount} loading={loading} icon={Users} label="Vacancies available" />
             </div>
@@ -1074,7 +1074,7 @@ export default function Home() {
             boxShadow: '0 8px 20px rgba(20,24,28,0.22)'
           }}
         >
-          <Briefcase size={16} /> Open positions ({openVacancies.length})
+          <Briefcase size={16} /> Open vacancies ({openVacancies.length})
         </button>
       )}
 

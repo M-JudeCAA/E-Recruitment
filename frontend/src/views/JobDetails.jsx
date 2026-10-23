@@ -77,7 +77,7 @@ export default function JobDetails() {
           <p style={{ color: 'var(--color-text-muted)', marginBottom: 16 }}>
             This vacancy doesn&rsquo;t exist, or is no longer available.
           </p>
-          <Link to="/#open-positions"><Button variant="secondary">View open positions</Button></Link>
+          <Link to="/#open-positions"><Button variant="secondary">View open vacancies</Button></Link>
         </Card>
       )}
 

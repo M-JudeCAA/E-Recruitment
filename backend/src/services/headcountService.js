@@ -33,7 +33,7 @@ async function availability(positionId, excludeVacancyId = null) {
 }
 
 function describe(a) {
-  return `${a.headcount} approved, ${a.occupied} filled, ${a.inRecruitment} already being recruited for - ${a.available} free`;
+  return `${a.headcount} position(s), ${a.occupied} filled, ${a.inRecruitment} already being recruited for - ${a.available} vacancy(ies) not yet advertised`;
 }
 
 /**
@@ -47,7 +47,7 @@ async function exceptionFor(positionId, positionsRequired, reasonInput, staffId,
   if (a.headcount == null || positionsRequired <= a.available) return null;
   const reason = typeof reasonInput === 'string' ? reasonInput.trim().slice(0, 2000) : '';
   if (reason.length < MIN_REASON) {
-    const err = new AppError(`This vacancy asks for ${positionsRequired} post(s) but the approved headcount leaves ${a.available} (${describe(a)}). `
+    const err = new AppError(`This vacancy asks for ${positionsRequired} person(s) but the title has only ${a.available} vacancy(ies) not already being recruited for (${describe(a)}). `
       + 'Give the reason for the exception - a Director must then authorise it.', 422);
     err.code = 'HEADCOUNT_EXCEEDED';
     err.details = a;

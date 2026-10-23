@@ -9,7 +9,7 @@ const { formatAs } = require('../utils/textCase');
 // positions - from one spreadsheet (.xlsx or .csv), one row per position,
 // each level with its short code and full name (utils/orgFields.js):
 //
-//   Directorate code | Directorate name                  | Department code | Department name | Position code | Position        | Level
+//   Directorate code | Directorate name                  | Department code | Department name | Title code    | Title           | Level
 //   DHRA             | Human Resource and Administration | HR              | Human Resource  | HRO           | HR Officer      | Officer
 //
 // Directorates and departments are matched by code, positions by title
@@ -38,11 +38,11 @@ const COLUMNS = {
   directorateName: ['directorate name', 'directorate full name'],
   department: ['department code', 'department'],
   departmentName: ['department name', 'department full name'],
-  positionCode: ['position code'],
-  position: ['position', 'position title', 'position name', 'job title', 'title'],
+  positionCode: ['title code', 'job title code', 'position code'],
+  position: ['title', 'job title', 'position', 'position title', 'position name'],
   level: ['level', 'seniority', 'seniority level']
 };
-const HEADINGS = 'Directorate code, Directorate name, Department code, Department name, Position code, Position, Level';
+const HEADINGS = 'Directorate code, Directorate name, Department code, Department name, Title code, Title, Level';
 const COLUMN_COUNT = 7;
 
 const key = (...parts) => parts.map((p) => clean(p).toLowerCase()).join('\u0000');
@@ -191,7 +191,7 @@ async function plan(rows, { canAddDirectorates }) {
       if (!level) return fail(`"${row.level}" isn't a level - use one of ${LEVEL_WORDS.join(', ')}`);
       out.levelLabel = levelLabel(level);
     } else if (row.level || row.positionCode) {
-      return fail('Position is empty but a position code or level is given');
+      return fail('Title is empty but a title code or level is given');
     }
 
     // Directorate, by code
@@ -263,24 +263,24 @@ async function plan(rows, { canAddDirectorates }) {
       const fileKey = key(dirCode, deptCode, row.position);
       const earlier = newPositions.get(fileKey);
       if (existingPos) {
-        if (existingPos.status === 'Rejected') return rejected(`Position "${row.position}"`, existingPos);
-        if (existingPos.status === 'Pending') out.messages.push('Position is awaiting approval');
+        if (existingPos.status === 'Rejected') return rejected(`Title "${row.position}"`, existingPos);
+        if (existingPos.status === 'Pending') out.messages.push('Title is awaiting approval');
         if (posCode && existingPos.code && posCode !== existingPos.code) {
-          warn(`Position already exists with the code ${existingPos.code} - not changed`);
+          warn(`Title already exists with the code ${existingPos.code} - not changed`);
         } else if (posCode && !existingPos.code) {
-          warn('Position already exists without a code - give it one on the Positions page');
+          warn('Title already exists without a code - give it one on the Titles page');
         }
         if (existingPos.level !== level) {
-          warn(`Position already exists as ${levelLabel(existingPos.level)} - not changed`);
+          warn(`Title already exists as ${levelLabel(existingPos.level)} - not changed`);
         } else if (out.status !== 'warning') {
-          out.messages.push('Position already exists');
+          out.messages.push('Title already exists');
         }
       } else if (earlier) {
-        if (earlier.level !== level) return fail(`Row ${earlier.rowNumber} has the same position as ${levelLabel(earlier.level)}`);
-        if (posCode && posCode !== earlier.code) return fail(`Row ${earlier.rowNumber} gives this position the code ${earlier.code}`);
+        if (earlier.level !== level) return fail(`Row ${earlier.rowNumber} has the same title as ${levelLabel(earlier.level)}`);
+        if (posCode && posCode !== earlier.code) return fail(`Row ${earlier.rowNumber} gives this title the code ${earlier.code}`);
         out.messages.push(`Same as row ${earlier.rowNumber}`);
       } else {
-        if (!posCode) return fail('Position code is missing - a new position needs its short code');
+        if (!posCode) return fail('Title code is missing - a new title needs its short code');
         const codeOwner = existingDept && posByCode.get(key(existingDept.id, posCode));
         if (codeOwner) return fail(`The code ${posCode} is already used by "${codeOwner.name}" in this department`);
         const fileOwner = newPositionCodes.get(key(dirCode, deptCode, posCode));
@@ -408,8 +408,8 @@ async function template() {
     { header: 'Directorate name', key: 'directorateName', width: 36 },
     { header: 'Department code', key: 'department', width: 16 },
     { header: 'Department name', key: 'departmentName', width: 30 },
-    { header: 'Position code', key: 'positionCode', width: 14 },
-    { header: 'Position', key: 'position', width: 36 },
+    { header: 'Title code', key: 'positionCode', width: 14 },
+    { header: 'Title', key: 'position', width: 36 },
     { header: 'Level', key: 'level', width: 14 }
   ];
   sheet.getRow(1).font = { bold: true };
@@ -431,19 +431,19 @@ async function template() {
   const help = workbook.addWorksheet('How to fill this in');
   help.getColumn(1).width = 110;
   [
-    'One row per position. Replace the example rows with your own.',
+    'One row per job title. Replace the example rows with your own.',
     '',
     'Directorate code and name - its short code (e.g. DHRA, DANS, DF) and its full name (e.g. Human Resource and Administration).',
     'Department code and name - its short code and full name within that directorate. The same code under two directorates is two departments.',
     'Leave the directorate code and name both blank for a department outside every directorate (e.g. the Director General’s Office).',
-    `Position code and Position - the job's short code (e.g. HRO) and its full title. Level - its seniority: ${POSITION_LEVELS.map((l) => l.label).join(', ')} (most junior first). Not every directorate uses every level; older files' Senior is read as Senior Officer.`,
+    `Title code and Title - the job's short code (e.g. HRO) and its full title. Level - its seniority: ${POSITION_LEVELS.map((l) => l.label).join(', ')} (most junior first). Not every directorate uses every level; older files' Senior is read as Senior Officer.`,
     'Codes can have letters, digits, spaces and & / . - (at most 20 characters).',
-    'A row with no Position, Position code and Level only makes sure the department exists.',
+    'A row with no Title, Title code and Level only makes sure the department exists.',
     '',
-    'Directorates and departments are matched by code, positions by title. Full names are needed only for new ones - once per new item is enough.',
-    'Nothing already in the system is changed - existing directorates, departments and positions are skipped.',
+    'Directorates and departments are matched by code, titles by name. Full names are needed only for new ones - once per new item is enough.',
+    'Nothing already in the system is changed - existing directorates, departments and titles are skipped.',
     'A Principal HR Officer or above can approve everything the import adds at once ("Approve now", ticked by default).',
-    'Otherwise it all arrives pending, for a Principal HR Officer or above to approve together. Positions can be used on a vacancy once approved.',
+    'Otherwise it all arrives pending, for a Principal HR Officer or above to approve together. Titles can be used on a vacancy once approved.',
     'New directorates can only be added by a Principal HR Officer or above.',
     '',
     'Upload this file under Organisation > Overview. You will see every row checked before anything is imported.'

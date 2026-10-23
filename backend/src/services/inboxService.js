@@ -245,7 +245,7 @@ async function forStaff(req, now = new Date()) {
       if (p.importId) { fromImport(p, 'position'); continue; }
       const where = `${p.department?.name || ''}${p.department?.directorate?.code ? `, ${p.department.directorate.code}` : ''}`;
       items.push({
-        key: `position-${p.id}`, kind: 'Position approval', title: `${p.name}${p.code ? ` (${p.code})` : ''} · ${where}`,
+        key: `position-${p.id}`, kind: 'Title approval', title: `${p.name}${p.code ? ` (${p.code})` : ''} · ${where}`,
         context: `Added by ${p.createdBy?.name || 'HR'}.`, link: '/hr/organisation/positions',
         review: { type: 'org', entity: 'position', id: p.id, name: p.name, rows: [['Code', p.code || '-'], ['Position', p.name], ['Department', where], ['Level', LEVEL_NAMES[p.level] || p.level]] },
         waiting: waitingLabel(p.createdAt, now),

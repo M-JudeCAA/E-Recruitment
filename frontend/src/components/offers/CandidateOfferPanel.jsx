@@ -62,7 +62,7 @@ export default function CandidateOfferPanel({ offer, jobTitle, busy, onRespond }
       </div>
 
       <div style={{ padding: '10px 12px', background: 'var(--color-bg)' }}>
-        <Row label="Position" value={jobTitle} />
+        <Row label="Job title" value={jobTitle} />
         <Row label="Salary" value={formatSalary(offer)} />
         <Row label="Employment" value={formatContract(offer)} />
         <Row label="Start date" value={offer.startDate ? formatDate(offer.startDate) : null} />

@@ -46,7 +46,7 @@ async function run(req, res) {
       entityType: 'OrgImport', entityId: result.importId,
       action: autoApproved ? 'Imported and approved (Approve now)' : 'Imported, sent for approval',
       actor: audit.actorFrom(req),
-      comment: `${result.directorates} directorate(s), ${result.departments} department(s) and ${result.positions} position(s) from ${result.fileName}. ${orgApproval.creationNote(state)}`,
+      comment: `${result.directorates} directorate(s), ${result.departments} department(s) and ${result.positions} title(s) from ${result.fileName}. ${orgApproval.creationNote(state)}`,
       details: {
         name: result.fileName, autoApproved, autoApproveAvailable: canApprove,
         directorates: result.directorates, departments: result.departments, positions: result.positions, skipped: result.skipped
