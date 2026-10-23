@@ -86,7 +86,7 @@ export async function clearMicrosoftSession(kind) {
 // [{ entraObjectId, name, email, jobTitle, department }]; throws if Graph
 // can't be used here (not set up, consent missing, popup blocked).
 //
-// kind 'candidate': an employee on Internal Careers picking their supervisor,
+// kind 'candidate': an employee on Internal Careers (not used at present),
 // with their own session on the candidate app - User.ReadBasic.All only (no
 // admin consent needed per user, though an admin can grant it for everyone)
 // and silently only: it runs as they type, where a popup would be blocked.

@@ -221,7 +221,7 @@ async function login(req, res) {
 // conflict-of-interest rules keep them out of any vacancy they apply for).
 // The first sign-in creates the Internal candidate account, already
 // confirmed - Entra has proven the address. After that the oid alone
-// matches. The internal profile (supervisor etc.) is still self-declared
+// matches. The internal profile (employee number, department, position) is self-declared
 // and HR-verified, as Entra holds none of it.
 // Applications on External vacancies not yet finished: a draft, anything in
 // the pipeline, or an offer still open - or accepted, until they are hired.

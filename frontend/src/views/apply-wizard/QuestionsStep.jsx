@@ -43,8 +43,7 @@ export default function QuestionsStep({
         <option value="No">No</option>
         <option value="Depends">Depends on the offer</option>
       </Select>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
-        <TextField label="Desired salary" hint="Monthly, UGX or USD" value={questions.desiredSalary} onChange={set('desiredSalary')} />
+      <div style={{ maxWidth: 312 }}>
         <TextField label="Earliest start date" type="date" value={questions.earliestStartDate} onChange={set('earliestStartDate')} />
       </div>
       <TextArea label="Why this role?" required rows={5} hint="A few sentences on what draws you to this role and to UCAA"

@@ -139,7 +139,7 @@ export default function CandidateSearch() {
           footer={canEmail && <Button onClick={() => { setSelected([open.id]); setComposing(true); }}><Mail size={14} /> Email</Button>}>
           <div>
             <h3>Contact</h3>
-            <KeyValues rows={[['Email', open.email], ['Phone', open.phone || null], ['Lives in', open.location || null]]} />
+            <KeyValues rows={[['Email', open.email], ['Phone', open.phone || null], ['Place of residence', open.location || null]]} />
           </div>
           <div>
             <h3>Background</h3>

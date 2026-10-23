@@ -188,6 +188,10 @@ async function approve(req, res) {
     + (offerService.describeSalary(offer) ? ` at ${offerService.describeSalary(offer)}` : '')
     + `. Please log in to review the terms and accept or decline by ${formatWhen(deadline)}.`
   ));
+  await safely(`hiring manager update for offer ${offerId}`, async () => {
+    const candidate = await prisma.candidate.findUnique({ where: { id: offer.application.candidateId }, select: { fullName: true } });
+    await hiringManagers.notify(offer.application.vacancy, 'offerMade', { candidateName: candidate?.fullName });
+  });
   broadcastDashboardEvent('OfferApproved', { offerId });
   res.json(offer);
 }

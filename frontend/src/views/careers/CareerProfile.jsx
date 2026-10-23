@@ -62,8 +62,8 @@ export default function CareerProfile() {
         {SITE.internal && section('UCAA employment', 'employment', check.tone ? <Pill tone={check.tone}>{check.tone === 'ok' ? `Verified by HR · ${formatDay(p.verifiedDate)}` : check.label}</Pill> : null, (
           <>
             <KeyValues rows={[
-              ['Employee ID', p.employeeId || null], ['Position', p.position || null], ['Department', p.department || null],
-              ['Joined UCAA', p.dateJoined ? formatDay(p.dateJoined) : null], ['Supervisor', p.supervisorName ? `${p.supervisorName}${p.supervisorEmail ? ` · ${p.supervisorEmail}` : ''}` : null]
+              ['Employee number', p.employeeId || null], ['Job title', p.position || null], ['Department', p.department || null],
+              ['Joined UCAA', p.dateJoined ? formatDay(p.dateJoined) : null]
             ]} />
             <div className="ws-note" style={{ marginTop: 8 }}>Changing these sends them back to HR to verify.</div>
           </>
@@ -77,9 +77,9 @@ export default function CareerProfile() {
               </div>
             )}
             <KeyValues rows={[
-              ['National ID', me.nationalId ? <span className="ws-mono">{me.nationalId}</span> : null],
+              me.candidateType !== 'Internal' && ['National ID', me.nationalId ? <span className="ws-mono">{me.nationalId}</span> : null],
               !SITE.internal && ['Phone', me.phone || null],
-              ['District of origin', me.districtOfOrigin || null], ['Lives in', me.location || null],
+              ['District of origin', me.districtOfOrigin || null], ['Place of residence', me.location || null],
               ['Date of birth', me.dateOfBirth ? formatDay(me.dateOfBirth) : null],
               me.flyingHours != null && ['Flying hours', me.flyingHours],
               !SITE.internal && me.linkedinUrl && ['LinkedIn', me.linkedinUrl],

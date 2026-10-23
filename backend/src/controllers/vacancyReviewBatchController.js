@@ -3,6 +3,7 @@ const audit = require('../services/auditService');
 const applicationModel = require('../models/applicationModel');
 const candidateModel = require('../models/candidateModel');
 const { screenApplication, scoreApplication, evaluateEssentialCriteria } = require('../services/screeningService');
+const hiringManagers = require('../services/hiringManagerService');
 
 // Explicit staff action (not a side effect of viewing the list, and not
 // per-candidate) - matches how every other meaningful transition in this
@@ -16,6 +17,7 @@ async function beginReview(req, res) {
 
   if (!vacancy.reviewStartedAt) {
     await vacancyModel.update(vacancyId, { reviewStartedAt: new Date() });
+    await hiringManagers.notify(vacancy, 'reviewStarted');
   }
 
   const pending = await applicationModel.findByVacancyAndStatus(vacancyId, 'Submitted');

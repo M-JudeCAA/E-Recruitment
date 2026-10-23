@@ -81,10 +81,9 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
         ['Email', person.email],
         ['Phone', person.phone],
         ['Department', person.department],
-        ['Position', person.position],
+        ['Job title', person.position],
         ['Employee number', person.employeeId],
         ['Joined UCAA', person.dateJoined ? formatDay(person.dateJoined) : null],
-        ['Supervisor', person.supervisorName ? `${person.supervisorName}${person.supervisorEmail ? ` (${person.supervisorEmail})` : ''}` : person.supervisorEmail],
         ['Waiting since', formatDay(person.waitingSince)]
       ]} />
 
@@ -117,7 +116,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
         <>
           <h3 style={SECTION}>Your check</h3>
           <p className="ws-note" style={{ marginTop: 0 }}>
-            Confirm the details with their supervisor or HR records. Give comments (at least {MIN_COMMENT} characters) or attach
+            Confirm the details against HR records (employee number, job title, date joined). Give comments (at least {MIN_COMMENT} characters) or attach
             the manager's recommendation letter - either is kept as the evidence.
           </p>
           <TextArea label="Comments" value={comments} onChange={(e) => setComments(e.target.value)} />
@@ -155,8 +154,8 @@ export default function EmploymentChecks() {
 
   const columns = [
     { key: 'name', label: 'Candidate', render: (p) => <><span className="t">{p.name}</span><div className="s">{p.email}</div></> },
-    { key: 'job', label: 'Department and position', render: (p) => <><span>{p.department || '—'}</span><div className="s">{p.position || ''}</div></> },
-    { key: 'supervisor', label: 'Supervisor', render: (p) => <span className="s">{p.supervisorName || p.supervisorEmail || '—'}</span> },
+    { key: 'job', label: 'Department and job title', render: (p) => <><span>{p.department || '—'}</span><div className="s">{p.position || ''}</div></> },
+    { key: 'employeeId', label: 'Employee number', render: (p) => <span className="s ws-mono">{p.employeeId || '—'}</span> },
     { key: 'status', label: 'Status', width: 120, render: (p) => { const s = STATUS[p.status] || STATUS.Pending; return <Pill tone={s.tone}>{s.label}</Pill>; } },
     { key: 'waiting', label: 'Waiting', width: 100, render: (p) => (p.status === 'HR_Verified' ? <span className="s">—</span> : waitingFor(p.waitingSince)) },
     { key: 'apps', label: 'Applications', width: 110, render: (p) => (p.applications.length ? <Pill tone="info">{p.applications.length} in progress</Pill> : <span className="s">None</span>) }

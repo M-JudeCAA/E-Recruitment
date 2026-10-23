@@ -568,7 +568,7 @@ describe('supporting documents', () => {
     let res = mockRes();
     await applicationDraftController.addDocument({ params: { id: '1' }, user: { id: 5 }, file, body: { category: 'Evidence', evidenceKey: 'nationalId' } }, res);
     expect(prisma.applicationDocument.create).toHaveBeenCalledWith({ data: expect.objectContaining({
-      category: 'Evidence', evidenceKey: 'nationalId', label: 'Copy of your National ID'
+      category: 'Evidence', evidenceKey: 'nationalId', label: 'Proof of your date of birth'
     }) });
 
     // Something this vacancy doesn't ask for is refused.

@@ -58,7 +58,7 @@ test('SuggestField hands the picked option over, by click or Enter', async () =>
 });
 
 describe('the employment form', () => {
-  const me = { fullName: 'Jane Nakato', email: 'jane@caa.co.ug', internalProfile: { employeeId: 'E1', dateJoined: '2017-03-01', supervisorName: 'Ben', supervisorEmail: 'ben@caa.co.ug' } };
+  const me = { fullName: 'Jane Nakato', email: 'jane@caa.co.ug', internalProfile: { employeeId: 'E1', dateJoined: '2017-03-01' } };
   const renderForm = () => {
     let save;
     render(<EmploymentForm me={me} bind={(fn) => { save = fn; }} />);

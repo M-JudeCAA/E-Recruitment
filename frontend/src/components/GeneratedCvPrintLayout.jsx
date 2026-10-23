@@ -95,7 +95,6 @@ export default function GeneratedCvPrintLayout({ candidate, application, vacancy
 
       <h2 style={sectionHeadingStyle}>APPLICATION DETAILS</h2>
       <div style={rowStyle}><span>Open to relocating</span><span>{RELOCATE_LABELS[a.openToRelocate] || '—'}</span></div>
-      <div style={rowStyle}><span>Desired salary</span><span>{a.desiredSalary || '—'}</span></div>
       <div style={rowStyle}><span>Earliest start date</span><span>{formatDate(a.earliestStartDate) || '—'}</span></div>
       {a.whyThisRole && (
         <div style={{ padding: '8px 0' }}>

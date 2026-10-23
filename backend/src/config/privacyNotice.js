@@ -3,6 +3,6 @@
 // Stored on each Application as consentNoticeVersion, so it's always known
 // which wording a candidate agreed to. Bump both together whenever the
 // notice's wording changes.
-const PRIVACY_NOTICE_VERSION = '2026-09-draft';
+const PRIVACY_NOTICE_VERSION = '2026-10-draft';
 
 module.exports = { PRIVACY_NOTICE_VERSION };

@@ -49,7 +49,7 @@ export default function ReviewStep({
       rows: [
         ['Place of residence', profileDetails.location || '—'],
         ['District of origin', profileDetails.districtOfOrigin || '—'],
-        ['National ID (NIN)', profileDetails.nationalId || '—'],
+        ...(candidateType === 'Internal' ? [] : [['National ID (NIN)', profileDetails.nationalId || '—']]),
         ['Education entries', (profile?.education || []).length],
         ['Work experience entries', (profile?.workExperience || []).length],
       ],
@@ -81,7 +81,6 @@ export default function ReviewStep({
       title: 'Questions',
       rows: [
         ['Open to relocating', RELOCATE_LABELS[questions.openToRelocate] || '—'],
-        ['Desired salary', questions.desiredSalary || '—'],
         ['Earliest start', questions.earliestStartDate || '—'],
         ['Why this role', questions.whyThisRole || '—'],
         ...(disqualifyingRequirements || []).map((req) => {
@@ -103,10 +102,9 @@ export default function ReviewStep({
       i: stepIndexes.internal,
       title: 'Internal Profile',
       rows: [
-        ['Employee ID', internalProfile.employeeId || '—'],
+        ['Employee number', internalProfile.employeeId || '—'],
         ['Department', internalProfile.department || '—'],
-        ['Position', internalProfile.position || '—'],
-        ['Supervisor', internalProfile.supervisorName || '—'],
+        ['Job title', internalProfile.position || '—'],
       ],
     });
   }

@@ -21,7 +21,7 @@ const ACTIVE_STATUSES = ['Submitted', 'UnderReview', 'ShortlistProposed', 'Short
 
 const PROFILE_SELECT = {
   candidateId: true, employeeId: true, department: true, position: true, dateJoined: true,
-  supervisorName: true, supervisorEmail: true, verificationStatus: true, verificationEvidenceType: true,
+  verificationStatus: true, verificationEvidenceType: true,
   verificationComments: true, supportingDocumentUrl: true, verifiedDate: true, detailsUpdatedAt: true,
   verifiedBy: { select: { name: true } },
   candidate: {
@@ -50,7 +50,7 @@ function view(profile) {
   return {
     candidateId: c.id, name: c.fullName, email: c.email, phone: c.phone,
     employeeId: profile.employeeId, department: profile.department, position: profile.position,
-    dateJoined: profile.dateJoined, supervisorName: profile.supervisorName, supervisorEmail: profile.supervisorEmail,
+    dateJoined: profile.dateJoined,
     status: isVerified(profile) ? 'HR_Verified' : profile.verificationStatus === 'HR_Verified' ? 'Pending' : profile.verificationStatus,
     evidenceType: profile.verificationEvidenceType, comments: profile.verificationComments,
     supportingDocumentUrl: profile.supportingDocumentUrl,

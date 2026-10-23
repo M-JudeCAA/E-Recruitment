@@ -11,7 +11,6 @@ const { educationKey, workExperienceKey, certificateKey, examGradeKey } = requir
 const { normalizeStringList } = require('../utils/vacancyValidation');
 const { toPublicVacancy } = require('../utils/publicVacancy');
 const { toCandidateOffer } = require('../services/offerService');
-const { internalDomains } = require('../services/entraAuthService');
 const { toCandidateInterview } = require('../utils/candidateInterview');
 const internalEmployment = require('../services/internalEmploymentService');
 
@@ -263,8 +262,11 @@ async function deleteExamGrade(req, res) {
 
 async function updateProfile(req, res) {
   const { location, districtOfOrigin, linkedinUrl, portfolioUrl, dateOfBirth, flyingHours } = req.body;
-  // The NIN is the only identity document a candidate gives (no passports).
-  const nationalId = req.body.nationalId === undefined ? undefined : normalizeNationalId(req.body.nationalId);
+  // The NIN is the only identity document an External candidate gives (no
+  // passports). Internal candidates give none: HR knows them by their
+  // employee number (internal profile), so a NIN from them is ignored.
+  const nationalId = req.body.nationalId === undefined || req.user.candidateType === 'Internal'
+    ? undefined : normalizeNationalId(req.body.nationalId);
   // Deliberately doesn't describe the NIN format - just flags the entry as
   // wrong and asks for a correct one, matching the frontend's own message
   // (ProfileCompletionForm.jsx / validators.js).
@@ -319,7 +321,7 @@ async function removePhoto(req, res) {
 const dayOf = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 const textOf = (v) => String(v ?? '').trim().toLowerCase();
 function internalDetailsChanged(current, next) {
-  return ['employeeId', 'department', 'position', 'supervisorName', 'supervisorEmail'].some((k) => next[k] !== undefined && textOf(current[k]) !== textOf(next[k]))
+  return ['employeeId', 'department', 'position'].some((k) => next[k] !== undefined && textOf(current[k]) !== textOf(next[k]))
     || dayOf(current.dateJoined) !== dayOf(next.dateJoined);
 }
 
@@ -327,21 +329,17 @@ async function updateInternalProfile(req, res) {
   if (req.user.candidateType !== 'Internal') {
     return res.status(403).json({ error: 'Only internal candidates have an internal profile' });
   }
-  const { employeeId, dateJoined, supervisorName } = req.body;
+  const { dateJoined } = req.body;
+  // The employee number is how HR identifies an internal candidate (they give
+  // no National ID), so it is required.
+  const employeeId = String(req.body.employeeId ?? '').trim();
+  if (!employeeId) return res.status(400).json({ error: 'Enter your UCAA employee number', code: 'EMPLOYEE_NUMBER_REQUIRED' });
   // Department and position are picked from the organisation structure, by
   // id; the names stored beside them come from those rows, never the request.
   const employment = await internalEmployment.pickedEmployment(req.body);
-  const supervisorEmail = req.body.supervisorEmail == null ? req.body.supervisorEmail : String(req.body.supervisorEmail).trim().toLowerCase();
-  // The supervisor is told about each application at this address, so it has
-  // to be a UCAA mailbox (Internal Careers picks it from the UCAA directory).
-  const domains = internalDomains();
-  if (supervisorEmail && domains.length && !domains.includes(supervisorEmail.split('@')[1])) {
-    return res.status(400).json({ error: "Your supervisor's email must be a UCAA address.", code: 'SUPERVISOR_NOT_UCAA' });
-  }
   const data = {
-    employeeId, ...employment,
-    dateJoined: dateJoined ? new Date(dateJoined) : null,
-    supervisorName, supervisorEmail
+    employeeId: employeeId.slice(0, 64), ...employment,
+    dateJoined: dateJoined ? new Date(dateJoined) : null
   };
   // HR verified the details as they were. Changing any of them sends the
   // profile back to Pending, so HR checks the new details before the
@@ -361,7 +359,7 @@ async function updateInternalProfile(req, res) {
     await audit.record({
       entityType: 'InternalProfile', entityId: req.user.id, actor: audit.actorFrom(req),
       action: 'Employment details changed - back to HR for checking',
-      before: current, after: profile, fields: ['department', 'position', 'employeeId', 'dateJoined', 'supervisorName', 'supervisorEmail', 'verificationStatus']
+      before: current, after: profile, fields: ['department', 'position', 'employeeId', 'dateJoined', 'verificationStatus']
     });
   }
   await checkAndFireCompletionEvent(req.user.id);

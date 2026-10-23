@@ -18,6 +18,7 @@ const { notify } = require('../services/notificationService');
 const conflictOfInterest = require('../services/conflictOfInterestService');
 const approvalNotices = require('../services/approvalNotificationService');
 const internalVerification = require('../services/internalVerificationService');
+const hiringManagers = require('../services/hiringManagerService');
 
 // HR's side of the shortlisting committee (shortlistCommitteeService.js has
 // the ranking rules). HR builds the assessment sheet, invites the committee,
@@ -466,6 +467,7 @@ async function openRating(req, res) {
   // The calibration set is drawn at random, so record which it was.
   const calibrationSet = [...new Set(plan.filter((p) => p.calibration).map((p) => p.applicationId))];
   await audit(vacancy.id, 'Shortlisting committee rating opened', req.user.id, { applicants: pool.length, members: exercise.members.length, calibrationSet });
+  await hiringManagers.notify(vacancy, 'shortlistingStarted', { count: pool.length });
   broadcastDashboardEvent('ShortlistCommitteeUpdated', { vacancyId: vacancy.id });
   res.json({ applicants: pool.length, assignments: plan.length, links });
 }
@@ -587,6 +589,7 @@ async function close(req, res) {
   await audit(exercise.vacancyId, 'Shortlisting committee closed', req.user.id, {
     ranking: rows.map((r) => ({ applicationId: r.applicationId, rank: r.rank, band: r.band, score: r.score }))
   });
+  await hiringManagers.notify(exercise.vacancyId, 'shortlistingComplete');
   broadcastDashboardEvent('ShortlistCommitteeUpdated', { vacancyId: exercise.vacancyId });
   return get(req, res);
 }
