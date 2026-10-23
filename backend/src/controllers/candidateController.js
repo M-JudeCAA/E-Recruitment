@@ -8,7 +8,7 @@ const { validateNationalId, normalizeNationalId } = require('../utils/validators
 const { checkAndFireCompletionEvent } = require('../services/profileCompletionService');
 const { fileUrl } = require('../middleware/upload');
 const { educationKey, workExperienceKey, certificateKey, examGradeKey } = require('../utils/entryDedup');
-const { normalizeStringList } = require('../utils/vacancyValidation');
+const { splitDuties } = require('../utils/dutyList');
 const { toPublicVacancy } = require('../utils/publicVacancy');
 const { toCandidateOffer } = require('../services/offerService');
 const { toCandidateInterview } = require('../utils/candidateInterview');
@@ -49,7 +49,7 @@ async function addWorkExperience(req, res) {
     candidateId: req.user.id, employer, jobTitle,
     startDate: new Date(startDate),
     endDate: endDate ? new Date(endDate) : null,
-    duties: normalizeStringList(duties) || []
+    duties: duties === undefined ? [] : splitDuties(duties)
   });
   await checkAndFireCompletionEvent(req.user.id);
   res.status(201).json(entry);
@@ -139,7 +139,7 @@ async function updateWorkExperience(req, res) {
     employer, jobTitle,
     startDate: new Date(startDate),
     endDate: endDate ? new Date(endDate) : null,
-    duties: normalizeStringList(duties) || []
+    duties: duties === undefined ? [] : splitDuties(duties)
   });
   if (result.count === 0) return res.status(404).json({ error: 'Work experience entry not found' });
   res.json({ message: 'Work experience entry updated' });

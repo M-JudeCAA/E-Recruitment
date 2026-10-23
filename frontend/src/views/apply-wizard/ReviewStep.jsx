@@ -15,7 +15,7 @@ export default function ReviewStep({
 
   // Each document opens in the viewer, so the candidate can check what they attached.
   const documentLinks = (list) => (list.length ? list.map((d, i) => (
-    <span key={d.id}>{i > 0 && ', '}<DocumentLink url={d.fileUrl} audience="candidate" name={d.label || d.originalName} /></span>
+    <span key={d.id}>{i > 0 && ', '}<DocumentLink url={d.fileUrl} audience="candidate" name={d.category === 'CV' ? d.originalName : d.label || d.originalName} /></span>
   )) : null);
   const inCategory = (category) => (documents || []).filter((d) => d.category === category);
 

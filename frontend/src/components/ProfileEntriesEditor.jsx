@@ -4,7 +4,8 @@ import client from '../models/apiClient';
 import TextField from './TextField';
 import Select from './Select';
 import Button from './Button';
-import BulletListEditor from './BulletListEditor';
+import TextArea from './TextArea';
+import { splitDuties, dutiesToText } from '../utils/dutyList';
 import { useConfirm } from './ConfirmDialog';
 import { educationKey, workExperienceKey, certificateKey } from '../utils/entryDedup';
 
@@ -45,9 +46,10 @@ export const ENTRY_KINDS = {
   workExperience: {
     path: '/api/candidates/me/work-experience',
     title: 'Work experience', noun: 'job', required: true,
-    empty: { employer: '', jobTitle: '', startDate: '', endDate: '', duties: [] },
-    fromSaved: (w) => ({ employer: w.employer || '', jobTitle: w.jobTitle || '', startDate: day(w.startDate), endDate: day(w.endDate), duties: w.duties || [] }),
-    toPayload: (v) => ({ ...v, endDate: v.endDate || null, duties: (v.duties || []).map((d) => d.trim()).filter(Boolean) }),
+    // duties: the text box's text; saved as a list, one duty per line or bullet.
+    empty: { employer: '', jobTitle: '', startDate: '', endDate: '', duties: '' },
+    fromSaved: (w) => ({ employer: w.employer || '', jobTitle: w.jobTitle || '', startDate: day(w.startDate), endDate: day(w.endDate), duties: dutiesToText(w.duties) }),
+    toPayload: (v) => ({ ...v, endDate: v.endDate || null, duties: splitDuties(v.duties) }),
     missing: (v) => [!v.employer.trim() && 'employer', !v.jobTitle.trim() && 'job title', !v.startDate && 'start date'].filter(Boolean),
     key: workExperienceKey
   },
@@ -218,7 +220,7 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({ profile,
   useImperativeHandle(ref, () => ({
     addFromCv(kind, values) {
       const cfg = ENTRY_KINDS[kind];
-      const filled = { ...cfg.empty, ...Object.fromEntries(Object.entries(values).map(([k, v]) => [k, Array.isArray(v) ? v : v == null ? '' : String(v)])) };
+      const filled = { ...cfg.empty, ...Object.fromEntries(Object.entries(values).map(([k, v]) => [k, Array.isArray(v) ? dutiesToText(v) : v == null ? '' : String(v)])) };
       if (kind !== 'education') for (const f of ['startDate', 'endDate', 'issueDate', 'expiryDate']) if (f in filled) filled[f] = day(filled[f]);
       const k = cfg.key(filled);
       if (rowsRef.current[kind].some((r) => cfg.key(r.values) === k)) return false;
@@ -258,8 +260,16 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({ profile,
           <TextField label="Start date" type="date" required value={v.startDate} onChange={set('startDate')} />
           <TextField label="End date" type="date" hint="Leave blank if this is your current job" value={v.endDate} onChange={set('endDate')} />
         </div>
-        <BulletListEditor label="Job duties" hint="What did this job involve? One duty per line."
-          items={v.duties} onChange={(duties) => change(kind, row.key, 'duties', duties)} placeholder="e.g. Managed the on-call rotation" />
+        {/* Paste a bulleted or numbered list straight in; on leaving the box
+            it is tidied to one bullet per duty, as it is saved. */}
+        <TextArea label="Job duties" rows={5}
+          hint="Type or paste them - a bulleted or numbered list, or one duty per line."
+          placeholder={'• Managed the on-call rotation\n• Trained new staff'}
+          value={v.duties} onChange={set('duties')}
+          onBlur={() => {
+            const tidy = dutiesToText(splitDuties(v.duties));
+            if (tidy !== v.duties) change(kind, row.key, 'duties', tidy);
+          }} />
       </>
     );
     return (

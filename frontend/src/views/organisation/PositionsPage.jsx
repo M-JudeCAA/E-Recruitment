@@ -247,7 +247,7 @@ export default function PositionsPage() {
           </select>
           <select className="ws-field" aria-label="Department" value={department} onChange={(e) => setDepartment(e.target.value)}>
             <option value="">All departments</option>
-            {departmentChoices.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.code}){directorate ? '' : ` · ${d.directorate?.code}`}</option>)}
+            {departmentChoices.map((d) => <option key={d.id} value={d.id}>{d.name} ({d.code}){directorate || !d.directorate ? '' : ` · ${d.directorate.code}`}</option>)}
           </select>
           <select className="ws-field" aria-label="Level" value={level} onChange={(e) => setLevel(e.target.value)}>
             <option value="">All levels</option>
@@ -270,7 +270,7 @@ export default function PositionsPage() {
                 { key: 'code', label: 'Code', width: 100, className: 'ws-mono', render: (p) => p.code || <span className="s">—</span> },
                 { key: 'name', label: 'Title', render: (p) => <span className="t">{p.name}</span> },
                 { key: 'level', label: 'Level', render: (p) => levelLabel(p.level) },
-                { key: 'dept', label: 'Department', render: (p) => <>{p.department?.name}<span className="s"> · {p.department?.directorate?.code}</span></> },
+                { key: 'dept', label: 'Department', render: (p) => <>{p.department?.name}{p.department?.directorate && <span className="s"> · {p.department.directorate.code}</span>}</> },
                 { key: 'headcount', label: 'Positions', align: 'right', className: 'ws-num', render: (p) => p.headcount ?? <span className="s">—</span> },
                 { key: 'occupied', label: 'Filled', align: 'right', className: 'ws-num', render: (p) => (p.headcount == null ? <span className="s">—</span> : p.occupied) },
                 { key: 'vacancies', label: 'Vacancies', align: 'right', className: 'ws-num', render: (p) => vacanciesOf(p) ?? <span className="s">—</span> },

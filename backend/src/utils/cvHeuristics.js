@@ -21,6 +21,7 @@
 //   date", "2015-2019", "since 2020", "12th March 1990").
 
 const { educationKey, workExperienceKey, certificateKey, dedupeBy } = require('./entryDedup');
+const { splitDuties } = require('./dutyList');
 
 // ---- Text ------------------------------------------------------------------
 
@@ -502,7 +503,7 @@ function parseWork(lines) {
       jobTitle: recase(clean(jobTitle)),
       startDate: range ? range.start : '',
       endDate: range && !range.current && !range.single ? range.end : '',
-      duties: e.duties.map((d) => d.replace(/\s+/g, ' ').trim()).filter((d) => d.length > 2).slice(0, 25),
+      duties: splitDuties(e.duties).filter((d) => d.length > 2).slice(0, 25),
       yearOnly
     };
   }).filter((e) => (e.jobTitle || e.employer) && (e.startDate || (e.jobTitle && e.employer)));

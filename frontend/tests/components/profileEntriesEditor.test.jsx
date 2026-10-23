@@ -98,3 +98,19 @@ test('flush() sends what is still waiting', async () => {
   await act(() => ref.current.flush());
   expect(sent.filter((r) => r.method === 'post' && r.url === '/api/candidates/me/education')).toHaveLength(1);
 });
+
+test('job duties pasted as a numbered list are saved one per duty and shown as bullets', async () => {
+  const user = userEvent.setup();
+  renderEditor();
+  await user.type(screen.getByLabelText(/Employer/), 'Uganda Airlines');
+  await user.type(screen.getByLabelText(/Job title/), 'Cabin Crew');
+  await user.type(screen.getByLabelText(/Start date/), '2019-03-01');
+  const box = screen.getByLabelText(/Job duties/);
+  await user.click(box);
+  await user.paste('1. Conducted safety briefings\n2) Served passengers on regional\nroutes\n3. Wrote cabin reports');
+  await user.tab();
+  expect(box.value).toBe('• Conducted safety briefings\n• Served passengers on regional routes\n• Wrote cabin reports');
+  await waitFor(() => expect(sent.some((r) => r.method === 'post' && r.body.duties?.length === 3)).toBe(true), { timeout: 3000 });
+  const saved = [...sent].reverse().find((r) => r.url === '/api/candidates/me/work-experience' || r.url.startsWith('/api/candidates/me/work-experience/'));
+  expect(saved.body.duties).toEqual(['Conducted safety briefings', 'Served passengers on regional routes', 'Wrote cabin reports']);
+});
