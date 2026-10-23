@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, CheckCircle2, Circle, Paperclip, Crown, Gavel } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle2, Circle, Paperclip, Crown, Gavel, Search } from 'lucide-react';
 import client from '../models/apiClient';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
@@ -12,14 +12,18 @@ import StatusBadge from '../components/StatusBadge';
 import { useConfirm } from '../components/ConfirmDialog';
 import { ESSENTIAL_OPTIONS, DESIRABLE_LABELS, ratingLabel } from '../utils/shortlistCommittee';
 import DocumentLink from '../components/DocumentLink';
+import Pagination, { usePagination } from '../components/Pagination';
+import { Chips } from '../components/workspace/ui';
 
 // Public page - a shortlisting committee member's private link (no account;
 // committee members are never HR staff). They rate each applicant assigned
 // to them on the vacancy's criteria - essential ones Met / Partly met / Not
 // met, desirable ones 1-5 - blind to the rest of the committee, and can
 // change any rating until they submit. At moderation the chair also gets the
-// disputed items, with every rater's view, to rule on. See backend
-// shortlistPanelController.js.
+// disputed items, with every rater's view, to rule on. A large pool means
+// hundreds of applicants per member, so the list is searched, filtered and
+// paged; prev/next walk the list as it was filtered when the applicant was
+// opened. See backend shortlistPanelController.js.
 
 const muted = { fontSize: 13, color: 'var(--color-text-muted)' };
 const choice = (active) => ({
@@ -29,6 +33,14 @@ const choice = (active) => ({
 });
 
 const yearOf = (d) => (d ? new Date(d).getFullYear() : null);
+
+const FILTERS = {
+  all: () => true,
+  todo: (a) => !a.complete,
+  done: (a) => a.complete && !a.conflict,
+  conflict: (a) => a.conflict,
+  calibration: (a) => a.calibration
+};
 
 function Profile({ applicant }) {
   const c = applicant.candidate;
@@ -248,27 +260,48 @@ export default function ShortlistPanelAccess() {
   const [applicant, setApplicant] = useState(null);
   const [tab, setTab] = useState('applicants');
   const [submitting, setSubmitting] = useState(false);
+  const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
+  // The applicants prev/next walk: the list as filtered when one was opened,
+  // so rating someone out of "To rate" doesn't lose your place.
+  const [navIds, setNavIds] = useState([]);
 
   const load = useCallback(() => client.get(`/api/shortlist-panel/${token}`)
     .then((res) => { setCtx(res.data); setError(''); })
     .catch((err) => { setCtx(null); setError(err.response?.data?.error || 'This link is not valid.'); }), [token]);
   useEffect(() => { load(); }, [load]);
 
-  const openApplicant = useCallback((id) => {
+  const openApplicant = useCallback((id, ids) => {
     setOpenId(id); setApplicant(null);
+    if (ids) setNavIds(ids);
     if (!id) return;
     client.get(`/api/shortlist-panel/${token}/applicants/${id}`)
       .then((res) => setApplicant(res.data))
       .catch((err) => setError(err.response?.data?.error || 'Could not load this applicant'));
   }, [token]);
 
+  const list = useMemo(() => ctx?.applicants || [], [ctx]);
+  const shown = useMemo(() => {
+    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    return list.filter(FILTERS[filter])
+      .filter((a) => words.every((w) => a.candidateName.toLowerCase().includes(w)));
+  }, [list, filter, query]);
+  const pager = usePagination(shown, { resetKey: `${filter}|${query}` });
+
   const wrap = (children) => <div style={{ maxWidth: 1000, margin: '0 auto' }}>{children}</div>;
   if (error && !ctx) return wrap(<><PageHeader title="Shortlisting" /><Alert type="error" message={error} /></>);
   if (!ctx) return wrap(<><Skeleton width={260} height={22} style={{ marginBottom: 12 }} /><Skeleton width="100%" height={200} radius={6} /></>);
 
-  const list = ctx.applicants;
-  const index = list.findIndex((a) => a.applicationId === openId);
+  const index = navIds.indexOf(openId);
   const done = list.filter((a) => a.complete).length;
+  const count = (key) => list.filter(FILTERS[key]).length;
+  const filterOptions = [
+    { key: 'all', label: 'All', count: list.length },
+    { key: 'todo', label: 'To rate', count: count('todo') },
+    { key: 'done', label: 'Rated', count: count('done') },
+    ...(count('conflict') ? [{ key: 'conflict', label: 'Stood down', count: count('conflict') }] : []),
+    ...(count('calibration') ? [{ key: 'calibration', label: 'Calibration', count: count('calibration') }] : [])
+  ];
   const readOnly = ctx.stage !== 'Rating' || Boolean(ctx.submittedAt);
 
   const submit = async () => {
@@ -320,17 +353,17 @@ export default function ShortlistPanelAccess() {
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
             <Button variant="ghost" onClick={() => openApplicant(null)}><ChevronLeft size={14} /> All applicants</Button>
-            <span style={muted}>Applicant {index + 1} of {list.length}</span>
+            <span style={muted}>Applicant {index + 1} of {navIds.length}{navIds.length < list.length ? ` (filtered from ${list.length})` : ''}</span>
             <div style={{ display: 'flex', gap: 6 }}>
-              <Button variant="ghost" disabled={index <= 0} onClick={() => openApplicant(list[index - 1].applicationId)}><ChevronLeft size={14} /></Button>
-              <Button variant="ghost" disabled={index >= list.length - 1} onClick={() => openApplicant(list[index + 1].applicationId)}><ChevronRight size={14} /></Button>
+              <Button variant="ghost" aria-label="Previous applicant" disabled={index <= 0} onClick={() => openApplicant(navIds[index - 1])}><ChevronLeft size={14} /></Button>
+              <Button variant="ghost" aria-label="Next applicant" disabled={index < 0 || index >= navIds.length - 1} onClick={() => openApplicant(navIds[index + 1])}><ChevronRight size={14} /></Button>
             </div>
           </div>
           {!applicant ? <Skeleton width="100%" height={240} radius={6} /> : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ alignItems: 'start' }}>
               <Profile token={token} applicant={applicant} />
               <RatingSheet token={token} applicant={applicant} onSaved={load}
-                onNext={() => (index < list.length - 1 ? openApplicant(list[index + 1].applicationId) : openApplicant(null))} />
+                onNext={() => (index >= 0 && index < navIds.length - 1 ? openApplicant(navIds[index + 1]) : openApplicant(null))} />
             </div>
           )}
         </>
@@ -340,9 +373,18 @@ export default function ShortlistPanelAccess() {
             {done} of {list.length} rated.{' '}
             {list.some((a) => a.calibration) && 'Applicants marked "calibration" are rated by every member, so the committee can compare standards.'}
           </p>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
+            <Chips options={filterOptions} value={filter} onChange={setFilter} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 220px', maxWidth: 320, padding: '6px 10px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', background: 'var(--color-bg)' }}>
+              <Search size={14} color="var(--color-text-muted)" />
+              <input type="search" aria-label="Search applicants by name" placeholder="Search by name" value={query} onChange={(e) => setQuery(e.target.value)}
+                style={{ border: 'none', outline: 'none', flex: 1, minWidth: 0, fontFamily: 'inherit', fontSize: 13, background: 'transparent', color: 'var(--color-text)' }} />
+            </label>
+          </div>
           <Card style={{ padding: 0, overflow: 'hidden' }}>
-            {list.map((a, i) => (
-              <button key={a.applicationId} type="button" onClick={() => openApplicant(a.applicationId)} className="list-row" style={{
+            {shown.length === 0 && <p style={{ ...muted, margin: 0, padding: 12 }}>No applicants match.</p>}
+            {pager.pageRows.map((a, i) => (
+              <button key={a.applicationId} type="button" onClick={() => openApplicant(a.applicationId, shown.map((x) => x.applicationId))} className="list-row" style={{
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', textAlign: 'left', gap: 8,
                 background: 'var(--color-bg)', border: 'none', borderTop: i ? '1px solid var(--color-border)' : 'none',
                 padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, color: 'var(--color-text)'
@@ -355,6 +397,7 @@ export default function ShortlistPanelAccess() {
                 <span style={muted}>{a.conflict ? 'Stood down' : `${a.rated}/${ctx.criteria.length} rated`}</span>
               </button>
             ))}
+            <Pagination {...pager.props} noun="applicants" />
           </Card>
           {!readOnly && (
             <div style={{ marginTop: 16, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>

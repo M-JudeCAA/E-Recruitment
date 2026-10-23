@@ -21,8 +21,9 @@ Settings are in `vitest.config.js`; `tests/setup.js` runs before every file.
 | `components/`, `workspace/ui.test.jsx` | The shared building blocks: buttons, dialogs, the reason dialog, status badges, tables, filter chips, menus, the side panel |
 | `routing/` | Who is shown which page: the role gates, the candidate gates, and the three sites told apart by port |
 | `models/` | The API client (which session a request carries, what a failure says, ending a session the API refused), sign-in and sign-out, approving a vacancy with an exception |
+| `views/` | Whole pages, with the API client mocked: so far only the committee member's list (paging, filters, search, prev/next) |
 
-Whole pages (the Inbox, the vacancy workspace, the apply wizard) are not covered yet.
+The big pages (the Inbox, the vacancy workspace, the apply wizard) are not covered yet.
 
 ## Writing a test
 

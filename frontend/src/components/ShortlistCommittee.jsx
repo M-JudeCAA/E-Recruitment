@@ -467,7 +467,7 @@ export default function ShortlistCommittee({ vacancy, staffRole, onChanged, onMa
                   onBlur={(e) => run(() => staffClient.patch(base, { ratingDeadline: e.target.value ? new Date(e.target.value).toISOString() : null }))} />
               </label>
               <span style={{ ...hintText, flex: '1 1 220px' }}>
-                With more members than raters per applicant, each applicant goes to a sub-panel, after a calibration set everyone rates.
+                With more members than raters per applicant, each applicant goes to a sub-panel, after a calibration set everyone rates (drawn at random when rating opens).
               </span>
             </div>
           )}

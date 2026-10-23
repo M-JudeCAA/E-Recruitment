@@ -463,7 +463,9 @@ async function openRating(req, res) {
     const emailed = await emailMember(m, vacancy, exercise, 'invite');
     links.push({ memberId: m.id, name: m.name, emailed, url: emailed ? undefined : linkFor(m) });
   }
-  await audit(vacancy.id, 'Shortlisting committee rating opened', req.user.id, { applicants: pool.length, members: exercise.members.length });
+  // The calibration set is drawn at random, so record which it was.
+  const calibrationSet = [...new Set(plan.filter((p) => p.calibration).map((p) => p.applicationId))];
+  await audit(vacancy.id, 'Shortlisting committee rating opened', req.user.id, { applicants: pool.length, members: exercise.members.length, calibrationSet });
   broadcastDashboardEvent('ShortlistCommitteeUpdated', { vacancyId: vacancy.id });
   res.json({ applicants: pool.length, assignments: plan.length, links });
 }

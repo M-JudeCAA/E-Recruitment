@@ -123,24 +123,35 @@ function validRating(criterion, value) {
   return criterion.kind === 'Essential' ? value >= NOT_MET && value <= MET : value >= 1 && value <= 5;
 }
 
+// `count` of `ids` drawn at random (a partial Fisher-Yates shuffle).
+function sample(ids, count, random) {
+  const pool = [...ids];
+  for (let i = 0; i < count; i += 1) {
+    const j = i + Math.floor(random() * (pool.length - i));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, count);
+}
+
 /**
- * Who rates whom. Every member rates the calibration set (the first
- * calibrationCount applicants) so their standards can be compared; each
- * remaining applicant goes to ratersPerApplicant members, always the ones
- * with the lightest load so far. With no more members than raters needed,
- * everyone rates everyone.
+ * Who rates whom. Every member rates the calibration set (calibrationCount
+ * applicants drawn at random, so it isn't just the earliest to apply) so
+ * their standards can be compared; each remaining applicant goes to
+ * ratersPerApplicant members, always the ones with the lightest load so far.
+ * With no more members than raters needed, everyone rates everyone.
  *
  * Returns [{ memberId, applicationId, calibration }].
  */
-function planAssignments(applicationIds, memberIds, { ratersPerApplicant = 3, calibrationCount = 10 } = {}) {
+function planAssignments(applicationIds, memberIds, { ratersPerApplicant = 3, calibrationCount = 10, random = Math.random } = {}) {
   const raters = Math.min(Math.max(ratersPerApplicant, 1), memberIds.length);
   const everyoneRatesAll = raters >= memberIds.length;
-  const calibration = everyoneRatesAll ? applicationIds.length : Math.min(Math.max(calibrationCount, 0), applicationIds.length);
+  const calibrationSize = Math.min(Math.max(calibrationCount, 0), applicationIds.length);
+  const calibration = new Set(everyoneRatesAll ? applicationIds : sample(applicationIds, calibrationSize, random));
   const load = new Map(memberIds.map((id) => [id, 0]));
   const plan = [];
 
   applicationIds.forEach((applicationId, i) => {
-    if (i < calibration) {
+    if (calibration.has(applicationId)) {
       for (const memberId of memberIds) {
         plan.push({ memberId, applicationId, calibration: !everyoneRatesAll });
         load.set(memberId, load.get(memberId) + 1);
