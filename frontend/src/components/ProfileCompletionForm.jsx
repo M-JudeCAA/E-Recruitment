@@ -36,7 +36,6 @@ export default function ProfileCompletionForm({ onComplete }) {
   const [submitted, setSubmitted] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [dedupeNotice, setDedupeNotice] = useState('');
   const [saving, setSaving] = useState(false);
   const isInternal = candidate?.candidateType === 'Internal';
 
@@ -84,9 +83,15 @@ export default function ProfileCompletionForm({ onComplete }) {
 
   const setField = (key) => (e) => setForm({ ...form, [key]: e.target.value });
 
-  // A CV suggestion becomes an entry below; one the profile already has is skipped.
-  const fromCv = (kind, what) => (values) => {
-    setDedupeNotice(entries.current?.addFromCv(kind, values) ? '' : `That ${what} is already on your profile - skipped.`);
+  // What a CV read goes straight into the form: each entry below (one the
+  // profile already has is skipped), personal details and LinkedIn only into
+  // empty fields - they are saved with the rest of the form.
+  const fromCv = (kind) => (values) => entries.current?.addFromCv(kind, values) || false;
+  const CV_LABELS = { location: 'Place of residence', districtOfOrigin: 'District of origin', dateOfBirth: 'Date of birth', nationalId: 'NIN', portfolioUrl: 'Website' };
+  const fillFromCv = (found) => {
+    const empty = Object.keys(found).filter((k) => k in form && !form[k]);
+    if (empty.length) setForm((f) => ({ ...f, ...Object.fromEntries(empty.filter((k) => !f[k]).map((k) => [k, found[k]])) }));
+    return empty.map((k) => CV_LABELS[k]);
   };
 
   const handleSave = async (e) => {
@@ -104,7 +109,12 @@ export default function ProfileCompletionForm({ onComplete }) {
 
     setSaving(true);
     try {
-      await entries.current?.flush();
+      // Entries save themselves; this saves what is still waiting and stops
+      // at one someone started but left without a required field (shown).
+      if (entries.current && !(await entries.current.finish())) {
+        setError('An entry below is missing something it needs - fill it in or remove it.');
+        return;
+      }
       await client.put('/api/candidates/me', form);
       if (isInternal && !(await saveEmployment.current?.())) {
         setError('Check your employment details below.');
@@ -134,19 +144,26 @@ export default function ProfileCompletionForm({ onComplete }) {
       />
 
       <CvAutofillPanel withNationalId={!isInternal}
-        onLinkedinSuggested={(url) => setForm((f) => ({ ...f, linkedinUrl: url }))}
-        onPersonalSuggested={(found) => setForm((f) => ({
-          ...f, ...Object.fromEntries(Object.entries(found).filter(([k]) => k in f && !f[k]))
-        }))}
-        onExamGradesSuggested={async (grades) => {
-          for (const g of grades) await client.post('/api/candidates/me/exam-grades', g).catch(() => {});
-          refreshEntries();
+        onLinkedinSuggested={(url) => {
+          if (form.linkedinUrl) return false;
+          setForm((f) => ({ ...f, linkedinUrl: f.linkedinUrl || url }));
+          return true;
         }}
-        onEducationSuggested={fromCv('education', 'education entry')}
-        onWorkExperienceSuggested={fromCv('workExperience', 'work experience entry')}
-        onCertificateSuggested={fromCv('certificates', 'certificate')}
+        onPersonalSuggested={fillFromCv}
+        onExamGradesSuggested={async (grades) => {
+          let added = 0;
+          // 201 is a new result, 200 one the profile already has.
+          for (const g of grades) {
+            const res = await client.post('/api/candidates/me/exam-grades', g).catch(() => null);
+            if (res?.status === 201) added += 1;
+          }
+          refreshEntries();
+          return added;
+        }}
+        onEducationSuggested={fromCv('education')}
+        onWorkExperienceSuggested={fromCv('workExperience')}
+        onCertificateSuggested={fromCv('certificates')}
       />
-      <Alert type="info" message={dedupeNotice} />
 
       <h3 style={{ fontSize: 15, marginBottom: 8 }}>Personal details</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
@@ -178,11 +195,8 @@ export default function ProfileCompletionForm({ onComplete }) {
       </div>
 
       <div style={{ marginTop: 24 }}>
-        <ProfileEntriesEditor ref={entries} profile={profile} onSaved={refreshEntries} showMissing={submitted} />
-      </div>
-
-      <div style={{ marginBottom: 24 }}>
-        <ExamGradesEditor examGrades={profile?.examGrades} onChange={refreshEntries} />
+        <ProfileEntriesEditor ref={entries} profile={profile} onSaved={refreshEntries} showMissing={submitted}
+          educationExtra={<ExamGradesEditor examGrades={profile?.examGrades} onChange={refreshEntries} />} />
       </div>
 
       {isInternal && (

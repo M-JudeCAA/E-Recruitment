@@ -18,6 +18,8 @@ const emptyGrade = { level: 'OLevel', subject: '', grade: '' };
 // API calls and is used identically in both - a new addition doesn't need
 // to inherit that duplication just because the older sections happen to
 // have it.
+// Shown inside the Education section (ProfileEntriesEditor educationExtra):
+// O-Level and A-Level results are part of a candidate's education.
 export default function ExamGradesEditor({ examGrades, onChange }) {
   const confirm = useConfirm();
   const [newGrade, setNewGrade] = useState(emptyGrade);
@@ -84,7 +86,7 @@ export default function ExamGradesEditor({ examGrades, onChange }) {
 
   return (
     <div>
-      <h3 style={{ fontSize: 15, marginBottom: 8 }}>O-Level / A-Level exam grades</h3>
+      <h4 style={{ fontSize: 14, margin: '0 0 8px' }}>O-Level and A-Level results</h4>
       {(examGrades || []).length === 0 && (
         <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No exam grades on file yet (optional, only needed if a role requires one).</p>
       )}

@@ -11,30 +11,76 @@ import Alert from './Alert';
 // The uploaded file itself is never stored (see backend's parse-cv route).
 // uploadOnly: just the upload, without the manual/upload switch (a page that
 // opens this on purpose, e.g. My profile's "Fill in from your CV").
-// onPersonalSuggested gets the personal details read (place of residence,
-// district of origin, date of birth, NIN unless withNationalId is false,
-// website); onExamGradesSuggested the O-Level / A-Level results.
+//
+// Everything read is added to the form at once - no list of suggestions to
+// click through - and a short summary says what went in and what was
+// skipped. Each handler reports what it did, for that summary:
+//   onEducationSuggested / onWorkExperienceSuggested / onCertificateSuggested(values)
+//     -> true when added, 'incomplete' when added but a required field is
+//     missing (the entry opens for it), false when the profile already has it;
+//   onPersonalSuggested(details) -> the labels of what it filled in (only
+//     what the profile lacked); details are place of residence, district of
+//     origin, date of birth, NIN unless withNationalId is false, website;
+//   onLinkedinSuggested(url) -> true when added (only when there was none);
+//   onExamGradesSuggested(grades) -> how many O-Level / A-Level results it added.
+// Any of them may answer with a promise.
 const PERSONAL = [
   ['location', 'Place of residence'], ['districtOfOrigin', 'District of origin'], ['dateOfBirth', 'Date of birth'],
   ['nationalId', 'NIN'], ['portfolioUrl', 'Website']
 ];
+const ENTRIES = [
+  ['education', 'onEducationSuggested', 'qualification'],
+  ['workExperience', 'onWorkExperienceSuggested', 'job'],
+  ['certificates', 'onCertificateSuggested', 'certificate']
+];
+const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+const sentence = (parts) => (parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]);
 
-export default function CvAutofillPanel({
-  onLinkedinSuggested, onEducationSuggested, onWorkExperienceSuggested, onCertificateSuggested,
-  onPersonalSuggested, onExamGradesSuggested, withNationalId = true, uploadOnly = false
-}) {
+export default function CvAutofillPanel(props) {
+  const { onLinkedinSuggested, onPersonalSuggested, onExamGradesSuggested, withNationalId = true, uploadOnly = false } = props;
   const [mode, setMode] = useState(uploadOnly ? 'upload' : 'manual');
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState(null);
+  const [summary, setSummary] = useState(null); // { added, skipped, incomplete, warnings, nothing }
   const [error, setError] = useState('');
-  const [applied, setApplied] = useState({});
+
+  // Puts everything read into the form and says what happened.
+  const apply = async (result) => {
+    const added = [];
+    const skipped = [];
+    const incomplete = [];
+    for (const [key, handler, noun] of ENTRIES) {
+      const found = result[key] || [];
+      if (!found.length || !props[handler]) continue;
+      let took = 0;
+      let open = 0;
+      for (const values of found) {
+        const outcome = await props[handler](values);
+        if (outcome) took += 1;
+        if (outcome === 'incomplete') open += 1;
+      }
+      if (open) incomplete.push(plural(open, noun));
+      if (took) added.push(plural(took, noun));
+      if (found.length - took) skipped.push(plural(found.length - took, noun));
+    }
+    const personal = Object.fromEntries(PERSONAL.filter(([k]) => result[k] && (withNationalId || k !== 'nationalId')).map(([k]) => [k, result[k]]));
+    if (Object.keys(personal).length && onPersonalSuggested) {
+      const filled = (await onPersonalSuggested(personal)) || [];
+      if (filled.length) added.push(`your ${sentence(filled.map((l) => l.toLowerCase()))}`);
+    }
+    if (result.linkedinUrl && onLinkedinSuggested && (await onLinkedinSuggested(result.linkedinUrl))) added.push('your LinkedIn');
+    if (result.examGrades?.length && onExamGradesSuggested) {
+      const n = (await onExamGradesSuggested(result.examGrades)) || 0;
+      if (n) added.push(plural(n, 'O-Level / A-Level result'));
+    }
+    const foundAnything = ENTRIES.some(([key]) => result[key]?.length) || Object.keys(personal).length || result.linkedinUrl || result.examGrades?.length;
+    setSummary({ added, skipped, incomplete, warnings: result.warnings || [], nothing: !foundAnything });
+  };
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setError('');
-    setResult(null);
-    setApplied({});
+    setSummary(null);
     setUploading(true);
     try {
       const formData = new FormData();
@@ -42,7 +88,7 @@ export default function CvAutofillPanel({
       const res = await client.post('/api/candidates/me/parse-cv', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      setResult(res.data);
+      await apply(res.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Could not read this file');
     } finally {
@@ -50,26 +96,6 @@ export default function CvAutofillPanel({
       e.target.value = '';
     }
   };
-
-  const personal = result && onPersonalSuggested
-    ? Object.fromEntries(PERSONAL.filter(([k]) => result[k] && (withNationalId || k !== 'nationalId')).map(([k]) => [k, result[k]]))
-    : {};
-  const hasPersonal = Object.keys(personal).length > 0;
-  const grades = onExamGradesSuggested ? result?.examGrades || [] : [];
-
-  // Every suggestion not yet taken, in one go.
-  const addAll = () => {
-    const taken = { ...applied };
-    if (result.linkedinUrl && !taken.linkedin) { onLinkedinSuggested(result.linkedinUrl); taken.linkedin = true; }
-    if (hasPersonal && !taken.personal) { onPersonalSuggested(personal); taken.personal = true; }
-    if (grades.length && !taken.grades) { onExamGradesSuggested(grades); taken.grades = true; }
-    (result.education || []).forEach((e, i) => { if (!taken[`edu-${i}`]) { onEducationSuggested(e); taken[`edu-${i}`] = true; } });
-    (result.workExperience || []).forEach((w, i) => { if (!taken[`work-${i}`]) { onWorkExperienceSuggested(w); taken[`work-${i}`] = true; } });
-    (result.certificates || []).forEach((c, i) => { if (!taken[`cert-${i}`]) { onCertificateSuggested(c); taken[`cert-${i}`] = true; } });
-    setApplied(taken);
-  };
-
-  const hasSuggestions = result && (result.linkedinUrl || hasPersonal || grades.length || result.education?.length || result.workExperience?.length || result.certificates?.length);
 
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 24 }}>
@@ -84,88 +110,24 @@ export default function CvAutofillPanel({
 
       {mode === 'upload' && (
         <div>
-          <Alert type="info" message="Autofill from an uploaded CV uses best-effort text extraction and may misread your personal layout - check every entry it fills in. The file itself is not kept." />
-          <input type="file" accept=".pdf,.docx" onChange={handleFile} disabled={uploading} />
-          {uploading && <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Reading your CV...</p>}
+          <Alert type="info" message="Your CV is read and its details are added to your profile straight away. Reading a CV is best-effort and may misread your layout - check every entry, especially the dates. The file itself is not kept." />
+          <input type="file" accept=".pdf,.docx" onChange={handleFile} disabled={uploading} aria-label="Upload your CV" />
+          {uploading && <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Reading your CV and filling in your profile...</p>}
           <Alert type="error" message={error} />
 
-          {result && (
-            <div style={{ marginTop: 12 }}>
-              {hasSuggestions && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                  <Alert type="success" message="We found these in your CV. Add each one you want, or all of them, then check every entry - especially the dates." />
-                  <Button type="button" onClick={addAll}>Add everything found</Button>
-                </div>
+          {summary && (
+            <div style={{ marginTop: 12 }} role="status">
+              {summary.nothing ? (
+                <Alert type="error" message="Nothing could be read from this file with confidence - please fill in your details by hand." />
+              ) : (
+                <Alert type={summary.added.length ? 'success' : 'info'} message={[
+                  summary.added.length ? `Added from your CV: ${sentence(summary.added)}.` : 'Nothing new was added.',
+                  summary.skipped.length ? `Skipped ${sentence(summary.skipped)} already on your profile.` : '',
+                  summary.incomplete.length ? `${sentence(summary.incomplete)} still ${summary.incomplete.length === 1 && summary.incomplete[0].startsWith('1 ') ? 'needs' : 'need'} a detail the CV did not give - open below for you to fill in.` : '',
+                  summary.added.length ? 'Check each entry below - use Edit to correct one, Delete to drop it.' : ''
+                ].filter(Boolean).join(' ')} />
               )}
-              {result.warnings?.length > 0 && (
-                <Alert type="info" message={result.warnings.join(' ')} />
-              )}
-
-              {hasPersonal && !applied.personal && (
-                <div style={{ fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span>Found {PERSONAL.filter(([k]) => personal[k]).map(([k, label]) => `${label}: ${personal[k]}`).join(' · ')}</span>
-                  <Button type="button" variant="ghost" onClick={() => { onPersonalSuggested(personal); setApplied((a) => ({ ...a, personal: true })); }}>
-                    Use these
-                  </Button>
-                </div>
-              )}
-
-              {grades.length > 0 && !applied.grades && (
-                <div style={{ fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <span>
-                    Found {grades.length} O-Level / A-Level result{grades.length === 1 ? '' : 's'}:{' '}
-                    {grades.map((g) => `${g.level === 'ALevel' ? 'A' : 'O'}-Level ${g.subject} ${g.grade}`).join(', ')}
-                  </span>
-                  <Button type="button" variant="ghost" onClick={() => { onExamGradesSuggested(grades); setApplied((a) => ({ ...a, grades: true })); }}>
-                    Add
-                  </Button>
-                </div>
-              )}
-
-              {result.linkedinUrl && !applied.linkedin && (
-                <div style={{ fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>Found LinkedIn: {result.linkedinUrl}</span>
-                  <Button type="button" variant="ghost" onClick={() => { onLinkedinSuggested(result.linkedinUrl); setApplied((a) => ({ ...a, linkedin: true })); }}>
-                    Use this
-                  </Button>
-                </div>
-              )}
-
-              {(result.education || []).map((edu, i) => !applied[`edu-${i}`] && (
-                <div key={i} style={{ fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>Found education: {edu.qualificationLevel}{edu.fieldOfStudy ? ` in ${edu.fieldOfStudy}` : ''}{edu.yearCompleted ? ` (${edu.yearCompleted})` : ''}</span>
-                  <Button type="button" variant="ghost" onClick={() => { onEducationSuggested(edu); setApplied((a) => ({ ...a, [`edu-${i}`]: true })); }}>
-                    Add
-                  </Button>
-                </div>
-              ))}
-
-              {(result.workExperience || []).map((w, i) => !applied[`work-${i}`] && (
-                <div key={i} style={{ fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>
-                    Found role: {w.jobTitle || '(title not detected)'}{w.startDate ? ` from ${w.startDate.slice(0, 4)}` : ''}
-                    {w.duties?.length > 0 ? ` - ${w.duties.length} duty line${w.duties.length === 1 ? '' : 's'} detected` : ''}
-                  </span>
-                  <Button type="button" variant="ghost" onClick={() => { onWorkExperienceSuggested(w); setApplied((a) => ({ ...a, [`work-${i}`]: true })); }}>
-                    Add
-                  </Button>
-                </div>
-              ))}
-
-              {(result.certificates || []).map((c, i) => !applied[`cert-${i}`] && (
-                <div key={i} style={{ fontSize: 13, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span>
-                    Found certificate: {c.name || '(name not detected)'}{c.issuingOrganization ? ` - ${c.issuingOrganization}` : ''}
-                  </span>
-                  <Button type="button" variant="ghost" onClick={() => { onCertificateSuggested(c); setApplied((a) => ({ ...a, [`cert-${i}`]: true })); }}>
-                    Add
-                  </Button>
-                </div>
-              ))}
-
-              {!hasSuggestions && (
-                <Alert type="error" message="No fields could be confidently extracted from this file - please fill in your details manually below." />
-              )}
+              {summary.warnings.length > 0 && <Alert type="info" message={summary.warnings.join(' ')} />}
             </div>
           )}
         </div>

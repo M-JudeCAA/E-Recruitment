@@ -8,7 +8,15 @@ import ProfileEntriesEditor from '../../components/ProfileEntriesEditor';
 // persist across every application this candidate ever submits.
 // showPersonalDetails={false} leaves out the personal details block - Internal
 // Careers asks for those in its own short form and uses this for the entries.
-export default function ProfileStep({ profile, onProfileChange, profileDetails, setProfileDetail, showPersonalDetails = true }) {
+// focusEntry ({ kind, id }) opens that one entry (My profile's Edit on it);
+// entryKinds and startNew pass through to ProfileEntriesEditor (My profile's
+// "+ Add" opens just that section's form); entriesRef reaches the editor, for
+// a panel's Done (finish()). O-Level and A-Level results sit inside the
+// Education section.
+export default function ProfileStep({
+  profile, onProfileChange, profileDetails, setProfileDetail, showPersonalDetails = true,
+  focusEntry = null, entryKinds = undefined, startNew = null, entriesRef = undefined
+}) {
   return (
     <div>
       {showPersonalDetails && (<>
@@ -42,11 +50,8 @@ export default function ProfileStep({ profile, onProfileChange, profileDetails, 
       </>)}
 
       <div style={{ marginTop: showPersonalDetails ? 24 : 0 }}>
-        <ProfileEntriesEditor profile={profile} onSaved={onProfileChange} />
-      </div>
-
-      <div style={{ marginTop: 24 }}>
-        <ExamGradesEditor examGrades={profile?.examGrades} onChange={onProfileChange} />
+        <ProfileEntriesEditor ref={entriesRef} profile={profile} onSaved={onProfileChange} focus={focusEntry} kinds={entryKinds} startNew={startNew}
+          educationExtra={<ExamGradesEditor examGrades={profile?.examGrades} onChange={onProfileChange} />} />
       </div>
     </div>
   );
