@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import client from '../models/apiClient';
 import TextField from './TextField';
 import Select from './Select';
@@ -9,21 +9,35 @@ import { splitDuties, dutiesToText } from '../utils/dutyList';
 import { useConfirm } from './ConfirmDialog';
 import { educationKey, workExperienceKey, certificateKey } from '../utils/entryDedup';
 
-// A candidate's education, work experience and certificates, edited in place
-// like the rest of the form: every entry is a set of fields, "Add another"
-// only opens a blank one, and each entry saves itself shortly after it is
-// changed, once its required fields are filled (POST the first time, PUT
-// after) - nothing to click to save, nothing lost by forgetting to. Entries
-// are candidate-level (/api/candidates/me/...), shared by every application.
-// Used by My profile, Internal Careers' first sign-in and /profile/complete.
+// A candidate's education, work experience and certificates. Each saved
+// entry is one summary line with Edit and Delete; Edit opens its fields,
+// which stay open until the panel or page closes - no Done per entry, since
+// nothing needs one. An entry saves itself shortly after it is changed,
+// once its required fields are filled (POST the first time, PUT after) -
+// nothing to click to save, nothing lost by forgetting to. Only entries that
+// need attention open by themselves: a new one, one with a required field
+// missing, one that failed to save. Entries are candidate-level
+// (/api/candidates/me/...), shared by every application. Used by My profile,
+// Internal Careers' first sign-in and /profile/complete.
 //
 // The ref offers addFromCv(kind, values) - a suggestion read from a CV
 // becomes an entry the same way (saved, marked "from your CV" so its dates
-// get checked); false when the profile already has it - and flush(), which
-// saves anything still waiting and resolves when every save is done.
+// get checked; closed unless something is missing) - true, or 'incomplete'
+// when a required field is missing (it opens to be filled in); false when the
+// profile already has it - flush(), which saves anything still waiting and
+// resolves when every save is done, and finish(), for the Done of the panel
+// or page around it (no entry has a Done of its own): it drops blank new
+// entries, saves the rest, and answers false while an entry someone started
+// still lacks a required field (shown, with what it needs). `focus` ({ kind, id }) opens that entry
+// and scrolls to it (My profile's Edit on one entry). `kinds` shows only
+// those sections (My profile's "+ Add" on Education opens the education
+// form alone), `startNew` (a kind) opens a blank entry of it ready to fill
+// in, and `educationExtra` is shown at the end of the Education section
+// (the O-Level and A-Level results, which belong with education).
 
 const SAVE_DELAY_MS = 800;
 const day = (v) => (v ? String(v).slice(0, 10) : '');
+const month = (v) => (v ? new Date(v).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '');
 
 const LEVELS = [
   ['Certificate', 'Certificate'], ['Diploma', 'Diploma'], ['Bachelors', "Bachelor's"],
@@ -41,6 +55,11 @@ export const ENTRY_KINDS = {
     }),
     toPayload: (v) => ({ ...v, yearCompleted: v.yearCompleted ? Number(v.yearCompleted) : null, cgpa: v.cgpa || null }),
     missing: (v) => [!v.institution.trim() && 'institution', !v.qualificationLevel && 'qualification level', !v.fieldOfStudy.trim() && 'field of study'].filter(Boolean),
+    // The entry's summary line: [title, details].
+    summary: (v) => [
+      `${(LEVELS.find(([value]) => value === v.qualificationLevel) || [])[1] || v.qualificationLevel || 'Qualification'}${v.fieldOfStudy ? ` in ${v.fieldOfStudy}` : ''}`,
+      [v.institution, v.yearCompleted || 'in progress', v.cgpa && `CGPA ${v.cgpa}`].filter(Boolean).join(' · ')
+    ],
     key: educationKey
   },
   workExperience: {
@@ -51,6 +70,11 @@ export const ENTRY_KINDS = {
     fromSaved: (w) => ({ employer: w.employer || '', jobTitle: w.jobTitle || '', startDate: day(w.startDate), endDate: day(w.endDate), duties: dutiesToText(w.duties) }),
     toPayload: (v) => ({ ...v, endDate: v.endDate || null, duties: splitDuties(v.duties) }),
     missing: (v) => [!v.employer.trim() && 'employer', !v.jobTitle.trim() && 'job title', !v.startDate && 'start date'].filter(Boolean),
+    summary: (v) => {
+      const duties = splitDuties(v.duties).length;
+      return [v.jobTitle || 'Job', [v.employer, v.startDate && `${month(v.startDate)} – ${v.endDate ? month(v.endDate) : 'now'}`,
+        duties && `${duties} ${duties === 1 ? 'duty' : 'duties'}`].filter(Boolean).join(' · ')];
+    },
     key: workExperienceKey
   },
   certificates: {
@@ -60,26 +84,30 @@ export const ENTRY_KINDS = {
     fromSaved: (c) => ({ name: c.name || '', issuingOrganization: c.issuingOrganization || '', issueDate: day(c.issueDate), expiryDate: day(c.expiryDate) }),
     toPayload: (v) => ({ ...v, issueDate: v.issueDate || null, expiryDate: v.expiryDate || null }),
     missing: (v) => [!v.name.trim() && 'certificate name', !v.issuingOrganization.trim() && 'issuing organisation'].filter(Boolean),
+    summary: (v) => [v.name || 'Certificate', [v.issuingOrganization, v.issueDate && month(v.issueDate), v.expiryDate && `expires ${month(v.expiryDate)}`].filter(Boolean).join(' · ')],
     key: certificateKey
   }
 };
 const KIND_NAMES = Object.keys(ENTRY_KINDS);
 
 let rowSeq = 0;
-const newRow = (values, extra = {}) => ({ key: `row-${++rowSeq}`, id: null, values, status: 'new', error: '', ...extra });
+// open: its fields are showing (else just its summary line, with Edit and Delete).
+const newRow = (values, extra = {}) => ({ key: `row-${++rowSeq}`, id: null, values, status: 'new', error: '', open: true, ...extra });
 const isBlank = (values) => Object.values(values).every((v) => (Array.isArray(v) ? !v.some((d) => d.trim()) : !String(v).trim()));
 
 function initialRows(profile) {
   const rows = {};
   for (const kind of KIND_NAMES) {
-    const saved = (profile?.[kind] || []).map((e) => newRow(ENTRY_KINDS[kind].fromSaved(e), { id: e.id, status: 'saved' }));
+    const saved = (profile?.[kind] || []).map((e) => newRow(ENTRY_KINDS[kind].fromSaved(e), { id: e.id, status: 'saved', open: false }));
     // A required list starts with a blank entry to fill in, like any other field.
     rows[kind] = saved.length || !ENTRY_KINDS[kind].required ? saved : [newRow({ ...ENTRY_KINDS[kind].empty })];
   }
   return rows;
 }
 
-const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({ profile, onSaved, showMissing = false }, ref) {
+const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
+  profile, onSaved, showMissing = false, focus = null, kinds = KIND_NAMES, startNew = null, educationExtra = null
+}, ref) {
   const confirm = useConfirm();
   const [rows, setRows] = useState(() => initialRows(profile));
   const rowsRef = useRef(rows);
@@ -113,7 +141,7 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({ profile,
     const row = findRow(kind, key);
     if (!row) return;
     const cfg = ENTRY_KINDS[kind];
-    if (cfg.missing(row.values).length) { patchRow(kind, key, { status: 'incomplete', error: '' }); return; }
+    if (cfg.missing(row.values).length) { patchRow(kind, key, { status: 'incomplete', error: '', open: true }); return; }
     const sent = row.values;
     patchRow(kind, key, { status: 'saving', error: '' });
     try {
@@ -133,7 +161,7 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({ profile,
       patchRow(kind, key, (r) => ({ status: r.values === sent ? 'saved' : r.status }));
       onSavedRef.current?.();
     } catch (err) {
-      patchRow(kind, key, { status: 'error', error: err.response?.data?.error || `Could not save this ${cfg.noun}` });
+      patchRow(kind, key, { status: 'error', error: err.response?.data?.error || `Could not save this ${cfg.noun}`, open: true });
     }
   });
 
@@ -173,7 +201,7 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({ profile,
         if (!arrived.length || all[kind].some((r) => !r.id && r.status === 'saving')) continue;
         next = { ...next, [kind]: [
           ...all[kind].filter((r) => r.id || !isBlank(r.values)),
-          ...arrived.map((e) => newRow(ENTRY_KINDS[kind].fromSaved(e), { id: e.id, status: 'saved' }))
+          ...arrived.map((e) => newRow(ENTRY_KINDS[kind].fromSaved(e), { id: e.id, status: 'saved', open: false }))
         ] };
       }
       rowsRef.current = next;
@@ -212,10 +240,58 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({ profile,
         dropRow(kind, row.key);
         onSavedRef.current?.();
       } catch (err) {
-        patchRow(kind, row.key, { status: 'error', error: err.response?.data?.error || `Could not remove this ${cfg.noun}` });
+        patchRow(kind, row.key, { status: 'error', error: err.response?.data?.error || `Could not remove this ${cfg.noun}`, open: true });
       }
     });
   };
+
+  // The panel's Done (there is none per entry - each saves itself): new
+  // entries nobody started are dropped, everything waiting is saved, and the
+  // answer is false - with the first entry still missing a required field
+  // marked and brought into view - while one someone started can't be saved.
+  const finish = async () => {
+    for (const kind of KIND_NAMES) {
+      for (const row of rowsRef.current[kind]) {
+        if (!row.id && isBlank(row.values) && !chains.current[row.key]) {
+          clearTimeout(timers.current[row.key]);
+          delete timers.current[row.key];
+          dropRow(kind, row.key);
+        }
+      }
+    }
+    await flush();
+    for (const kind of KIND_NAMES) {
+      const row = rowsRef.current[kind].find((r) => ENTRY_KINDS[kind].missing(r.values).length);
+      if (row) {
+        patchRow(kind, row.key, { status: 'incomplete', open: true });
+        setTimeout(() => document.querySelector(`[data-entry="${row.key}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
+        return false;
+      }
+    }
+    return !KIND_NAMES.some((kind) => rowsRef.current[kind].some((r) => r.status === 'error'));
+  };
+
+  // My profile's "+ Add": a blank entry of that kind, open and in view (the
+  // blank one already waiting, if there is one). Once, even when React runs
+  // the effect twice.
+  const started = useRef(false);
+  useEffect(() => {
+    if (!startNew || started.current) return;
+    started.current = true;
+    const blank = rowsRef.current[startNew].find((r) => !r.id && isBlank(r.values));
+    const row = blank || add(startNew);
+    if (blank) patchRow(startNew, blank.key, { open: true });
+    setTimeout(() => document.querySelector(`[data-entry="${row.key}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 50);
+  }, [startNew]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // My profile's Edit on one entry opens it here.
+  useEffect(() => {
+    if (!focus) return;
+    const row = rowsRef.current[focus.kind]?.find((r) => r.id === focus.id);
+    if (!row) return;
+    patchRow(focus.kind, row.key, { open: true });
+    setTimeout(() => document.querySelector(`[data-entry="${row.key}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 50);
+  }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useImperativeHandle(ref, () => ({
     addFromCv(kind, values) {
@@ -224,11 +300,12 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({ profile,
       if (kind !== 'education') for (const f of ['startDate', 'endDate', 'issueDate', 'expiryDate']) if (f in filled) filled[f] = day(filled[f]);
       const k = cfg.key(filled);
       if (rowsRef.current[kind].some((r) => cfg.key(r.values) === k)) return false;
-      const row = add(kind, filled, { fromCv: true });
+      const row = add(kind, filled, { fromCv: true, open: false });
       schedule(kind, row.key, 0);
-      return true;
+      return cfg.missing(filled).length ? 'incomplete' : true;
     },
-    flush
+    flush,
+    finish
   }));
 
   const fieldsFor = (kind, row) => {
@@ -299,15 +376,18 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({ profile,
 
   return (
     <div>
-      {KIND_NAMES.map((kind) => {
+      {KIND_NAMES.filter((kind) => kinds.includes(kind)).map((kind) => {
         const cfg = ENTRY_KINDS[kind];
         const list = rows[kind];
         const savedCount = list.filter((r) => r.id).length;
         return (
           <section key={kind} style={{ marginBottom: 24 }}>
-            <h3 style={{ fontSize: 15, marginBottom: 8 }}>
-              {cfg.title}{cfg.required && <span style={{ color: 'var(--color-primary)', marginLeft: 4 }}>*</span>}
-            </h3>
+            {/* One section alone sits in a panel already titled with it. */}
+            {kinds.length > 1 && (
+              <h3 style={{ fontSize: 15, marginBottom: 8 }}>
+                {cfg.title}{cfg.required && <span style={{ color: 'var(--color-primary)', marginLeft: 4 }}>*</span>}
+              </h3>
+            )}
             {cfg.required && savedCount === 0 && (
               <p style={{ fontSize: 13, color: showMissing ? 'var(--color-danger)' : 'var(--color-text-muted)', marginTop: 0 }}>
                 At least one {cfg.noun} is required.
@@ -316,21 +396,54 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({ profile,
             {!cfg.required && list.length === 0 && (
               <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>None yet (optional).</p>
             )}
-            {list.map((row, i) => (
-              <div key={row.key} style={{
-                marginBottom: 12, padding: 12, borderRadius: 'var(--radius-sm)',
-                border: row.fromCv ? '1px dashed var(--color-primary)' : '1px solid var(--color-border)'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>
-                  <span>{cfg.noun[0].toUpperCase() + cfg.noun.slice(1)} {i + 1}{row.fromCv ? ' · from your CV' : ''} {statusLine(kind, row) && <>· {statusLine(kind, row)}</>}</span>
-                  <button type="button" className="ws-icon-btn" aria-label={`Remove ${cfg.noun} ${i + 1}`} onClick={() => remove(kind, row)}><Trash2 size={14} /></button>
+            {list.map((row, i) => {
+              const [title, details] = cfg.summary(row.values);
+              const status = statusLine(kind, row);
+              const actions = (
+                <span style={{ display: 'flex', gap: 2, flex: 'none' }}>
+                  {!row.open && (
+                    <button type="button" className="ws-icon-btn" aria-label={`Edit ${cfg.noun} ${i + 1}`} title="Edit"
+                      onClick={() => patchRow(kind, row.key, { open: true })}><Pencil size={14} /></button>
+                  )}
+                  <button type="button" className="ws-icon-btn" aria-label={`Delete ${cfg.noun} ${i + 1}`} title="Delete"
+                    onClick={() => remove(kind, row)}><Trash2 size={14} /></button>
+                </span>
+              );
+              return (
+                <div key={row.key} data-entry={row.key} style={{
+                  marginBottom: 8, padding: row.open ? 12 : '10px 12px', borderRadius: 'var(--radius-sm)', scrollMarginTop: 16,
+                  border: row.fromCv ? '1px dashed var(--color-primary)' : '1px solid var(--color-border)'
+                }}>
+                  {row.open ? (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>
+                        <span>{cfg.noun[0].toUpperCase() + cfg.noun.slice(1)} {i + 1}{row.fromCv ? ' · from your CV' : ''} {status && <>· {status}</>}</span>
+                        {actions}
+                      </div>
+                      {fieldsFor(kind, row)}
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
+                        {details && <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{details}</div>}
+                        {(row.fromCv || (status && row.status !== 'saved')) && (
+                          <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>
+                            {row.fromCv && <span style={{ color: 'var(--color-primary)' }}>From your CV - check it, especially the dates</span>}
+                            {row.status !== 'saved' && status && <>{row.fromCv && ' · '}{status}</>}
+                          </div>
+                        )}
+                      </div>
+                      {actions}
+                    </div>
+                  )}
                 </div>
-                {fieldsFor(kind, row)}
-              </div>
-            ))}
+              );
+            })}
             <Button type="button" variant="ghost" onClick={() => add(kind)}>
               <Plus size={14} /> {list.length ? `Add another ${cfg.noun}` : `Add a ${cfg.noun}`}
             </Button>
+            {kind === 'education' && educationExtra && <div style={{ marginTop: 20 }}>{educationExtra}</div>}
           </section>
         );
       })}

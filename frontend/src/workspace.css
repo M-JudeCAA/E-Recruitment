@@ -333,3 +333,11 @@ button.barlist-row:focus-visible { outline: 2px solid var(--color-primary); outl
 .barlist-row .fill { height: 14px; border-radius: 0 4px 4px 0; flex: none; }
 .barlist-row .val { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 12.5px; }
 @media (max-width: 900px) { .ws-charts, .ws-charts.two { grid-template-columns: 1fr; } }
+
+/* My profile: a sub-heading inside a panel (the O-Level and A-Level results
+   under Education), and how many duties a job has on file. */
+.ws-subhead { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-muted); margin: 18px 0 6px; }
+.ws-duties { font-size: 12.5px; color: var(--color-accent); margin-top: 2px; }
+.ws-duties::before { content: "\2713\00a0"; }
+.ws-duties.none { color: var(--color-warning); }
+.ws-duties.none::before { content: ""; }
