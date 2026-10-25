@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Building2, Network, BadgeCheck, Hourglass } from 'lucide-react';
 import staffClient from '../../models/staffApiClient';
 import { refreshInbox } from '../../models/useInbox';
 import HRSidebar from '../../components/HRSidebar';
@@ -153,10 +154,13 @@ export default function OrgOverview() {
 
         {counts ? (
           <Figures figures={[
-            { label: 'Directorates', value: tally(counts.directorates).approved },
-            { label: 'Departments', value: tally(counts.departments).approved },
-            { label: 'Titles', value: tally(counts.positions).approved },
-            { label: 'Waiting for approval', value: levels.reduce((n, l) => n + tally(l.list).pending, 0) }
+            { label: 'Directorates', value: tally(counts.directorates).approved, tone: 'brand', icon: Building2, to: '/hr/organisation/directorates' },
+            { label: 'Departments', value: tally(counts.departments).approved, tone: 'info', icon: Network, to: '/hr/organisation/departments' },
+            { label: 'Titles', value: tally(counts.positions).approved, tone: 'violet', icon: BadgeCheck, to: '/hr/organisation/positions' },
+            (() => {
+              const waiting = levels.reduce((n, l) => n + tally(l.list).pending, 0);
+              return { label: 'Waiting for approval', value: waiting, tone: waiting ? 'warn' : 'ok', icon: Hourglass };
+            })()
           ]} />
         ) : <Skeleton width="60%" height={40} />}
 

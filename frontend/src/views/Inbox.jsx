@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Briefcase, CalendarClock, Send, Users } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
 import { useDashboardEvents } from '../models/dashboardSocket';
@@ -12,6 +13,10 @@ import LiveIndicator from '../components/LiveIndicator';
 import SystemHealthBanner from '../components/SystemHealthBanner';
 import ReviewPanel from '../components/workspace/ReviewPanel';
 import { PageTop, Meta, Figures, Panel, rankOf } from '../components/workspace/ui';
+import DonutChart from '../components/charts/DonutChart';
+import BarList from '../components/charts/BarList';
+import { STATUS_FILL } from '../theme/chartPalette';
+import { countByStage } from '../utils/vacancyStages';
 import { debounce } from '../utils/debounce';
 
 // The landing page for every staff role: one list of what is waiting for
@@ -26,6 +31,55 @@ import { debounce } from '../utils/debounce';
 // else dealt with it), the page says so and offers `fallback`.
 
 const GROUPS = [['overdue', 'Overdue'], ['week', 'Due this week'], ['later', 'Later']];
+const GROUP_COLORS = { overdue: STATUS_FILL.bad, week: STATUS_FILL.waiting, later: STATUS_FILL.info };
+
+// The four figures from the API (inboxService), in its order, each given a
+// colour, an icon and the page that lists what it counts.
+const FIGURE_LOOKS = [
+  { tone: 'brand', icon: Briefcase, to: '/hr' },
+  { tone: 'violet', icon: CalendarClock, to: '/hr/interviews' },
+  { tone: 'warn', icon: Send, to: '/hr/offers' },
+  { tone: 'ok', icon: Users, to: '/hr/candidates?view=applications' }
+];
+
+// The charts under the figures: this person's work by urgency, every
+// vacancy by stage (a slice opens the Vacancies list at that stage) and the
+// live vacancies drawing the most applicants (a bar opens the vacancy).
+function InboxCharts({ items, showVacancies }) {
+  const navigate = useNavigate();
+  const [vacancies, setVacancies] = useState(null);
+  useEffect(() => {
+    if (!showVacancies) return;
+    staffClient.get('/api/vacancies/admin').then((r) => setVacancies(r.data)).catch(() => setVacancies([]));
+  }, [showVacancies]);
+
+  const work = GROUPS.map(([key, label]) => ({ key, label, color: GROUP_COLORS[key], value: items.filter((i) => i.group === key && !i.info).length }));
+  const jump = (d) => document.getElementById(`inbox-${d.key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const live = (vacancies || []).filter((v) => ['Open', 'PartiallyFilled'].includes(v.status));
+  const busiest = live
+    .map((v) => ({ key: v.id, label: v.title, note: v.jobRef?.replace('UCAA/ADV/', ''), value: v._count?.applications ?? 0 }))
+    .sort((a, b) => b.value - a.value).slice(0, 6);
+
+  return (
+    <div className="ws-charts">
+      <Panel title="Your work" note="What is waiting for you, by when it is due">
+        <DonutChart data={work} centerLabel="waiting" onSelect={jump} emptyText="Nothing waiting for you." />
+      </Panel>
+      {showVacancies && (
+        <Panel title="Vacancies by stage" note="Click a stage to see its vacancies">
+          {vacancies ? <DonutChart data={countByStage(vacancies)} centerLabel="vacancies" emptyText="No vacancies yet."
+            onSelect={(d) => navigate(`/hr?stage=${d.key}`)} /> : <Skeleton height={168} />}
+        </Panel>
+      )}
+      {showVacancies && (
+        <Panel title="Most applicants" note="Open vacancies with the most applications">
+          {vacancies ? <BarList rows={busiest} emptyText="No open vacancies." color={STATUS_FILL.info}
+            onSelect={(r) => navigate(`/hr/vacancy/${r.key}?tab=applicants`)} /> : <Skeleton height={168} />}
+        </Panel>
+      )}
+    </div>
+  );
+}
 
 function greeting() {
   const hour = new Date().getHours();
@@ -125,7 +179,9 @@ export default function Inbox() {
           </div>
         )}
 
-        {inbox ? <Figures figures={inbox.figures} /> : <Skeleton height={76} />}
+        {inbox ? <Figures figures={inbox.figures.map((f, i) => ({ ...FIGURE_LOOKS[i], ...f }))} /> : <Skeleton height={76} />}
+
+        {inbox && <InboxCharts items={items} showVacancies={rankOf(staff?.role) > 0} />}
 
         {!inbox && <Panel><Skeleton width="60%" height={14} style={{ marginBottom: 10 }} /><Skeleton width="40%" height={12} /></Panel>}
 
@@ -134,11 +190,11 @@ export default function Inbox() {
         )}
 
         {grouped.map(([key, label, list]) => list.length > 0 && (
-          <section key={key} className="ws-group">
-            <h3>{label}</h3>
+          <section key={key} id={`inbox-${key}`} className="ws-group" style={{ scrollMarginTop: 'calc(var(--navbar-height) + 16px)' }}>
+            <h3 className={key}>{label} <span style={{ fontWeight: 500 }}>· {list.length}</span></h3>
             <div className="ws-panel">
               {list.map((item) => (
-                <div key={item.key} className={`ws-task${item.overdue ? ' over' : ''}`}>
+                <div key={item.key} className={`ws-task${item.overdue ? ' over' : key === 'week' ? ' soon' : ' later'}`}>
                   <div className="kind">{item.kind}</div>
                   <div className="what">
                     <b>{item.title}</b>

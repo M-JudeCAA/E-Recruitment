@@ -74,23 +74,31 @@
 /* staff member is signed in or the page is on the staff port, so the  */
 /* candidate site keeps the brighter look above. On <html> rather than  */
 /* the app shell so modals rendered elsewhere pick it up too. Same      */
-/* token names, quieter values: a grey canvas with white surfaces, the  */
-/* brand blue kept for actions and selection, neutral borders, tighter  */
-/* corners, and no footer or breadcrumb strip (the sidebar and page     */
-/* headers carry the navigation).                                       */
+/* token names, in UCAA's colours: a pale sky-blue canvas under white   */
+/* surfaces, the navy app bar and sidebar with a sky-blue stripe (the   */
+/* logo's blue and black), the brand blue for actions and selection,    */
+/* and colour that means something - green good, red a problem, gold    */
+/* waiting. Tighter corners, and no footer or breadcrumb strip (the     */
+/* sidebar and page headers carry the navigation).                      */
 /* ------------------------------------------------------------------ */
 .staff-ui {
   --color-primary: #1C719D;
   --color-primary-dark: #155A7E;
-  --color-primary-light: #E7F1F8;
+  --color-primary-light: #E3F0F9;
+  --color-sky: #2596D1;           /* the UCAA logo's blue */
   --color-text: #16202A;
-  --color-text-muted: #5B6874;
-  --color-border: #DCE3EA;
-  --color-border-strong: #C5D0DB;
-  --color-bg-subtle: #F1F4F7;
-  --color-canvas: #F3F5F8;
+  --color-text-muted: #55636F;
+  --color-border: #D5E2EC;
+  --color-border-strong: #BFD0DE;
+  --color-bg-subtle: #EEF5FA;
+  --color-canvas: #E6F0F8;
   --color-nav: #0F2A44;
   --color-nav-raised: #1B3A57;
+  --color-violet: #5B45B8;
+  --color-magenta: #B23A72;
+  --color-success-light: #E5F3EA;
+  --color-danger-light: #FBE9E8;
+  --shadow-surface: 0 1px 2px rgba(15, 42, 68, .06), 0 2px 6px rgba(15, 42, 68, .05);
   --radius: 6px;
   --radius-sm: 4px;
   --font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -105,17 +113,31 @@
 .staff-ui .app-shell { font-family: var(--font-family) !important; }
 .staff-ui .site-footer,
 .staff-ui .breadcrumb-bar { display: none !important; }
-.staff-ui .site-navbar { background: var(--color-nav) !important; border-bottom: 0 !important; }
+.staff-ui .site-navbar { background: var(--color-nav) !important; border-bottom: 0 !important; box-shadow: inset 0 -3px 0 var(--color-sky); }
 
-/* Page titles: one size and colour on every staff page. */
-.staff-ui .page-title { font-size: 22px !important; font-weight: 600; color: var(--color-text) !important; line-height: 1.3; }
+/* Page titles: one size and colour on every staff page, in UCAA navy. */
+.staff-ui .page-title { font-size: 22px !important; font-weight: 650; color: var(--color-nav) !important; line-height: 1.3; }
 .staff-ui .page-subtitle { font-size: 14px; }
 
-/* Cards: flat white surfaces; a coloured edge only where something is overdue or failing. */
-.staff-ui .ui-card { box-shadow: none !important; }
-.staff-ui .ui-card[data-accent]:not([data-accent="danger"]) {
-  border-left: 1px solid var(--color-border) !important;
+/* Cards: white surfaces lifted off the blue canvas; an accent edge in the
+   colour the caller gave (green done, gold waiting, red a problem). */
+.staff-ui .ui-card { box-shadow: var(--shadow-surface) !important; }
+
+/* The sidebar rail in navy, like the app bar: Sidebar.jsx colours its links
+   from these tokens, so redefining them here recolours it without touching
+   its code. The page you are on is lit in the logo's blue. */
+.staff-ui .app-rail {
+  --color-text: #E3ECF4;
+  --color-text-muted: #93A9BE;
+  --color-primary: #5BBBEA;
+  --color-primary-dark: #FFFFFF;
+  --color-primary-light: rgba(91, 187, 234, .16);
+  --color-bg-subtle: rgba(255, 255, 255, .08);
+  --color-border: rgba(255, 255, 255, .12);
+  background: linear-gradient(180deg, #0F2A44 0%, #0C2238 100%);
+  border-right: 0;
 }
+.staff-ui .app-rail .sidebar-link:hover { background: rgba(255, 255, 255, .08); }
 
 /* Status labels: soft tint with dark text instead of a solid pill. */
 .status-badge {

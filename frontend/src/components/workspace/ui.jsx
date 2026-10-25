@@ -15,6 +15,8 @@ const TONE_COLORS = {
   bad: 'var(--color-danger)',
   info: 'var(--color-primary)',
   brand: 'var(--color-primary-dark)',
+  violet: 'var(--color-violet)',
+  magenta: 'var(--color-magenta)',
   neutral: 'var(--color-text-muted)'
 };
 
@@ -76,15 +78,33 @@ export function Panel({ title, note, actions, children, padded = true, style }) 
   );
 }
 
-export function Figures({ figures }) {
+/**
+ * The figures row: coloured cards, figures [{ label, value, tone, icon, to, onClick, active, note }].
+ * `tone` picks the colour by meaning (ok green, bad red, warn gold, info/brand
+ * UCAA blue, violet/magenta for kinds of work with no good or bad); with `to`
+ * or `onClick` the card opens the list behind the figure; `active` marks the
+ * card whose filter is on (a row of them used as a filter).
+ */
+export function Figures({ figures, compact = false }) {
   return (
-    <div className="ws-figures">
-      {figures.map((f) => (
-        <div key={f.label} className="ws-fig">
-          <div className="v">{f.value ?? '—'}</div>
-          <div className="l">{f.label}</div>
-        </div>
-      ))}
+    <div className={`ws-figures${compact ? ' compact' : ''}`}>
+      {figures.map((f) => {
+        const Icon = f.icon;
+        const body = (
+          <>
+            {Icon && <span className="ic" aria-hidden="true"><Icon size={18} /></span>}
+            <span className="tx">
+              <span className="v">{f.value ?? '—'}</span>
+              <span className="l">{f.label}</span>
+              {f.note && <span className="n">{f.note}</span>}
+            </span>
+          </>
+        );
+        const props = { className: `ws-fig${f.active ? ' on' : ''}`, style: { '--fig-color': TONE_COLORS[f.tone] || TONE_COLORS.brand } };
+        if (f.to) return <Link key={f.label} to={f.to} {...props}>{body}</Link>;
+        if (f.onClick) return <button key={f.label} type="button" onClick={f.onClick} aria-pressed={f.active ?? undefined} {...props}>{body}</button>;
+        return <div key={f.label} {...props}>{body}</div>;
+      })}
     </div>
   );
 }
