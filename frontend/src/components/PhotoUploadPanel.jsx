@@ -7,8 +7,8 @@ import Alert from './Alert';
 import { useConfirm } from './ConfirmDialog';
 import { candidateFileSrc } from '../utils/fileSrc';
 
-// Optional avatar upload, shown wherever ProfileCompletionForm is (the
-// dedicated My Profile page, and the New User /profile/complete page).
+// Optional avatar upload, on the public site's My profile and first
+// sign-in setup (views/careers/Welcome.jsx, Personal details step).
 // Mirrors CvAutofillPanel's own upload pattern (FormData -> multipart
 // POST/PUT, busy/error state via the same Alert component) rather than
 // introducing a new one. `photoUrl`/`onChange` are controlled by the

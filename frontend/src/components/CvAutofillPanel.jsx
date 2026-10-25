@@ -1,16 +1,12 @@
 import { useState } from 'react';
 import client from '../models/apiClient';
-import Button from './Button';
 import Alert from './Alert';
 
-// Two CV "formats": the default here (mode 'manual') is really just the
-// structured profile form itself - there's no file, so nothing to
-// misread. Only the 'upload' mode involves a real file, parsed
-// best-effort on the server (no AI, plain text-extraction + heuristics)
-// - hence the persistent accuracy warning the moment that mode is picked.
-// The uploaded file itself is never stored (see backend's parse-cv route).
-// uploadOnly: just the upload, without the manual/upload switch (a page that
-// opens this on purpose, e.g. My profile's "Fill in from your CV").
+// A CV upload (views/careers/CvImport.jsx: My profile's "Fill in from your
+// CV" and the first sign-in setup's Education and experience step). The file
+// is read best-effort on the server (no AI, plain text extraction and
+// heuristics) - hence the accuracy warning - and never stored (see the
+// backend's parse-cv route).
 //
 // Everything read is added to the form at once - no list of suggestions to
 // click through - and a short summary says what went in and what was
@@ -37,8 +33,7 @@ const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 const sentence = (parts) => (parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]);
 
 export default function CvAutofillPanel(props) {
-  const { onLinkedinSuggested, onPersonalSuggested, onExamGradesSuggested, withNationalId = true, uploadOnly = false } = props;
-  const [mode, setMode] = useState(uploadOnly ? 'upload' : 'manual');
+  const { onLinkedinSuggested, onPersonalSuggested, onExamGradesSuggested, withNationalId = true } = props;
   const [uploading, setUploading] = useState(false);
   const [summary, setSummary] = useState(null); // { added, skipped, incomplete, warnings, nothing }
   const [error, setError] = useState('');
@@ -99,17 +94,7 @@ export default function CvAutofillPanel(props) {
 
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 24 }}>
-      {!uploadOnly && <div style={{ display: 'flex', gap: 8, marginBottom: mode === 'upload' ? 12 : 0 }}>
-        <Button type="button" variant={mode === 'manual' ? 'primary' : 'ghost'} onClick={() => setMode('manual')}>
-          Fill in manually
-        </Button>
-        <Button type="button" variant={mode === 'upload' ? 'primary' : 'ghost'} onClick={() => setMode('upload')}>
-          Upload a CV to autofill
-        </Button>
-      </div>}
-
-      {mode === 'upload' && (
-        <div>
+      <div>
           <Alert type="info" message="Your CV is read and its details are added to your profile straight away. Reading a CV is best-effort and may misread your layout - check every entry, especially the dates. The file itself is not kept." />
           <input type="file" accept=".pdf,.docx" onChange={handleFile} disabled={uploading} aria-label="Upload your CV" />
           {uploading && <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Reading your CV and filling in your profile...</p>}
@@ -130,8 +115,7 @@ export default function CvAutofillPanel(props) {
               {summary.warnings.length > 0 && <Alert type="info" message={summary.warnings.join(' ')} />}
             </div>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -9,7 +9,7 @@ import { useAuth } from "./models/AuthContext";
 import { isStaffPort } from "./staffPort";
 import { isInternalPort } from "./internalPort";
 import InternalSignIn from "./views/careers/InternalSignIn";
-import InternalWelcome from "./views/careers/InternalWelcome";
+import Welcome from "./views/careers/Welcome";
 import CareerHome from "./views/careers/CareerHome";
 import CareerJobs from "./views/careers/CareerJobs";
 import CareerJob from "./views/careers/CareerJob";
@@ -23,7 +23,6 @@ import ConfirmEmail from "./views/ConfirmEmail";
 import CandidateLogin from "./views/CandidateLogin";
 import ForgotPassword from "./views/ForgotPassword";
 import ResetPassword from "./views/ResetPassword";
-import ProfileCompletePage from "./views/ProfileCompletePage";
 import JobDetails from "./views/JobDetails";
 import StaffLogin from "./views/StaffLogin";
 import Inbox from "./views/Inbox";
@@ -73,7 +72,7 @@ function PaddedLayout() {
 // Focused flows where a phone shows no tab bar, the way an app hides its
 // tabs inside a multi-step task: the apply wizard, first-time profile
 // completion, and a shortlisting committee member's private link.
-const NO_TABBAR_PATHS = [/^\/apply\//, /^\/profile\/complete/, /^\/shortlist-panel\//];
+const NO_TABBAR_PATHS = [/^\/apply\//, /^\/shortlist-panel\//];
 
 // The public site's signed-in candidate area (views/careers, the same pages
 // as Internal Careers) wears .careers-ui (theme.css): the site's own colours
@@ -326,7 +325,7 @@ export default function App() {
           <Route path="/careers/sign-in" element={<InternalSignIn />} />
           <Route element={<PaddedLayout />}>
             <Route path="/careers" element={<RequireInternalCandidate><CareerHome /></RequireInternalCandidate>} />
-            <Route path="/careers/welcome" element={<RequireInternalCandidate><InternalWelcome /></RequireInternalCandidate>} />
+            <Route path="/careers/welcome" element={<RequireInternalCandidate><Welcome /></RequireInternalCandidate>} />
             <Route path="/careers/vacancies" element={<RequireInternalCandidate><CareerJobs /></RequireInternalCandidate>} />
             <Route path="/careers/vacancies/:id" element={<RequireInternalCandidate><CareerJob /></RequireInternalCandidate>} />
             <Route path="/careers/apply/:vacancyId" element={<RequireInternalCandidate><CareerApply /></RequireInternalCandidate>} />
@@ -379,6 +378,15 @@ export default function App() {
                 </RequireCandidate>
               }
             />
+            {/* First sign-in: the profile set up step by step (views/careers/Welcome.jsx). */}
+            <Route
+              path="/dashboard/welcome"
+              element={
+                <RequireCandidate>
+                  <Welcome />
+                </RequireCandidate>
+              }
+            />
             <Route
               path="/dashboard/profile"
               element={
@@ -405,14 +413,8 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/register" element={<Register />} />
           <Route path="/login" element={<CandidateLogin />} />
-          <Route
-            path="/profile/complete"
-            element={
-              <RequireCandidate>
-                <ProfileCompletePage />
-              </RequireCandidate>
-            }
-          />
+          {/* The old one-page profile form; first sign-in is /dashboard/welcome now. */}
+          <Route path="/profile/complete" element={<Navigate to="/dashboard/welcome" replace />} />
         </Route>
 
         {/* Internal Careers: an unknown address goes to its home rather than a blank page. */}

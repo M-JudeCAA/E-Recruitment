@@ -18,7 +18,7 @@ import { educationKey, workExperienceKey, certificateKey } from '../utils/entryD
 // need attention open by themselves: a new one, one with a required field
 // missing, one that failed to save. Entries are candidate-level
 // (/api/candidates/me/...), shared by every application. Used by My profile,
-// Internal Careers' first sign-in and /profile/complete.
+// the first sign-in setup on both sites and the apply wizard.
 //
 // The ref offers addFromCv(kind, values) - a suggestion read from a CV
 // becomes an entry the same way (saved, marked "from your CV" so its dates

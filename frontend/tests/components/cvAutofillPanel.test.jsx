@@ -33,7 +33,7 @@ test('everything read is added at once, and the panel says what went in and what
     onLinkedinSuggested: vi.fn(() => true),
     onExamGradesSuggested: vi.fn(async () => 1)
   };
-  render(<CvAutofillPanel uploadOnly {...handlers} />);
+  render(<CvAutofillPanel {...handlers} />);
   await user.upload(screen.getByLabelText('Upload your CV'), new File(['%PDF'], 'cv.pdf', { type: 'application/pdf' }));
 
   await waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());

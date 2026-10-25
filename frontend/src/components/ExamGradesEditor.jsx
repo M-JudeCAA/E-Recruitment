@@ -13,11 +13,8 @@ const emptyGrade = { level: 'OLevel', subject: '', grade: '' };
 // Self-contained CRUD editor for O-Level/A-Level exam grades, backing
 // real machine-checked screening (Vacancy.requiredExamGrades - see
 // screeningService.evaluateExamGrades) instead of a self-declared answer.
-// Unlike Education/WorkExperience/Certificate (each duplicated separately
-// in ProfileStep.jsx and ProfileCompletionForm.jsx), this manages its own
-// API calls and is used identically in both - a new addition doesn't need
-// to inherit that duplication just because the older sections happen to
-// have it.
+// It manages its own API calls, so every page that shows the education
+// form uses it the same way.
 // Shown inside the Education section (ProfileEntriesEditor educationExtra):
 // O-Level and A-Level results are part of a candidate's education.
 export default function ExamGradesEditor({ examGrades, onChange }) {

@@ -19,7 +19,6 @@ const ROUTE_TRAILS = [
   { path: '/dashboard/jobs', trail: [{ label: 'Dashboard', to: '/dashboard' }, { label: 'Find Jobs' }] },
   { path: '/dashboard/applications', trail: [{ label: 'Dashboard', to: '/dashboard' }, { label: 'My Applications' }] },
   { path: '/dashboard/profile', trail: [{ label: 'Dashboard', to: '/dashboard' }, { label: 'My Profile' }] },
-  { path: '/profile/complete', trail: [{ label: 'Dashboard', to: '/dashboard' }, { label: 'Complete Your Profile' }] },
 
   { path: '/confirm-email', trail: [{ label: 'Candidate Login', to: '/login' }, { label: 'Confirm Email' }] },
   { path: '/forgot-password', trail: [{ label: 'Candidate Login', to: '/login' }, { label: 'Forgot Password' }] },

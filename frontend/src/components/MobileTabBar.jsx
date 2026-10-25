@@ -21,7 +21,7 @@ const CANDIDATE_TABS = [
   { label: 'Home', icon: Home, to: '/dashboard', match: (p) => p === '/dashboard' },
   { label: 'Jobs', icon: Search, to: '/dashboard/jobs', match: (p) => p === '/dashboard/jobs' || p.startsWith('/jobs/') },
   { label: 'Applications', icon: FileText, to: '/dashboard/applications', match: (p) => p === '/dashboard/applications' },
-  { label: 'Profile', icon: User, to: '/dashboard/profile', match: (p) => p === '/dashboard/profile' || p === '/profile/complete' }
+  { label: 'Profile', icon: User, to: '/dashboard/profile', match: (p) => p === '/dashboard/profile' || p === '/dashboard/welcome' }
 ];
 
 export default function MobileTabBar({ signedIn }) {

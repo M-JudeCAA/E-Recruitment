@@ -10,7 +10,7 @@ const VARIANTS = {
 
 // `loading` covers the gap between click and response on a button that
 // triggers a request - without it, a slow request just looks unresponsive
-// (see ProfileCompletionForm/ProfileStep's add/save/delete buttons, which
+// (see the profile forms' add/save/delete buttons, which
 // used to only flip a bare "Saving..." label with no visual cue that the
 // click actually registered). `loadingText`, if given, replaces the label
 // while loading; otherwise the children stay and only the spinner is added.

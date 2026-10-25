@@ -13,19 +13,32 @@ import ExamGradesEditor from '../../components/ExamGradesEditor';
 // LinkedIn only where the profile has none, O-Level / A-Level results added
 // (shown under Education).
 // One the profile already has is skipped; the panel says what went in.
+// Used on both sites: the public site's My profile, and Internal Careers'
+// My profile and first sign-in setup (Education and experience step).
 const LABELS = { location: 'Place of residence', districtOfOrigin: 'District of origin', dateOfBirth: 'Date of birth', nationalId: 'NIN', portfolioUrl: 'Website' };
 
-// entriesRef: the editor, for the panel's Done (finish()).
-export default function CvImport({ profile, onAdded, entriesRef }) {
+// entriesRef: the editor, for the Done or Continue around it (finish()).
+// links: take LinkedIn and a website from the CV - off on Internal Careers,
+// which shows neither (an internal candidate's NIN is never taken either).
+export default function CvImport({ profile, onAdded, entriesRef, links = true }) {
   const ownEditor = useRef(null);
   const editor = entriesRef || ownEditor;
   const [error, setError] = useState('');
 
-  const take = (kind) => (values) => editor.current?.addFromCv(kind, values) || false;
+  // An internal candidate's current UCAA job is already on the profile, from
+  // their employment details; their CV's line for it rarely matches word for
+  // word, so a current job at UCAA counts as one the profile has.
+  const UCAA_JOB = /civil aviation authority|\bucaa\b/i;
+  const currentUcaaJob = (w) => UCAA_JOB.test(w.employer || '') && !w.endDate;
+  const hasCurrentUcaaJob = profile?.candidateType === 'Internal' && (profile.workExperience || []).some(currentUcaaJob);
+  const take = (kind) => (values) => {
+    if (kind === 'workExperience' && hasCurrentUcaaJob && currentUcaaJob(values)) return false;
+    return editor.current?.addFromCv(kind, values) || false;
+  };
 
   // Personal details fill only what the profile doesn't have yet.
   const fillPersonal = async (found) => {
-    const missing = Object.fromEntries(Object.entries(found).filter(([k]) => !profile?.[k]));
+    const missing = Object.fromEntries(Object.entries(found).filter(([k]) => !profile?.[k] && (links || k !== 'portfolioUrl')));
     if (!Object.keys(missing).length) return [];
     try {
       await client.put('/api/candidates/me', missing);
@@ -59,8 +72,8 @@ export default function CvImport({ profile, onAdded, entriesRef }) {
 
   return (
     <div>
-      <CvAutofillPanel uploadOnly withNationalId={profile?.candidateType !== 'Internal'}
-        onPersonalSuggested={fillPersonal} onExamGradesSuggested={addGrades} onLinkedinSuggested={addLinkedin}
+      <CvAutofillPanel withNationalId={profile?.candidateType !== 'Internal'}
+        onPersonalSuggested={fillPersonal} onExamGradesSuggested={addGrades} onLinkedinSuggested={links ? addLinkedin : undefined}
         onEducationSuggested={take('education')}
         onWorkExperienceSuggested={take('workExperience')}
         onCertificateSuggested={take('certificates')} />
