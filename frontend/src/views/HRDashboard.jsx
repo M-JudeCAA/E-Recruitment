@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Archive, Briefcase, CheckCircle2, Hourglass, ListChecks, Megaphone, Send } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useDashboardEvents } from '../models/dashboardSocket';
 import HRSidebar from '../components/HRSidebar';
@@ -8,7 +9,8 @@ import Alert from '../components/Alert';
 import Skeleton from '../components/Skeleton';
 import LiveIndicator from '../components/LiveIndicator';
 import VacancyDraftsList from '../components/VacancyDraftsList';
-import { PageTop, Panel, Table, Chips, Pill, formatDay } from '../components/workspace/ui';
+import { PageTop, Panel, Table, Figures, Pill, formatDay } from '../components/workspace/ui';
+import { VACANCY_STAGES } from '../utils/vacancyStages';
 import { debounce } from '../utils/debounce';
 import { downloadCsv } from '../utils/csvDownload';
 
@@ -16,18 +18,13 @@ import { downloadCsv } from '../utils/csvDownload';
 // Stage and "Waiting on" come from each vacancy's progress (backend
 // vacancyProgressService), so the list says where each one is and who has
 // to act next. The chips double as quick filters. A row opens the vacancy's
-// workspace (VacancyWorkspace.jsx), where every action on it lives.
+// workspace (VacancyWorkspace.jsx), where every action on it lives. The
+// stage cards above the table (one colour per stage, shared with the
+// Inbox's "Vacancies by stage" chart) are the stage filter.
 // /hr?tab=offers - the old Offers tab - now goes to Offers & hires.
 
-const STAGE_FILTERS = [
-  { key: 'all', label: 'All', test: () => true },
-  { key: 'approval', label: 'Pending approval', test: (v) => ['PendingApproval', 'Returned'].includes(v.status) },
-  { key: 'advertised', label: 'Advertised', test: (v) => ['Open', 'PartiallyFilled'].includes(v.status) && v.progress?.stepIndex === 1 },
-  { key: 'selection', label: 'In selection', test: (v) => ['Open', 'PartiallyFilled'].includes(v.status) && v.progress?.stepIndex >= 2 && v.progress?.stepIndex <= 5 },
-  { key: 'offers', label: 'Offers', test: (v) => ['Open', 'PartiallyFilled'].includes(v.status) && v.progress?.stepIndex === 6 },
-  { key: 'filled', label: 'Filled', test: (v) => v.status === 'Filled' },
-  { key: 'closed', label: 'Closed', test: (v) => ['Closed', 'Rejected'].includes(v.status) }
-];
+const STAGE_ICONS = { all: Briefcase, approval: Hourglass, advertised: Megaphone, selection: ListChecks, offers: Send, filled: CheckCircle2, closed: Archive };
+const STAGE_FILTERS = [{ key: 'all', label: 'All vacancies', tone: 'brand', test: () => true }, ...VACANCY_STAGES];
 
 export default function HRDashboard() {
   const location = useLocation();
@@ -123,9 +120,13 @@ export default function HRDashboard() {
             <option value="Internal">Internal</option>
             <option value="External">External</option>
           </select>
-          <Chips style={{ marginLeft: 'auto' }} value={stage} onChange={setStage}
-            options={STAGE_FILTERS.map((f) => ({ key: f.key, label: f.label, count: base.filter(f.test).length }))} />
         </div>
+        {vacancies && (
+          <Figures compact figures={STAGE_FILTERS.map((f) => ({
+            label: f.label, value: base.filter(f.test).length, tone: f.tone, icon: STAGE_ICONS[f.key],
+            active: stage === f.key, onClick: () => setStage(stage === f.key && f.key !== 'all' ? 'all' : f.key)
+          }))} />
+        )}
 
         <Panel padded={false}>
           {!vacancies ? (

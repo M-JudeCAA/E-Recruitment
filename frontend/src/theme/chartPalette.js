@@ -38,3 +38,24 @@ export const CHART_SERIES = [
 // colors above so a gridline can never be mistaken for a data series.
 export const CHART_GRID = '#E4EFF8';   // matches --color-bg-subtle
 export const CHART_AXIS_TEXT = '#51606B'; // matches --color-text-muted
+
+// Status fills for charts - the same meaning as theme.css's status tokens
+// (green good, red a problem, gold waiting, UCAA blue in hand, grey over),
+// one step brighter so a slice or bar reads as a fill rather than as text.
+// Ordered and validated so red and green are never neighbours:
+//
+//   node scripts/validate_palette.js "#1E8A4C,#2596D1,#E0A339,#D64541,#7D8B99"
+//
+//   PASS CVD separation (worst ΔE 12.1), normal-vision floor (19.6). The
+//   grey fails the chroma floor on purpose - it is the neutral "nothing more
+//   to do" - and gold sits below 3:1 on white, so every chart using these
+//   carries a legend with counts beside it.
+export const STATUS_FILL = {
+  good: '#1E8A4C',
+  info: '#2596D1',
+  waiting: '#E0A339',
+  bad: '#D64541',
+  neutral: '#7D8B99',
+  violet: '#6E56CF',
+  magenta: '#D0508A'
+};

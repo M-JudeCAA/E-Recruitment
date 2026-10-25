@@ -1,10 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronUp, Info, Printer } from 'lucide-react';
+import {
+  ChevronDown, ChevronUp, Info, Printer, Timer, Megaphone, Filter, Users, Percent, Briefcase, FileCheck2,
+  Hourglass, Stamp, Gauge, UsersRound, Handshake
+} from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import HRSidebar from '../components/HRSidebar';
 import AnalyticsTrends from './Analytics';
-import { PageTop } from '../components/workspace/ui';
+import { PageTop, Panel } from '../components/workspace/ui';
+import DonutChart from '../components/charts/DonutChart';
+import BarList from '../components/charts/BarList';
+import { CHART_SERIES, STATUS_FILL } from '../theme/chartPalette';
 import Card from '../components/Card';
 import Alert from '../components/Alert';
 import Button from '../components/Button';
@@ -23,6 +29,79 @@ import { printDocument, escapeHtml } from '../utils/printDocument';
 // version for PDF. Manager+.
 
 const FILTER_KEYS = ['from', 'to', 'directorateId', 'departmentId', 'positionId', 'grade', 'location', 'postingType'];
+
+// Each metric's icon and colour. Rates where higher is plainly better are
+// green, gold or red against `good`/`fair` (a first setting - HR can say
+// where the lines should be); the rest wear a colour for their kind
+// (blue time, violet people) with no good or bad implied.
+const LOOKS = {
+  timeToHire: { icon: Timer, tone: 'info' },
+  sourceOfHire: { icon: Megaphone, tone: 'violet' },
+  pipelineHealth: { icon: Filter, tone: 'info' },
+  applicantsPerPosition: { icon: Users, tone: 'violet' },
+  selectionRatio: { icon: Percent, tone: 'violet' },
+  openPositions: { icon: Briefcase, tone: 'brand' },
+  completionRate: { icon: FileCheck2, good: 70, fair: 40 },
+  requisitionAging: { icon: Hourglass, tone: 'warn' },
+  approvalTurnaround: { icon: Stamp, tone: 'info' },
+  bottlenecks: { icon: Gauge, tone: 'warn' },
+  committeeParticipation: { icon: UsersRound, good: 80, fair: 50 },
+  offerOutcomes: { icon: Handshake, good: 70, fair: 50 }
+};
+const TONE_VARS = {
+  ok: 'var(--color-accent)', warn: 'var(--color-gold)', bad: 'var(--color-danger)', info: 'var(--color-sky)',
+  brand: 'var(--color-primary-dark)', violet: 'var(--color-violet)', neutral: 'var(--color-text-muted)'
+};
+const RATING = { ok: 'Good', warn: 'Fair', bad: 'Low' };
+function lookOf(m) {
+  const look = LOOKS[m.key] || {};
+  let tone = look.tone || 'brand';
+  if (look.good != null) tone = m.value == null ? 'neutral' : m.value >= look.good ? 'ok' : m.value >= look.fair ? 'warn' : 'bad';
+  return { Icon: look.icon || Info, color: TONE_VARS[tone], rating: look.good != null ? RATING[tone] : null };
+}
+
+// Offer outcomes in the order validated for neighbouring colours (red and
+// green never touch; theme/chartPalette.js).
+const OUTCOME_COLORS = [['Accepted', STATUS_FILL.good], ['Waiting', STATUS_FILL.info], ['Expired', STATUS_FILL.waiting], ['Declined', STATUS_FILL.bad], ['Withdrawn', STATUS_FILL.neutral]];
+
+// The charts at the top, each drawn from a metric's own rows; clicking one
+// opens that metric's figures and records below.
+function DashboardCharts({ metrics, onOpen }) {
+  const m = Object.fromEntries(metrics.map((x) => [x.key, x]));
+  const pipeline = (m.pipelineHealth?.rows || []).map((r) => ({
+    key: r.stage, label: r.stage, value: r.reached,
+    note: r.fromPrevious != null ? `${r.fromPrevious}% of the stage before` : undefined,
+    color: r.stage === 'Hired' ? STATUS_FILL.good : STATUS_FILL.info
+  }));
+  const outcomes = OUTCOME_COLORS.map(([key, color]) => ({ key, label: key, color, value: m.offerOutcomes?.rows.find((r) => r.outcome === key)?.offers || 0 }));
+  // Sources by applicants, in a fixed order of hue; past seven they share "Other".
+  const sources = [...(m.sourceOfHire?.rows || [])].sort((a, b) => b.applicants - a.applicants);
+  const shown = sources.slice(0, 7).map((r, i) => ({ key: r.source, label: r.source, value: r.applicants, color: CHART_SERIES[i] }));
+  const rest = sources.slice(7).reduce((n, r) => n + r.applicants, 0);
+  if (rest) shown.push({ key: 'Other', label: 'Other', value: rest, color: STATUS_FILL.neutral });
+  const steps = (m.bottlenecks?.rows || []).filter((r) => r.averageDays != null && r.stage !== 'Approved to applications closing');
+  const slowest = Math.max(0, ...steps.map((r) => r.averageDays));
+  const stepRows = steps.map((r) => ({
+    key: r.stage, label: r.stage, value: r.averageDays, note: `${r.vacancies} ${r.vacancies === 1 ? 'vacancy' : 'vacancies'}`,
+    color: r.averageDays === slowest ? STATUS_FILL.bad : STATUS_FILL.info
+  }));
+  return (
+    <div className="ws-charts two">
+      <Panel title="Pipeline" note="Applications reaching each stage - click for the figures">
+        <BarList rows={pipeline} onSelect={() => onOpen('pipelineHealth')} emptyText="No applications in this range." />
+      </Panel>
+      <Panel title="Offer outcomes" note="Issued offers and how they ended">
+        <DonutChart data={outcomes} centerLabel="offers" onSelect={() => onOpen('offerOutcomes')} emptyText="No offers issued in this range." />
+      </Panel>
+      <Panel title="Where applicants saw the advert" note="Applicants by source">
+        <DonutChart data={shown} centerLabel="applicants" onSelect={() => onOpen('sourceOfHire')} emptyText="No applications in this range." />
+      </Panel>
+      <Panel title="How long each step takes" note="Average days per vacancy; the slowest in red">
+        <BarList rows={stepRows} formatValue={(v) => `${v} d`} onSelect={() => onOpen('bottlenecks')} emptyText="Not enough history yet." />
+      </Panel>
+    </div>
+  );
+}
 
 function display(m) {
   if (m.value == null) return '-';
@@ -50,15 +129,23 @@ function MetricTable({ metric }) {
 }
 
 function MetricCard({ metric, open, onToggle }) {
+  const { Icon, color, rating } = lookOf(metric);
   return (
-    <Card style={{ marginBottom: 0, gridColumn: open ? '1 / -1' : undefined }}>
-      <button type="button" onClick={onToggle} aria-expanded={open}
-        style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-          <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{metric.label}</span>
+    <Card style={{ marginBottom: 0, gridColumn: open ? '1 / -1' : undefined, borderTop: `4px solid ${color}`,
+      background: `linear-gradient(180deg, color-mix(in srgb, ${color} 7%, #fff), #fff 60%)` }}>
+      <button type="button" id={`metric-${metric.key}`} onClick={onToggle} aria-expanded={open}
+        style={{ all: 'unset', cursor: 'pointer', display: 'block', width: '100%', scrollMarginTop: 'calc(var(--navbar-height) + 16px)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--color-text-muted)' }}>
+            <span aria-hidden="true" style={{ width: 28, height: 28, borderRadius: 8, display: 'grid', placeItems: 'center', flex: 'none', color, background: `color-mix(in srgb, ${color} 15%, #fff)` }}><Icon size={15} /></span>
+            {metric.label}
+          </span>
           {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </div>
-        <div style={{ fontSize: 24, fontWeight: 700, margin: '4px 0' }}>{display(metric)}</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', margin: '6px 0 4px' }}>
+          <span style={{ fontSize: 24, fontWeight: 700 }}>{display(metric)}</span>
+          {rating && <span className="status-badge" style={{ '--badge-color': color }}>{rating}</span>}
+        </div>
         <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{metric.summary}</div>
       </button>
       {open && (
@@ -166,6 +253,10 @@ export default function RecruitmentDashboard() {
         </Card>
 
         {!report && !error && <LoadingState label="Working out the figures..." />}
+        {report && <DashboardCharts metrics={report.metrics} onOpen={(key) => {
+          setOpen(key);
+          setTimeout(() => document.getElementById(`metric-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
+        }} />}
         {report && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 'var(--spacing-md)' }}>
             {report.metrics.map((m) => (

@@ -5,9 +5,9 @@ import React from 'react';
 // affecting every other Card that doesn't pass one. className is also
 // optional and purely additive (e.g. Home.jsx's "hover-lift" - see
 // theme.css) - existing call sites that don't pass one are unaffected.
-// The staff workspace (theme.css .staff-ui .ui-card) keeps an accent edge
-// only for danger - overdue or failing - so colour there always means
-// something needs attention; data-accent says which kind it is.
+// An accent edge says what the card is about by colour: green done or
+// good, gold waiting, red overdue or failing. data-accent says whether it
+// is danger.
 export default function Card({ children, accent, style, onClick, className }) {
   return (
     <div
