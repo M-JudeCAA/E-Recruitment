@@ -59,8 +59,7 @@ export function AuthProvider({ children }) {
     clearMicrosoftSession('candidate');
     setCandidate(null);
   }
-  // Called right after a photo upload/removal (ProfileCompletionForm's
-  // PhotoUploadPanel) so the Navbar avatar updates immediately, without
+  // Called right after a photo upload/removal (PhotoUploadPanel) so the Navbar avatar updates immediately, without
   // requiring a fresh login - AuthContext otherwise only ever reflects
   // what the login response carried.
   function updateCandidatePhoto(photoUrl) {

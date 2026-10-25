@@ -8,7 +8,7 @@ import { validateNationalId } from '../../utils/validators';
 
 // The short forms the candidate pages ask for - a UCAA employee's employment
 // (what HR verifies; Internal Careers only) and personal details - shared by
-// the first-time setup (InternalWelcome) and My profile (CareerProfile). Each
+// the first-time setup (Welcome) and My profile (CareerProfile). Each
 // owns its state and exposes save() through the `bind` callback, so the page
 // around it decides where the Save button sits.
 

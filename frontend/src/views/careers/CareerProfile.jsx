@@ -20,7 +20,7 @@ import { SITE, CareerShell, useCareer, profileGaps, employmentCheck, formatDay }
 // /dashboard/profile): the profile as sections, each with its own Edit in a
 // side panel, instead of one long form. On Internal Careers employment shows
 // whether HR has verified it (changing it sends it back to HR); on the
-// public site the photo, links and "Fill in from your CV" are here.
+// public site the photo and links are here. "Fill in from your CV" is on both.
 // Education (with the O-Level and A-Level results), work experience and
 // certificates each open their own form: "+ Add" starts a new entry of that
 // kind, a row's Edit opens that entry (a job with its duties) and Delete
@@ -109,7 +109,7 @@ export default function CareerProfile() {
     <CareerShell active="profile">
       <PageTop title="My profile"
         subtitle={<Meta parts={[`${me.fullName} · ${me.email}`, complete ? <Pill tone="ok">Complete</Pill> : <Pill tone="warn">Needs {[...(gaps.employment ? ['employment details'] : []), ...gaps.personal].join(', ').toLowerCase()}</Pill>]} />}
-        actions={!SITE.internal && <Button variant="secondary" onClick={() => open('cv')}>Fill in from your CV</Button>} />
+        actions={<Button variant="secondary" onClick={() => open('cv')}>Fill in from your CV</Button>} />
       <Alert type="error" message={error} />
       <Alert type="success" message={message} />
       <Alert type="error" message={entryError} />
@@ -184,7 +184,7 @@ export default function CareerProfile() {
             <ProfileStep key={`${editing}-${startNew || ''}`} profile={me} onProfileChange={reload} showPersonalDetails={false}
               profileDetails={{}} setProfileDetail={() => () => {}} entryKinds={[editing]} startNew={startNew} focusEntry={focusEntry} entriesRef={entries} />
           )}
-          {editing === 'cv' && <CvImport profile={me} onAdded={reload} entriesRef={entries} />}
+          {editing === 'cv' && <CvImport profile={me} onAdded={reload} entriesRef={entries} links={!SITE.internal} />}
         </SidePanel>
       )}
     </CareerShell>

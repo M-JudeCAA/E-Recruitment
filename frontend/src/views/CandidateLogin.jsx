@@ -104,7 +104,7 @@ export default function CandidateLogin() {
       // leaving the app. Everything navigated to *after* this one push is
       // normal history, so Back still steps through those as expected.
       if (validReturnTo) navigate(validReturnTo, { replace: true });
-      else if (res.data.firstLogin) navigate("/profile/complete", { replace: true });
+      else if (res.data.firstLogin) navigate("/dashboard/welcome", { replace: true });
       else navigate("/dashboard", { replace: true });
     } catch (err) {
       setUseMicrosoft(err.response?.data?.code === "USE_MICROSOFT");
