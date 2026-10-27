@@ -191,3 +191,16 @@ describe('panelWorkload', () => {
     ]);
   });
 });
+
+describe('panelWorkload and conflicts of interest', () => {
+  test('leaves out interviews on vacancies the viewer applied for', async () => {
+    prisma.staffUser.findUnique.mockResolvedValue({ email: 'officer@caa.co.ug', entraObjectId: null });
+    prisma.application.findMany.mockResolvedValue([{ vacancyId: 12 }]);
+    prisma.panelMember.findMany.mockResolvedValue([]);
+    const req = { query: {}, user: { type: 'staff', id: 5 } };
+    await analyticsController.panelWorkload(req, mockRes());
+    expect(prisma.panelMember.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { interviewRound: { status: 'Completed', application: { vacancyId: { notIn: [12] } } } }
+    }));
+  });
+});

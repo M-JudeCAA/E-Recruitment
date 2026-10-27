@@ -46,8 +46,32 @@ afterAll(async () => {
   await prisma.$disconnect();
 });
 
+test('every HR tier gets the dashboard; the trends about individual staff stay with Managers', async () => {
+  expectStatus(await api(tokens.hro).get('/api/analytics/recruitment'), 200);
+  expectStatus(await api(tokens.hro).get('/api/analytics/recruitment/export'), 200);
+  for (const path of ['sla-compliance', 'offer-outcomes', 'hiring-mix', 'time-to-fill', 'panel-workload']) {
+    expectStatus(await api(tokens.hro).get(`/api/analytics/${path}`), 200);
+  }
+  for (const path of ['approval-turnaround', 'delegation-activity']) {
+    expectStatus(await api(tokens.hro).get(`/api/analytics/${path}`), 403);
+    expectStatus(await api(tokens.manager).get(`/api/analytics/${path}`), 200);
+  }
+});
+
+test('panel workload leaves out interviews on a vacancy the viewer applied for', async () => {
+  const round = await prisma.interviewRound.findFirst({ where: { status: 'Completed' } });
+  await prisma.panelMember.create({ data: { interviewRoundId: round.id, name: 'Dr. Okello', isChair: true } });
+  // The HR Officer applied for that vacancy (their own candidate account).
+  const vacancyId = (await prisma.application.findUnique({ where: { id: round.applicationId } })).vacancyId;
+  const own = await createCandidate({ fullName: 'HR Officer', email: 'hro@caa.co.ug' });
+  await prisma.application.create({ data: { candidateId: own.id, vacancyId, status: 'Submitted', submittedDate: ago(35) } });
+
+  expect(expectStatus(await api(tokens.hro).get('/api/analytics/panel-workload'), 200).body).toEqual([]);
+  expect(expectStatus(await api(tokens.manager).get('/api/analytics/panel-workload'), 200).body)
+    .toEqual([{ name: 'Dr. Okello', interviews: 1, chaired: 1 }]);
+});
+
 test('works out every metric with its formula and rows', async () => {
-  expectStatus(await api(tokens.hro).get('/api/analytics/recruitment'), 403);
   const report = expectStatus(await api(tokens.manager).get('/api/analytics/recruitment'), 200).body;
   const m = Object.fromEntries(report.metrics.map((x) => [x.key, x]));
   expect(report.metrics.every((x) => x.formula && x.source && x.refresh)).toBe(true);

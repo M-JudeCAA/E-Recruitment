@@ -225,7 +225,7 @@ export default function App() {
           <Route
             path="/hr/dashboard"
             element={
-              <RequireStaff minRole="Manager">
+              <RequireStaff minRole="HR_Officer">
                 <RecruitmentDashboard />
               </RequireStaff>
             }

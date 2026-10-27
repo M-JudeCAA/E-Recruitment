@@ -4,20 +4,22 @@ const { authenticate, requireStaffRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Historical/reporting endpoints behind the Analytics page - Manager+
-// only, same tier as dashboardController's summary/activity/headcount
-// (oversight-tier reporting, not everyday operational visibility).
-router.get('/sla-compliance', authenticate, requireStaffRole('Manager'), controller.slaCompliance);
+// The trend charts under the recruitment dashboard. The organisation-level
+// ones are open to all HR staff; the two about individual staff members -
+// each approver's turnaround and who acted under whose delegation - stay
+// with Managers and Directors (oversight, not everyday work).
+router.get('/sla-compliance', authenticate, requireStaffRole('HR_Officer'), controller.slaCompliance);
 router.get('/approval-turnaround', authenticate, requireStaffRole('Manager'), controller.approvalTurnaround);
-router.get('/offer-outcomes', authenticate, requireStaffRole('Manager'), controller.offerOutcomes);
-router.get('/hiring-mix', authenticate, requireStaffRole('Manager'), controller.hiringMix);
-router.get('/time-to-fill', authenticate, requireStaffRole('Manager'), controller.timeToFill);
+router.get('/offer-outcomes', authenticate, requireStaffRole('HR_Officer'), controller.offerOutcomes);
+router.get('/hiring-mix', authenticate, requireStaffRole('HR_Officer'), controller.hiringMix);
+router.get('/time-to-fill', authenticate, requireStaffRole('HR_Officer'), controller.timeToFill);
 router.get('/delegation-activity', authenticate, requireStaffRole('Manager'), controller.delegationActivity);
-router.get('/panel-workload', authenticate, requireStaffRole('Manager'), controller.panelWorkload);
+router.get('/panel-workload', authenticate, requireStaffRole('HR_Officer'), controller.panelWorkload);
 
-// The recruitment dashboard (FR-ATS-070 to 074), filterable and exportable.
+// The recruitment dashboard (FR-ATS-070 to 074), filterable and exportable,
+// for all HR staff (vacancies the viewer applied for are left out).
 const recruitment = require('../controllers/recruitmentMetricsController');
-router.get('/recruitment', authenticate, requireStaffRole('Manager'), recruitment.get);
-router.get('/recruitment/export', authenticate, requireStaffRole('Manager'), recruitment.exportCsv);
+router.get('/recruitment', authenticate, requireStaffRole('HR_Officer'), recruitment.get);
+router.get('/recruitment/export', authenticate, requireStaffRole('HR_Officer'), recruitment.exportCsv);
 
 module.exports = router;

@@ -137,9 +137,12 @@ const HIRING_MIX_SERIES = [
 
 // The trend charts under the Dashboard's figures (RecruitmentDashboard.jsx):
 // SLA compliance, time to fill, offer outcomes, hiring mix, approval
-// turnaround, panel workload and delegation activity. Manager+ only, the
-// same tier as the endpoints it reads.
-export default function AnalyticsTrends() {
+// turnaround, panel workload and delegation activity. Every HR tier sees the
+// organisation-level charts; approval turnaround by approver and delegation
+// activity, which are about individual staff members, only Managers and
+// Directors (oversight, as their endpoints are) - for anyone else they are
+// neither fetched nor shown.
+export default function AnalyticsTrends({ oversight = false }) {
   const [slaCompliance, setSlaCompliance] = useState([]);
   const [approvalTurnaround, setApprovalTurnaround] = useState([]);
   const [offerOutcomes, setOfferOutcomes] = useState([]);
@@ -151,13 +154,14 @@ export default function AnalyticsTrends() {
   const [error, setError] = useState('');
 
   const loadAll = useCallback(() => {
+    const none = Promise.resolve({ data: [] });
     Promise.all([
       staffClient.get('/api/analytics/sla-compliance'),
-      staffClient.get('/api/analytics/approval-turnaround'),
+      oversight ? staffClient.get('/api/analytics/approval-turnaround') : none,
       staffClient.get('/api/analytics/offer-outcomes'),
       staffClient.get('/api/analytics/hiring-mix'),
       staffClient.get('/api/analytics/time-to-fill'),
-      staffClient.get('/api/analytics/delegation-activity'),
+      oversight ? staffClient.get('/api/analytics/delegation-activity') : none,
       staffClient.get('/api/analytics/panel-workload')
     ])
       .then(([sla, turnaround, offers, mix, fill, delegation, panel]) => {
@@ -171,7 +175,7 @@ export default function AnalyticsTrends() {
       })
       .catch((err) => setError(err.response?.data?.error || 'Could not load the trends'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [oversight]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
   const refetchAll = useCallback(debounce(loadAll, 500), [loadAll]);
@@ -198,13 +202,15 @@ export default function AnalyticsTrends() {
         <MonthlyStackedBarChart title="Offer outcomes" data={offerOutcomes} series={OFFER_OUTCOME_SERIES} loading={loading} emptyText="No offers decided in this window yet." />
         <MonthlyStackedBarChart title="Hiring mix" data={hiringMix} series={HIRING_MIX_SERIES} loading={loading} emptyText="No vacancies filled in this window yet." />
       </div>
-      <div style={grid}>
-        <ApprovalTurnaroundTable rows={approvalTurnaround} loading={loading} />
+      <div style={oversight ? grid : { ...grid, marginBottom: 0 }}>
+        {oversight && <ApprovalTurnaroundTable rows={approvalTurnaround} loading={loading} />}
         <PanelWorkloadTable rows={panelWorkload} loading={loading} />
       </div>
-      <div style={{ ...grid, marginBottom: 0 }}>
-        <DelegationActivityList rows={delegationActivity} loading={loading} />
-      </div>
+      {oversight && (
+        <div style={{ ...grid, marginBottom: 0 }}>
+          <DelegationActivityList rows={delegationActivity} loading={loading} />
+        </div>
+      )}
     </section>
   );
 }
