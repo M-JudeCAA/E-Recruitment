@@ -5,9 +5,10 @@ import {
   Hourglass, Stamp, Gauge, UsersRound, Handshake
 } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
+import { useAuth } from '../models/AuthContext';
 import HRSidebar from '../components/HRSidebar';
 import AnalyticsTrends from './Analytics';
-import { PageTop, Panel } from '../components/workspace/ui';
+import { PageTop, Panel, rankOf, ROLE_RANK } from '../components/workspace/ui';
 import DonutChart from '../components/charts/DonutChart';
 import BarList from '../components/charts/BarList';
 import { CHART_SERIES, STATUS_FILL } from '../theme/chartPalette';
@@ -26,7 +27,8 @@ import { printDocument, escapeHtml } from '../utils/printDocument';
 // recruitmentMetricsService): every metric with its formula, data source and
 // refresh, the rows behind it, filters (kept in the URL so a filtered view
 // can be shared with anyone allowed to see it), a CSV export and a printable
-// version for PDF. Manager+.
+// version for PDF. Every HR tier; the trends' staff-level panels (approval
+// turnaround by approver, delegation activity) only for Managers and Directors.
 
 const FILTER_KEYS = ['from', 'to', 'directorateId', 'departmentId', 'positionId', 'grade', 'location', 'postingType'];
 
@@ -163,6 +165,7 @@ function MetricCard({ metric, open, onToggle }) {
 }
 
 export default function RecruitmentDashboard() {
+  const { staff } = useAuth();
   const [params, setParams] = useSearchParams();
   const filters = useMemo(() => Object.fromEntries(FILTER_KEYS.map((k) => [k, params.get(k) || ''])), [params]);
   const query = useMemo(() => new URLSearchParams(Object.entries(filters).filter(([, v]) => v)).toString(), [filters]);
@@ -264,7 +267,7 @@ export default function RecruitmentDashboard() {
             ))}
           </div>
         )}
-        <AnalyticsTrends />
+        <AnalyticsTrends oversight={rankOf(staff?.role) >= ROLE_RANK.Manager} />
       </div>
     </div>
   );

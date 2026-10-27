@@ -1,4 +1,5 @@
 const dashboardModel = require('../models/dashboardModel');
+const conflictOfInterest = require('../services/conflictOfInterestService');
 
 const ALLOWED_MONTHS = [3, 6, 12];
 const MS_PER_HOUR = 60 * 60 * 1000;
@@ -191,8 +192,10 @@ async function delegationActivity(req, res) {
 // panelist commonly has no system account): the interviews they sat on and
 // how many they chaired, busiest first. Panels score on paper, so there are
 // no per-panelist scores to average.
+// Interviews on a vacancy the viewer applied for are left out, as in every
+// cross-vacancy list.
 async function panelWorkload(req, res) {
-  const rows = await dashboardModel.heldPanelMembers();
+  const rows = await dashboardModel.heldPanelMembers(await conflictOfInterest.conflictedVacancyIds(req));
 
   const byName = new Map();
   for (const row of rows) {

@@ -159,8 +159,14 @@ module.exports = {
   // grouped by name (not staffUserId, which is optional/absent for the
   // common case of an external panelist with no system account) in the
   // controller, for the panel workload table.
-  heldPanelMembers: () => prisma.panelMember.findMany({
-    where: { interviewRound: { status: 'Completed' } },
+  // excludeVacancyIds: vacancies the viewer applied for (conflict of interest).
+  heldPanelMembers: (excludeVacancyIds = []) => prisma.panelMember.findMany({
+    where: {
+      interviewRound: {
+        status: 'Completed',
+        ...(excludeVacancyIds.length ? { application: { vacancyId: { notIn: excludeVacancyIds } } } : {})
+      }
+    },
     select: { name: true, isChair: true }
   }),
 

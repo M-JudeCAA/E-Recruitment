@@ -12,7 +12,7 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 //   My work     - the Inbox: what is waiting for this person (inboxService)
 //   Recruitment - vacancies (each with its own workspace), candidates,
 //                 interviews, offers & hires
-//   Reports     - the recruitment dashboard (Manager+, as its API is)
+//   Reports     - the recruitment dashboard (every HR role)
 //   Setup       - organisation (overview, with Directorates, Departments
 //                 and Positions under its arrow), templates, delegations,
 //                 settings, accounts
@@ -59,7 +59,7 @@ export default function HRSidebar({ active }) {
     { key: 'verification', label: 'Employment checks', icon: BadgeCheck, to: '/hr/verification', section: 'Recruitment' },
     { key: 'interviews', label: 'Interviews', icon: CalendarClock, to: '/hr/interviews', section: 'Recruitment' },
     { key: 'offers', label: 'Offers & hires', icon: Award, to: '/hr/offers', section: 'Recruitment' },
-    ...(rank >= ROLE_RANK.Manager ? [{ key: 'dashboard', label: 'Dashboard', icon: BarChart3, to: '/hr/dashboard', section: 'Reports' }] : []),
+    { key: 'dashboard', label: 'Dashboard', icon: BarChart3, to: '/hr/dashboard', section: 'Reports' },
     ...setup
   ];
 
