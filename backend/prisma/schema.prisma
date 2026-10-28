@@ -781,6 +781,7 @@ model Candidate {
   dataRequests       DataSubjectRequest[]
   tags               CandidateTagging[]
   bulkEmailsReceived BulkEmailRecipient[]
+  surveys            ApplicantSurvey[]
 
   @@index([phoneKey])
 }
@@ -1958,5 +1959,34 @@ model BulkEmailRecipient {
   email         String
   sent          Boolean
 
+  @@index([candidateId])
+}
+
+// The short survey an internal candidate is offered right after submitting
+// an application (pilot feedback on applying through the system;
+// services/applicantSurveyService.js). One per application, skippable.
+// Shown to HR and system administrators without the candidate's name.
+// applicationId is a plain column, not a relation, and the vacancy's title
+// and job reference are snapshots, so the feedback stays readable if the
+// recruitment data is cleared. The erasure purge clears the free text.
+model ApplicantSurvey {
+  id            Int       @id @default(autoincrement())
+  candidateId   Int
+  candidate     Candidate @relation(fields: [candidateId], references: [id])
+  applicationId Int       @unique
+  vacancyTitle  String    @db.VarChar(255)
+  jobRef        String?   @db.VarChar(60)
+  // 1 (very poor) to 5 (very good)
+  overallRating Int
+  easeRating    Int
+  clarityRating Int
+  // under15 | 15to30 | 30to60 | over60 (minutes)
+  timeTaken     String?   @db.VarChar(20)
+  hadProblems   Boolean   @default(false)
+  problems      String?   @db.Text
+  suggestions   String?   @db.Text
+  submittedAt   DateTime  @default(now())
+
+  @@index([submittedAt])
   @@index([candidateId])
 }

@@ -110,6 +110,8 @@ async function purgeCandidate(candidateId, { reason, requestId = null, performed
     await tx.verificationToken.deleteMany({ where: { candidateId } });
     await tx.candidateNotification.deleteMany({ where: { candidateId } });
     await tx.candidateTagging.deleteMany({ where: { candidateId } });
+    // Their survey ratings stay (they name nobody); what they wrote goes.
+    await tx.applicantSurvey.updateMany({ where: { candidateId }, data: { problems: null, suggestions: null } });
     await tx.bulkEmailRecipient.updateMany({ where: { candidateId }, data: { email: `removed-${candidateId}@removed.invalid` } });
     if (applicationIds.length) {
       await tx.applicationDocument.deleteMany({ where: { applicationId: { in: applicationIds } } });

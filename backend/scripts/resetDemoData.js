@@ -36,7 +36,7 @@ const TABLES = [
   'Hire', 'Offer', 'ApplicationDocument', 'Application', 'ExcoShortlistApproval', 'VacancyAdvertEvidence',
   'BulkEmailRecipient', 'BulkEmail', 'CandidateTagging', 'CandidateTag',
   'CandidateNotification', 'VerificationToken', 'PendingCandidateRegistration', 'DataSubjectRequest', 'DataPurgeLog',
-  'InternalProfile', 'WorkExperience', 'Education', 'ExamGrade', 'Certificate', 'Candidate',
+  'ApplicantSurvey', 'InternalProfile', 'WorkExperience', 'Education', 'ExamGrade', 'Certificate', 'Candidate',
   'Notification', 'TaskEscalation', 'AuditLog', 'SystemHealth', 'DataAccessLog', 'ActivityLog',
   'VacancyDraft', 'DocumentTemplate', 'Vacancy', 'JobRefSequence', 'Position', 'Department', 'OrgImport', 'Directorate'
 ];
@@ -51,7 +51,7 @@ const DELEGATE = {
   BulkEmailRecipient: 'bulkEmailRecipient', BulkEmail: 'bulkEmail', CandidateTagging: 'candidateTagging', CandidateTag: 'candidateTag',
   CandidateNotification: 'candidateNotification', VerificationToken: 'verificationToken',
   PendingCandidateRegistration: 'pendingCandidateRegistration', DataSubjectRequest: 'dataSubjectRequest', DataPurgeLog: 'dataPurgeLog',
-  InternalProfile: 'internalProfile', WorkExperience: 'workExperience', Education: 'education',
+  ApplicantSurvey: 'applicantSurvey', InternalProfile: 'internalProfile', WorkExperience: 'workExperience', Education: 'education',
   ExamGrade: 'examGrade', Certificate: 'certificate', Candidate: 'candidate',
   Notification: 'notification', TaskEscalation: 'taskEscalation', AuditLog: 'auditLog', SystemHealth: 'systemHealth',
   DataAccessLog: 'dataAccessLog', VacancyDraft: 'vacancyDraft', DocumentTemplate: 'documentTemplate', JobRefSequence: 'jobRefSequence',
