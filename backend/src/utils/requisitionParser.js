@@ -75,9 +75,11 @@ const COLUMN_HEADINGS = new Set(['specific activities', 'activities', 'key activ
 const isFiller = (line) => /^\d{1,3}$/.test(line) || COLUMN_HEADINGS.has(normalizeLabel(line));
 
 // Fields a requisition is expected to state; anything here that isn't
-// found is reported as missing for HR to fill in.
+// found is reported as missing for HR to fill in. Duties and responsibilities
+// are read when a document has them, but not expected: UCAA's requisitions
+// cover them under the job purpose and principal accountabilities.
 const EXPECTED = ['jobTitle', 'department', 'reportsTo', 'station', 'salaryScale', 'vacancies', 'contractType',
-  'jobPurpose', 'principalAccountabilities', 'duties', 'essential', 'desirable', 'knowledge', 'specialSkills'];
+  'jobPurpose', 'principalAccountabilities', 'essential', 'desirable', 'knowledge', 'specialSkills'];
 
 const LABEL_FOR = {
   jobTitle: 'Job title', directorate: 'Directorate', department: 'Department', section: 'Section', station: 'Station / location',
