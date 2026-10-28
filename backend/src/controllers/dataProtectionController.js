@@ -37,7 +37,8 @@ async function exportMine(req, res) {
           offer: { select: { status: true, approvedDate: true, salaryAmount: true, salaryCurrency: true, salaryPeriod: true, startDate: true, decidedAt: true } }
         }
       },
-      dataRequests: { select: { id: true, status: true, createdAt: true, decidedAt: true, decisionReason: true } }
+      dataRequests: { select: { id: true, status: true, createdAt: true, decidedAt: true, decisionReason: true } },
+      surveys: { select: { applicationId: true, vacancyTitle: true, overallRating: true, easeRating: true, clarityRating: true, timeTaken: true, hadProblems: true, problems: true, suggestions: true, submittedAt: true } }
     }
   });
   if (!candidate) return res.status(404).json({ error: 'Account not found' });

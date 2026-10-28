@@ -27,6 +27,7 @@ const mockDb = {
   dataPurgeLog: { create: jest.fn(), findMany: jest.fn() },
   candidateTag: { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), create: jest.fn(), delete: jest.fn() },
   candidateTagging: { findMany: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
+  applicantSurvey: { findMany: jest.fn(), findUnique: jest.fn(), create: jest.fn(), updateMany: jest.fn(), deleteMany: jest.fn() },
   bulkEmail: { create: jest.fn(), findMany: jest.fn() },
   bulkEmailRecipient: { updateMany: jest.fn() },
   hire: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn(), count: jest.fn(), deleteMany: jest.fn() },

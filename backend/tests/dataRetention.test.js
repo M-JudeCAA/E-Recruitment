@@ -73,7 +73,7 @@ describe('erasing a candidate', () => {
   beforeEach(() => {
     tx = {
       workExperience: many(), education: many(), examGrade: many(), certificate: many(), internalProfile: many(),
-      verificationToken: many(), candidateNotification: many(), candidateTagging: many(), bulkEmailRecipient: many(),
+      verificationToken: many(), candidateNotification: many(), candidateTagging: many(), applicantSurvey: many(), bulkEmailRecipient: many(),
       applicationDocument: many(), application: many(), interviewRound: many(), shortlistRating: many(), auditLog: many(), activityLog: many(),
       candidate: { update: jest.fn() }, dataPurgeLog: { create: jest.fn() }
     };
@@ -100,5 +100,10 @@ describe('erasing a candidate', () => {
       where: { entityType: 'ApplicationSnapshot', entityId: { in: [31] } },
       data: { payload: expect.objectContaining({ erased: true }) }
     });
+  });
+
+  test('keeps their survey ratings but not what they wrote', async () => {
+    await purge.purgeCandidate(9, { reason: 'ErasureRequest' });
+    expect(tx.applicantSurvey.updateMany).toHaveBeenCalledWith({ where: { candidateId: 9 }, data: { problems: null, suggestions: null } });
   });
 });

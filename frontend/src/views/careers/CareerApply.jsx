@@ -13,6 +13,7 @@ import { PageTop, Meta } from '../../components/workspace/ui';
 import { failedDisqualifyingRequirements } from '../../utils/screeningQuestions';
 import { evidenceRequirements, missingEvidence } from '../../utils/screeningEvidence';
 import { EmploymentForm } from './forms';
+import ApplicantSurvey from './ApplicantSurvey';
 import { SITE, CareerShell, WizardRail, profileGaps, formatDay } from './careers';
 import { formatDeadlineTime } from '../../utils/deadline';
 
@@ -230,6 +231,7 @@ export default function CareerApply() {
                   onSubmitted={() => setApplication({ ...application, status: 'Submitted' })}
                   onWithdrawn={() => navigate(SITE.applications)} />
                 {!decided && <div className="ws-note">After you submit, a confirmation is emailed to you. Follow progress under My applications.</div>}
+                {decided && SITE.internal && application.status !== 'Withdrawn' && <ApplicantSurvey applicationId={application.id} />}
               </>
             )}
             {missing.length > 0 && stepKey !== 'check' && <div className="ws-note" style={{ color: 'var(--color-danger)' }}>Before continuing, please complete: {missing.join(', ')}</div>}

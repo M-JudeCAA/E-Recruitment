@@ -1,5 +1,5 @@
 import React from 'react';
-import { Inbox, Briefcase, Users, CalendarClock, Award, BarChart3, Network, FileSignature, Share2, Settings, UserCog, ScrollText, UsersRound, BadgeCheck } from 'lucide-react';
+import { Inbox, Briefcase, Users, CalendarClock, Award, BarChart3, Network, FileSignature, Share2, Settings, UserCog, ScrollText, UsersRound, BadgeCheck, MessageSquare } from 'lucide-react';
 import { isHrDepartment } from '../utils/staffDepartments';
 import Sidebar from './Sidebar';
 import { useAuth } from '../models/AuthContext';
@@ -12,12 +12,14 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 //   My work     - the Inbox: what is waiting for this person (inboxService)
 //   Recruitment - vacancies (each with its own workspace), candidates,
 //                 interviews, offers & hires
-//   Reports     - the recruitment dashboard (every HR role)
+//   Reports     - the recruitment dashboard (every HR role) and applicant
+//                 feedback (every HR role and system administrators)
 //   Setup       - organisation (overview, with Directorates, Departments
 //                 and Positions under its arrow), templates, delegations,
 //                 settings, accounts
 // Items a role can't use are left out rather than shown and refused. An
-// accounts-only system administrator (no HR role) sees only Setup.
+// accounts-only system administrator (no HR role) sees applicant feedback
+// and Setup.
 //
 // `active` is the key of the current page; the old keys some pages still
 // pass map onto the new items.
@@ -52,7 +54,9 @@ export default function HRSidebar({ active }) {
     staff?.isSystemAdmin && { key: 'audit-log', label: 'Audit log', icon: ScrollText, to: '/hr/audit-log', section: 'Setup' }
   ].filter(Boolean);
 
-  const list = !staff?.role ? setup : [
+  const feedback = { key: 'feedback', label: 'Applicant feedback', icon: MessageSquare, to: '/hr/feedback', section: 'Reports' };
+
+  const list = !staff?.role ? [...(staff?.isSystemAdmin ? [feedback] : []), ...setup] : [
     { key: 'inbox', label: 'Inbox', icon: Inbox, to: '/hr/inbox', section: 'My work', badge: actionable.length, badgeTone: overdue ? 'alert' : 'count' },
     { key: 'vacancies', label: 'Vacancies', icon: Briefcase, to: '/hr', section: 'Recruitment' },
     { key: 'candidates', label: 'Candidates', icon: Users, to: '/hr/candidates', section: 'Recruitment' },
@@ -60,6 +64,7 @@ export default function HRSidebar({ active }) {
     { key: 'interviews', label: 'Interviews', icon: CalendarClock, to: '/hr/interviews', section: 'Recruitment' },
     { key: 'offers', label: 'Offers & hires', icon: Award, to: '/hr/offers', section: 'Recruitment' },
     { key: 'dashboard', label: 'Dashboard', icon: BarChart3, to: '/hr/dashboard', section: 'Reports' },
+    feedback,
     ...setup
   ];
 

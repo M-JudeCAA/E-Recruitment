@@ -42,6 +42,7 @@ import HrTeam from "./views/HrTeam";
 import EmploymentChecks from "./views/EmploymentChecks";
 import DocumentTemplates from "./views/DocumentTemplates";
 import SettingsAndData from "./views/SettingsAndData";
+import ApplicantFeedback from "./views/ApplicantFeedback";
 import VacancyWorkspace from "./views/VacancyWorkspace";
 import CreateVacancyListing from "./views/CreateVacancyListing";
 import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
@@ -271,6 +272,14 @@ export default function App() {
               <RequireSystemAdmin>
                 <AuditLogPage />
               </RequireSystemAdmin>
+            }
+          />
+          <Route
+            path="/hr/feedback"
+            element={
+              <RequireSystemAdminOrRole minRole="HR_Officer">
+                <ApplicantFeedback />
+              </RequireSystemAdminOrRole>
             }
           />
           <Route

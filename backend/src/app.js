@@ -121,6 +121,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/data-protection', dataProtectionRoutes);
 app.use('/api/talent', talentRoutes);
 app.use('/api/bulk-email', bulkEmailRoutes);
+app.use('/api/feedback', require('./routes/feedback'));
 
 // The scheduler worker's "something changed" signal for the HR dashboards
 // (utils/dashboardSignal.js) - signed with the shared secret, no session.

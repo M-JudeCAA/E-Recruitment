@@ -154,7 +154,10 @@ const ACTIONS = {
   'POST /api/talent/candidates/:candidateId/tags': 'Candidate tagged',
   'DELETE /api/talent/candidates/:candidateId/tags/:tagId': 'Candidate tag removed',
   'POST /api/bulk-email/preview': 'Bulk email previewed',
-  'POST /api/bulk-email/send': 'Bulk email sent'
+  'POST /api/bulk-email/send': 'Bulk email sent',
+
+  // Applicant feedback
+  'POST /api/feedback/application-survey': 'Applicant feedback given'
 };
 
 // Requests not worth a row: reading notifications, and the vacancy form's

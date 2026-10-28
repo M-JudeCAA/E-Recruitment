@@ -223,6 +223,27 @@ positions.
   UCAA employees applying as candidates use **Sign in with your UCAA account**.
 - Accounts from before the reset no longer exist.
 
+## Clearing only the recruitment data (accounts kept)
+
+To start again without the vacancies and applications - e.g. before the pilot -
+but keep everyone's accounts, use `backend/scripts/clearRecruitmentData.js`
+instead of the full reset. It deletes every vacancy, vacancy draft and
+application (drafts and submitted), with their documents, committees,
+interviews, EXCO approvals, offers, hires, bulk emails and advert evidence, the
+notices about them and the uploads only they used. It keeps staff and candidate
+accounts with their profiles, internal candidates' employment details and HR's
+checks, the organisation structure, settings, templates, applicant feedback and
+the logs. Back up first (step 3), then:
+
+```bash
+# from backend/
+node scripts/clearRecruitmentData.js          # what it would delete
+node scripts/clearRecruitmentData.js --yes    # do it
+```
+
+`--restart-job-refs` also starts job references again at 001 for the year.
+Ids are not reset. Nothing needs stopping first.
+
 ## If something goes wrong: restoring the backup
 
 Stop the API and the scheduler worker, restore both backups from step 3, then
