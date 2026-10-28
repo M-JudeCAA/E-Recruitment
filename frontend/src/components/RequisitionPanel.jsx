@@ -220,7 +220,9 @@ export default function RequisitionPanel({
     );
   }
 
-  const { document, fields, labels, missing, warnings, organogram } = requisition;
+  const { document, fields, labels, warnings, organogram } = requisition;
+  // Duties are covered by the job purpose; drafts read before that may still list them.
+  const missing = requisition.missing.filter((k) => k !== 'duties');
   const keys = ORDER.filter((k) => fields[k]);
   const toCheck = keys.filter((k) => fields[k].confidence !== 'high').length;
 
