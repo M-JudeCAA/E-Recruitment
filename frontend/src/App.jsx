@@ -48,6 +48,8 @@ import CreateVacancyListing from "./views/CreateVacancyListing";
 import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
 import InterviewHub from "./views/InterviewHub";
 import PrivacyNotice from "./views/PrivacyNotice";
+import ExternalSiteClosed from "./views/ExternalSiteClosed";
+import { useExternalSiteOpen } from "./models/siteStatus";
 import { RequireCandidate, RequireStaff, RequireSystemAdmin, RequireSystemAdminOrRole, RequireStaffPort, GuestPortGate, InternalPortGate, RequireInternalCandidate } from "./components/ProtectedRoute";
 
 // Padding lives here, not on the app shell - Navbar/Footer render outside
@@ -80,6 +82,11 @@ const NO_TABBAR_PATHS = [/^\/apply\//, /^\/shortlist-panel\//];
 // with the sidebar layout, and no breadcrumb strip or footer.
 const CAREER_PATHS = [/^\/dashboard(\/|$)/, /^\/jobs\//, /^\/apply\//];
 
+// What the public site still shows while it is closed to external applicants
+// (backend config/externalSite.js): the privacy notice, and committee
+// members' links sent before their links moved to Internal Careers.
+const OPEN_WHEN_CLOSED = [/^\/privacy$/, /^\/shortlist-panel\//];
+
 // A job advert: a signed-in applicant gets it in their own area, with "Your
 // fit" and Apply; a guest gets the public page.
 function JobPage() {
@@ -95,7 +102,15 @@ export default function App() {
   // Phones only (theme.css hides it above 767px). The guest/candidate site
   // gets the bottom tab bar; staff screens keep their sidebar drawer.
   // Internal Careers (internalPort.js) uses the sidebar, like staff.
-  const showTabBar = !staff && !isStaffPort() && !isInternalPort() && !NO_TABBAR_PATHS.some((re) => re.test(pathname));
+  // The public site can be closed to external applicants: then every other
+  // page is a notice (views/ExternalSiteClosed.jsx), and nothing shows
+  // until the API has said which.
+  const publicSite = !isStaffPort() && !isInternalPort();
+  const siteOpen = useExternalSiteOpen(publicSite);
+  const gated = publicSite && !staff && !OPEN_WHEN_CLOSED.some((re) => re.test(pathname));
+  const siteClosed = gated && siteOpen === false;
+  const siteWaiting = gated && siteOpen === null;
+  const showTabBar = !siteClosed && !staff && !isStaffPort() && !isInternalPort() && !NO_TABBAR_PATHS.some((re) => re.test(pathname));
   // The quieter staff workspace look (theme.css .staff-ui): on <html> so
   // modals and anything else outside the app shell pick it up as well.
   // Internal Careers wears it too: UCAA employees get the same corporate look.
@@ -120,6 +135,7 @@ export default function App() {
           siblings below (their own edge-to-edge backgrounds still start
           right under the navbar, not behind it). */}
       <div style={{ paddingTop: "var(--navbar-height)", paddingBottom: "var(--footer-height)", boxSizing: "border-box" }}>
+      {siteClosed ? <ExternalSiteClosed /> : siteWaiting ? null : (
       <Routes>
         {/* Staff-side and public routes - never gated by GuestPortGate.
             The unauthenticated staff entry points below are gated the
@@ -323,8 +339,9 @@ export default function App() {
             }
           />
           {/* Public - a shortlisting committee member's private link, no
-              login, and not gated by port since that link always points at
-              the guest origin (see backend/src/config/frontendUrl.js) anyway. */}
+              login, and not gated by port: it points at the public site, or
+              at Internal Careers while the public site is closed (backend
+              config/externalSite.js, shortlistCommitteeController linkFor). */}
           <Route path="/shortlist-panel/:token" element={<ShortlistPanelAccess />} />
         </Route>
         {/* Internal Careers - UCAA employees, on its own port only
@@ -429,6 +446,7 @@ export default function App() {
         {/* Internal Careers: an unknown address goes to its home rather than a blank page. */}
         {isInternalPort() && <Route path="*" element={<Navigate to="/careers" replace />} />}
       </Routes>
+      )}
       </div>
 
       <Footer />

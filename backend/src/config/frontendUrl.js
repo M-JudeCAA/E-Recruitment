@@ -6,10 +6,14 @@
 // /staff/reset-password back to "/" unless served from the staff port),
 // so links to those routes MUST use staffFrontendUrl, not frontendUrl -
 // an emailed staff link pointing at the guest origin would 404 itself.
+// The third origin is Internal Careers (internalPort.js), where the
+// shortlisting committee's links point (the public site can be closed,
+// config/externalSite.js).
 const origins = (process.env.FRONTEND_URL || '').split(',').map((s) => s.trim()).filter(Boolean);
 
 module.exports = {
   allowedOrigins: origins,
   frontendUrl: origins[0] || '',
   staffFrontendUrl: origins[1] || origins[0] || '',
+  internalFrontendUrl: origins[2] || origins[0] || '',
 };

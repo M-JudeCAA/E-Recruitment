@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const { externalSiteOpen, refuseClosed } = require('../config/externalSite');
 
 function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
@@ -135,6 +136,11 @@ async function loadCurrentCandidate(req, res) {
   }
   if ((current.tokenVersion ?? 0) !== (req.user.tv ?? 0)) {
     res.status(401).json({ error: 'Your session has ended - please sign in again' });
+    return null;
+  }
+  // The public careers site is closed (config/externalSite.js): External accounts can do nothing meanwhile.
+  if (current.candidateType === 'External' && !externalSiteOpen()) {
+    refuseClosed(res);
     return null;
   }
   return current;
