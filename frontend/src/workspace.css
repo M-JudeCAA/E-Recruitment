@@ -343,7 +343,6 @@ button.barlist-row:focus-visible { outline: 2px solid var(--color-primary); outl
 .ws-duties.none::before { content: ""; }
 
 /* The applicant survey (views/careers/ApplicantSurvey.jsx) */
-.survey { margin-top: var(--spacing-lg); }
 .survey-q { border: 0; padding: 0; margin: 0 0 18px; }
 .survey-q legend { font-size: 14px; font-weight: 500; margin-bottom: 8px; padding: 0; }
 .survey-scale { align-items: center; }

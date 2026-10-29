@@ -8,13 +8,14 @@ import client from '../../src/models/apiClient';
 // eslint-disable-next-line import/first
 import ApplicantSurvey from '../../src/views/careers/ApplicantSurvey';
 
-// The survey offered on Internal Careers after an application is submitted.
+// The survey that pops up on Internal Careers once an application is submitted.
+const onClose = vi.fn();
 beforeEach(() => vi.clearAllMocks());
 
 
 test('it is not offered again once this application has feedback', async () => {
   client.get.mockResolvedValue({ data: { answered: true } });
-  const { container } = render(<ApplicantSurvey applicationId={4} />);
+  const { container } = render(<ApplicantSurvey applicationId={4} onClose={onClose} />);
   await waitFor(() => expect(client.get).toHaveBeenCalledWith('/api/feedback/application-survey/4'));
   expect(container).toBeEmptyDOMElement();
 });
@@ -22,8 +23,8 @@ test('it is not offered again once this application has feedback', async () => {
 test('the ratings and the problem question must be answered before it is sent', async () => {
   client.get.mockResolvedValue({ data: { answered: false } });
   client.post.mockResolvedValue({ data: { id: 1 } });
-  render(<ApplicantSurvey applicationId={4} />);
-  await screen.findByText('How did applying go?');
+  render(<ApplicantSurvey applicationId={4} onClose={onClose} />);
+  expect(await screen.findByRole('dialog', { name: 'How did applying go?' })).toBeInTheDocument();
 
   await userEvent.click(screen.getByRole('button', { name: 'Send feedback' }));
   expect(screen.getByText(/Please answer the rating questions/)).toBeInTheDocument();
@@ -42,12 +43,18 @@ test('the ratings and the problem question must be answered before it is sent', 
   expect(client.post).toHaveBeenCalledWith('/api/feedback/application-survey', expect.objectContaining({
     applicationId: 4, overallRating: 4, easeRating: 5, clarityRating: 3, timeTaken: '15to30', hadProblems: true, problems: 'Upload was slow'
   }));
+  expect(onClose).not.toHaveBeenCalled();
+  // The thank-you stays up until the candidate closes it (the footer's Close, after the corner's).
+  await userEvent.click(screen.getAllByRole('button', { name: 'Close' }).at(-1));
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
 
-test('it can be skipped', async () => {
+test('it can be skipped or closed without sending anything', async () => {
   client.get.mockResolvedValue({ data: { answered: false } });
-  render(<ApplicantSurvey applicationId={4} />);
+  render(<ApplicantSurvey applicationId={4} onClose={onClose} />);
   await userEvent.click(await screen.findByRole('button', { name: 'Skip' }));
-  expect(screen.queryByText('How did applying go?')).not.toBeInTheDocument();
+  expect(onClose).toHaveBeenCalledTimes(1);
+  await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+  expect(onClose).toHaveBeenCalledTimes(2);
   expect(client.post).not.toHaveBeenCalled();
 });

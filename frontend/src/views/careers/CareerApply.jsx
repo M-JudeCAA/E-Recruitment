@@ -52,6 +52,8 @@ export default function CareerApply() {
   const [me, setMe] = useState(null);
   const [application, setApplication] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  // Internal Careers: the applicant survey pops up once, as the application is submitted.
+  const [surveyOpen, setSurveyOpen] = useState(false);
   const [eligibility, setEligibility] = useState(null);
   const [questions, setQuestions] = useState({ openToRelocate: '', earliestStartDate: '', whyThisRole: '' });
   const [desirable, setDesirable] = useState({});
@@ -228,10 +230,10 @@ export default function CareerApply() {
                 )}
                 <SubmitStep vacancy={vacancy} applicationId={application?.id} status={application?.status} eligibility={eligibility}
                   goToStep={(k) => setStep(STEP_INDEX[k] ?? STEP_INDEX.documents)}
-                  onSubmitted={() => setApplication({ ...application, status: 'Submitted' })}
+                  onSubmitted={() => { setApplication({ ...application, status: 'Submitted' }); if (SITE.internal) setSurveyOpen(true); }}
                   onWithdrawn={() => navigate(SITE.applications)} />
                 {!decided && <div className="ws-note">After you submit, a confirmation is emailed to you. Follow progress under My applications.</div>}
-                {decided && SITE.internal && application.status !== 'Withdrawn' && <ApplicantSurvey applicationId={application.id} />}
+                {surveyOpen && <ApplicantSurvey applicationId={application.id} onClose={() => setSurveyOpen(false)} />}
               </>
             )}
             {missing.length > 0 && stepKey !== 'check' && <div className="ws-note" style={{ color: 'var(--color-danger)' }}>Before continuing, please complete: {missing.join(', ')}</div>}
