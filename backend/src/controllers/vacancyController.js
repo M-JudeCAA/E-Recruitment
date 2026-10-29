@@ -24,7 +24,7 @@ const advertEvidence = require('../models/vacancyAdvertEvidenceModel');
 const { fileUrl } = require('../middleware/upload');
 const { removeUploads } = require('../utils/uploadFiles');
 const vacancyProgress = require('../services/vacancyProgressService');
-const { ROLE_RANK } = require('../middleware/auth');
+const { ROLE_RANK, hasRankOrDelegation } = require('../middleware/auth');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { toPublicVacancy } = require('../utils/publicVacancy');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
@@ -505,7 +505,8 @@ function describeVacancy(vacancy) {
   return `${vacancy.jobRef} (${vacancy.title})`;
 }
 
-// A vacancy waiting for approval: its approvers (Managers and Directors,
+// A vacancy waiting for approval: its approvers (Principal HR Officers,
+// Managers and Directors,
 // not whoever raised it) are told by email and in-app.
 async function askForApproval(vacancy, req, how) {
   const exceptions = vacancy.requisitionDetails || {};
@@ -530,7 +531,7 @@ async function notifySafely(recipientId, taskType, taskId, message) {
   }
 }
 
-// PATCH /api/vacancies/:id/return - Manager+ sends a vacancy awaiting
+// PATCH /api/vacancies/:id/return - Principal HR Officer+ sends a vacancy awaiting
 // approval back to HR with what needs to change. HR edits it and
 // resubmits it (below); the edits and the comment are in its history.
 async function returnForRevision(req, res) {
@@ -553,7 +554,7 @@ async function returnForRevision(req, res) {
   res.json(await vacancyModel.findById(vacancy.id));
 }
 
-// PATCH /api/vacancies/:id/reject - Manager+ refuses a vacancy outright.
+// PATCH /api/vacancies/:id/reject - Principal HR Officer+ refuses a vacancy outright.
 // Final: a rejected vacancy can't be resubmitted or approved.
 async function reject(req, res) {
   const vacancy = await loadPendingApproval(req, res, 'rejected');
@@ -772,6 +773,11 @@ async function approve(req, res) {
     const why = vacancy.status === 'Returned' ? 'It was returned for revision - HR needs to resubmit it first'
       : vacancy.status === 'Rejected' ? 'It was rejected' : 'It does not need approval right now';
     return res.status(422).json({ error: `This vacancy can't be approved. ${why}.` });
+  }
+  // Principal HR Officers approve new vacancies; re-opening a closed one
+  // stays with a Manager or Director (own role or delegation).
+  if (vacancy.status === 'Closed' && !(await hasRankOrDelegation(req, 'Manager'))) {
+    return res.status(403).json({ error: 'Only a Manager or Director can re-open a closed vacancy', code: 'REOPEN_NEEDS_MANAGER' });
   }
   // The version the approver reviewed (the vacancy's updatedAt as they saw
   // it). When sent, approval applies only to that version - an edit since

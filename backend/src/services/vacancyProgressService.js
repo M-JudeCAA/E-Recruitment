@@ -80,9 +80,9 @@ function computeProgress(vacancy, facts = {}, now = new Date()) {
   } else if (vacancy.status === 'PendingApproval') {
     stepIndex = 0;
     stage = { label: 'Pending approval', tone: 'warn' };
-    next = step('approveVacancy', 'Manager',
-      'A Manager or Director approves it before it is advertised.', 'approval', 'overview',
-      { excludeStaffIds: [vacancy.createdById].filter(Boolean), since: vacancy.approvalRequestedAt || vacancy.createdAt });
+    next = step('approveVacancy', 'Principal_HR_Officer',
+      'A Principal HR Officer, Manager or Director approves it before it is advertised.', 'approval', 'overview',
+      { upTo: 'Director', who: 'Principal HR Officer, Manager or Director', excludeStaffIds: [vacancy.createdById].filter(Boolean), since: vacancy.approvalRequestedAt || vacancy.createdAt });
   } else if (vacancy.status === 'Filled') {
     stepIndex = 7;
     stage = { label: 'Filled', tone: 'ok' };

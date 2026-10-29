@@ -97,7 +97,7 @@ describe('computeStatus', () => {
     expect(status.isOverdue).toBe(false);
     expect(status.hoursRemaining).toBeGreaterThan(40);
     expect(status.escalated).toBe(false);
-    expect(status.currentTier).toBe('Manager'); // INITIAL_TIER.VacancyApproval, no active escalation
+    expect(status.currentTier).toBe('Principal_HR_Officer'); // INITIAL_TIER.VacancyApproval, no active escalation
   });
 
   test('a task past its SLA duration is overdue', async () => {

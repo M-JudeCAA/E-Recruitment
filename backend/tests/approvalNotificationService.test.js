@@ -19,6 +19,7 @@ describe('who approves', () => {
     expect(approvals.audienceRoles('Manager')).toEqual(['Manager', 'Director']);
     expect(approvals.audienceRoles('Principal_HR_Officer')).toEqual(['Principal_HR_Officer', 'Manager']);
     expect(approvals.audienceRoles('Director')).toEqual(['Director']);
+    expect(approvals.audienceRoles('Principal_HR_Officer', 'Director')).toEqual(['Principal_HR_Officer', 'Manager', 'Director']);
   });
 
   test('includes delegates, never whoever made the request nor a delegate acting on their authority', async () => {
@@ -29,7 +30,7 @@ describe('who approves', () => {
     ]);
     const ids = await approvals.approverIds('vacancy', { excludeIds: [11] });
     expect(ids.sort()).toEqual([10, 20]);
-    expect(prisma.staffUser.findMany).toHaveBeenCalledWith({ where: { active: true, role: { in: ['Manager', 'Director'] } }, select: { id: true } });
+    expect(prisma.staffUser.findMany).toHaveBeenCalledWith({ where: { active: true, role: { in: ['Principal_HR_Officer', 'Manager', 'Director'] } }, select: { id: true } });
   });
 
   test('leaves out staff who applied for the vacancy', async () => {

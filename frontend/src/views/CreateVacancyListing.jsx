@@ -287,7 +287,7 @@ export default function CreateVacancyListing() {
         ...fields, deadline: deadlineValue(form.deadline, deadlineTime), requisitionDocument: requisition.document, requisitionSignedCopy: signedCopy, requisitionConfirmed: true,
         ...(draft.draftId ? { draftId: draft.draftId } : {})
       });
-      navigate('/hr', { state: { vacancyCreatedMessage: `Vacancy created (Ref: ${res.data.jobRef}). It needs Manager or Director approval to open.` } });
+      navigate('/hr', { state: { vacancyCreatedMessage: `Vacancy created (Ref: ${res.data.jobRef}). It needs approval by a Principal HR Officer, Manager or Director to open.` } });
     } catch (err) {
       const errs = err.response?.data?.errors;
       setError(errs ? errs.join('; ') : (err.response?.data?.error || 'Failed to create vacancy'));

@@ -7,7 +7,8 @@ const { linkFor } = require('../utils/notificationLinks');
 // A new approval request reaches everyone who may approve it, by email and
 // in-app, the moment it is made - the same people the Inbox lists it for
 // (inboxService.inAudience): the tier that approves and the tier above
-// (Manager steps go to Managers and Directors), plus anyone acting for one
+// (Manager steps go to Managers and Directors; a vacancy to Principal HR
+// Officers, Managers and Directors), plus anyone acting for one
 // of them under an active delegation. Never whoever made the request (the
 // self-approval rule; also not their delegates acting on their authority),
 // and never a staff member who applied for the vacancy (conflict of
@@ -22,7 +23,7 @@ const { linkFor } = require('../utils/notificationLinks');
 // What each kind of request is, who approves it (the role whose tier and
 // the tier above are asked) and the notice's type.
 const KINDS = {
-  vacancy: { taskType: 'VacancyApproval', role: 'Manager', what: 'vacancy' },
+  vacancy: { taskType: 'VacancyApproval', role: 'Principal_HR_Officer', upTo: 'Director', what: 'vacancy' },
   offer: { taskType: 'OfferApproval', role: 'Manager', what: 'offer' },
   shortlist: { taskType: 'ShortlistProposed', role: 'Principal_HR_Officer', what: 'interview shortlist' },
   merit: { taskType: 'MeritListProposed', role: 'Principal_HR_Officer', what: 'merit list' },
@@ -32,10 +33,11 @@ const KINDS = {
   position: { taskType: 'PositionApproval', role: 'Principal_HR_Officer', what: 'title' }
 };
 
-// The roles in a step's audience - as inboxService.inAudience.
-function audienceRoles(role) {
+// The roles in a step's audience - as inboxService.inAudience. upTo widens
+// it past the tier above.
+function audienceRoles(role, upTo) {
   const base = ROLE_RANK[role];
-  const top = role === 'Manager' ? ROLE_RANK.Director : base + 1;
+  const top = upTo ? ROLE_RANK[upTo] : role === 'Manager' ? ROLE_RANK.Director : base + 1;
   return Object.keys(ROLE_RANK).filter((r) => ROLE_RANK[r] >= base && ROLE_RANK[r] <= top);
 }
 
@@ -45,7 +47,7 @@ function audienceRoles(role) {
  * excludeIds (whoever made it) and, for a vacancy, its applicants.
  */
 async function approverIds(kind, { excludeIds = [], vacancyId = null, now = new Date() } = {}) {
-  const roles = audienceRoles(KINDS[kind].role);
+  const roles = audienceRoles(KINDS[kind].role, KINDS[kind].upTo);
   const excluded = new Set(excludeIds.filter(Boolean));
   const [staff, delegations, applicants] = await Promise.all([
     prisma.staffUser.findMany({ where: { active: true, role: { in: roles } }, select: { id: true } }),
