@@ -58,8 +58,9 @@ router.post('/vacancies/:vacancyId/merit-list', authenticate, requireStaffRole('
 router.get('/vacancies/:vacancyId/merit-list/export', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('vacancyId')), exportController.meritList);
 router.post('/vacancies/:vacancyId/merit-list/approve', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.param('vacancyId')), meritListController.approve);
 // Offers (offerController, lifecycle in offerService.js). Principal HR
-// Officer+ drafts, revises and withdraws; Manager/Director approve or return
-// (Decision #10: PHRO can recommend but never approve); only the owning
+// Officer+ drafts, revises and withdraws; a Manager checks and forwards, a
+// Director approves, either returns (Decision #10: PHRO can recommend but
+// never approve); only the owning
 // candidate accepts or declines. Reading is open to every HR tier.
 router.get('/offers/export', authenticate, requireStaffRole('HR_Officer'), exportController.offers);
 router.get('/offers', authenticate, requireStaffRole('HR_Officer'), offerController.list);
@@ -68,7 +69,9 @@ router.get('/:id/offer-draft', authenticate, requireStaffRole('Principal_HR_Offi
 // Only for a Primary candidate on an approved merit list.
 router.post('/:id/recommend-offer', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.application('id')), offerController.recommend);
 router.patch('/offers/:offerId', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.offer('offerId')), offerController.revise);
-router.patch('/offers/:offerId/approve', authenticate, requireStaffRole('Manager'), guardVacancy(vacancyFrom.offer('offerId')), offerController.approve);
+// Principal HR Officer recommends, a Manager checks and forwards, a Director approves.
+router.patch('/offers/:offerId/check', authenticate, requireStaffRole('Manager'), guardVacancy(vacancyFrom.offer('offerId')), offerController.check);
+router.patch('/offers/:offerId/approve', authenticate, requireStaffRole('Director'), guardVacancy(vacancyFrom.offer('offerId')), offerController.approve);
 router.patch('/offers/:offerId/return', authenticate, requireStaffRole('Manager'), guardVacancy(vacancyFrom.offer('offerId')), offerController.returnForRevision);
 router.patch('/offers/:offerId/accept', authenticate, requireCandidate, offerController.accept);
 router.patch('/offers/:offerId/decline', authenticate, requireCandidate, offerController.decline);

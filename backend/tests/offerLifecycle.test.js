@@ -133,7 +133,7 @@ describe('candidateController.myApplications and offers', () => {
 
 describe('return and revise', () => {
   const offer = (overrides = {}) => ({
-    id: 20, status: 'Recommended', recommendedById: 5, applicationId: 44,
+    id: 20, status: 'Recommended', recommendedById: 5, applicationId: 44, checkedById: 4, checkedAt: new Date('2026-10-02T09:00:00Z'),
     application: { candidateId: 7, vacancyId: 3, vacancy: { id: 3, jobRef: 'REF/1', title: 'ATC', positionsRequired: 1 } },
     ...overrides
   });
@@ -174,6 +174,18 @@ describe('return and revise', () => {
       data: expect.objectContaining({ status: 'Recommended', recommendedById: 8, recommendedDate: expect.any(Date), salaryAmount: 4500000 })
     });
     expect(res.json).toHaveBeenCalled();
+  });
+
+  test('revised terms go back to be checked by a Manager', async () => {
+    prisma.offer.findUnique.mockResolvedValueOnce(offer()).mockResolvedValueOnce(offer({ checkedById: null, checkedAt: null }));
+    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
+
+    await offerController.revise({ params: { offerId: '20' }, body: TERMS, user: { id: 8 } }, mockRes());
+
+    expect(prisma.offer.updateMany).toHaveBeenCalledWith({
+      where: { id: 20, status: 'Recommended' },
+      data: expect.objectContaining({ checkedById: null, checkedAt: null })
+    });
   });
 
   test('an issued offer can no longer be revised', async () => {

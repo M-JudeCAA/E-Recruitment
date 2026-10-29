@@ -139,8 +139,8 @@ const HIRING_MIX_SERIES = [
 // SLA compliance, time to fill, offer outcomes, hiring mix, approval
 // turnaround, panel workload and delegation activity. Every HR tier sees the
 // organisation-level charts; approval turnaround by approver and delegation
-// activity, which are about individual staff members, only Managers and
-// Directors (oversight, as their endpoints are) - for anyone else they are
+// activity, which are about individual staff members, only Senior HR
+// Officers and above (as their endpoints are) - for anyone else they are
 // neither fetched nor shown.
 export default function AnalyticsTrends({ oversight = false }) {
   const [slaCompliance, setSlaCompliance] = useState([]);

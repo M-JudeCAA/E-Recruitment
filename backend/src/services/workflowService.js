@@ -99,10 +99,24 @@ async function assertNotSelfApprovedShortlist(vacancyId, approver) {
 function assertNotSelfApprovedOffer(offer, approver) {
   const [own, ...actingFor] = idsOf(approver);
   if (offer.recommendedById != null && offer.recommendedById === own) {
-    throw new Error('Self-approval blocked: you recommended this offer - a different Manager or Director must approve it');
+    throw new Error('Self-approval blocked: you recommended this offer - someone else must check and approve it');
   }
   if (offer.recommendedById != null && actingFor.includes(offer.recommendedById)) {
     throw new Error(`${FOR_DELEGATOR} recommended this offer - someone else must approve it`);
+  }
+}
+
+/**
+ * The Director who approves an offer can't be the Manager who checked it -
+ * two people look at every offer after its recommender.
+ */
+function assertNotCheckerApprovingOffer(offer, approver) {
+  const [own, ...actingFor] = idsOf(approver);
+  if (offer.checkedById != null && offer.checkedById === own) {
+    throw new Error('You checked this offer - a different Director must approve it');
+  }
+  if (offer.checkedById != null && actingFor.includes(offer.checkedById)) {
+    throw new Error(`${FOR_DELEGATOR} checked this offer - someone else must approve it`);
   }
 }
 
@@ -373,6 +387,7 @@ module.exports = {
   assertNotSelfApproval,
   assertNotSelfApprovedShortlist,
   assertNotSelfApprovedOffer,
+  assertNotCheckerApprovingOffer,
   recomputeVacancyStatus,
   acceptOfferTransactionally,
   handleOfferDeclined,

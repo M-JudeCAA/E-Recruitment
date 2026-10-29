@@ -17,7 +17,7 @@ import DocumentLink from './DocumentLink';
 
 const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3, Manager: 4, Director: 5 };
 export default function ExcoShortlistPanel({ vacancyId, staffRole, onChanged }) {
-  const canAttach = (ROLE_RANK[staffRole] || 0) >= ROLE_RANK.Senior_HR_Officer;
+  const canAttach = (ROLE_RANK[staffRole] || 0) >= ROLE_RANK.HR_Officer;
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -107,7 +107,7 @@ export default function ExcoShortlistPanel({ vacancyId, staffRole, onChanged }) 
           </div>
         </div>
       )}
-      {data.awaiting.length > 0 && !canAttach && <p style={{ ...hintText, marginTop: 8 }}>A Senior HR Officer or above attaches the signed copy.</p>}
+      {data.awaiting.length > 0 && !canAttach && <p style={{ ...hintText, marginTop: 8 }}>An HR officer attaches the signed copy.</p>}
 
       {data.approvals.length > 0 && (
         <div style={{ marginTop: 12 }}>

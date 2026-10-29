@@ -8,6 +8,7 @@ const offerService = require('../services/offerService');
 const hiringManagers = require('../services/hiringManagerService');
 const audit = require('../services/auditService');
 const approvalNotices = require('../services/approvalNotificationService');
+const requesterNotices = require('../services/requesterNoticeService');
 const { notifyCandidate } = require('../services/candidateNotificationService');
 const { notify, notifyAllWithRole } = require('../services/notificationService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
@@ -41,19 +42,21 @@ async function safely(label, fn) {
   }
 }
 
-// An offer waiting for approval: its approvers (Managers and Directors,
-// never whoever recommended it) are told by email and in-app.
-async function askForApproval(offerId, req, how) {
+// An offer moving on: a recommended one goes to the Managers to check, a
+// checked one to the Directors to approve - never to whoever recommended or
+// checked it. By email and in-app.
+async function askForApproval(offerId, req, how, stage = 'check') {
   const offer = await prisma.offer.findUnique({
     where: { id: offerId },
-    select: { recommendedById: true, application: { select: { vacancyId: true, candidate: { select: { fullName: true } }, vacancy: { select: { jobRef: true, title: true } } } } }
+    select: { recommendedById: true, checkedById: true, application: { select: { vacancyId: true, candidate: { select: { fullName: true } }, vacancy: { select: { jobRef: true, title: true } } } } }
   });
   if (!offer) return;
-  await approvalNotices.notifyApprovers('offer', {
+  await approvalNotices.notifyApprovers(stage === 'check' ? 'offerCheck' : 'offer', {
     taskId: offerId,
     vacancyId: offer.application.vacancyId,
-    excludeIds: [offer.recommendedById, req.user.id],
-    message: `${req.user.name || 'HR'} ${how} an offer to ${offer.application.candidate?.fullName || 'a candidate'} for ${describeVacancy(offer.application.vacancy)} for your approval.`
+    excludeIds: [offer.recommendedById, offer.checkedById, req.user.id],
+    message: `${req.user.name || 'HR'} ${how} an offer to ${offer.application.candidate?.fullName || 'a candidate'} for ${describeVacancy(offer.application.vacancy)} `
+      + (stage === 'check' ? 'for you to check and forward for approval.' : 'for your approval.')
   });
 }
 
@@ -109,7 +112,8 @@ async function revise(req, res) {
   });
   // A fresh submission restarts the approval clock.
   await slaModel.resolveEscalations('OfferApproval', offerId);
-  if (result.previousStatus === 'Returned') await askForApproval(offerId, req, 'revised and resubmitted');
+  // Revised terms go back to be checked, whether or not it was returned.
+  if (result.previousStatus === 'Returned' || result.before.checkedAt) await askForApproval(offerId, req, 'revised and resubmitted');
   broadcastDashboardEvent('OfferPendingApproval', { offerId });
   res.json(result.offer);
 }
@@ -148,8 +152,43 @@ async function list(req, res) {
   res.json({ ...result, page: pageNum, limit: take });
 }
 
-// PATCH /api/applications/offers/:offerId/approve - Manager+, never the
-// recommender. Issues the offer to the candidate with its response deadline.
+// PATCH /api/applications/offers/:offerId/check - a Manager+ (never the
+// recommender) checks a recommended offer and forwards it to the Directors.
+async function check(req, res) {
+  const offerId = parseId(req.params.offerId);
+  if (!offerId) return res.status(400).json({ error: 'Invalid offer id' });
+  const existing = await offerModel.findById(offerId);
+  if (!existing) return res.status(404).json({ error: 'Offer not found' });
+  if (existing.status !== 'Recommended') {
+    return res.status(422).json({ error: `An offer at status "${existing.status}" cannot be checked` });
+  }
+  try {
+    workflow.assertNotSelfApprovedOffer(existing, workflow.actingIds(req));
+  } catch (err) {
+    return sendError(res, err, 422);
+  }
+  const seenValue = req.body?.expectedRecommendedDate;
+  const seen = seenValue ? new Date(seenValue) : null;
+  if (seen && Number.isNaN(seen.getTime())) return res.status(400).json({ error: 'expectedRecommendedDate must be a date' });
+  try {
+    await offerService.check(existing, req.user.id, new Date(), seen);
+  } catch (err) {
+    return sendError(res, err);
+  }
+  const offer = await offerModel.findById(offerId);
+  await audit.record({
+    entityType: 'Offer', entityId: offerId, action: 'Offer checked and forwarded for approval', actor: audit.actorFrom(req),
+    before: existing, after: offer, fields: ['checkedAt']
+  });
+  await askForApproval(offerId, req, 'checked and forwarded', 'approve');
+  await requesterNotices.offerChecked(offer, req, await candidateName(offer.application.candidateId).catch(() => null));
+  broadcastDashboardEvent('OfferPendingApproval', { offerId });
+  res.json(offer);
+}
+
+// PATCH /api/applications/offers/:offerId/approve - a Director, once a
+// Manager has checked it; never the recommender or the checker. Issues the
+// offer to the candidate with its response deadline.
 async function approve(req, res) {
   const offerId = parseId(req.params.offerId);
   if (!offerId) return res.status(400).json({ error: 'Invalid offer id' });
@@ -160,6 +199,7 @@ async function approve(req, res) {
   }
   try {
     workflow.assertNotSelfApprovedOffer(existing, workflow.actingIds(req));
+    workflow.assertNotCheckerApprovingOffer(existing, workflow.actingIds(req));
   } catch (err) {
     return sendError(res, err, 422);
   }
@@ -188,16 +228,16 @@ async function approve(req, res) {
     + (offerService.describeSalary(offer) ? ` at ${offerService.describeSalary(offer)}` : '')
     + `. Please log in to review the terms and accept or decline by ${formatWhen(deadline)}.`
   ));
-  await safely(`hiring manager update for offer ${offerId}`, async () => {
-    const candidate = await prisma.candidate.findUnique({ where: { id: offer.application.candidateId }, select: { fullName: true } });
-    await hiringManagers.notify(offer.application.vacancy, 'offerMade', { candidateName: candidate?.fullName });
-  });
+  const name = await candidateName(offer.application.candidateId).catch(() => null);
+  await safely(`hiring manager update for offer ${offerId}`, () => hiringManagers.notify(offer.application.vacancy, 'offerMade', { candidateName: name }));
+  await requesterNotices.offerApproved(offer, req, name);
   broadcastDashboardEvent('OfferApproved', { offerId });
   res.json(offer);
 }
 
-// PATCH /api/applications/offers/:offerId/return - Manager+ sends an offer
-// back to its recommender with what needs to change.
+// PATCH /api/applications/offers/:offerId/return - the checking Manager or
+// the approving Director sends an offer back to its recommender with what
+// needs to change.
 async function returnForRevision(req, res) {
   const offerId = parseId(req.params.offerId);
   if (!offerId) return res.status(400).json({ error: 'Invalid offer id' });
@@ -392,5 +432,5 @@ async function withdraw(req, res) {
 }
 
 module.exports = {
-  draft, recommend, revise, list, listPendingApproval, approve, returnForRevision, accept, decline, withdraw
+  draft, recommend, revise, list, listPendingApproval, check, approve, returnForRevision, accept, decline, withdraw
 };

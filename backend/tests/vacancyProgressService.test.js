@@ -52,12 +52,14 @@ describe('computeProgress', () => {
     expect(p.next).toMatchObject({ kind: 'recordResults', role: 'HR_Officer' });
   });
 
-  test('offers: a recommended offer waits for approval, then a primary with no offer is drafted', () => {
-    const recommended = computeProgress(vacancy(), {
-      applications: [app({ status: 'Offered', meritStatus: 'Approved', meritListStatus: 'Primary', offer: { status: 'Recommended', recommendedById: 9 } })]
+  test('offers: a recommended offer waits for a Manager to check it, then a Director to approve it, then a primary with no offer is drafted', () => {
+    const offered = (offer) => computeProgress(vacancy(), {
+      applications: [app({ status: 'Offered', meritStatus: 'Approved', meritListStatus: 'Primary', offer: { status: 'Recommended', recommendedById: 9, ...offer } })]
     }, NOW);
+    const recommended = offered({});
     expect(recommended.stage.label).toBe('Offers · 0 of 2 accepted');
-    expect(recommended.next).toMatchObject({ kind: 'approveOffer', role: 'Manager', excludeStaffIds: [9] });
+    expect(recommended.next).toMatchObject({ kind: 'checkOffer', role: 'Manager', upTo: 'Manager', excludeStaffIds: [9] });
+    expect(offered({ checkedById: 4, checkedAt: NOW }).next).toMatchObject({ kind: 'approveOffer', role: 'Director', excludeStaffIds: [9, 4] });
 
     const draft = computeProgress(vacancy(), {
       applications: [

@@ -5,9 +5,9 @@ const controller = require('../controllers/documentController');
 
 const router = express.Router();
 const read = [authenticate, requireStaffRole('HR_Officer')];
-const edit = [authenticate, requireStaffRole('Manager')];
+const edit = [authenticate, requireStaffRole('Senior_HR_Officer')];
 
-// Templates - anyone in HR can read them; HR Manager+ edits or resets.
+// Templates - anyone in HR can read them; Senior HR Officer+ edits or resets.
 router.get('/templates', ...read, controller.listTemplates);
 router.get('/templates/:key', ...read, controller.getTemplate);
 router.post('/templates/:key/preview', ...read, controller.previewTemplate);

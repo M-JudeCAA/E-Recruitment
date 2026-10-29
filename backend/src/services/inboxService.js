@@ -131,7 +131,7 @@ async function forStaff(req, now = new Date()) {
   const items = [];
   for (const v of vacancies) {
     const next = progress.get(v.id)?.next;
-    if (!next || next.kind === 'approveOffer') continue; // offers are listed one by one below
+    if (!next || ['checkOffer', 'approveOffer'].includes(next.kind)) continue; // offers are listed one by one below
     const mine = next.kind === 'resubmitVacancy' ? v.createdById === me || inAudience(next.role, rank, next.upTo) : inAudience(next.role, rank, next.upTo);
     if (!mine || next.excludeStaffIds?.includes(me)) continue;
     // Theirs only through the delegation, and it is the delegator's own
@@ -158,19 +158,26 @@ async function forStaff(req, now = new Date()) {
     const offers = await prisma.offer.findMany({
       where: { status: 'Recommended', ...(notConflicted ? { application: { vacancyId: notConflicted } } : {}) },
       select: {
-        id: true, recommendedById: true, recommendedDate: true,
-        recommendedBy: { select: { name: true } },
+        id: true, recommendedById: true, recommendedDate: true, checkedById: true, checkedAt: true,
+        recommendedBy: { select: { name: true } }, checkedBy: { select: { name: true } },
         application: { select: { id: true, vacancyId: true, candidate: { select: { fullName: true } }, vacancy: { select: { title: true, jobRef: true } } } }
       }
     }) || [];
+    // A Principal HR Officer recommends, a Manager checks and forwards, a
+    // Director approves - each offer is waiting on one of the last two.
     for (const o of offers) {
-      if (o.recommendedById === me) continue;
-      if (borrowed('Manager') && o.recommendedById === req.actingAsDelegateFor) continue;
+      const checking = !o.checkedAt;
+      const role = checking ? 'Manager' : 'Director';
+      if (!inAudience(role, rank, role)) continue;
+      if (o.recommendedById === me || o.checkedById === me) continue;
+      if (borrowed(role) && [o.recommendedById, o.checkedById].includes(req.actingAsDelegateFor)) continue;
+      const day = (d) => (d ? ` on ${new Date(d).toDateString().slice(4)}` : '');
       items.push({
         key: `offer-${o.id}`,
-        kind: 'Offer approval',
+        kind: checking ? 'Offer to check' : 'Offer approval',
         title: `${o.application.candidate.fullName} · ${o.application.vacancy.title}`,
-        context: `Recommended by ${o.recommendedBy?.name || 'HR'}${o.recommendedDate ? ` on ${new Date(o.recommendedDate).toDateString().slice(4)}` : ''}.`,
+        context: `Recommended by ${o.recommendedBy?.name || 'HR'}${day(o.recommendedDate)}`
+          + (checking ? '. Check it and forward it to a Director for approval.' : `, checked by ${o.checkedBy?.name || 'a Manager'}${day(o.checkedAt)}.`),
         vacancyId: o.application.vacancyId,
         jobRef: o.application.vacancy.jobRef,
         tab: 'merit',
@@ -292,8 +299,8 @@ async function forStaff(req, now = new Date()) {
 
   // Internal candidates can't apply until HR has checked their UCAA
   // employment details - one item for all of them, for whoever decides
-  // (Senior HR Officer) and the tier above.
-  if (rank >= ROLE_RANK.Senior_HR_Officer && rank <= ROLE_RANK.Principal_HR_Officer) {
+  // (HR Officers, Senior and Principal HR Officers).
+  if (rank >= ROLE_RANK.HR_Officer && rank <= ROLE_RANK.Principal_HR_Officer) {
     const waiting = await internalVerification.waitingSummary(req);
     if (waiting.count) {
       items.push({

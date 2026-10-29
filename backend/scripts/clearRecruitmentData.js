@@ -34,7 +34,7 @@ const TABLES = [
   ['Hire', 'hire'], ['Offer', 'offer'], ['ApplicationDocument', 'applicationDocument'], ['Application', 'application'],
   ['ExcoShortlistApproval', 'excoShortlistApproval'], ['VacancyAdvertEvidence', 'vacancyAdvertEvidence'],
   ['BulkEmailRecipient', 'bulkEmailRecipient'], ['BulkEmail', 'bulkEmail'],
-  ['VacancyDraft', 'vacancyDraft'], ['Vacancy', 'vacancy']
+  ['VacancyDraft', 'vacancyDraft'], ['RequisitionSignedCopyChange', 'requisitionSignedCopyChange'], ['Vacancy', 'vacancy']
 ];
 
 // Staff notices and SLA escalations not about a vacancy, application,

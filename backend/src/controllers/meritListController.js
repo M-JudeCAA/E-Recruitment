@@ -4,6 +4,7 @@ const hiringManagers = require('../services/hiringManagerService');
 const meritList = require('../services/meritListService');
 const audit = require('../services/auditService');
 const approvalNotices = require('../services/approvalNotificationService');
+const requesterNotices = require('../services/requesterNoticeService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { sendError } = require('../utils/errorResponse');
 
@@ -93,6 +94,11 @@ async function approve(req, res) {
       entityType: 'Vacancy', entityId: vacancyId, action: 'Merit list approved', actor: audit.actorFrom(req), details: result
     });
     await notifyHiringManager(vacancyId);
+    const [vacancy, proposers] = await Promise.all([
+      prisma.vacancy.findUnique({ where: { id: vacancyId }, select: { id: true, jobRef: true, title: true } }),
+      prisma.application.findMany({ where: { vacancyId, meritStatus: 'Approved' }, select: { meritProposedById: true } })
+    ]);
+    if (vacancy) await requesterNotices.meritListApproved(vacancy, (proposers || []).map((p) => p.meritProposedById), req);
     broadcastDashboardEvent('MeritListApproved', { vacancyId });
     res.json({ message: 'Merit list approved', vacancyId, ...result });
   } catch (err) {

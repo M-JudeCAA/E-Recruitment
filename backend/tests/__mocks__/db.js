@@ -21,6 +21,7 @@ const mockDb = {
   interviewRound: { create: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), updateMany: jest.fn(), count: jest.fn() },
   excoShortlistApproval: { create: jest.fn(), findMany: jest.fn() },
   vacancyAdvertEvidence: { count: jest.fn(), createMany: jest.fn() },
+  requisitionSignedCopyChange: { create: jest.fn(), findMany: jest.fn() },
   documentTemplate: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
   setting: { findUnique: jest.fn(), findMany: jest.fn(), upsert: jest.fn() },
   dataSubjectRequest: { create: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), findUnique: jest.fn(), update: jest.fn() },

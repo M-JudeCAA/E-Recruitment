@@ -35,6 +35,7 @@ function Term({ label, value }) {
 function trail(offer) {
   const steps = [];
   if (offer.recommendedDate) steps.push(`Recommended ${formatDate(offer.recommendedDate)}${offer.recommendedBy?.name ? ` by ${offer.recommendedBy.name}` : ''}`);
+  if (offer.checkedAt) steps.push(`checked and forwarded ${formatDate(offer.checkedAt)}${offer.checkedBy?.name ? ` by ${offer.checkedBy.name}` : ''}`);
   if (offer.returnedAt) steps.push(`returned ${formatDate(offer.returnedAt)}${offer.returnedBy?.name ? ` by ${offer.returnedBy.name}` : ''}: "${offer.returnReason}"`);
   if (offer.approvedDate) steps.push(`issued ${formatDate(offer.approvedDate)}${offer.approvedBy?.name ? ` by ${offer.approvedBy.name}` : ''}`);
   if (offer.approvedDate) steps.push(offer.viewedAt ? `viewed by the candidate ${formatDate(offer.viewedAt)}` : 'not yet viewed by the candidate');

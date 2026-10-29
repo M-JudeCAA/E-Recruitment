@@ -8,6 +8,7 @@ const positionModel = require('../models/positionModel');
 const orgApproval = require('../services/orgApprovalService');
 const reportingLines = require('../services/reportingLineService');
 const approvalNotices = require('../services/approvalNotificationService');
+const requesterNotices = require('../services/requesterNoticeService');
 const offerModel = require('../models/offerModel');
 const workflow = require('../services/workflowService');
 const audit = require('../services/auditService');
@@ -348,13 +349,13 @@ async function update(req, res) {
   if (vacancy.status === 'Rejected') return res.status(422).json({ error: 'A rejected vacancy can no longer be edited' });
 
   // Before approval the posting type is part of the draft. After it, a
-  // change is a transition: Manager+, audited, locked once made after the
+  // change is a transition: Principal HR Officer+, audited, locked once made after the
   // deadline - transitionPostingType, never this HR Officer edit. The form
   // always sends the type, so the same value is just left alone.
   const drafting = ['PendingApproval', 'Returned'].includes(vacancy.status);
   if (postingType !== undefined && postingType !== vacancy.postingType && !drafting) {
     return res.status(409).json({
-      error: 'This vacancy has been approved - change its posting type with "Change to ...", which a Manager or Director approves',
+      error: 'This vacancy has been approved - change its posting type with "Change to ...", which a Principal HR Officer, Manager or Director makes',
       code: 'USE_POSTING_TYPE_TRANSITION'
     });
   }
@@ -883,6 +884,7 @@ async function approve(req, res) {
   });
 
   await hiringManagers.notify(updated, 'published');
+  if (vacancy.status === 'PendingApproval') await requesterNotices.vacancyApproved(updated, req);
   broadcastDashboardEvent('VacancyApproved', { vacancyId });
   res.json(updated);
 }

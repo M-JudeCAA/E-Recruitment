@@ -54,7 +54,7 @@ const previewTemplate = wrap(async (req, res) => {
   res.json(documents.preview(req.params.key, String(req.body?.body || '')));
 });
 
-// PUT - HR Manager+ saves their own wording; DELETE puts the default back.
+// PUT - Senior HR Officer+ saves their own wording; DELETE puts the default back.
 const saveTemplate = wrap(async (req, res) => {
   const { key } = req.params;
   const unknown = templates.unknownPlaceholders(key, String(req.body?.body || ''));

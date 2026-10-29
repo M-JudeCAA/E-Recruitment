@@ -24,7 +24,7 @@ function uploadDir() {
 }
 
 async function referencedFilenames() {
-  const [vacancies, drafts] = await Promise.all([
+  const [vacancies, drafts, changes] = await Promise.all([
     prisma.vacancy.findMany({
       where: { OR: [{ requisitionDocumentUrl: { not: null } }, { requisitionSignedCopyUrl: { not: null } }] },
       select: { requisitionDocumentUrl: true, requisitionSignedCopyUrl: true }
@@ -32,11 +32,14 @@ async function referencedFilenames() {
     prisma.vacancyDraft.findMany({
       where: { OR: [{ requisitionFilename: { not: null } }, { signedCopyFilename: { not: null } }] },
       select: { requisitionFilename: true, signedCopyFilename: true }
-    })
+    }),
+    // Replaced signed copies stay, as the history of the replacement.
+    prisma.requisitionSignedCopyChange.findMany({ select: { previousUrl: true, newUrl: true } })
   ]);
   return new Set([
     ...vacancies.flatMap((v) => [v.requisitionDocumentUrl, v.requisitionSignedCopyUrl]).filter(Boolean).map((url) => path.basename(url)),
-    ...drafts.flatMap((d) => [d.requisitionFilename, d.signedCopyFilename]).filter(Boolean)
+    ...drafts.flatMap((d) => [d.requisitionFilename, d.signedCopyFilename]).filter(Boolean),
+    ...(changes || []).flatMap((c) => [c.previousUrl, c.newUrl]).filter(Boolean).map((url) => path.basename(url))
   ]);
 }
 

@@ -28,7 +28,7 @@ import { printDocument, escapeHtml } from '../utils/printDocument';
 // refresh, the rows behind it, filters (kept in the URL so a filtered view
 // can be shared with anyone allowed to see it), a CSV export and a printable
 // version for PDF. Every HR tier; the trends' staff-level panels (approval
-// turnaround by approver, delegation activity) only for Managers and Directors.
+// turnaround by approver, delegation activity) for Senior HR Officers and above.
 
 const FILTER_KEYS = ['from', 'to', 'directorateId', 'departmentId', 'positionId', 'grade', 'location', 'postingType'];
 
@@ -267,7 +267,7 @@ export default function RecruitmentDashboard() {
             ))}
           </div>
         )}
-        <AnalyticsTrends oversight={rankOf(staff?.role) >= ROLE_RANK.Manager} />
+        <AnalyticsTrends oversight={rankOf(staff?.role) >= ROLE_RANK.Senior_HR_Officer} />
       </div>
     </div>
   );

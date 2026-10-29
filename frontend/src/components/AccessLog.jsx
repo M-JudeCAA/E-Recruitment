@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 
 // Who has viewed this applicant's data (FR-ATS-081,
-// GET /api/audit/access/applications/:id - Manager and above): the
+// GET /api/audit/access/applications/:id - Senior HR Officer and above): the
 // applicant lists that showed them, their documents, exports and the
 // shortlisting committee's views. Repeated identical views within a few
 // minutes are recorded once. Collapsed and loaded only when opened.

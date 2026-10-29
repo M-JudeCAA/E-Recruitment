@@ -435,7 +435,7 @@ export default function MeritListBoard({ vacancy, staffRole, reloadKey, onChange
       )}
       {composeFor && (
         <OfferComposer applicationId={composeFor} onClose={() => setComposeFor(null)}
-          onSaved={() => { setMessage('Offer sent for approval. A Manager or Director approves it before the candidate is told.'); afterOfferChange(); }} />
+          onSaved={() => { setMessage('Offer sent for approval. A Manager checks it and a Director approves it before the candidate is told.'); afterOfferChange(); }} />
       )}
     </div>
   );

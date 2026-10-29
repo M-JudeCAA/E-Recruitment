@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, Undo2, Pencil, XCircle, Printer } from 'lucide-react';
+import { CheckCircle2, Undo2, Pencil, XCircle, Printer, Send } from 'lucide-react';
 import staffClient from '../../models/staffApiClient';
 import Button from '../Button';
 import Modal from '../Modal';
@@ -14,7 +14,8 @@ import HireSection from './HireSection';
 // every screen that shows one (merit list, review card, Approvals Center,
 // offer tracker):
 //   Principal HR Officer+  revise terms (awaiting approval or returned), withdraw
-//   Manager/Director       approve and issue, or return with a reason
+//   Manager+               check a recommended offer and forward it, or return it
+//   Director               approve and issue a checked offer, or return it
 // The backend enforces all of it (self-approval included); this only
 // decides which buttons are worth showing.
 
@@ -34,7 +35,9 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
   if (!offer) return null;
   const accepted = offer.status === 'Accepted';
   const canRevise = rank >= ROLE_RANK.Principal_HR_Officer && ['Recommended', 'Returned'].includes(offer.status);
-  const canDecide = rank >= ROLE_RANK.Manager && offer.status === 'Recommended';
+  const canCheck = rank >= ROLE_RANK.Manager && offer.status === 'Recommended' && !offer.checkedAt;
+  const canApprove = rank >= ROLE_RANK.Director && offer.status === 'Recommended' && Boolean(offer.checkedAt);
+  const canDecide = canCheck || canApprove;
   // An accepted offer the candidate didn't take up: a Manager+ withdraws it,
   // until they are marked hired (the API also accepts a delegated Manager).
   const canWithdraw = (rank >= ROLE_RANK.Principal_HR_Officer && OPEN_OFFER_STATUSES.includes(offer.status))
@@ -78,13 +81,19 @@ export default function OfferActions({ offer, applicationId, staffRole, onChange
             <Printer size={13} /> Appointing instrument
           </Button>
         )}
+        {canCheck && (
+          <Button style={small} loading={busy === 'check'} loadingText="Forwarding..." disabled={!!busy}
+            onClick={() => act('check', () => staffClient.patch(`/api/applications/offers/${offer.id}/check`, { expectedRecommendedDate: offer.recommendedDate }), () => 'Offer checked and forwarded to the Directors for approval.')}>
+            <Send size={13} /> Check &amp; forward
+          </Button>
+        )}
         {canDecide && (
           <>
-            <Button style={small} loading={busy === 'approve'} loadingText="Issuing..." disabled={!!busy}
+            {canApprove && <Button style={small} loading={busy === 'approve'} loadingText="Issuing..." disabled={!!busy}
               // The terms on screen are what is approved - changed since, the API refuses (OFFER_CHANGED).
               onClick={() => act('approve', () => staffClient.patch(`/api/applications/offers/${offer.id}/approve`, { expectedRecommendedDate: offer.recommendedDate }), () => 'Offer approved and issued to the candidate.')}>
               <CheckCircle2 size={13} /> Approve &amp; issue
-            </Button>
+            </Button>}
             <Button variant="secondary" style={small} disabled={!!busy} onClick={() => open('return')}>
               <Undo2 size={13} /> Return
             </Button>

@@ -215,7 +215,8 @@ async function revise(offerId, body, revisedById) {
   const terms = parseTerms(body);
   const result = await prisma.offer.updateMany({
     where: { id: offerId, status: existing.status },
-    data: { ...terms, status: 'Recommended', recommendedById: revisedById, recommendedDate: new Date() }
+    // Changed terms are checked again before a Director sees them.
+    data: { ...terms, status: 'Recommended', recommendedById: revisedById, recommendedDate: new Date(), checkedById: null, checkedAt: null }
   });
   if (result.count === 0) throw new AppError('This offer was already updated - please refresh and try again', 409);
   return { previousStatus: existing.status, before: existing, offer: await prisma.offer.findUnique({ where: { id: offerId } }) };
@@ -230,10 +231,38 @@ async function revise(offerId, body, revisedById) {
 // revising the terms moves it on, so terms changed after the approver
 // reviewed them are refused (409 OFFER_CHANGED), never issued unseen.
 const OFFER_CHANGED = 'The terms of this offer have changed since you opened it - refresh, review them again and then approve';
+function offerChanged() {
+  const err = new AppError(OFFER_CHANGED, 409);
+  err.code = 'OFFER_CHANGED';
+  return err;
+}
+function assertSeen(offer, seen) {
+  if (seen && (!offer.recommendedDate || new Date(offer.recommendedDate).getTime() !== seen.getTime())) throw offerChanged();
+}
+
+/**
+ * A Manager checks a recommended offer and forwards it to a Director for
+ * approval (the Principal HR Officer recommends, a Manager checks, a
+ * Director approves). Same `seen` rule as approval.
+ */
+async function check(offer, checkerId, now = new Date(), seen = null) {
+  assertSeen(offer, seen);
+  if (offer.checkedAt) throw new AppError('This offer has already been checked and is waiting for a Director', 409);
+  if (!hasTerms(offer)) {
+    throw new AppError('This offer has no terms yet - the recommending officer needs to add the salary, start date and contract before it can be checked', 422);
+  }
+  const result = await prisma.offer.updateMany({
+    where: { id: offer.id, status: 'Recommended', checkedAt: null, ...(seen ? { recommendedDate: seen } : {}) },
+    data: { checkedById: checkerId, checkedAt: now }
+  });
+  if (result.count === 0) throw seen ? offerChanged() : new AppError('This offer was already updated - please refresh and try again', 409);
+}
+
 async function approve(offer, approverId, now = new Date(), seen = null) {
-  if (seen && (!offer.recommendedDate || new Date(offer.recommendedDate).getTime() !== seen.getTime())) {
-    const err = new AppError(OFFER_CHANGED, 409);
-    err.code = 'OFFER_CHANGED';
+  assertSeen(offer, seen);
+  if (!offer.checkedAt) {
+    const err = new AppError('A Manager needs to check this offer and forward it before a Director approves it', 422);
+    err.code = 'OFFER_NOT_CHECKED';
     throw err;
   }
   if (!hasTerms(offer)) {
@@ -253,18 +282,14 @@ async function approve(offer, approverId, now = new Date(), seen = null) {
   }
   const responseDeadline = new Date(now.getTime() + (offer.responseDays || DEFAULT_RESPONSE_DAYS) * DAY_MS);
   const result = await prisma.offer.updateMany({
-    where: { id: offer.id, status: 'Recommended', ...(seen ? { recommendedDate: seen } : {}) },
+    where: { id: offer.id, status: 'Recommended', checkedAt: { not: null }, ...(seen ? { recommendedDate: seen } : {}) },
     data: { status: 'Approved', approvedById: approverId, approvedDate: now, responseDeadline }
   });
-  if (result.count === 0) {
-    const err = new AppError(seen ? OFFER_CHANGED : 'This offer was already updated - please refresh and try again', 409);
-    if (seen) err.code = 'OFFER_CHANGED';
-    throw err;
-  }
+  if (result.count === 0) throw seen ? offerChanged() : new AppError('This offer was already updated - please refresh and try again', 409);
   return responseDeadline;
 }
 
-/** The approver sends a Recommended offer back for revision. */
+/** The checker or approver sends a Recommended offer back for revision. */
 async function returnForRevision(offerId, reason, returnedById) {
   const text = cleanText(reason, 1000);
   if (!text || text.length < 3) throw new AppError('Say what needs to change before the offer can be approved', 400);
@@ -294,6 +319,7 @@ function findOverdue(now) {
 const LIST_INCLUDE = {
   recommendedBy: { select: { name: true } },
   approvedBy: { select: { name: true } },
+  checkedBy: { select: { name: true } },
   returnedBy: { select: { name: true } },
   withdrawnBy: { select: { name: true } },
   application: {
@@ -391,6 +417,6 @@ async function notifyPositionReleased(taskType, offerId, vacancy, applicationId,
 
 module.exports = {
   EMPLOYMENT_CATEGORIES, SALARY_PERIODS, MIN_RESPONSE_DAYS, MAX_RESPONSE_DAYS, DEFAULT_RESPONSE_DAYS, OPEN_STATUSES, DEFAULT_CONDITIONS,
-  TERM_FIELDS, termsOf, parseTerms, hasTerms, recommendBlocker, draftContext, recommend, revise, approve, returnForRevision,
+  TERM_FIELDS, termsOf, parseTerms, hasTerms, recommendBlocker, draftContext, recommend, revise, check, approve, returnForRevision,
   findDueForReminder, findOverdue, list, toCandidateOffer, describeSalary, notifyPositionReleased
 };

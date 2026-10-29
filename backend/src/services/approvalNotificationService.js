@@ -24,7 +24,10 @@ const { linkFor } = require('../utils/notificationLinks');
 // the tier above are asked) and the notice's type.
 const KINDS = {
   vacancy: { taskType: 'VacancyApproval', role: 'Principal_HR_Officer', upTo: 'Director', what: 'vacancy' },
-  offer: { taskType: 'OfferApproval', role: 'Manager', what: 'offer' },
+  // An offer is checked by a Manager, then approved by a Director - one
+  // request (OfferApproval) at two stages.
+  offerCheck: { taskType: 'OfferApproval', role: 'Manager', upTo: 'Manager', what: 'offer' },
+  offer: { taskType: 'OfferApproval', role: 'Director', what: 'offer' },
   shortlist: { taskType: 'ShortlistProposed', role: 'Principal_HR_Officer', what: 'interview shortlist' },
   merit: { taskType: 'MeritListProposed', role: 'Principal_HR_Officer', what: 'merit list' },
   committee: { taskType: 'CommitteeNominationSubmitted', role: 'Director', what: 'shortlisting committee' },
