@@ -3,12 +3,14 @@ import client from '../../models/apiClient';
 import Button from '../../components/Button';
 import Alert from '../../components/Alert';
 import TextArea from '../../components/TextArea';
+import Modal from '../../components/Modal';
 
-// The short survey offered on Internal Careers once an application is
-// submitted - how applying through the system went, for the pilot review
-// (backend services/applicantSurveyService.js). One per application, and
-// skippable. HR and system administrators read the answers without the
-// candidate's name (views/ApplicantFeedback.jsx).
+// The short survey that pops up on Internal Careers right after an
+// application is submitted (CareerApply) - how applying through the system
+// went, for the pilot review (backend services/applicantSurveyService.js).
+// One per application, and skippable: Skip, the close button and a click
+// outside all call onClose. HR and system administrators read the answers
+// without the candidate's name (views/ApplicantFeedback.jsx).
 
 const RATINGS = [
   { key: 'overallRating', text: 'Overall, how was applying through the system?' },
@@ -49,8 +51,8 @@ function Choice({ label, options, value, onChange }) {
   );
 }
 
-export default function ApplicantSurvey({ applicationId }) {
-  const [state, setState] = useState('loading'); // loading | open | skipped | sent | hidden
+export default function ApplicantSurvey({ applicationId, onClose }) {
+  const [state, setState] = useState('loading'); // loading | open | sent | hidden
   const [answers, setAnswers] = useState({ overallRating: null, easeRating: null, clarityRating: null, timeTaken: '', hadProblems: null, problems: '', suggestions: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -64,9 +66,12 @@ export default function ApplicantSurvey({ applicationId }) {
   }, [applicationId]);
 
   if (state === 'loading' || state === 'hidden') return null;
-  if (state === 'skipped') return null;
   if (state === 'sent') {
-    return <div className="ws-panel survey"><div className="ws-panel-b"><Alert type="success" message="Thank you for your feedback - it helps us improve the system." /></div></div>;
+    return (
+      <Modal title="Thank you" onClose={onClose} maxWidth={560} footer={<Button onClick={onClose}>Close</Button>}>
+        <Alert type="success" message="Thank you for your feedback - it helps us improve the system." />
+      </Modal>
+    );
   }
 
   const complete = RATINGS.every((r) => answers[r.key]) && answers.hadProblems !== null;
@@ -85,14 +90,19 @@ export default function ApplicantSurvey({ applicationId }) {
   };
 
   return (
-    <section className="ws-panel survey" aria-labelledby="survey-title">
-      <div className="ws-panel-h">
-        <div>
-          <h2 id="survey-title">How did applying go?</h2>
-          <div className="ws-note" style={{ marginTop: 2 }}>A short survey about using the system - about a minute. It is optional, has no effect on your application, and HR sees your answers without your name.</div>
-        </div>
-      </div>
-      <div className="ws-panel-b">
+    <Modal
+      title="How did applying go?"
+      onClose={onClose}
+      maxWidth={560}
+      footer={(
+        <>
+          <Button variant="ghost" onClick={onClose}>Skip</Button>
+          <Button onClick={send} loading={busy} loadingText="Sending...">Send feedback</Button>
+        </>
+      )}
+    >
+      <div className="survey">
+        <div className="ws-note" style={{ marginBottom: 16 }}>Your application has been submitted. A short survey about using the system - about a minute. It is optional, has no effect on your application, and HR sees your answers without your name.</div>
         {RATINGS.map((r) => <Scale key={r.key} label={r.text} value={answers[r.key]} onChange={set(r.key)} />)}
         <Choice label="Roughly how long did it take you?" options={TIME_TAKEN} value={answers.timeTaken} onChange={set('timeTaken')} />
         <Choice label="Did anything go wrong or confuse you?" options={[{ key: true, label: 'Yes' }, { key: false, label: 'No' }]} value={answers.hadProblems} onChange={set('hadProblems')} />
@@ -101,11 +111,7 @@ export default function ApplicantSurvey({ applicationId }) {
         )}
         <TextArea label="What would make applying better? (optional)" rows={3} maxLength={2000} value={answers.suggestions} onChange={(e) => set('suggestions')(e.target.value)} />
         <Alert type="error" message={error} />
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <Button variant="ghost" onClick={() => setState('skipped')}>Skip</Button>
-          <Button onClick={send} loading={busy} loadingText="Sending...">Send feedback</Button>
-        </div>
       </div>
-    </section>
+    </Modal>
   );
 }
