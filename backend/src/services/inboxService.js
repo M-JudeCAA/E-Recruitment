@@ -57,11 +57,12 @@ const APPROVAL_NOTICES = {
   approveCommittee: 'CommitteeNominationSubmitted'
 };
 
-function inAudience(role, rank) {
+function inAudience(role, rank, upTo) {
   if (!role) return false;
   const base = ROLE_RANK[role];
-  // "Manager" steps are Manager-or-Director steps already.
-  const top = role === 'Manager' ? ROLE_RANK.Director : base + 1;
+  // "Manager" steps are Manager-or-Director steps already; upTo (vacancy
+  // approval: Principal HR Officer to Director) widens a step further.
+  const top = upTo ? ROLE_RANK[upTo] : role === 'Manager' ? ROLE_RANK.Director : base + 1;
   return rank >= base && rank <= top;
 }
 
@@ -131,7 +132,7 @@ async function forStaff(req, now = new Date()) {
   for (const v of vacancies) {
     const next = progress.get(v.id)?.next;
     if (!next || next.kind === 'approveOffer') continue; // offers are listed one by one below
-    const mine = next.kind === 'resubmitVacancy' ? v.createdById === me || inAudience(next.role, rank) : inAudience(next.role, rank);
+    const mine = next.kind === 'resubmitVacancy' ? v.createdById === me || inAudience(next.role, rank, next.upTo) : inAudience(next.role, rank, next.upTo);
     if (!mine || next.excludeStaffIds?.includes(me)) continue;
     // Theirs only through the delegation, and it is the delegator's own
     // work: the delegator's authority can't approve it (workflowService.actingIds).

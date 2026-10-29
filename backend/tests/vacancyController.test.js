@@ -635,6 +635,23 @@ describe('approve', () => {
       expect(prisma.vacancy.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 1, status } }));
     });
 
+  test('a Principal HR Officer approves a vacancy awaiting approval', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'PendingApproval', createdById: 5 });
+    prisma.vacancy.updateMany.mockResolvedValue({ count: 1 });
+    const res = mockRes();
+    await vacancyController.approve({ params: { id: '1' }, user: { id: 2, role: 'Principal_HR_Officer' } }, res);
+    expect(prisma.vacancy.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 1, status: 'PendingApproval' } }));
+  });
+
+  test('a Principal HR Officer cannot re-open a closed vacancy - that stays with a Manager or Director', async () => {
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 1, status: 'Closed', createdById: 5 });
+    const res = mockRes();
+    await vacancyController.approve({ params: { id: '1' }, user: { id: 2, role: 'Principal_HR_Officer' } }, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'REOPEN_NEEDS_MANAGER' }));
+    expect(prisma.vacancy.updateMany).not.toHaveBeenCalled();
+  });
+
   describe('approves only the version the approver reviewed', () => {
     const seen = new Date('2026-10-01T09:00:00.000Z');
 

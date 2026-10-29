@@ -26,15 +26,14 @@ router.post('/:id/advert-evidence', authenticate, requireStaffRole('Senior_HR_Of
 // vacancy approval changed. Application screening's Begin Review (below)
 // is a separate, unrelated feature and is untouched.
 router.patch('/:id/begin-review', authenticate, requireStaffRole('Senior_HR_Officer'), guardVacancy(vacancyFrom.param('id')), batchController.beginReview);
-// CHANGED: was Principal_HR_Officer. The new 2-tier flow is HR Officer
-// creates, then Manager or Director approves directly - matching "MHRA
-// or DHRA" exactly. Cumulative rank means Director can also reach this,
-// consistent with every other minRole gate in this app.
-router.patch('/:id/approve', authenticate, requireStaffRole('Manager'), guardVacancy(vacancyFrom.param('id')), controller.approve);
+// HR Officer creates, then a Principal HR Officer, Manager or Director
+// approves directly. Re-opening a closed vacancy (the same endpoint) stays
+// Manager+, checked in the controller.
+router.patch('/:id/approve', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.approve);
 // The approver's other answers - both need a comment (FR-ATS-009). A
 // returned vacancy is revised and resubmitted by HR; a rejected one is final.
-router.patch('/:id/return', authenticate, requireStaffRole('Manager'), guardVacancy(vacancyFrom.param('id')), controller.returnForRevision);
-router.patch('/:id/reject', authenticate, requireStaffRole('Manager'), guardVacancy(vacancyFrom.param('id')), controller.reject);
+router.patch('/:id/return', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.returnForRevision);
+router.patch('/:id/reject', authenticate, requireStaffRole('Principal_HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.reject);
 router.patch('/:id/resubmit', authenticate, requireStaffRole('HR_Officer'), guardVacancy(vacancyFrom.param('id')), controller.resubmit);
 // NEW - Internal <-> External transition. Same tier as approval itself:
 // only Manager/Director can call this at all, which is what makes their

@@ -9,7 +9,7 @@ const { ROLE_RANK } = require('../middleware/auth');
 // this module's read-only status reporting, so the two can never drift on
 // "who owns this task right now".
 const INITIAL_TIER = {
-  VacancyApproval: 'Manager',
+  VacancyApproval: 'Principal_HR_Officer',
   DepartmentApproval: 'Principal_HR_Officer',
   DirectorateApproval: 'Principal_HR_Officer',
   PositionApproval: 'Principal_HR_Officer',

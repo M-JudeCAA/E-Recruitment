@@ -46,12 +46,12 @@ const TABS = [
   ['interviews', 'Interviews & EXCO'], ['merit', 'Merit list & offers'], ['history', 'History']
 ];
 
-// Who acts on a step (vacancyProgressService next.role) - mirrors inboxService.inAudience.
-function canTakeStep(role, staffRole) {
+// Who acts on a step (vacancyProgressService next.role/upTo) - mirrors inboxService.inAudience.
+function canTakeStep(role, staffRole, upTo) {
   if (!role) return false;
   const rank = rankOf(staffRole);
   const base = ROLE_RANK[role];
-  return rank >= base && rank <= (role === 'Manager' ? ROLE_RANK.Director : base + 1);
+  return rank >= base && rank <= (upTo ? ROLE_RANK[upTo] : role === 'Manager' ? ROLE_RANK.Director : base + 1);
 }
 
 const ACTION_LABELS = {
@@ -214,7 +214,7 @@ export default function VacancyWorkspace() {
 
   const v = vacancy;
   const next = progress?.next;
-  const isApprover = rankOf(staff?.role) >= ROLE_RANK.Manager;
+  const isApprover = rankOf(staff?.role) >= ROLE_RANK.Principal_HR_Officer;
   const unpublished = v && ['PendingApproval', 'Returned', 'Rejected'].includes(v.status);
   const deadlinePassed = v?.deadline && new Date(v.deadline) < new Date();
   const openApp = apps.find((a) => a.id === openAppId);
@@ -230,7 +230,7 @@ export default function VacancyWorkspace() {
         finally { setApproving(false); }
       }}>Approve</Button>
     );
-  } else if (next && canTakeStep(next.role, staff?.role) && !next.excludeStaffIds?.includes(currentStaffId()) && next.kind !== 'approveVacancy') {
+  } else if (next && canTakeStep(next.role, staff?.role, next.upTo) && !next.excludeStaffIds?.includes(currentStaffId()) && next.kind !== 'approveVacancy') {
     primary = <Button onClick={() => (next.kind === 'beginReview' ? beginReview() : setTab(next.tab))} loading={beginning}>{ACTION_LABELS[next.kind] || 'Open'}</Button>;
   }
 

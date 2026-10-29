@@ -11,11 +11,11 @@ const app = (over = {}) => ({ id: Math.random(), status: 'UnderReview', candidat
 beforeEach(() => jest.clearAllMocks());
 
 describe('computeProgress', () => {
-  test('a vacancy waiting for approval waits on a Manager or Director, never its creator', () => {
+  test('a vacancy waiting for approval waits on a Principal HR Officer, Manager or Director, never its creator', () => {
     const p = computeProgress(vacancy({ status: 'PendingApproval', deadline: FUTURE }), {}, NOW);
     expect(p.stage.label).toBe('Pending approval');
     expect(p.stepIndex).toBe(0);
-    expect(p.next).toMatchObject({ kind: 'approveVacancy', role: 'Manager', tab: 'overview', excludeStaffIds: [7] });
+    expect(p.next).toMatchObject({ kind: 'approveVacancy', role: 'Principal_HR_Officer', upTo: 'Director', tab: 'overview', excludeStaffIds: [7] });
     expect(p.steps[0].state).toBe('now');
   });
 
