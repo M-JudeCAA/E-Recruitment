@@ -20,8 +20,8 @@ import { EMPLOYMENT_LABELS as EMPLOYMENT_CATEGORY_LABELS } from '../../utils/emp
 // View advert, Edit, and a "⋯" menu (resubmit, return/reject for an
 // approver, re-open, readvertise, change posting type, export, close), each
 // with the dialog it needs. The rules match the API's: approving, returning
-// and rejecting are Principal HR Officer+; re-opening and changing the
-// posting type are Manager+;
+// and rejecting and changing the posting type are Principal HR Officer+;
+// re-opening is Manager+;
 // closing is Principal HR Officer+; a returned vacancy is resubmitted by HR.
 // `primary` is the page's main button, placed last.
 
@@ -219,7 +219,7 @@ export default function VacancyActions({ vacancy: v, staffRole, onChanged, prima
     v.status === 'PendingApproval' && isApprover && { label: 'Reject', danger: true, onClick: () => setDialog('reject') },
     v.status === 'Closed' && isManager && { label: 'Re-open', onClick: () => run(async () => Boolean(await approveVacancy(v, confirm)), 'Vacancy re-opened.', 'Could not re-open the vacancy') },
     v.status === 'Closed' && { label: 'Readvertise…', onClick: () => openForm('readvertise') },
-    live && isManager && (v.postingTypeLocked
+    live && isApprover && (v.postingTypeLocked
       ? { label: 'Posting type locked', disabled: true, hint: 'The posting type was changed after the deadline had passed, so it is now fixed.', onClick: () => {} }
       : { label: `Change to ${v.postingType === 'Internal' ? 'External' : 'Internal'}…`, onClick: () => { setTransition({ target: v.postingType === 'Internal' ? 'External' : 'Internal', deadline: deadlineFields(v.deadline).date, deadlineTime: deadlineFields(v.deadline).time }); setError(''); setDialog('transition'); } }),
     !['Closed', 'Returned', 'Rejected'].includes(v.status) && rank >= ROLE_RANK.Principal_HR_Officer && { divider: true },

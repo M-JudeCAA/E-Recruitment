@@ -24,7 +24,8 @@ beforeEach(async () => {
     phro: await createStaff('Principal_HR_Officer', 'phro@caa.co.ug'),
     phro2: await createStaff('Principal_HR_Officer', 'phro2@caa.co.ug'),
     manager: await createStaff('Manager', 'manager@caa.co.ug'),
-    manager2: await createStaff('Manager', 'manager2@caa.co.ug')
+    manager2: await createStaff('Manager', 'manager2@caa.co.ug'),
+    director: await createStaff('Director', 'dhra@caa.co.ug')
   };
   tokens = {};
   for (const [key, s] of Object.entries(staff)) tokens[key] = await staffToken(s.email);
@@ -123,11 +124,15 @@ test('carries a vacancy from creation to an accepted hire', async () => {
   expect(before[0].status).toBe('Interviewed');
   expect(before[0].offer).toBeNull();
 
-  // The approver sends it back; the recommender revises and resubmits.
+  // The checking Manager sends it back; the recommender revises and resubmits.
   expectStatus(await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/return`, { reason: 'Use the top of the salary scale' }), 200);
-  expect((await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/approve`)).status).toBe(422);
+  expect((await api(tokens.director).patch(`/api/applications/offers/${offer.id}/approve`)).status).toBe(422);
   expectStatus(await api(tokens.phro).patch(`/api/applications/offers/${offer.id}`, { ...OFFER_TERMS, salaryAmount: 5200000 }), 200);
-  expectStatus(await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/approve`), 200);
+  // A Manager checks it and forwards it; only a Director approves it.
+  expect((await api(tokens.director).patch(`/api/applications/offers/${offer.id}/approve`)).body.code).toBe('OFFER_NOT_CHECKED');
+  expectStatus(await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/check`), 200);
+  expect((await api(tokens.manager2).patch(`/api/applications/offers/${offer.id}/approve`)).status).toBe(403);
+  expectStatus(await api(tokens.director).patch(`/api/applications/offers/${offer.id}/approve`), 200);
   const issued = await prisma.offer.findUnique({ where: { id: offer.id } });
   expect(issued.responseDeadline - issued.approvedDate).toBe(10 * 24 * 60 * 60 * 1000);
 
@@ -171,7 +176,7 @@ test('carries a vacancy from creation to an accepted hire', async () => {
   expect(await prisma.candidateNotification.count({ where: { candidateId: alice.id, type: 'OfferReceived', channel: 'InApp' } })).toBe(1);
 });
 
-test('blocks a Manager from approving an offer they recommended themselves', async () => {
+test('nobody checks an offer they recommended, or approves one they checked', async () => {
   const vacancy = await createApprovedVacancy();
   expectStatus(await api(tokens.manager).patch(`/api/vacancies/${vacancy.id}/approve`), 200);
   const alice = await createCandidate({ fullName: 'Alice Nakato', email: 'alice@example.com' });
@@ -182,12 +187,17 @@ test('blocks a Manager from approving an offer they recommended themselves', asy
   expectStatus(await api(tokens.manager).post(`/api/applications/${a.applicationId}/recommend-offer`, OFFER_TERMS), 201);
   const offer = await prisma.offer.findUnique({ where: { applicationId: a.applicationId } });
 
-  const selfApproval = await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/approve`);
-  expect(selfApproval.status).toBe(422);
-  expect(selfApproval.body.error).toMatch(/Self-approval blocked/);
-  expect((await prisma.offer.findUnique({ where: { id: offer.id } })).status).toBe('Recommended');
+  const selfCheck = await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/check`);
+  expect(selfCheck.status).toBe(422);
+  expect(selfCheck.body.error).toMatch(/Self-approval blocked/);
+  expect((await prisma.offer.findUnique({ where: { id: offer.id } })).checkedAt).toBeNull();
 
-  expectStatus(await api(tokens.manager2).patch(`/api/applications/offers/${offer.id}/approve`), 200);
+  // A Director may check one, but then another Director approves it.
+  expectStatus(await api(tokens.director).patch(`/api/applications/offers/${offer.id}/check`), 200);
+  const checkerApproval = await api(tokens.director).patch(`/api/applications/offers/${offer.id}/approve`);
+  expect(checkerApproval.status).toBe(422);
+  expect(checkerApproval.body.error).toMatch(/You checked this offer/);
+  expect((await prisma.offer.findUnique({ where: { id: offer.id } })).status).toBe('Recommended');
 });
 
 test('declining an offer promotes the reserve and tells every Principal HR Officer', async () => {
@@ -200,7 +210,8 @@ test('declining an offer promotes the reserve and tells every Principal HR Offic
   await shortlistAndInterview(vacancy.id, [a.applicationId, b.applicationId]);
   expectStatus(await api(tokens.phro).post(`/api/applications/${a.applicationId}/recommend-offer`, OFFER_TERMS), 201);
   const offer = await prisma.offer.findUnique({ where: { applicationId: a.applicationId } });
-  expectStatus(await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/approve`), 200);
+  expectStatus(await api(tokens.manager).patch(`/api/applications/offers/${offer.id}/check`), 200);
+  expectStatus(await api(tokens.director).patch(`/api/applications/offers/${offer.id}/approve`), 200);
   // Offers are in play - the merit list can no longer be re-ranked.
   expect((await api(tokens.shro).post(`/api/applications/vacancies/${vacancy.id}/merit-list`, {
     applicationIds: [b.applicationId], applicationRankVersions: { [b.applicationId]: 0 }

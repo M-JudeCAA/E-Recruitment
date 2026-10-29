@@ -194,41 +194,43 @@ model StaffUser {
   delegates           StaffUser[]       @relation("Delegation")
   createdAt           DateTime          @default(now())
 
-  vacanciesCreated               Vacancy[]               @relation("VacancyCreatedBy")
-  vacanciesApproved              Vacancy[]               @relation("VacancyApprovedBy")
-  vacanciesPostingTypeChanged    Vacancy[]               @relation("VacancyPostingTypeChangedBy")
-  interviewResultsRecorded       InterviewRound[]        @relation("InterviewConductedBy")
-  interviewsScheduled            InterviewRound[]        @relation("InterviewScheduledBy")
-  interviewsCancelled            InterviewRound[]        @relation("InterviewCancelledBy")
-  panelLinks                     PanelMember[]           @relation("PanelStaffLink")
-  offersRecommended              Offer[]                 @relation("OfferRecommendedBy")
-  offersApproved                 Offer[]                 @relation("OfferApprovedBy")
-  verifications                  InternalProfile[]       @relation("VerifiedBy")
+  vacanciesCreated               Vacancy[]                     @relation("VacancyCreatedBy")
+  vacanciesApproved              Vacancy[]                     @relation("VacancyApprovedBy")
+  vacanciesPostingTypeChanged    Vacancy[]                     @relation("VacancyPostingTypeChangedBy")
+  interviewResultsRecorded       InterviewRound[]              @relation("InterviewConductedBy")
+  interviewsScheduled            InterviewRound[]              @relation("InterviewScheduledBy")
+  interviewsCancelled            InterviewRound[]              @relation("InterviewCancelledBy")
+  panelLinks                     PanelMember[]                 @relation("PanelStaffLink")
+  offersRecommended              Offer[]                       @relation("OfferRecommendedBy")
+  offersApproved                 Offer[]                       @relation("OfferApprovedBy")
+  verifications                  InternalProfile[]             @relation("VerifiedBy")
   auditLogs                      AuditLog[]
   verificationTokens             VerificationToken[]
-  directoratesCreated            Directorate[]           @relation("DirectorateCreatedBy")
-  directoratesApproved           Directorate[]           @relation("DirectorateApprovedBy")
-  departmentsCreated             Department[]            @relation("DepartmentCreatedBy")
-  departmentsApproved            Department[]            @relation("DepartmentApprovedBy")
-  positionsCreated               Position[]              @relation("PositionCreatedBy")
-  positionsApproved              Position[]              @relation("PositionApprovedBy")
-  orgImports                     OrgImport[]             @relation("OrgImportCreatedBy")
-  applicationsRejected           Application[]           @relation("ApplicationRejectedBy")
-  applicationsShortlistProposed  Application[]           @relation("ApplicationShortlistProposedBy")
-  applicationsShortlistApproved  Application[]           @relation("ApplicationShortlistApprovedBy")
-  excoShortlistApprovalsUploaded ExcoShortlistApproval[] @relation("ExcoShortlistApprovalUploadedBy")
-  advertEvidenceUploaded         VacancyAdvertEvidence[] @relation("VacancyAdvertEvidenceUploadedBy")
-  documentTemplatesUpdated       DocumentTemplate[]      @relation("DocumentTemplateUpdatedBy")
-  settingsUpdated                Setting[]               @relation("SettingUpdatedBy")
-  hiresRecorded                  Hire[]                  @relation("HireRecordedBy")
-  tagsCreated                    CandidateTag[]          @relation("CandidateTagCreatedBy")
-  taggingsAdded                  CandidateTagging[]      @relation("CandidateTaggingAddedBy")
-  bulkEmailsSent                 BulkEmail[]             @relation("BulkEmailSentBy")
-  dataRequestsDecided            DataSubjectRequest[]    @relation("DataSubjectRequestDecidedBy")
-  applicationsMeritProposed      Application[]           @relation("ApplicationMeritProposedBy")
-  applicationsMeritApproved      Application[]           @relation("ApplicationMeritApprovedBy")
-  offersReturned                 Offer[]                 @relation("OfferReturnedBy")
-  offersWithdrawn                Offer[]                 @relation("OfferWithdrawnBy")
+  directoratesCreated            Directorate[]                 @relation("DirectorateCreatedBy")
+  directoratesApproved           Directorate[]                 @relation("DirectorateApprovedBy")
+  departmentsCreated             Department[]                  @relation("DepartmentCreatedBy")
+  departmentsApproved            Department[]                  @relation("DepartmentApprovedBy")
+  positionsCreated               Position[]                    @relation("PositionCreatedBy")
+  positionsApproved              Position[]                    @relation("PositionApprovedBy")
+  orgImports                     OrgImport[]                   @relation("OrgImportCreatedBy")
+  applicationsRejected           Application[]                 @relation("ApplicationRejectedBy")
+  applicationsShortlistProposed  Application[]                 @relation("ApplicationShortlistProposedBy")
+  applicationsShortlistApproved  Application[]                 @relation("ApplicationShortlistApprovedBy")
+  excoShortlistApprovalsUploaded ExcoShortlistApproval[]       @relation("ExcoShortlistApprovalUploadedBy")
+  advertEvidenceUploaded         VacancyAdvertEvidence[]       @relation("VacancyAdvertEvidenceUploadedBy")
+  signedCopyChanges              RequisitionSignedCopyChange[] @relation("RequisitionSignedCopyChangedBy")
+  documentTemplatesUpdated       DocumentTemplate[]            @relation("DocumentTemplateUpdatedBy")
+  settingsUpdated                Setting[]                     @relation("SettingUpdatedBy")
+  hiresRecorded                  Hire[]                        @relation("HireRecordedBy")
+  tagsCreated                    CandidateTag[]                @relation("CandidateTagCreatedBy")
+  taggingsAdded                  CandidateTagging[]            @relation("CandidateTaggingAddedBy")
+  bulkEmailsSent                 BulkEmail[]                   @relation("BulkEmailSentBy")
+  dataRequestsDecided            DataSubjectRequest[]          @relation("DataSubjectRequestDecidedBy")
+  applicationsMeritProposed      Application[]                 @relation("ApplicationMeritProposedBy")
+  applicationsMeritApproved      Application[]                 @relation("ApplicationMeritApprovedBy")
+  offersReturned                 Offer[]                       @relation("OfferReturnedBy")
+  offersChecked                  Offer[]                       @relation("OfferCheckedBy")
+  offersWithdrawn                Offer[]                       @relation("OfferWithdrawnBy")
 
   // Real, time-bounded, audited delegation - distinct from the older
   // static `actingAsId` field above, which predates this and is left
@@ -442,18 +444,18 @@ model JobRefSequence {
 }
 
 model Vacancy {
-  id                     Int                     @id @default(autoincrement())
-  jobRef                 String                  @unique
+  id                     Int                           @id @default(autoincrement())
+  jobRef                 String                        @unique
   title                  String // snapshot of Position.name at creation time - see note below
   positionId             Int
-  position               Position                @relation("VacancyPosition", fields: [positionId], references: [id])
+  position               Position                      @relation("VacancyPosition", fields: [positionId], references: [id])
   departmentId           Int // derived from position.departmentId at creation - never independently settable
-  department             Department              @relation(fields: [departmentId], references: [id])
+  department             Department                    @relation(fields: [departmentId], references: [id])
   reportsToPositionId    Int?
-  reportsToPosition      Position?               @relation("VacancyReportsToPosition", fields: [reportsToPositionId], references: [id])
+  reportsToPosition      Position?                     @relation("VacancyReportsToPosition", fields: [reportsToPositionId], references: [id])
   salaryScale            String?
-  positionsRequired      Int                     @default(1)
-  status                 VacancyStatus           @default(PendingApproval)
+  positionsRequired      Int                           @default(1)
+  status                 VacancyStatus                 @default(PendingApproval)
   // No default - PostingType.Open is gone, so there is no longer a safe
   // "both" fallback. HR must choose Internal or External explicitly at
   // creation (enforced in vacancyController.create).
@@ -470,17 +472,18 @@ model Vacancy {
   category               String?
   priority               String?
   createdById            Int
-  createdBy              StaffUser               @relation("VacancyCreatedBy", fields: [createdById], references: [id])
-  createdAt              DateTime                @default(now())
+  createdBy              StaffUser                     @relation("VacancyCreatedBy", fields: [createdById], references: [id])
+  createdAt              DateTime                      @default(now())
   // Every write moves it on. The approver sends the value they reviewed
   // (expectedUpdatedAt), so a vacancy edited after they looked at it is
   // refused (409 VACANCY_CHANGED) instead of approved unseen.
-  updatedAt              DateTime                @default(now()) @updatedAt
+  updatedAt              DateTime                      @default(now()) @updatedAt
   applications           Application[]
   hires                  Hire[]
   shortlistExercise      ShortlistExercise?
   excoShortlistApprovals ExcoShortlistApproval[]
   advertEvidence         VacancyAdvertEvidence[]
+  signedCopyChanges      RequisitionSignedCopyChange[]
 
   // Declaring pre-existing drift, not adding new columns: approvedAt,
   // approvedById (with its FK already live), and rejectionReason already
@@ -1333,6 +1336,12 @@ model Offer {
   recommendedBy   StaffUser?  @relation("OfferRecommendedBy", fields: [recommendedById], references: [id])
   approvedById    Int?
   approvedBy      StaffUser?  @relation("OfferApprovedBy", fields: [approvedById], references: [id])
+  // A Manager checked the recommended offer and forwarded it to a Director
+  // for approval (offerService.check). Null while it waits to be checked;
+  // cleared again when the terms are revised.
+  checkedById     Int?
+  checkedBy       StaffUser?  @relation("OfferCheckedBy", fields: [checkedById], references: [id])
+  checkedAt       DateTime?
   approvedDate    DateTime?
   // Required for SLA timing to work at all - without a timestamp marking
   // when an offer entered the Recommended state, there is no clean signal
@@ -1627,6 +1636,13 @@ enum SlaTaskType {
   // Entra group - to every active system administrator (staffGroupService).
   // taskId is the StaffUser id.
   StaffGroupSyncFailed
+  // An approval someone asked for was given - to whoever asked (a vacancy's
+  // creator, an offer's recommender, a shortlist's or merit list's proposer,
+  // whoever added an organisation item or ran the import), and an offer
+  // checked and forwarded, to its recommender (requesterNoticeService).
+  // taskId is the vacancy, offer, organisation item or import id; the link
+  // is stored with the notice.
+  ApprovalGiven
 }
 
 model SlaPolicy {
@@ -1794,6 +1810,35 @@ model VacancyAdvertEvidence {
   uploadedById Int
   uploadedBy   StaffUser @relation("VacancyAdvertEvidenceUploadedBy", fields: [uploadedById], references: [id])
   uploadedAt   DateTime  @default(now())
+
+  @@index([vacancyId])
+}
+
+// Each replacement of a vacancy's signed requisition copy
+// (Vacancy.requisitionSignedCopyUrl), with who, in what role, when and why:
+// before approval anyone in HR, after it a Senior HR Officer or above with
+// a reason (requisitionSignedCopyService). Both files are kept, so the
+// history can still be opened.
+model RequisitionSignedCopyChange {
+  id            Int        @id @default(autoincrement())
+  vacancyId     Int
+  vacancy       Vacancy    @relation(fields: [vacancyId], references: [id])
+  previousUrl   String?
+  previousName  String?
+  previousHash  String?    @db.VarChar(64)
+  newUrl        String
+  newName       String
+  newHash       String     @db.VarChar(64)
+  reason        String?    @db.Text
+  // Whether the vacancy had been approved when it was replaced.
+  afterApproval Boolean
+  changedById   Int
+  changedBy     StaffUser  @relation("RequisitionSignedCopyChangedBy", fields: [changedById], references: [id])
+  // Their role then (a snapshot, like Vacancy.approvedByRole), and the
+  // delegator whose authority they used, if any.
+  changedByRole StaffRole?
+  actingAsId    Int?
+  changedAt     DateTime   @default(now())
 
   @@index([vacancyId])
 }

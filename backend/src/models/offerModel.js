@@ -35,6 +35,7 @@ module.exports = {
     where: { status: 'Recommended', ...notOnVacancies(excludeVacancyIds) },
     include: {
       recommendedBy: { select: { name: true } },
+      checkedBy: { select: { name: true } },
       application: {
         include: {
           candidate: { select: { fullName: true, candidateType: true } },

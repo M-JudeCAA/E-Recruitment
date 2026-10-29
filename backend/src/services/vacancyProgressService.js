@@ -47,6 +47,9 @@ const names = (apps) => {
   return list.length <= 2 ? list.join(' and ') : `${list.slice(0, 2).join(', ')} and ${plural(list.length - 2, 'other')}`;
 };
 
+// Any HR officer up to a Principal HR Officer attaches EXCO's signed copy.
+const EXCO_STEP = { upTo: 'Principal_HR_Officer', who: 'HR Officer' };
+
 function step(kind, role, text, short, tab, extra = {}) {
   return { kind, role, who: role ? WHO[role] : extra.who, text, short, tab, excludeStaffIds: [], ...extra };
 }
@@ -124,10 +127,16 @@ function computeProgress(vacancy, facts = {}, now = new Date()) {
     if (offers.length || primaryNoOffer.length || meritApproved) {
       stepIndex = 6;
       stage = { label: `Offers · ${accepted} of ${posts} accepted`, tone: 'brand' };
-      if (recommended.length) {
-        next = step('approveOffer', 'Manager',
-          `${names(recommended.map((o) => o.app))}’s offer${recommended.length > 1 ? 's are' : ' is'} waiting for approval.`, 'offer approval', 'merit',
-          { excludeStaffIds: recommended.map((o) => o.recommendedById).filter(Boolean), since: recommended[0].recommendedDate });
+      const toCheck = recommended.filter((o) => !o.checkedAt);
+      const toApprove = recommended.filter((o) => o.checkedAt);
+      if (toCheck.length) {
+        next = step('checkOffer', 'Manager',
+          `${names(toCheck.map((o) => o.app))}’s offer${toCheck.length > 1 ? 's are' : ' is'} waiting for a Manager to check and forward for approval.`, 'check offer', 'merit',
+          { upTo: 'Manager', who: 'Manager', excludeStaffIds: toCheck.map((o) => o.recommendedById).filter(Boolean), since: toCheck[0].recommendedDate });
+      } else if (toApprove.length) {
+        next = step('approveOffer', 'Director',
+          `${names(toApprove.map((o) => o.app))}’s offer${toApprove.length > 1 ? 's are' : ' is'} checked and waiting for a Director's approval.`, 'offer approval', 'merit',
+          { who: 'Director', excludeStaffIds: toApprove.flatMap((o) => [o.recommendedById, o.checkedById]).filter(Boolean), since: toApprove[0].checkedAt });
       } else if (returned.length) {
         next = step('reviseOffer', 'Principal_HR_Officer',
           `${names(returned.map((o) => o.app))}’s offer was returned by the approver. Revise it.`, 'revise offer', 'merit');
@@ -157,9 +166,9 @@ function computeProgress(vacancy, facts = {}, now = new Date()) {
         next = step('recordResults', 'HR_Officer',
           `${plural(resultsDue, 'interview')} held with no results recorded. Record them from the panel’s signed score sheet.`, 'record results', 'interviews');
       } else if (awaitingExco.length) {
-        next = step('attachExco', 'Senior_HR_Officer',
+        next = step('attachExco', 'HR_Officer',
           `${plural(awaitingExco.length, 'candidate')} on the interview shortlist still need EXCO’s approval. Print the shortlist for EXCO and attach the signed copy.`,
-          'EXCO approval', 'interviews');
+          'EXCO approval', 'interviews', EXCO_STEP);
       } else if (shortlisted.length) {
         next = step('scheduleInterviews', 'Senior_HR_Officer',
           `${plural(shortlisted.length, 'shortlisted candidate')} still to schedule.`, 'schedule interviews', 'interviews');
@@ -172,8 +181,8 @@ function computeProgress(vacancy, facts = {}, now = new Date()) {
     } else if (awaitingExco.length) {
       stepIndex = 3;
       stage = { label: 'EXCO approval', tone: 'warn' };
-      next = step('attachExco', 'Senior_HR_Officer',
-        `Print the interview shortlist for EXCO and attach the signed copy (${plural(awaitingExco.length, 'candidate')}).`, 'EXCO approval', 'interviews');
+      next = step('attachExco', 'HR_Officer',
+        `Print the interview shortlist for EXCO and attach the signed copy (${plural(awaitingExco.length, 'candidate')}).`, 'EXCO approval', 'interviews', EXCO_STEP);
     } else if (shortlisted.length) {
       stepIndex = 4;
       stage = { label: 'Interviews', tone: 'info' };
@@ -258,7 +267,7 @@ async function loadFacts(vacancyIds, now = new Date()) {
         id: true, vacancyId: true, status: true, excoApprovalId: true, shortlistProposedById: true,
         meritStatus: true, meritListStatus: true, meritProposedById: true, meritProposedAt: true,
         candidate: { select: { fullName: true } },
-        offer: { select: { id: true, status: true, recommendedById: true, recommendedDate: true, responseDeadline: true } },
+        offer: { select: { id: true, status: true, recommendedById: true, recommendedDate: true, checkedById: true, checkedAt: true, responseDeadline: true } },
         hire: { select: { id: true } },
         _count: { select: { interviewRounds: true } }
       }

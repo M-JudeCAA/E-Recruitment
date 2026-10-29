@@ -13,6 +13,7 @@ const reinstatement = require('../services/applicationReinstatementService');
 const { cancelUpcomingInterviews } = require('../services/applicationWithdrawalService');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const approvalNotices = require('../services/approvalNotificationService');
+const requesterNotices = require('../services/requesterNoticeService');
 const { ROLE_RANK } = require('../middleware/auth');
 
 // NOTE: application creation/submission lives in applicationDraftController
@@ -309,6 +310,8 @@ async function approveShortlist(req, res) {
     before: application, after: { status: 'Shortlisted' }, fields: ['status']
   })));
 
+  const vacancy = await vacancyModel.findById(vacancyId);
+  if (vacancy) await requesterNotices.shortlistApproved(vacancy, proposed.map((a) => a.shortlistProposedById), proposed.length, req);
   // Candidates aren't told yet: the shortlist still goes to EXCO, and they
   // hear once the signed approval is attached (excoShortlistController).
   res.json({ message: 'Shortlist approved - print it for EXCO and attach the signed copy before scheduling interviews', vacancyId, approvedCount: proposed.length });

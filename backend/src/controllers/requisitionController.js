@@ -1,4 +1,6 @@
 const requisitionService = require('../services/requisitionService');
+const signedCopies = require('../services/requisitionSignedCopyService');
+const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
 const { sendError } = require('../utils/errorResponse');
 
 // The answer for a requisition that can't be used, with the machine-readable
@@ -38,4 +40,26 @@ async function uploadSignedCopy(req, res) {
   }
 }
 
-module.exports = { read, uploadSignedCopy, sendRequisitionError };
+// PUT /api/vacancies/:id/requisition/signed-copy - replace an existing
+// vacancy's signed copy (multipart `document`, `reason`); the rules are in
+// requisitionSignedCopyService.
+async function replaceSignedCopy(req, res) {
+  const vacancyId = Number(req.params.id);
+  if (!Number.isInteger(vacancyId)) return res.status(400).json({ error: 'Invalid vacancy id' });
+  try {
+    const change = await signedCopies.replace(req, vacancyId, req.file, req.body?.reason);
+    broadcastDashboardEvent('VacancyUpdated', { vacancyId });
+    res.json(change);
+  } catch (err) {
+    sendRequisitionError(res, err);
+  }
+}
+
+// GET /api/vacancies/:id/requisition/signed-copy/history
+async function signedCopyHistory(req, res) {
+  const vacancyId = Number(req.params.id);
+  if (!Number.isInteger(vacancyId)) return res.status(400).json({ error: 'Invalid vacancy id' });
+  res.json(await signedCopies.history(vacancyId));
+}
+
+module.exports = { read, uploadSignedCopy, replaceSignedCopy, signedCopyHistory, sendRequisitionError };

@@ -27,6 +27,7 @@ import { debounce } from '../utils/debounce';
 import { canShareJob } from '../utils/jobShareLink';
 import { employmentLabel } from '../utils/employmentCategories';
 import DocumentLink from '../components/DocumentLink';
+import SignedCopy from '../components/workspace/SignedCopy';
 
 // One page per vacancy (/hr/vacancy/:id?tab=...): the header carries every
 // action on it (VacancyActions), the Next step box says what happens next
@@ -60,7 +61,7 @@ const ACTION_LABELS = {
   approveShortlist: 'Review the shortlist', beginReview: 'Begin review', attachExco: 'Attach EXCO approval',
   scheduleInterviews: 'Schedule interviews', recordResults: 'Record results', proposeMerit: 'Propose merit list',
   approveMerit: 'Review the merit list', draftOffer: 'Draft offer', reviseOffer: 'Revise offer',
-  approveOffer: 'Review offers', markHired: 'Mark as hired', noApplicants: 'Readvertise or close'
+  checkOffer: 'Check offers', approveOffer: 'Review offers', markHired: 'Mark as hired', noApplicants: 'Readvertise or close'
 };
 
 const REQUISITION_FACTS = [
@@ -75,7 +76,7 @@ const EDITED_LABELS = {
   desirableQualifications: 'desirable requirements', generalKnowledge: 'knowledge', specialSkills: 'special skills'
 };
 
-function RequisitionPanel({ vacancy }) {
+function RequisitionPanel({ vacancy, staffRole, onChanged }) {
   if (!vacancy.requisitionDocumentUrl) {
     return <Panel title="Requisition"><div className="ws-note">Created before vacancies required an uploaded requisition.</div></Panel>;
   }
@@ -90,12 +91,7 @@ function RequisitionPanel({ vacancy }) {
           <DocumentLink url={vacancy.requisitionDocumentUrl} name={vacancy.requisitionDocumentName || 'Requisition document'} />
           {vacancy.requisitionUploadedAt && <span className="ws-note"> · uploaded {formatDay(vacancy.requisitionUploadedAt)}</span>}
         </div>
-        <div>
-          Signed copy:{' '}
-          {vacancy.requisitionSignedCopyUrl
-            ? <DocumentLink url={vacancy.requisitionSignedCopyUrl} name={vacancy.requisitionSignedCopyName || 'Signed requisition'} />
-            : <span className="ws-note">none - created before the signed scan was required</span>}
-        </div>
+        <SignedCopy vacancy={vacancy} staffRole={staffRole} onChanged={onChanged} />
         {facts.length > 0 && <KeyValues rows={facts.map(([key, label]) => [label, String(fields[key].value)])} />}
         {details.jdException && (
           <div className="ws-note" style={{ color: 'var(--color-warning)' }}>
@@ -255,7 +251,7 @@ export default function VacancyWorkspace() {
           ]} />
         </Panel>
         <div className="ws-stack">
-          <RequisitionPanel vacancy={v} />
+          <RequisitionPanel vacancy={v} staffRole={staff?.role} onChanged={changed} />
           <AdvertEvidencePanel vacancy={v} staffRole={staff?.role} onChanged={changed} />
           <Panel title="Hiring manager" note="Emailed at each step: advertised, shortlist, interviews, merit list, offers.">
             <HiringManagerPicker

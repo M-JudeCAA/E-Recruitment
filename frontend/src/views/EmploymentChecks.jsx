@@ -15,7 +15,7 @@ import { PageTop, Panel, Table, Pill, Chips, SidePanel, KeyValues, formatDay, ra
 // Employment checks (/hr/verification): internal candidates whose UCAA
 // employment details wait for HR's check. They can't submit applications
 // until verified (backend utils/employmentCheck.js), so HR works from here
-// rather than from an application. A Senior HR Officer or above verifies or
+// rather than from an application. Anyone in HR (never for themselves) verifies or
 // flags a discrepancy, with comments or the manager's recommendation letter
 // (backend services/internalVerificationService.js); the candidate is told
 // either way. Nobody sees or checks their own profile.
@@ -124,7 +124,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
           <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setFile(e.target.files[0] || null)} />
         </>
       ) : !canDecide ? (
-        <p className="ws-note">A Senior HR Officer or above verifies employment.</p>
+        <p className="ws-note">An HR officer verifies employment.</p>
       ) : null}
       <AuditTrail entityType="InternalProfile" entityId={person.candidateId} label="History of checks" />
     </SidePanel>
@@ -133,7 +133,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
 
 export default function EmploymentChecks() {
   const { staff } = useAuth();
-  const canDecide = rankOf(staff?.role) >= ROLE_RANK.Senior_HR_Officer;
+  const canDecide = rankOf(staff?.role) >= ROLE_RANK.HR_Officer;
   const [params, setParams] = useSearchParams();
   const [filter, setFilter] = useState('waiting');
   const [rows, setRows] = useState(null);

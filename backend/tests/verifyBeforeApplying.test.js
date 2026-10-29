@@ -176,7 +176,7 @@ describe('the queue', () => {
 describe('the Inbox item', () => {
   const inbox = require('../src/services/inboxService');
 
-  test('Senior HR Officers see one item for everyone waiting', async () => {
+  test.each(['HR_Officer', 'Senior_HR_Officer'])('%s sees one item for everyone waiting', async (role) => {
     prisma.delegation.findFirst.mockResolvedValue(null);
     prisma.vacancy.findMany.mockResolvedValue([]);
     prisma.staffUser.findMany.mockResolvedValue([]);
@@ -185,7 +185,7 @@ describe('the Inbox item', () => {
         candidate: { id: 1, fullName: 'A', email: 'a@caa.co.ug', createdAt: new Date(), applications: [] } }
     ]);
 
-    const { items } = await inbox.forStaff({ user: { id: 7, type: 'staff', role: 'Senior_HR_Officer' } });
+    const { items } = await inbox.forStaff({ user: { id: 7, type: 'staff', role } });
 
     const item = items.find((i) => i.key === 'employment-checks');
     expect(item).toEqual(expect.objectContaining({ link: '/hr/verification', title: '1 internal candidate waiting for an employment check' }));

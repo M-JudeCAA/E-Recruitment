@@ -15,7 +15,7 @@ import { documentPage } from '../utils/printDocument';
 // The documents the system prints - offer letter, appointing instrument,
 // interview invitation, regret letter, EXCO shortlist - with UCAA's own
 // default wording until official templates are supplied. Anyone in HR can
-// read them; HR Manager+ edits them (backend documentController). A
+// read them; Senior HR Officer+ edits them (backend documentController). A
 // placeholder like {{candidateName}} is filled from the record when the
 // document is made.
 
@@ -23,7 +23,7 @@ const ROLE_RANK = { HR_Officer: 1, Senior_HR_Officer: 2, Principal_HR_Officer: 3
 
 export default function DocumentTemplates() {
   const { staff } = useAuth();
-  const canEdit = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Manager;
+  const canEdit = (ROLE_RANK[staff?.role] || 0) >= ROLE_RANK.Senior_HR_Officer;
   const confirm = useConfirm();
   const [list, setList] = useState(null);
   const [key, setKey] = useState(null);
@@ -137,7 +137,7 @@ export default function DocumentTemplates() {
                   </>
                 ) : (
                   <>
-                    <Alert type="info" message="An HR Manager or Director can change this wording." />
+                    <Alert type="info" message="A Senior HR Officer or above can change this wording." />
                     <Button variant="secondary" onClick={showPreview}><Eye size={14} /> Preview with sample details</Button>
                   </>
                 )}

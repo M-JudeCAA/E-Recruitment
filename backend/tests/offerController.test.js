@@ -20,9 +20,10 @@ const TERMS = {
   salaryAmount: 4500000, salaryCurrency: 'UGX', salaryPeriod: 'Monthly', employmentCategory: 'Secondment',
   startDate: '2099-01-15', dutyStation: 'Entebbe', conditions: ['Medical fitness'], responseDays: 10
 };
-// An offer as the approver sees it: terms present, vacancy with room.
+// An offer as the approver sees it: checked by a Manager, terms present,
+// vacancy with room.
 const recommendedOffer = (overrides = {}) => ({
-  id: 20, status: 'Recommended', recommendedById: 5, applicationId: 44,
+  id: 20, status: 'Recommended', recommendedById: 5, applicationId: 44, checkedById: 4, checkedAt: new Date('2026-10-02T09:00:00Z'),
   salaryAmount: 4500000, salaryCurrency: 'UGX', salaryPeriod: 'Monthly', employmentCategory: 'Secondment',
   startDate: new Date('2099-01-15'), responseDays: 10,
   application: { candidateId: 7, vacancyId: 3, vacancy: { id: 3, jobRef: 'REF/1', title: 'Air Traffic Controller', positionsRequired: 1 } },
@@ -238,7 +239,7 @@ describe('approveOffer', () => {
       await offerController.approve({ params: { offerId: '20' }, body: { expectedRecommendedDate: recommendedDate.toISOString() }, user: { id: 2 } }, res);
 
       expect(prisma.offer.updateMany).toHaveBeenCalledWith(expect.objectContaining({
-        where: { id: 20, status: 'Recommended', recommendedDate }
+        where: { id: 20, status: 'Recommended', checkedAt: { not: null }, recommendedDate }
       }));
     });
   });
@@ -268,7 +269,7 @@ describe('approveOffer', () => {
     await offerController.approve(req, res);
 
     expect(prisma.offer.updateMany).toHaveBeenCalledWith({
-      where: { id: 20, status: 'Recommended' },
+      where: { id: 20, status: 'Recommended', checkedAt: { not: null } },
       data: expect.objectContaining({ status: 'Approved', approvedById: 2, responseDeadline: expect.any(Date) })
     });
     // Deadline is responseDays (10) from approval.
@@ -286,6 +287,67 @@ describe('approveOffer', () => {
     expect(prisma.candidateNotification.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ candidateId: 7, type: 'OfferReceived' })
     }));
+  });
+});
+
+describe('checkOffer - a Manager checks and forwards, then a Director approves', () => {
+  const unchecked = (overrides = {}) => recommendedOffer({ checkedById: null, checkedAt: null, ...overrides });
+
+  test('a Manager checks a recommended offer, and the Directors are asked to approve it', async () => {
+    prisma.offer.findUnique.mockResolvedValue(unchecked());
+    prisma.offer.updateMany.mockResolvedValue({ count: 1 });
+    const res = mockRes();
+
+    await offerController.check({ params: { offerId: '20' }, user: { id: 4, role: 'Manager' } }, res);
+
+    expect(prisma.offer.updateMany).toHaveBeenCalledWith({
+      where: { id: 20, status: 'Recommended', checkedAt: null },
+      data: { checkedById: 4, checkedAt: expect.any(Date) }
+    });
+    expect(prisma.staffUser.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { active: true, role: { in: ['Director'] } } }));
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  test('whoever recommended it cannot check it', async () => {
+    prisma.offer.findUnique.mockResolvedValue(unchecked({ recommendedById: 4 }));
+    const res = mockRes();
+
+    await offerController.check({ params: { offerId: '20' }, user: { id: 4, role: 'Manager' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('an offer already checked is not checked again', async () => {
+    prisma.offer.findUnique.mockResolvedValue(recommendedOffer());
+    const res = mockRes();
+
+    await offerController.check({ params: { offerId: '20' }, user: { id: 6, role: 'Manager' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('a Director cannot approve an offer no Manager has checked', async () => {
+    prisma.offer.findUnique.mockResolvedValue(unchecked());
+    const res = mockRes();
+
+    await offerController.approve({ params: { offerId: '20' }, user: { id: 2, role: 'Director' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'OFFER_NOT_CHECKED' }));
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
+  });
+
+  test('whoever checked it cannot approve it too', async () => {
+    prisma.offer.findUnique.mockResolvedValue(recommendedOffer({ checkedById: 2 }));
+    const res = mockRes();
+
+    await offerController.approve({ params: { offerId: '20' }, user: { id: 2, role: 'Director' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(res.json).toHaveBeenCalledWith({ error: expect.stringMatching(/You checked this offer/) });
+    expect(prisma.offer.updateMany).not.toHaveBeenCalled();
   });
 });
 

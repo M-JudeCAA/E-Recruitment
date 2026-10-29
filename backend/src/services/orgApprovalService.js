@@ -169,6 +169,7 @@ async function decide(req, entityType, id, decision, reason) {
     comment: rejecting ? String(reason).trim() : null,
     details: { name: row.name, code: row.code }
   });
+  if (!rejecting) await require('./requesterNoticeService').orgItemApproved(entityType, row, req);
   return updated;
 }
 
@@ -213,6 +214,7 @@ async function approveImport(req, importId) {
     comment: `Approved ${d1.count} directorate(s), ${d2.count} department(s) and ${d3.count} title(s) from ${record.fileName}.`,
     details: { name: record.fileName, directorates: d1.count, departments: d2.count, positions: d3.count }
   });
+  await require('./requesterNoticeService').orgImportApproved(record, result, req);
   return result;
 }
 

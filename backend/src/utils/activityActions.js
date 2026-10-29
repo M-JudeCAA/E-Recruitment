@@ -42,6 +42,7 @@ const ACTIONS = {
   // Vacancies
   'POST /api/vacancies/requisition': 'Requisition uploaded and read',
   'POST /api/vacancies/requisition/signed-copy': 'Signed requisition uploaded',
+  'PUT /api/vacancies/:id/requisition/signed-copy': 'Signed requisition copy replaced',
   'POST /api/vacancies': 'Vacancy created',
   'PATCH /api/vacancies/:id': 'Vacancy edited',
   'PATCH /api/vacancies/:id/close': 'Vacancy closed',

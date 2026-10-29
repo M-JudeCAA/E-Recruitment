@@ -268,10 +268,9 @@ test('EXCO approves the shortlist outside the system: nobody is told or intervie
   const sheet = expectStatus(await api(tokens.hro).get(`/api/vacancies/${vacancy.id}/exco-shortlist`), 200).body;
   expect(sheet.awaiting.map((a) => a.candidateName).sort()).toEqual(['Fay Fiona', 'Gil Gaba', 'Hal Hamza']);
 
-  // HR Officers can print it; attaching is for whoever schedules.
-  expect((await attachExcoApproval(tokens.hro, vacancy.id)).status).toBe(403);
-  expect((await attachExcoApproval(tokens.shro, vacancy.id, { struckOff: [fay.applicationId, gil.applicationId, hal.applicationId] })).status).toBe(422);
-  const attached = expectStatus(await attachExcoApproval(tokens.shro, vacancy.id, { struckOff: [hal.applicationId], excoReference: 'EXCO MIN 31/2026' }), 201).body;
+  // Any HR officer prints it and attaches EXCO's signed copy.
+  expect((await attachExcoApproval(tokens.hro, vacancy.id, { struckOff: [fay.applicationId, gil.applicationId, hal.applicationId] })).status).toBe(422);
+  const attached = expectStatus(await attachExcoApproval(tokens.hro, vacancy.id, { struckOff: [hal.applicationId], excoReference: 'EXCO MIN 31/2026' }), 201).body;
   expect(attached).toEqual(expect.objectContaining({ approved: 2, struckOff: 1 }));
 
   // Hal was struck off: rejected and told. Fay and Gil are told they're shortlisted.

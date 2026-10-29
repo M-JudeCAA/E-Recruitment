@@ -419,7 +419,7 @@ export default function ApplicationReviewCard({
       </div>
 
       <AuditTrail entityType="Application" entityId={app.id} />
-      {rank >= ROLE_RANK.Manager && <AccessLog applicationId={app.id} />}
+      {rank >= ROLE_RANK.Senior_HR_Officer && <AccessLog applicationId={app.id} />}
 
       {activeModal === 'reject' && (
         <Modal
