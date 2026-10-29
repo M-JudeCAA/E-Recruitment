@@ -56,6 +56,7 @@ Every other field in `.env.example` needs a real value too:
 | `ENTRA_TENANT_ID`, `ENTRA_STAFF_CLIENT_ID`, `ENTRA_CANDIDATE_CLIENT_ID` | Microsoft sign-in - see [Microsoft (Entra ID) sign-in](#microsoft-entra-id-sign-in). Without them the API says so at start-up and Microsoft sign-in answers 501 |
 | `DEV_PASSWORD_LOGIN` | Optional, local development only: `true` lets the seeded demo staff accounts sign in with their password at `/staff/login?password`. Ignored when `NODE_ENV=production` |
 | `BREAK_GLASS_LOGIN` | Optional, production emergencies only: `true` lets a system administrator with a break-glass password sign in at `/staff/login?password` while Microsoft sign-in is down. Leave unset otherwise |
+| `EXTERNAL_SITE_ENABLED` | Optional. `false` closes the public careers site to external applicants: its address shows a notice pointing UCAA staff to Internal Careers, and password registration, sign-in and resets - and everything an External account does - are refused (403 `EXTERNAL_SITE_CLOSED`). Internal Careers, the staff app and the privacy notice are unaffected; shortlisting committee links are sent on Internal Careers (the third `FRONTEND_URL` origin) meanwhile. Restart the API after changing it. Default: open |
 | `PORT` | Leave as `4000` |
 | `FRONTEND_URL` | Comma-separated list of allowed CORS origins. Leave as `http://localhost:5173,http://localhost:4174,http://localhost:4175` (guest dev server, staff preview, Internal Careers preview - see [below](#staff-access-on-a-separate-port)) |
 | `SMTP_*` | See [Email](#email-gmail-smtp) below |

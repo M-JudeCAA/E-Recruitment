@@ -89,6 +89,8 @@ app.use(require('./utils/requestContext').middleware);
 app.use(require('./services/activityLogService').middleware);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
+// Public: whether the external careers site is open (config/externalSite.js) - the frontend shows a notice if not.
+app.get('/api/site-status', (req, res) => res.json({ externalSite: require('./config/externalSite').externalSiteOpen() }));
 
 app.use('/api/candidates/auth', candidateAuthRoutes);
 app.use('/api/staff/auth', staffAuthRoutes);

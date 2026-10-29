@@ -6,7 +6,8 @@ const committee = require('../services/shortlistCommitteeService');
 const workflow = require('../services/workflowService');
 const { computeExperienceYears } = require('../services/screeningService');
 const { sendMail } = require('../utils/mailer');
-const { frontendUrl } = require('../config/frontendUrl');
+const { frontendUrl, internalFrontendUrl } = require('../config/frontendUrl');
+const { externalSiteOpen } = require('../config/externalSite');
 const { validateEmail } = require('../utils/validators');
 const { internalDomains } = require('../services/entraAuthService');
 const { escapeHtml, formatWhen } = require('../utils/interviewFormat');
@@ -36,8 +37,9 @@ function parseVacancyId(req, res) {
   return id;
 }
 
+// On Internal Careers while the public site is closed (config/externalSite.js); the page itself works on either.
 function linkFor(member) {
-  return `${frontendUrl}/shortlist-panel/${member.token}`;
+  return `${externalSiteOpen() ? frontendUrl : internalFrontendUrl}/shortlist-panel/${member.token}`;
 }
 
 function newToken() {
@@ -738,5 +740,5 @@ async function pendingNominations(req, res) {
 module.exports = {
   submitNomination, approveNomination, returnNomination, pendingNominations,
   get, create, update, addMember, updateMember, removeMember, reissueLink, openRating, addAssignment,
-  startModeration, close, propose, setActingChair, computeRanking, PAST_SHORTLIST
+  startModeration, close, propose, setActingChair, computeRanking, PAST_SHORTLIST, linkFor
 };
