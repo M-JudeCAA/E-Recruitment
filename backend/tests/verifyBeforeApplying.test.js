@@ -129,8 +129,15 @@ describe("HR's decision", () => {
   });
 
   test('needs evidence', async () => {
-    await expect(verification.decide(hr, 5, { decision: 'HR_Verified', comments: 'ok' })).rejects.toMatchObject({ status: 422 });
+    await expect(verification.decide(hr, 5, { decision: 'HR_Verified', comments: ' ' })).rejects.toMatchObject({ status: 422 });
     expect(prisma.internalProfile.update).not.toHaveBeenCalled();
+  });
+
+  test('a comment of any length is evidence enough', async () => {
+    await verification.decide(hr, 5, { decision: 'HR_Verified', comments: 'ok' });
+    expect(prisma.internalProfile.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ verificationComments: 'ok', verificationEvidenceType: 'Comments' })
+    }));
   });
 
   test('nobody checks their own employment', async () => {

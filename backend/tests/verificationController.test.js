@@ -35,8 +35,8 @@ describe('verify', () => {
     expect(prisma.internalProfile.update).not.toHaveBeenCalled();
   });
 
-  test('rejects when neither sufficient comments nor a document are provided', async () => {
-    const req = { params: { candidateId: '5' }, body: { decision: 'HR_Verified', comments: 'too short' } };
+  test('rejects when neither comments nor a document are provided', async () => {
+    const req = { params: { candidateId: '5' }, body: { decision: 'HR_Verified', comments: '   ' } };
     const res = mockRes();
 
     await verificationController.verify(req, res);
@@ -56,7 +56,7 @@ describe('verify', () => {
     expect(prisma.internalProfile.update).not.toHaveBeenCalled();
   });
 
-  test('verifies with sufficient comments and no document', async () => {
+  test('verifies with comments of any length and no document', async () => {
     prisma.internalProfile.findUnique.mockResolvedValue({ candidateId: 5 });
     prisma.internalProfile.update.mockResolvedValue({ candidateId: 5, verificationStatus: 'HR_Verified' });
     const req = {

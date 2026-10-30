@@ -12,7 +12,6 @@ const { AppError } = require('../utils/errorResponse');
 // is now done before they apply, not from an application.
 
 const DECISIONS = ['HR_Verified', 'Discrepancy_Flagged'];
-const MIN_COMMENT = 20;
 const AUDIT_FIELDS = ['verificationStatus', 'verificationEvidenceType', 'verificationComments', 'supportingDocumentUrl'];
 
 // Applications still in play - an applicant from before the rule, shown so HR
@@ -87,15 +86,15 @@ async function waitingSummary(req) {
 
 /**
  * HR's decision on one candidate's employment details: HR_Verified or
- * Discrepancy_Flagged, with comments (20+ characters) or a manager's
+ * Discrepancy_Flagged, with comments (any length) or the candidate's
  * appointment letter as evidence. Audited before/after; the candidate is
  * told; a replaced letter is removed. Never the viewer's own.
  */
 async function decide(req, candidateId, { decision, comments, documentUrl }) {
   if (!DECISIONS.includes(decision)) throw new AppError(`decision must be one of: ${DECISIONS.join(', ')}`, 400);
   const text = typeof comments === 'string' ? comments.trim() : '';
-  if (text.length < MIN_COMMENT && !documentUrl) {
-    throw new AppError(`Give comments (at least ${MIN_COMMENT} characters) or attach their appointment letter`, 422);
+  if (!text && !documentUrl) {
+    throw new AppError('Give comments or attach their appointment letter', 422);
   }
   const before = await prisma.internalProfile.findUnique({ where: { candidateId } });
   if (!before) throw new AppError('No internal profile found for this candidate', 404);

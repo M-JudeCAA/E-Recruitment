@@ -25,7 +25,6 @@ const STATUS = {
   Discrepancy_Flagged: { tone: 'bad', label: 'Discrepancy' },
   HR_Verified: { tone: 'ok', label: 'Verified' }
 };
-const MIN_COMMENT = 20;
 const SECTION = { fontSize: 14, margin: '20px 0 8px' };
 
 function waitingFor(since) {
@@ -38,7 +37,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState('');
-  const enough = comments.trim().length >= MIN_COMMENT || Boolean(file);
+  const enough = Boolean(comments.trim()) || Boolean(file);
 
   const decide = async (decision) => {
     setBusy(decision); setError('');
@@ -116,7 +115,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
         <>
           <h3 style={SECTION}>Your check</h3>
           <p className="ws-note" style={{ marginTop: 0 }}>
-            Confirm the details against HR records (employee number, job title, date joined). Give comments (at least {MIN_COMMENT} characters) or attach
+            Confirm the details against HR records (employee number, job title, date joined). Give comments or attach
             their appointment letter - either is kept as the evidence.
           </p>
           <TextArea label="Comments" value={comments} onChange={(e) => setComments(e.target.value)} />
