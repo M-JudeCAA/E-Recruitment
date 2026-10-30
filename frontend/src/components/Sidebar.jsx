@@ -244,7 +244,7 @@ export default function Sidebar({ items, active, storageKey, width = 250, title,
               style={{
                 flexShrink: 0, minWidth: 18, padding: '0 5px', borderRadius: 999, textAlign: 'center',
                 fontSize: 11, fontWeight: 700, lineHeight: '17px',
-                // 'count' is a plain number (the Inbox when nothing is overdue); 'alert' is red.
+                // 'alert' (the default, every staff menu count) is red; 'count' a plain grey number.
                 background: badgeTone === 'count' ? 'var(--color-bg-subtle)' : 'var(--color-danger)',
                 color: badgeTone === 'count' ? 'var(--color-text-muted)' : '#FFFFFF',
               }}
