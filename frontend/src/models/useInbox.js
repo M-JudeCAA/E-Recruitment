@@ -9,10 +9,19 @@ let cache = null;
 let inflight = null;
 const listeners = new Set();
 
+// Fired after each refresh, so the bell reloads too - the API clears notices
+// about whatever the action just dealt with.
+export const INBOX_REFRESHED_EVENT = 'inbox-refreshed';
+
 export function refreshInbox() {
   if (!localStorage.getItem('staffToken')) return Promise.resolve(null);
   inflight = staffClient.get('/api/dashboard/inbox')
-    .then((res) => { cache = res.data; listeners.forEach((fn) => fn(cache)); return cache; })
+    .then((res) => {
+      cache = res.data;
+      listeners.forEach((fn) => fn(cache));
+      window.dispatchEvent(new Event(INBOX_REFRESHED_EVENT));
+      return cache;
+    })
     .catch(() => cache)
     .finally(() => { inflight = null; });
   return inflight;

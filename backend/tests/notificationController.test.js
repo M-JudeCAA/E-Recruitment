@@ -29,6 +29,23 @@ describe('listMine', () => {
     // Each with where opening it goes - worked out from its task for rows without one.
     expect(res.json).toHaveBeenCalledWith([{ id: 1, message: 'hi', link: '/hr/inbox' }]);
   });
+
+  test('leaves out, and clears for everyone, a notice about something already done', async () => {
+    prisma.notification.findMany.mockResolvedValue([
+      { id: 1, taskType: 'VacancyApproval', taskId: 4, sentAt: new Date(), link: '/hr/inbox?item=vacancy-4-approveVacancy' },
+      { id: 2, taskType: 'ApprovalGiven', taskId: 4, sentAt: new Date(), link: '/hr/vacancy/4' }
+    ]);
+    prisma.vacancy.findMany.mockResolvedValue([]); // approved by someone else
+    prisma.notification.updateMany.mockResolvedValue({ count: 3 });
+    const res = mockRes();
+
+    await notificationController.listMine({ user: { id: 7 } }, res);
+
+    expect(prisma.notification.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ taskType: 'VacancyApproval', taskId: 4, readAt: null })
+    }));
+    expect(res.json).toHaveBeenCalledWith([expect.objectContaining({ id: 2 })]);
+  });
 });
 
 describe('markRead', () => {
