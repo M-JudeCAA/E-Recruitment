@@ -298,9 +298,9 @@ async function forStaff(req, now = new Date()) {
   }
 
   // Internal candidates can't apply until HR has checked their UCAA
-  // employment details - one item for all of them, for whoever decides
-  // (HR Officers, Senior and Principal HR Officers).
-  if (rank >= ROLE_RANK.HR_Officer && rank <= ROLE_RANK.Principal_HR_Officer) {
+  // employment details - one item for all of them, for every HR role (any of
+  // them may decide), with the count, while any are still waiting.
+  if (rank >= ROLE_RANK.HR_Officer) {
     const waiting = await internalVerification.waitingSummary(req);
     if (waiting.count) {
       items.push({
@@ -311,6 +311,7 @@ async function forStaff(req, now = new Date()) {
           ? `${waiting.withApplications} applied before checks were required - they can't be shortlisted until verified.`
           : "They can't submit applications until their employment is verified.",
         link: '/hr/verification',
+        count: waiting.count,
         waiting: waitingLabel(waiting.oldest, now),
         since: waiting.oldest
       });

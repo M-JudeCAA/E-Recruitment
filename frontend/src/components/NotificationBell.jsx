@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, ChevronRight } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
+import { INBOX_REFRESHED_EVENT } from '../models/useInbox';
 import Spinner from './Spinner';
 import Skeleton from './Skeleton';
 
@@ -30,7 +31,9 @@ export default function NotificationBell() {
   useEffect(() => {
     load();
     const interval = setInterval(load, POLL_MS);
-    return () => clearInterval(interval);
+    // After an action (refreshInbox), so a notice it dealt with goes at once.
+    window.addEventListener(INBOX_REFRESHED_EVENT, load);
+    return () => { clearInterval(interval); window.removeEventListener(INBOX_REFRESHED_EVENT, load); };
   }, []);
 
   useEffect(() => {
