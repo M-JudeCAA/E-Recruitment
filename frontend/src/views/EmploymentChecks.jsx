@@ -27,6 +27,50 @@ const STATUS = {
 };
 const SECTION = { fontSize: 14, margin: '20px 0 8px' };
 
+// How the history and the earlier check word the profile's stored fields.
+const DECISION_WORDS = { Pending: 'Waiting for HR', HR_Verified: 'Verified', Discrepancy_Flagged: 'Doesn’t match HR records' };
+const day = (v) => formatDay(v);
+const HISTORY_LABELS = {
+  verificationStatus: { label: 'Check', values: DECISION_WORDS },
+  verificationEvidenceType: { label: 'Evidence', values: { Comments: 'Comments', ManagerRecommendationLetter: 'Appointment letter' } },
+  verificationComments: { label: 'Comments' },
+  supportingDocumentUrl: { label: 'Appointment letter', values: () => 'Attached' },
+  employeeId: { label: 'Employee number' },
+  position: { label: 'Job title' },
+  department: { label: 'Department' },
+  dateJoined: { label: 'Joined UCAA', values: day }
+};
+const changeWords = (field, value) => {
+  if (value === null || value === undefined || value === '') return '—';
+  const values = HISTORY_LABELS[field]?.values;
+  return (typeof values === 'function' ? values(value) : values?.[value]) || String(value);
+};
+
+// A check back with HR after the candidate changed the details: the earlier
+// decision, and what they changed since.
+function EarlierCheck({ check }) {
+  const changes = Object.entries(check.changes || {});
+  return (
+    <Alert type={check.decision === 'Discrepancy_Flagged' ? 'warning' : 'info'} message={(
+      <>
+        <strong>Earlier check: {DECISION_WORDS[check.decision]}</strong>
+        {check.by && <> - {check.by}</>}, {formatDay(check.at)}.
+        {check.comments && <div style={{ marginTop: 4 }}>&ldquo;{check.comments}&rdquo;</div>}
+        {changes.length > 0 && (
+          <div style={{ marginTop: 6 }}>
+            Changed since:
+            <ul style={{ margin: '2px 0 0', paddingLeft: 18 }}>
+              {changes.map(([field, { from, to }]) => (
+                <li key={field}>{HISTORY_LABELS[field]?.label || field}: {changeWords(field, from)} &rarr; {changeWords(field, to)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </>
+    )} />
+  );
+}
+
 function waitingFor(since) {
   const days = Math.floor((Date.now() - new Date(since)) / 86400000);
   return days <= 0 ? 'Today' : days === 1 ? '1 day' : `${days} days`;
@@ -75,6 +119,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
       ) : null}
     >
       <Alert type="error" message={error} />
+      {person.status === 'Pending' && person.previousCheck && <EarlierCheck check={person.previousCheck} />}
       <h3 style={SECTION}>What they told us</h3>
       <KeyValues rows={[
         ['Email', person.email],
@@ -125,7 +170,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
       ) : !canDecide ? (
         <p className="ws-note">An HR officer verifies employment.</p>
       ) : null}
-      <AuditTrail entityType="InternalProfile" entityId={person.candidateId} label="History of checks" />
+      <AuditTrail entityType="InternalProfile" entityId={person.candidateId} label="History of checks" labels={HISTORY_LABELS} />
     </SidePanel>
   );
 }

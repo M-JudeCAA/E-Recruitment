@@ -9,7 +9,7 @@ import { PageTop, Meta, Panel, Pill } from '../../components/workspace/ui';
 import { useVacancyPdfDownload } from '../../utils/useVacancyPdfDownload';
 import { evidenceRequirements } from '../../utils/screeningEvidence';
 import { orgLabel } from '../../utils/orgNames';
-import { SITE, CareerShell, useCareer, formatDay, daysLeft } from './careers';
+import { SITE, CareerShell, useCareer, employmentFit, formatDay, daysLeft } from './careers';
 import { formatDeadlineTime } from '../../utils/deadline';
 
 // One vacancy (Internal Careers: /careers/vacancies/:id; public site, signed
@@ -105,7 +105,8 @@ export default function CareerJob() {
             </Panel>
             <div className="ws-sticky">
               <Panel padded={false} title="Your fit"
-                actions={fit && (fit.employmentCheck && !fit.employmentCheck.verified ? <Pill tone="warn">Waiting for HR</Pill>
+                actions={fit && (fit.employmentCheck && !fit.employmentCheck.verified
+                  ? <Pill tone={employmentFit(fit.employmentCheck, true).tone}>{employmentFit(fit.employmentCheck, true).label}</Pill>
                   : fit.eligible ? <Pill tone="ok">You can apply</Pill> : <Pill tone="neutral">Not eligible</Pill>)}>
                 <div className="ws-panel-b" style={{ paddingBlock: 4 }}>
                   {!fit && <div className="ws-note" style={{ padding: '10px 0' }}>Checking your profile…</div>}

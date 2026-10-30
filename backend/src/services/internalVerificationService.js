@@ -75,7 +75,43 @@ async function queue(req, { include = 'waiting' } = {}) {
     },
     select: PROFILE_SELECT
   }) || [];
-  return rows.map(view).sort((a, b) => new Date(a.waitingSince) - new Date(b.waitingSince));
+  const people = rows.map(view);
+  await addPreviousChecks(people);
+  return people.sort((a, b) => new Date(a.waitingSince) - new Date(b.waitingSince));
+}
+
+const DECIDED = { 'Employment verified': 'HR_Verified', 'Employment discrepancy flagged': 'Discrepancy_Flagged' };
+const DETAILS_CHANGED = 'Employment details changed - back to HR for checking';
+
+/**
+ * A check waiting again after the candidate changed checked details has
+ * lost who decided it and when (candidateController.updateInternalProfile
+ * clears them), so HR's second look would start blind. From the audit
+ * trail: `previousCheck` - the last decision (by, at, comments) and what the
+ * candidate changed since ({ field: { from, to } }).
+ */
+async function addPreviousChecks(people) {
+  const waiting = people.filter((p) => p.status === 'Pending');
+  if (!waiting.length) return;
+  const rows = await prisma.auditLog.findMany({
+    where: { entityType: 'InternalProfile', entityId: { in: waiting.map((p) => p.candidateId) }, action: { in: [...Object.keys(DECIDED), DETAILS_CHANGED] } },
+    select: { entityId: true, action: true, timestamp: true, payload: true, performedBy: { select: { name: true } } },
+    orderBy: [{ timestamp: 'asc' }, { id: 'asc' }]
+  }) || [];
+  for (const person of waiting) {
+    let previous = null;
+    for (const row of rows.filter((r) => r.entityId === person.candidateId)) {
+      if (DECIDED[row.action]) {
+        previous = { decision: DECIDED[row.action], by: row.performedBy?.name || null, at: row.timestamp, comments: row.payload?.comment || null, changes: {} };
+      } else if (previous) {
+        for (const [field, change] of Object.entries(row.payload?.changes || {})) {
+          if (field === 'verificationStatus') continue;
+          previous.changes[field] = { from: previous.changes[field]?.from ?? change.from, to: change.to };
+        }
+      }
+    }
+    if (previous) person.previousCheck = previous;
+  }
 }
 
 /** How many wait, and since when the oldest - for the Inbox. */

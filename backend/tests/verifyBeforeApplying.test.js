@@ -178,6 +178,28 @@ describe('the queue', () => {
     const summary = await verification.waitingSummary(hr);
     expect(summary).toEqual({ count: 2, oldest: new Date('2026-10-10'), withApplications: 1 });
   });
+
+  test('a check waiting again carries the earlier decision and what changed since', async () => {
+    prisma.staffUser.findMany.mockResolvedValue([]);
+    prisma.internalProfile.findMany.mockResolvedValue([row(1, { verificationComments: 'Wrong number.' }), row(2)]);
+    prisma.auditLog.findMany.mockResolvedValue([
+      { entityId: 1, action: 'Employment discrepancy flagged', timestamp: new Date('2026-10-20'), payload: { comment: 'Wrong number.' }, performedBy: { name: 'Hope' } },
+      { entityId: 1, action: 'Employment details changed - back to HR for checking', timestamp: new Date('2026-10-21'),
+        payload: { changes: { employeeId: { from: 'U9', to: 'U1' }, verificationStatus: { from: 'Discrepancy_Flagged', to: 'Pending' } } } },
+      { entityId: 1, action: 'Employment details changed - back to HR for checking', timestamp: new Date('2026-10-22'),
+        payload: { changes: { employeeId: { from: 'U1', to: 'U12' } } } }
+    ]);
+
+    const [first, second] = await verification.queue(hr);
+
+    expect(prisma.auditLog.findMany.mock.calls[0][0].where.entityId).toEqual({ in: [1, 2] });
+    expect(first.previousCheck).toEqual({
+      decision: 'Discrepancy_Flagged', by: 'Hope', at: new Date('2026-10-20'), comments: 'Wrong number.',
+      changes: { employeeId: { from: 'U9', to: 'U12' } }
+    });
+    // Never checked before - nothing to show.
+    expect(second.previousCheck).toBeUndefined();
+  });
 });
 
 describe('the Inbox item', () => {

@@ -4,7 +4,7 @@ import Skeleton from '../../components/Skeleton';
 import { offerAwaitingAnswer } from '../../components/offers/offerFormat';
 import { Panel, Table, Pill } from '../../components/workspace/ui';
 import { orgLabel } from '../../utils/orgNames';
-import { SITE, stageOf, employmentCheck, formatDay, daysLeft } from './careers';
+import { SITE, stageOf, employmentCheck, employmentFit, formatDay, daysLeft } from './careers';
 
 // The two lists the candidate pages show on more than one page (both sites, see SITE).
 
@@ -32,7 +32,10 @@ export function VacancyFitTable({ vacancies, fit, applications, limit }) {
             key: 'fit', label: 'Your fit', render: (v) => {
               const f = fit?.[v.id];
               if (!f) return <span className="s">Checking…</span>;
-              if (f.employmentCheck && !f.employmentCheck.verified) return <Pill tone="warn">Waiting for HR's check</Pill>;
+              if (f.employmentCheck && !f.employmentCheck.verified) {
+                const pending = employmentFit(f.employmentCheck);
+                return <Pill tone={pending.tone}>{pending.label}</Pill>;
+              }
               return f.eligible ? <Pill tone="ok">You meet the minimums</Pill> : <Pill tone="neutral">Not eligible</Pill>;
             }
           },
