@@ -100,7 +100,7 @@ app.use('/api/vacancies', vacancyRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/candidates', candidateRoutes);
 // Authenticated file access - replaces a plain express.static mount so
-// CVs, cover letters, and recommendation letters aren't publicly readable.
+// CVs, cover letters, and appointment letters aren't publicly readable.
 app.use('/api/files', fileRoutes);
 app.use('/api/shortlist-committee', shortlistCommitteeRoutes);
 // Public - a shortlisting committee member's private link.

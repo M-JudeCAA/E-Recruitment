@@ -88,14 +88,14 @@ async function waitingSummary(req) {
 /**
  * HR's decision on one candidate's employment details: HR_Verified or
  * Discrepancy_Flagged, with comments (20+ characters) or a manager's
- * recommendation letter as evidence. Audited before/after; the candidate is
+ * appointment letter as evidence. Audited before/after; the candidate is
  * told; a replaced letter is removed. Never the viewer's own.
  */
 async function decide(req, candidateId, { decision, comments, documentUrl }) {
   if (!DECISIONS.includes(decision)) throw new AppError(`decision must be one of: ${DECISIONS.join(', ')}`, 400);
   const text = typeof comments === 'string' ? comments.trim() : '';
   if (text.length < MIN_COMMENT && !documentUrl) {
-    throw new AppError(`Give comments (at least ${MIN_COMMENT} characters) or attach the manager's recommendation letter`, 422);
+    throw new AppError(`Give comments (at least ${MIN_COMMENT} characters) or attach their appointment letter`, 422);
   }
   const before = await prisma.internalProfile.findUnique({ where: { candidateId } });
   if (!before) throw new AppError('No internal profile found for this candidate', 404);

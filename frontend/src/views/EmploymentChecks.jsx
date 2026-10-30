@@ -16,7 +16,7 @@ import { PageTop, Panel, Table, Pill, Chips, SidePanel, KeyValues, formatDay, ra
 // employment details wait for HR's check. They can't submit applications
 // until verified (backend utils/employmentCheck.js), so HR works from here
 // rather than from an application. Anyone in HR (never for themselves) verifies or
-// flags a discrepancy, with comments or the manager's recommendation letter
+// flags a discrepancy, with comments or the candidate's appointment letter
 // (backend services/internalVerificationService.js); the candidate is told
 // either way. Nobody sees or checks their own profile.
 
@@ -107,7 +107,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
             ['By', person.checkedBy],
             ['On', formatDay(person.checkedAt)],
             ['Comments', person.comments],
-            ['Letter', person.supportingDocumentUrl ? <DocumentLink url={person.supportingDocumentUrl} name="Manager's recommendation letter" /> : null]
+            ['Letter', person.supportingDocumentUrl ? <DocumentLink url={person.supportingDocumentUrl} name="Appointment letter" /> : null]
           ]} />
         </>
       )}
@@ -117,10 +117,10 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
           <h3 style={SECTION}>Your check</h3>
           <p className="ws-note" style={{ marginTop: 0 }}>
             Confirm the details against HR records (employee number, job title, date joined). Give comments (at least {MIN_COMMENT} characters) or attach
-            the manager's recommendation letter - either is kept as the evidence.
+            their appointment letter - either is kept as the evidence.
           </p>
           <TextArea label="Comments" value={comments} onChange={(e) => setComments(e.target.value)} />
-          <label className="ws-note" style={{ display: 'block', marginBottom: 4 }}>Manager's recommendation letter (PDF or Word)</label>
+          <label className="ws-note" style={{ display: 'block', marginBottom: 4 }}>Appointment letter (optional; PDF or Word)</label>
           <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setFile(e.target.files[0] || null)} />
         </>
       ) : !canDecide ? (

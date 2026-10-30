@@ -14,7 +14,7 @@ const NOT_SHORTLISTABLE = ['Draft', 'Offered', 'Rejected', 'Withdrawn'];
  * Mandatory internal-candidate verification gate, plus a status gate every
  * shortlisting entry point (single shortlist() and bulk saveRanking()) now
  * shares. Blocks Application -> Shortlisted unless HR has verified
- * employment with either comments or a manager recommendation letter on
+ * employment with either comments or an appointment letter on
  * file. Applies regardless of vacancy posting_type or department match.
  */
 async function assertCanShortlist(applicationId) {
@@ -34,7 +34,7 @@ async function assertCanShortlist(applicationId) {
       throw new Error('Internal candidate employment must be HR Verified before shortlisting');
     }
     if (!profile.verificationEvidenceType) {
-      throw new Error('Verification requires comments or a manager recommendation letter');
+      throw new Error('Verification requires comments or an appointment letter');
     }
   }
 }
