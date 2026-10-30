@@ -7,6 +7,10 @@ import staffClient from './staffApiClient';
 // action that clears or adds a task.
 let cache = null;
 let inflight = null;
+// Each refresh's number: an answer to an older request that arrives after a
+// newer one (a slow first load, then a refresh after an action) is dropped,
+// so it can't put back counts the action already changed.
+let latest = 0;
 const listeners = new Set();
 
 // Fired after each refresh, so the bell reloads too - the API clears notices
@@ -15,16 +19,19 @@ export const INBOX_REFRESHED_EVENT = 'inbox-refreshed';
 
 export function refreshInbox() {
   if (!localStorage.getItem('staffToken')) return Promise.resolve(null);
-  inflight = staffClient.get('/api/dashboard/inbox')
+  const mine = ++latest;
+  const request = staffClient.get('/api/dashboard/inbox')
     .then((res) => {
+      if (mine !== latest) return cache;
       cache = res.data;
       listeners.forEach((fn) => fn(cache));
       window.dispatchEvent(new Event(INBOX_REFRESHED_EVENT));
       return cache;
     })
     .catch(() => cache)
-    .finally(() => { inflight = null; });
-  return inflight;
+    .finally(() => { if (inflight === request) inflight = null; });
+  inflight = request;
+  return request;
 }
 
 export function useInbox({ enabled = true } = {}) {

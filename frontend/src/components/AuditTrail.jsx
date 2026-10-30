@@ -6,6 +6,9 @@ import staffClient from '../models/staffApiClient';
 // (GET /api/audit/:entityType/:entityId): who did what and when, the values
 // that changed, and any comment given. Collapsed until opened, and loaded
 // only then - most reviews never need it.
+//
+// `labels` words a page's own fields: { field: { label, values } }, values
+// being a map of stored value to words or a function of the value.
 
 const MAX_VALUE_LENGTH = 80;
 
@@ -15,7 +18,11 @@ function fieldLabel(field) {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function describeValue(value) {
+function describeValue(value, words) {
+  if (words && value !== null && value !== undefined && value !== '') {
+    const said = typeof words === 'function' ? words(value) : words[value];
+    if (said != null) return said;
+  }
   if (value === null || value === undefined || value === '') return '—';
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value)) return new Date(value).toLocaleString();
   const text = typeof value === 'string' ? value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : JSON.stringify(value);
@@ -30,7 +37,7 @@ function describeActor(row) {
 }
 
 // defaultOpen shows the history straight away (the vacancy page's History tab).
-export default function AuditTrail({ entityType, entityId, label = 'History', defaultOpen = false }) {
+export default function AuditTrail({ entityType, entityId, label = 'History', defaultOpen = false, labels = {} }) {
   const [open, setOpen] = useState(false);
   const [rows, setRows] = useState(null);
   const [error, setError] = useState('');
@@ -83,7 +90,7 @@ export default function AuditTrail({ entityType, entityId, label = 'History', de
                     <ul style={{ margin: '2px 0 0', paddingLeft: 18, color: 'var(--color-text-muted)' }}>
                       {Object.entries(row.changes).map(([field, { from, to }]) => (
                         <li key={field} style={{ overflowWrap: 'anywhere' }}>
-                          {fieldLabel(field)}: {describeValue(from)} &rarr; {describeValue(to)}
+                          {labels[field]?.label || fieldLabel(field)}: {describeValue(from, labels[field]?.values)} &rarr; {describeValue(to, labels[field]?.values)}
                         </li>
                       ))}
                     </ul>

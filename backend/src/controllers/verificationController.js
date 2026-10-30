@@ -10,7 +10,8 @@ const verification = require('../services/internalVerificationService');
 
 // PATCH /api/verification/candidates/:candidateId/verify
 // { decision: HR_Verified | Discrepancy_Flagged, comments } + optional
-// recommendationLetter file. 'Pending' is the starting state, never a decision.
+// recommendationLetter file (the candidate's appointment letter; the field
+// and the evidence type ManagerRecommendationLetter keep their old names). 'Pending' is the starting state, never a decision.
 async function verify(req, res) {
   const candidateId = Number(req.params.candidateId);
   const documentUrl = fileUrl(req.file);

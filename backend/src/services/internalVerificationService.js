@@ -12,7 +12,6 @@ const { AppError } = require('../utils/errorResponse');
 // is now done before they apply, not from an application.
 
 const DECISIONS = ['HR_Verified', 'Discrepancy_Flagged'];
-const MIN_COMMENT = 20;
 const AUDIT_FIELDS = ['verificationStatus', 'verificationEvidenceType', 'verificationComments', 'supportingDocumentUrl'];
 
 // Applications still in play - an applicant from before the rule, shown so HR
@@ -76,7 +75,43 @@ async function queue(req, { include = 'waiting' } = {}) {
     },
     select: PROFILE_SELECT
   }) || [];
-  return rows.map(view).sort((a, b) => new Date(a.waitingSince) - new Date(b.waitingSince));
+  const people = rows.map(view);
+  await addPreviousChecks(people);
+  return people.sort((a, b) => new Date(a.waitingSince) - new Date(b.waitingSince));
+}
+
+const DECIDED = { 'Employment verified': 'HR_Verified', 'Employment discrepancy flagged': 'Discrepancy_Flagged' };
+const DETAILS_CHANGED = 'Employment details changed - back to HR for checking';
+
+/**
+ * A check waiting again after the candidate changed checked details has
+ * lost who decided it and when (candidateController.updateInternalProfile
+ * clears them), so HR's second look would start blind. From the audit
+ * trail: `previousCheck` - the last decision (by, at, comments) and what the
+ * candidate changed since ({ field: { from, to } }).
+ */
+async function addPreviousChecks(people) {
+  const waiting = people.filter((p) => p.status === 'Pending');
+  if (!waiting.length) return;
+  const rows = await prisma.auditLog.findMany({
+    where: { entityType: 'InternalProfile', entityId: { in: waiting.map((p) => p.candidateId) }, action: { in: [...Object.keys(DECIDED), DETAILS_CHANGED] } },
+    select: { entityId: true, action: true, timestamp: true, payload: true, performedBy: { select: { name: true } } },
+    orderBy: [{ timestamp: 'asc' }, { id: 'asc' }]
+  }) || [];
+  for (const person of waiting) {
+    let previous = null;
+    for (const row of rows.filter((r) => r.entityId === person.candidateId)) {
+      if (DECIDED[row.action]) {
+        previous = { decision: DECIDED[row.action], by: row.performedBy?.name || null, at: row.timestamp, comments: row.payload?.comment || null, changes: {} };
+      } else if (previous) {
+        for (const [field, change] of Object.entries(row.payload?.changes || {})) {
+          if (field === 'verificationStatus') continue;
+          previous.changes[field] = { from: previous.changes[field]?.from ?? change.from, to: change.to };
+        }
+      }
+    }
+    if (previous) person.previousCheck = previous;
+  }
 }
 
 /** How many wait, and since when the oldest - for the Inbox. */
@@ -87,15 +122,15 @@ async function waitingSummary(req) {
 
 /**
  * HR's decision on one candidate's employment details: HR_Verified or
- * Discrepancy_Flagged, with comments (20+ characters) or a manager's
- * recommendation letter as evidence. Audited before/after; the candidate is
+ * Discrepancy_Flagged, with comments (any length) or the candidate's
+ * appointment letter as evidence. Audited before/after; the candidate is
  * told; a replaced letter is removed. Never the viewer's own.
  */
 async function decide(req, candidateId, { decision, comments, documentUrl }) {
   if (!DECISIONS.includes(decision)) throw new AppError(`decision must be one of: ${DECISIONS.join(', ')}`, 400);
   const text = typeof comments === 'string' ? comments.trim() : '';
-  if (text.length < MIN_COMMENT && !documentUrl) {
-    throw new AppError(`Give comments (at least ${MIN_COMMENT} characters) or attach the manager's recommendation letter`, 422);
+  if (!text && !documentUrl) {
+    throw new AppError('Give comments or attach their appointment letter', 422);
   }
   const before = await prisma.internalProfile.findUnique({ where: { candidateId } });
   if (!before) throw new AppError('No internal profile found for this candidate', 404);

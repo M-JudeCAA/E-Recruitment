@@ -16,7 +16,7 @@ import { PageTop, Panel, Table, Pill, Chips, SidePanel, KeyValues, formatDay, ra
 // employment details wait for HR's check. They can't submit applications
 // until verified (backend utils/employmentCheck.js), so HR works from here
 // rather than from an application. Anyone in HR (never for themselves) verifies or
-// flags a discrepancy, with comments or the manager's recommendation letter
+// flags a discrepancy, with comments or the candidate's appointment letter
 // (backend services/internalVerificationService.js); the candidate is told
 // either way. Nobody sees or checks their own profile.
 
@@ -25,8 +25,51 @@ const STATUS = {
   Discrepancy_Flagged: { tone: 'bad', label: 'Discrepancy' },
   HR_Verified: { tone: 'ok', label: 'Verified' }
 };
-const MIN_COMMENT = 20;
 const SECTION = { fontSize: 14, margin: '20px 0 8px' };
+
+// How the history and the earlier check word the profile's stored fields.
+const DECISION_WORDS = { Pending: 'Waiting for HR', HR_Verified: 'Verified', Discrepancy_Flagged: 'Doesn’t match HR records' };
+const day = (v) => formatDay(v);
+const HISTORY_LABELS = {
+  verificationStatus: { label: 'Check', values: DECISION_WORDS },
+  verificationEvidenceType: { label: 'Evidence', values: { Comments: 'Comments', ManagerRecommendationLetter: 'Appointment letter' } },
+  verificationComments: { label: 'Comments' },
+  supportingDocumentUrl: { label: 'Appointment letter', values: () => 'Attached' },
+  employeeId: { label: 'Employee number' },
+  position: { label: 'Job title' },
+  department: { label: 'Department' },
+  dateJoined: { label: 'Joined UCAA', values: day }
+};
+const changeWords = (field, value) => {
+  if (value === null || value === undefined || value === '') return '—';
+  const values = HISTORY_LABELS[field]?.values;
+  return (typeof values === 'function' ? values(value) : values?.[value]) || String(value);
+};
+
+// A check back with HR after the candidate changed the details: the earlier
+// decision, and what they changed since.
+function EarlierCheck({ check }) {
+  const changes = Object.entries(check.changes || {});
+  return (
+    <Alert type={check.decision === 'Discrepancy_Flagged' ? 'warning' : 'info'} message={(
+      <>
+        <strong>Earlier check: {DECISION_WORDS[check.decision]}</strong>
+        {check.by && <> - {check.by}</>}, {formatDay(check.at)}.
+        {check.comments && <div style={{ marginTop: 4 }}>&ldquo;{check.comments}&rdquo;</div>}
+        {changes.length > 0 && (
+          <div style={{ marginTop: 6 }}>
+            Changed since:
+            <ul style={{ margin: '2px 0 0', paddingLeft: 18 }}>
+              {changes.map(([field, { from, to }]) => (
+                <li key={field}>{HISTORY_LABELS[field]?.label || field}: {changeWords(field, from)} &rarr; {changeWords(field, to)}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </>
+    )} />
+  );
+}
 
 function waitingFor(since) {
   const days = Math.floor((Date.now() - new Date(since)) / 86400000);
@@ -38,7 +81,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState('');
-  const enough = comments.trim().length >= MIN_COMMENT || Boolean(file);
+  const enough = Boolean(comments.trim()) || Boolean(file);
 
   const decide = async (decision) => {
     setBusy(decision); setError('');
@@ -76,6 +119,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
       ) : null}
     >
       <Alert type="error" message={error} />
+      {person.status === 'Pending' && person.previousCheck && <EarlierCheck check={person.previousCheck} />}
       <h3 style={SECTION}>What they told us</h3>
       <KeyValues rows={[
         ['Email', person.email],
@@ -107,7 +151,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
             ['By', person.checkedBy],
             ['On', formatDay(person.checkedAt)],
             ['Comments', person.comments],
-            ['Letter', person.supportingDocumentUrl ? <DocumentLink url={person.supportingDocumentUrl} name="Manager's recommendation letter" /> : null]
+            ['Letter', person.supportingDocumentUrl ? <DocumentLink url={person.supportingDocumentUrl} name="Appointment letter" /> : null]
           ]} />
         </>
       )}
@@ -116,17 +160,17 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
         <>
           <h3 style={SECTION}>Your check</h3>
           <p className="ws-note" style={{ marginTop: 0 }}>
-            Confirm the details against HR records (employee number, job title, date joined). Give comments (at least {MIN_COMMENT} characters) or attach
-            the manager's recommendation letter - either is kept as the evidence.
+            Confirm the details against HR records (employee number, job title, date joined). Give comments or attach
+            their appointment letter - either is kept as the evidence.
           </p>
           <TextArea label="Comments" value={comments} onChange={(e) => setComments(e.target.value)} />
-          <label className="ws-note" style={{ display: 'block', marginBottom: 4 }}>Manager's recommendation letter (PDF or Word)</label>
+          <label className="ws-note" style={{ display: 'block', marginBottom: 4 }}>Appointment letter (optional; PDF or Word)</label>
           <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setFile(e.target.files[0] || null)} />
         </>
       ) : !canDecide ? (
         <p className="ws-note">An HR officer verifies employment.</p>
       ) : null}
-      <AuditTrail entityType="InternalProfile" entityId={person.candidateId} label="History of checks" />
+      <AuditTrail entityType="InternalProfile" entityId={person.candidateId} label="History of checks" labels={HISTORY_LABELS} />
     </SidePanel>
   );
 }

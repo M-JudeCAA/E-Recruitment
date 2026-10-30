@@ -148,6 +148,17 @@ export function employmentCheck(me, app) {
   return { label: 'HR checking', tone: 'warn' };
 }
 
+/**
+ * "Your fit" while employment isn't verified yet - the eligibility answer's
+ * employmentCheck (status Pending, Discrepancy_Flagged or Missing), worded
+ * by whose move it is: HR's while waiting, the candidate's otherwise.
+ */
+export function employmentFit(check, short = false) {
+  if (check?.status === 'Discrepancy_Flagged') return { label: short ? 'Check your details' : 'Check your employment details', tone: 'bad' };
+  if (check?.status === 'Missing') return { label: short ? 'Add your details' : 'Add your employment details', tone: 'warn' };
+  return { label: short ? 'Waiting for HR' : 'Waiting for HR’s check', tone: 'warn' };
+}
+
 export function formatDay(value, short = false) {
   if (!value) return '';
   return new Date(value).toLocaleDateString('en-GB', short ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' });

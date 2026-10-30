@@ -29,7 +29,7 @@ describe('assertCanShortlist', () => {
       }
     });
 
-    await expect(workflow.assertCanShortlist(1)).rejects.toThrow(/requires comments or a manager/);
+    await expect(workflow.assertCanShortlist(1)).rejects.toThrow(/requires comments or an appointment letter/);
   });
 
   test('allows an internal candidate who is HR Verified with evidence', async () => {

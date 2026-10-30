@@ -34,7 +34,6 @@ export default function HRSidebar({ active }) {
   const inbox = useInbox({ enabled: Boolean(staff?.role) });
   const items = inbox?.items || [];
   const actionable = items.filter((i) => !i.info);
-  const overdue = actionable.some((i) => i.overdue);
   // The Inbox's one Employment checks item carries how many are waiting.
   const employmentChecks = items.find((i) => i.key === 'employment-checks')?.count || 0;
 
@@ -59,10 +58,10 @@ export default function HRSidebar({ active }) {
   const feedback = { key: 'feedback', label: 'Applicant feedback', icon: MessageSquare, to: '/hr/feedback', section: 'Reports' };
 
   const list = !staff?.role ? [...(staff?.isSystemAdmin ? [feedback] : []), ...setup] : [
-    { key: 'inbox', label: 'Inbox', icon: Inbox, to: '/hr/inbox', section: 'My work', badge: actionable.length, badgeTone: overdue ? 'alert' : 'count' },
+    { key: 'inbox', label: 'Inbox', icon: Inbox, to: '/hr/inbox', section: 'My work', badge: actionable.length },
     { key: 'vacancies', label: 'Vacancies', icon: Briefcase, to: '/hr', section: 'Recruitment' },
     { key: 'candidates', label: 'Candidates', icon: Users, to: '/hr/candidates', section: 'Recruitment' },
-    { key: 'verification', label: 'Employment checks', icon: BadgeCheck, to: '/hr/verification', section: 'Recruitment', badge: employmentChecks, badgeTone: 'count' },
+    { key: 'verification', label: 'Employment checks', icon: BadgeCheck, to: '/hr/verification', section: 'Recruitment', badge: employmentChecks },
     { key: 'interviews', label: 'Interviews', icon: CalendarClock, to: '/hr/interviews', section: 'Recruitment' },
     { key: 'offers', label: 'Offers & hires', icon: Award, to: '/hr/offers', section: 'Recruitment' },
     { key: 'dashboard', label: 'Dashboard', icon: BarChart3, to: '/hr/dashboard', section: 'Reports' },

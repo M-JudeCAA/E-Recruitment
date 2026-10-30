@@ -467,11 +467,11 @@ export default function ApplicationReviewCard({
         >
           {error && <div style={{ color: 'var(--color-danger)', fontSize: 13, marginBottom: 8 }}>{error}</div>}
           <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>
-            Provide comments (min. 20 characters) or attach a manager recommendation letter as evidence.
+            Provide comments or attach their appointment letter as evidence.
           </p>
           <TextArea label="Comments" value={verifyComments} onChange={(e) => setVerifyComments(e.target.value)} />
           <label style={{ display: 'block', fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 4 }}>
-            Manager recommendation letter (optional if comments provided)
+            Appointment letter (optional if comments provided)
           </label>
           <input type="file" accept=".pdf,.doc,.docx" onChange={(e) => setVerifyFile(e.target.files[0])} />
         </Modal>

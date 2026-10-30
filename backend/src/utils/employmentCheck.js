@@ -1,7 +1,7 @@
 // HR's check of an internal candidate's UCAA employment details
 // (InternalProfile.verificationStatus) - the one rule for whether it is done.
 // Verified means HR_Verified with its evidence on file (comments or a
-// manager's recommendation letter). An internal candidate submits an
+// appointment letter). An internal candidate submits an
 // application only once verified (applicationDraftController.submit), and is
 // shortlisted only once verified (workflowService.assertCanShortlist).
 // External candidates have no such check.
