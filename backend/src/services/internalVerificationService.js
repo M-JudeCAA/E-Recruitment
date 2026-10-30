@@ -137,9 +137,18 @@ async function decide(req, candidateId, { decision, comments, documentUrl }) {
   if ((await ownCandidateIds(req)).includes(candidateId)) {
     throw Object.assign(new AppError('You cannot check your own employment details. Another member of HR must do it.', 403), { code: 'SELF_VERIFICATION' });
   }
+  // A flagged discrepancy is the candidate's to sort out: only their
+  // corrected details (back to Pending) reopen the check for HR.
+  if (before.verificationStatus === 'Discrepancy_Flagged') {
+    throw Object.assign(new AppError(decision === 'HR_Verified'
+      ? 'A discrepancy is flagged on these details. They can be verified once the candidate has corrected them.'
+      : 'A discrepancy is already flagged on these details. The candidate has been asked to correct them.', 409), { code: 'DISCREPANCY_NOT_RESOLVED' });
+  }
 
+  // Only from the status just read, so two of HR deciding at once can't both
+  // get through (the second gets 409).
   const after = await prisma.internalProfile.update({
-    where: { candidateId },
+    where: { candidateId, verificationStatus: before.verificationStatus },
     data: {
       verificationStatus: decision,
       verificationEvidenceType: documentUrl ? 'ManagerRecommendationLetter' : 'Comments',
@@ -148,6 +157,11 @@ async function decide(req, candidateId, { decision, comments, documentUrl }) {
       verifiedById: req.user.id,
       verifiedDate: new Date()
     }
+  }).catch((err) => {
+    if (err?.code === 'P2025') {
+      throw Object.assign(new AppError('Someone else has just decided this check. Reload to see where it stands.', 409), { code: 'CHECK_CHANGED' });
+    }
+    throw err;
   });
   if (before.supportingDocumentUrl && before.supportingDocumentUrl !== after.supportingDocumentUrl) {
     await removeUploads(before.supportingDocumentUrl);

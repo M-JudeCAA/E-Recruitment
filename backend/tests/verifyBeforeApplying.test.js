@@ -114,7 +114,7 @@ describe("HR's decision", () => {
     await verification.decide(hr, 5, { decision: 'HR_Verified', comments: COMMENT });
 
     expect(prisma.internalProfile.update).toHaveBeenCalledWith({
-      where: { candidateId: 5 },
+      where: { candidateId: 5, verificationStatus: 'Pending' },
       data: expect.objectContaining({ verificationStatus: 'HR_Verified', verificationEvidenceType: 'Comments', verifiedById: 7 })
     });
     const auditRow = prisma.auditLog.create.mock.calls[0][0].data;
@@ -145,6 +145,21 @@ describe("HR's decision", () => {
     await expect(verification.decide(hr, 70, { decision: 'HR_Verified', comments: COMMENT }))
       .rejects.toMatchObject({ status: 403, code: 'SELF_VERIFICATION' });
     expect(prisma.internalProfile.update).not.toHaveBeenCalled();
+  });
+
+  test.each(['HR_Verified', 'Discrepancy_Flagged'])("can't decide (%s) while a flagged discrepancy waits for the candidate", async (decision) => {
+    prisma.internalProfile.findUnique.mockResolvedValue({ candidateId: 5, ...EMPLOYMENT, verificationStatus: 'Discrepancy_Flagged' });
+    await expect(verification.decide(hr, 5, { decision, comments: COMMENT }))
+      .rejects.toMatchObject({ status: 409, code: 'DISCREPANCY_NOT_RESOLVED' });
+    expect(prisma.internalProfile.update).not.toHaveBeenCalled();
+    expect(prisma.candidateNotification.create).not.toHaveBeenCalled();
+  });
+
+  test('two of HR deciding at once: the second is refused', async () => {
+    prisma.internalProfile.update.mockRejectedValue(Object.assign(new Error('Record to update not found.'), { code: 'P2025' }));
+    await expect(verification.decide(hr, 5, { decision: 'HR_Verified', comments: COMMENT }))
+      .rejects.toMatchObject({ status: 409, code: 'CHECK_CHANGED' });
+    expect(prisma.auditLog.create).not.toHaveBeenCalled();
   });
 
   test('a failed notice does not undo the decision', async () => {

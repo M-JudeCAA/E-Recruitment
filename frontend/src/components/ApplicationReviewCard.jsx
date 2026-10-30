@@ -342,7 +342,12 @@ export default function ApplicationReviewCard({
           {app.candidate.candidateType === 'Internal' && app.candidate.internalProfile && (
             <Card accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)', marginBottom: 8 }}>
               <strong>Internal verification:</strong> <StatusBadge status={app.candidate.internalProfile.verificationStatus} />
-              {app.candidate.internalProfile.verificationStatus !== 'HR_Verified' && (
+              {app.candidate.internalProfile.verificationStatus === 'Discrepancy_Flagged' && (
+                <div style={{ marginTop: 8, fontSize: 13, color: 'var(--color-text-muted)' }}>
+                  Waiting for the candidate to correct their details - they come back to HR to check when they do.
+                </div>
+              )}
+              {!['HR_Verified', 'Discrepancy_Flagged'].includes(app.candidate.internalProfile.verificationStatus) && (
                 <div style={{ marginTop: 8 }}>
                   <Button variant="secondary" onClick={() => openVerify('HR_Verified')}>Mark HR Verified</Button>{' '}
                   <Button variant="ghost" onClick={() => openVerify('Discrepancy_Flagged')}>Flag discrepancy</Button>

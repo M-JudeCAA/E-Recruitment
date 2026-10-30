@@ -109,7 +109,7 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
       eyebrow="Employment check"
       badges={<Pill tone={status.tone}>{status.label}</Pill>}
       onClose={onClose}
-      footer={canDecide && person.status !== 'HR_Verified' ? (
+      footer={canDecide && person.status === 'Pending' ? (
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           <Button variant="ghost" disabled={!enough || Boolean(busy)} loading={busy === 'Discrepancy_Flagged'} loadingText="Saving..."
             onClick={() => decide('Discrepancy_Flagged')}>Flag discrepancy</Button>
@@ -156,7 +156,12 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
         </>
       )}
 
-      {canDecide && person.status !== 'HR_Verified' ? (
+      {person.status === 'Discrepancy_Flagged' ? (
+        // The candidate's move: their corrected details bring it back here.
+        <p className="ws-note">
+          Waiting for {person.name} to correct their details. It comes back to the Waiting list when they do, and can be verified then.
+        </p>
+      ) : canDecide && person.status === 'Pending' ? (
         <>
           <h3 style={SECTION}>Your check</h3>
           <p className="ws-note" style={{ marginTop: 0 }}>
