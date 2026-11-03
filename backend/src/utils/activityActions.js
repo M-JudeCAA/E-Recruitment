@@ -91,6 +91,9 @@ const ACTIONS = {
   'PUT /api/candidates/me/photo': 'Candidate photo uploaded',
   'DELETE /api/candidates/me/photo': 'Candidate photo removed',
   'POST /api/candidates/me/data-requests': 'Candidate asked for their data to be erased',
+  'PUT /api/candidates/me/email-preferences': 'Candidate changed their email settings',
+  'PUT /api/candidates/email-preferences/:token': 'Candidate changed their email settings from the emailed link',
+  'POST /api/candidates/email-preferences/:token/unsubscribe': 'Candidate unsubscribed from notice emails (one click)',
   'POST /api/candidates/me/parse-cv': 'Candidate CV read to fill in the profile',
 
   // Shortlisting committee

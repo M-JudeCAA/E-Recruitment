@@ -155,7 +155,10 @@ async function decide(req, candidateId, { decision, comments, documentUrl }) {
       verificationComments: text || null,
       supportingDocumentUrl: documentUrl || null,
       verifiedById: req.user.id,
-      verifiedDate: new Date()
+      verifiedDate: new Date(),
+      // A new decision starts any daily reminders afresh (sendDiscrepancyReminders).
+      discrepancyReminders: 0,
+      discrepancyRemindedAt: null
     }
   }).catch((err) => {
     if (err?.code === 'P2025') {

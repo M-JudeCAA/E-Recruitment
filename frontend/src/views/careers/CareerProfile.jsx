@@ -9,6 +9,7 @@ import Skeleton from '../../components/Skeleton';
 import Avatar from '../../components/Avatar';
 import PhotoUploadPanel from '../../components/PhotoUploadPanel';
 import YourDataCard from '../../components/YourDataCard';
+import EmailNotificationsCard from '../../components/EmailNotificationsCard';
 import ProfileStep from '../apply-wizard/ProfileStep';
 import { PageTop, Meta, Panel, Pill, KeyValues, SidePanel } from '../../components/workspace/ui';
 import { candidateFileSrc } from '../../utils/fileSrc';
@@ -162,6 +163,7 @@ export default function CareerProfile() {
           : <Alert type="warning" message="No jobs added yet. Most vacancies ask for years of experience, so add your work history." />, '+ Add', () => addEntry('workExperience'))}
         {section('Certificates', 'certificates', null, list((me.certificates || []).map((c) => [c.id, c.name,
           `${c.issuingOrganization}${c.issueDate ? ` · ${formatDay(c.issueDate)}` : ''}${c.expiryDate ? ` · expires ${formatDay(c.expiryDate)}` : ''}`]), 'None on file. Add any a vacancy asks for.', 'certificates'), '+ Add', () => addEntry('certificates'))}
+        <Panel title="Email notifications"><EmailNotificationsCard /></Panel>
         <Panel title="Your data"><YourDataCard bare /></Panel>
       </div>
 

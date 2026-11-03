@@ -56,8 +56,9 @@ async function recordOutcome(ok, error) {
 // attachments is optional (nodemailer's own shape). icalEvent ({ method,
 // content, filename }) sends a calendar invitation the way mail clients
 // expect one - as a text/calendar part of the message, which Outlook and
-// Google show with Accept/Decline - used for interview invitations.
-async function sendMail({ to, subject, html, attachments, icalEvent }) {
+// Google show with Accept/Decline - used for interview invitations. headers
+// adds message headers (a candidate notice's List-Unsubscribe).
+async function sendMail({ to, subject, html, attachments, icalEvent, headers }) {
   if (!process.env.SMTP_HOST) {
     console.error(`Failed to send email to ${to}: SMTP_HOST is not set`);
     await recordOutcome(false, 'SMTP_HOST is not set');
@@ -67,6 +68,7 @@ async function sendMail({ to, subject, html, attachments, icalEvent }) {
     const info = await transporter.sendMail({
       from: process.env.SMTP_FROM, to, subject, html,
       ...(attachments ? { attachments } : {}),
+      ...(headers ? { headers } : {}),
       ...(icalEvent ? { icalEvent } : {})
     });
     await recordOutcome(true);

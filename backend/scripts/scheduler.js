@@ -27,6 +27,7 @@ const JOBS = [
   { name: 'sendApprovalReminders', run: () => require('./sendApprovalReminders').run() },
   { name: 'checkVacancyDeadlines', run: require('./checkVacancyDeadlines').run },
   { name: 'sendInterviewReminders', run: require('./sendInterviewReminders').run },
+  { name: 'sendDiscrepancyReminders', run: () => require('./sendDiscrepancyReminders').run() },
   { name: 'expireOffers', run: require('./expireOffers').run },
   { name: 'cleanupPendingRegistrations', run: require('./cleanupPendingRegistrations').run },
   { name: 'cleanupVerificationTokens', run: () => require('./cleanupVerificationTokens').run() },
