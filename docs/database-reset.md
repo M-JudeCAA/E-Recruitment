@@ -154,6 +154,10 @@ to step 5.
 node scripts/resetDemoData.js --remove-demo-staff --yes
 ```
 
+On the production server (`NODE_ENV=production`) it also needs `--production`
+and refuses without it, so this command, copied from here, can't empty
+production by accident. The demo-data seeders never run there.
+
 It lists each table it empties, then *"Deleted N uploaded file(s)"*, the staff
 accounts it kept, and what it re-created of the organisation structure. It
 finishes with *"Done - a clean start."*
@@ -241,6 +245,7 @@ node scripts/clearRecruitmentData.js          # what it would delete
 node scripts/clearRecruitmentData.js --yes    # do it
 ```
 
+In production `--yes` must come with `--production` too (see step 7).
 `--restart-job-refs` also starts job references again at 001 for the year.
 Ids are not reset. Nothing needs stopping first.
 

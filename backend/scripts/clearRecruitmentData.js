@@ -25,6 +25,7 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const prisma = require('../src/config/db');
+const { confirmProduction } = require('./lib/productionGuard');
 
 // Children before parents, so no delete trips a foreign key.
 const TABLES = [
@@ -80,6 +81,7 @@ async function uploadsToRemove() {
 async function main() {
   const host = (process.env.DATABASE_URL || '').replace(/^.*@/, '').replace(/\?.*$/, '');
   const confirmed = process.argv.includes('--yes');
+  if (confirmed) confirmProduction('clearRecruitmentData');
   const restartJobRefs = process.argv.includes('--restart-job-refs');
 
   const staffNotices = { taskType: { notIn: KEEP_STAFF_NOTICES } };

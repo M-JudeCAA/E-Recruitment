@@ -13,6 +13,14 @@ reachable from UCAA's network only:
 alias of the server), the same in every address. Plain `http://<host>` redirects
 to the careers site.
 
+**Production** uses these same scripts on its own app server, with the
+database on a separate server. Its `deploy\lan\environment.json` (copied from
+`environment.production.example.json`; see `environment.ps1`) makes them
+deploy the `release` branch, back up the database nightly and before every
+deployment (`backup.ps1`), and name the tasks "UCAA e-Recruitment Production ...".
+A server without that file is UAT, as described here. Setting up production
+and releasing to it: [docs/releasing.md](../../docs/releasing.md).
+
 ## How it fits together
 
 - **What's on `main` goes live.** Every push to `main` runs CI on GitHub

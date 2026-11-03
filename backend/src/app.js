@@ -89,6 +89,17 @@ app.use(require('./utils/requestContext').middleware);
 app.use(require('./services/activityLogService').middleware);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
+// For a monitor: also asks the database (on its own server in production),
+// so a lost connection shows as 503 rather than "ok".
+app.get('/health/ready', async (req, res) => {
+  try {
+    await require('./config/db').$queryRaw`SELECT 1`;
+    res.json({ status: 'ok', database: 'ok' });
+  } catch (err) {
+    console.error('Readiness check: database unreachable:', err.message);
+    res.status(503).json({ status: 'unavailable', database: 'unreachable' });
+  }
+});
 // Public: whether the external careers site is open (config/externalSite.js) - the frontend shows a notice if not.
 app.get('/api/site-status', (req, res) => res.json({ externalSite: require('./config/externalSite').externalSiteOpen() }));
 

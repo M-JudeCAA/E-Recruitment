@@ -1,13 +1,18 @@
-# Brings the test (UAT) deployment up to date and restarts it. Run from the
-# deployment folder - not your development copy:
+# Brings this server's deployment - UAT or production, see environment.ps1 -
+# up to date and restarts it. Run from the deployment folder - not your
+# development copy:
 #   powershell -ExecutionPolicy Bypass -File deploy\lan\update-uat.ps1
 #   ... -Commit <sha>   deploy exactly this commit (what auto-deploy.ps1 does)
 #   ... -NoPull         rebuild what is checked out without fetching new code
 #
 # It pauses the running app (the `hold` file run-uat.ps1 watches), fetches
 # the code, installs packages, updates the database schema, rebuilds the
-# sites, and lets the app start again. Testers are cut off for a few minutes.
-# Without -Commit it moves the deployment branch `uat` to origin/main.
+# sites, and lets the app start again. Users are cut off for a few minutes.
+# Without -Commit it moves the local deployment branch (`uat` on UAT) to the
+# newest commit of the deployed branch (origin/main on UAT, origin/release in
+# production). With BackupBeforeDeploy (production) the database is dumped
+# (backup.ps1) before its schema is touched; a failed dump stops the
+# deployment there.
 param([string]$Commit, [switch]$NoPull)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
@@ -18,6 +23,7 @@ $logs = Join-Path $PSScriptRoot 'logs'
 New-Item -ItemType Directory -Force $logs | Out-Null
 $holdFile = Join-Path $logs 'hold'
 $pidFile = Join-Path $logs 'pids.txt'
+$deployEnv = Get-DeployEnvironment
 
 function Invoke-Step($what, [scriptblock]$block) {
   Write-Host "== $what" -ForegroundColor Cyan
@@ -34,10 +40,10 @@ foreach ($f in @("$backend\.env", "$frontend\.env")) {
 }
 
 # Fetch and check before stopping anything, so a bad commit id or local
-# edits don't cost testers an outage.
+# edits don't cost users an outage.
 if (-not $NoPull) {
   Invoke-Step 'Fetching the code' { Invoke-Git fetch --quiet origin }
-  if (-not $Commit) { $Commit = 'origin/main' }
+  if (-not $Commit) { $Commit = "origin/$($deployEnv.Branch)" }
   $target = (Invoke-Git rev-parse --verify --quiet "$Commit^{commit}")
   if (-not $target) { throw "Unknown commit $Commit." }
   Invoke-Git diff --quiet HEAD
@@ -55,13 +61,17 @@ if (Test-Path $pidFile) {
 
 try {
   if (-not $NoPull) {
-    Invoke-Step "Checking out $($target.Substring(0, 7))" { Invoke-Git checkout --quiet -B uat $target }
+    Invoke-Step "Checking out $($target.Substring(0, 7))" { Invoke-Git checkout --quiet -B $deployEnv.LocalBranch $target }
   }
 
   Push-Location $backend
   try {
     Invoke-Step 'Installing API packages' { npm.cmd ci --no-audit --no-fund }
     Invoke-Step 'Generating the database client' { npx.cmd prisma generate }
+    if ($deployEnv.BackupBeforeDeploy) {
+      $label = 'before-' + (Invoke-Git rev-parse --short HEAD)
+      Invoke-Step 'Backing up the database' { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'backup.ps1') -Label $label }
+    }
     Invoke-Step 'Updating the database schema' { node scripts/prepareDatabase.js }
   } finally { Pop-Location }
 

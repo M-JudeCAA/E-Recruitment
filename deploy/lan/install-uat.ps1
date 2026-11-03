@@ -2,10 +2,13 @@
 #   - opens the site ports in Windows Firewall - 443 (careers), 80 (redirect to
 #     https), 4174 (HR staff), 4175 (Internal Careers) - for the domain and
 #     private networks only
-#   - registers two scheduled tasks, both running as SYSTEM:
-#       "UCAA e-Recruitment UAT"         run-uat.ps1 from boot - keeps the app running
-#       "UCAA e-Recruitment UAT deploy"  auto-deploy.ps1 every 5 minutes - deploys
-#                                        what passed CI on main
+#   - registers scheduled tasks, all running as SYSTEM (<Name> is UAT, or
+#     Production with that environment.json - see environment.ps1):
+#       "UCAA e-Recruitment <Name>"         run-uat.ps1 from boot - keeps the app running
+#       "UCAA e-Recruitment <Name> deploy"  auto-deploy.ps1 every 5 minutes - deploys
+#                                          what passed CI on the deployed branch
+#       "UCAA e-Recruitment <Name> backup"  backup.ps1 nightly at 01:30, only with
+#                                          DailyBackup (production)
 #   - lets -Operator start and end those tasks, and change the deployment
 #     and data folders the tasks also write to, without being an administrator
 #   - starts them
@@ -19,12 +22,15 @@ param(
   [switch]$Uninstall
 )
 $ErrorActionPreference = 'Stop'
-$appTask = 'UCAA e-Recruitment UAT'
-$deployTask = 'UCAA e-Recruitment UAT deploy'
-$ruleName = 'UCAA e-Recruitment UAT (443, 80, 4174, 4175)'
-$oldRuleNames = @('UCAA e-Recruitment UAT (HTTPS 5173, 4174, 4175)')   # earlier versions
+. (Join-Path $PSScriptRoot 'environment.ps1')
+$deployEnv = Get-DeployEnvironment
+$appTask = $deployEnv.Title
+$deployTask = "$($deployEnv.Title) deploy"
+$backupTask = "$($deployEnv.Title) backup"
+$ruleName = "$($deployEnv.Title) (443, 80, 4174, 4175)"
+$oldRuleNames = @("$($deployEnv.Title) (HTTPS 5173, 4174, 4175)")   # earlier versions
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$dataDir = 'C:\ProgramData\UCAA-eRecruitment-UAT'
+$dataDir = $deployEnv.DataDir
 
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -34,7 +40,7 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 $scheduler = New-Object -ComObject Schedule.Service
 $scheduler.Connect()
 $rootFolder = $scheduler.GetFolder('\')
-foreach ($name in @($appTask, $deployTask)) {
+foreach ($name in @($appTask, $deployTask, $backupTask)) {
   $existing = $null
   try { $existing = $rootFolder.GetTask($name) } catch { }
   if ($existing) {
@@ -60,7 +66,7 @@ if ($Operator) {
   $sddl += "(A;;GRGX;;;$sid)"
   # The tasks create files (packages, builds, logs, uploads) the operator
   # must still be able to change when updating by hand.
-  foreach ($dir in @($root, $dataDir)) {
+  foreach ($dir in @($root, $dataDir, $deployEnv.BackupDir)) {
     New-Item -ItemType Directory -Force $dir | Out-Null
     & icacls.exe $dir /grant "${Operator}:(OI)(CI)M" /T /C /Q | Out-Null
   }
@@ -88,7 +94,7 @@ function Register-SystemTask($name, $description, $script, $timeLimit, [scriptbl
   Write-Host "Scheduled task '$name' registered."
 }
 
-Register-SystemTask $appTask 'Runs the UCAA e-Recruitment test deployment (deploy\lan\README.md).' 'run-uat.ps1' 'PT0S' {
+Register-SystemTask $appTask "Runs the UCAA e-Recruitment $($deployEnv.Name) deployment (deploy\lan\README.md)." 'run-uat.ps1' 'PT0S' {
   param($def)
   $def.Settings.RestartInterval = 'PT1M'
   $def.Settings.RestartCount = 999
@@ -96,12 +102,21 @@ Register-SystemTask $appTask 'Runs the UCAA e-Recruitment test deployment (deplo
   $trigger.Delay = 'PT1M'                          # let MySQL start first
 }
 
-Register-SystemTask $deployTask 'Deploys the newest commit on main that passed CI to the UCAA e-Recruitment test deployment (deploy\lan\README.md).' 'auto-deploy.ps1' 'PT1H' {
+Register-SystemTask $deployTask "Deploys the newest commit on $($deployEnv.Branch) that passed CI to the UCAA e-Recruitment $($deployEnv.Name) deployment (deploy\lan\README.md)." 'auto-deploy.ps1' 'PT1H' {
   param($def)
   $trigger = $def.Triggers.Create(1)               # once, repeating
   $trigger.StartBoundary = (Get-Date).AddMinutes(1).ToString('s')
   $trigger.Repetition.Interval = 'PT5M'
   $trigger.Repetition.Duration = ''                # indefinitely
+}
+
+if ($deployEnv.DailyBackup) {
+  Register-SystemTask $backupTask "Backs up the UCAA e-Recruitment $($deployEnv.Name) database and uploads (deploy\lan\backup.ps1)." 'backup.ps1' 'PT4H' {
+    param($def)
+    $trigger = $def.Triggers.Create(2)             # daily
+    $trigger.StartBoundary = (Get-Date).Date.AddHours(1).AddMinutes(30).ToString('s')
+    $trigger.DaysInterval = 1
+  }
 }
 
 if ($Operator) { Write-Host "$Operator can start and end them: Start-ScheduledTask / Stop-ScheduledTask -TaskName '<name>'." }
