@@ -149,6 +149,7 @@ SMTP_FROM="UCAA e-Recruitment <erecruitment@caa.co.ug>"
 SMTP_FROM_PUBLIC="UCAA Careers <careers@caa.co.ug>"
 INTERVIEW_ORGANIZER_EMAIL=recruitment@caa.co.ug
 REQUIRE_SITE_HEADER=true
+EXTERNAL_SITE_ENABLED=true
 ```
 
 ```bash
@@ -165,6 +166,11 @@ sudo chmod 660 /srv/erecruitment/backend/.env
   refused anywhere but the HR workspace, an employee's session is refused on
   the public site (401), and the live dashboard socket works only on the HR
   workspace.
+- **`EXTERNAL_SITE_ENABLED=true`**: production runs with the public careers
+  site open. UAT has it `false`; never copy UAT's `.env`. If the site is ever
+  closed for a time, the API warns in `journalctl -u erecruitment-api` at every
+  start and the release script warns after every install, until it is `true`
+  again.
 - **`SMTP_FROM_PUBLIC`** is the sender for External candidates and
   shortlisting committee links. Everyone internal gets mail from `SMTP_FROM`.
 - **The API refuses to start** when `JWT_SECRET` is shorter than 32 characters,
