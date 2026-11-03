@@ -64,6 +64,8 @@ Every other field in `.env.example` needs a real value too:
 | `ACCESS_LOG_RETENTION_DAYS` | Optional. How long the record of who viewed candidate data is kept before the scheduled job deletes it (default `730`, minimum `90`). Once set on the Settings & data page (`/hr/settings`), the page's value wins |
 | `TRUST_PROXY` | Optional. Which reverse proxy to believe about a client's address, used by the sign-in rate limits. Default `loopback` (a proxy on the same machine, e.g. nginx or IIS). Set to `false` if nothing sits in front of the API, or to a hop count or proxy address if the proxy is on another machine |
 | `APP_TIMEZONE` | Optional. Time zone used for interview times in emails, notifications and calendar invitations. Default `Africa/Kampala` |
+| `SMTP_FROM_PUBLIC` | Optional. The sender for mail to the public - External candidates (registration, password reset, notices, bulk email) and shortlisting committee links - e.g. `"UCAA Careers <careers@caa.co.ug>"`. Everyone internal (staff, employees, hiring managers, panelists) gets `SMTP_FROM`. Unset: everything goes from `SMTP_FROM` |
+| `REQUIRE_SITE_HEADER` | Production only (behind its nginx, [deploy/production/README.md](deploy/production/README.md)): `true` makes the API read the `X-ERecruitment-Site` header nginx sets (`staff`, `internal`, `public`) and refuse what a site mustn't do - a request without it (400), staff and Microsoft sign-in on the public site (404), a staff session anywhere but the HR site and an employee's session on the public site (401), the dashboard socket off the HR site. Never set it where nothing sets the header (UAT, local dev): every request would be refused |
 | `INTERVIEW_ORGANIZER_EMAIL` | Optional but recommended. The mailbox shown as the organizer of interview calendar invitations - when a panelist or candidate accepts or declines, the reply goes here (e.g. the HR recruitment mailbox). Default: the address in `SMTP_FROM` |
 | `HRIS_HANDOFF_URL`, `HRIS_HANDOFF_TOKEN` | Optional, for when the core HRIS can take new hires. "Mark as Hired" POSTs each onboarding case there as JSON (with the case reference as the `Idempotency-Key` header, and the token as a bearer token), retrying until it is accepted. Unset: HR downloads each case's package and passes it on by hand |
 | `SCHEDULER_INTERVAL_MINUTES` | Optional. How often the scheduler worker runs the maintenance jobs. Default `60` |
@@ -381,6 +383,31 @@ Register-ScheduledTask -TaskName "UCAA-CheckVacancyDeadlines" -Action $action -T
 
 Each script reads `backend/.env` (database and SMTP settings), so it must
 run somewhere with that file present and network access to the database.
+
+## Sites by host name (production)
+
+In production the three sites have their own host names and no ports
+(careers.caa.co.ug, erecruitment.caa.co.ug, internal-careers.caa.co.ug).
+The build is told which names are the HR site and Internal Careers in
+`frontend/.env`, at build time:
+
+| Variable | What it's for |
+|---|---|
+| `VITE_STAFF_HOST` | The HR workspace's host name (e.g. `erecruitment.caa.co.ug`) |
+| `VITE_INTERNAL_HOST` | Internal Careers' host name (e.g. `internal-careers.caa.co.ug`) |
+
+With either set, the site is chosen by `window.location.hostname`
+(`frontend/src/site.js`, `currentSite()`); any other host is the public
+site and the ports no longer count. Without them (UAT, local development)
+the port decides, as described above. Set `VITE_PUBLIC_SITE_URL` and
+`VITE_INTERNAL_SITE_URL` too, for the links between the sites.
+
+## Production
+
+See [deploy/production/README.md](deploy/production/README.md): Ubuntu
+app server with nginx (certificate, WAF, the site stamp), MySQL on its own
+server, and releases installed by tag with
+`deploy/production/update-production.sh`.
 
 ## Test (UAT) deployment on the office network
 

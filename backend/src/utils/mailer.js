@@ -63,7 +63,13 @@ async function recordOutcome(ok, error) {
 // Every email wears the same design (utils/emailLayout.js): html that is not
 // a whole document already is put into the standard frame, and a plain-text
 // copy goes with it.
-async function sendMail({ to, subject, html: content, attachments, icalEvent, headers }) {
+//
+// from: 'public' sends from SMTP_FROM_PUBLIC (careers@ in production), when
+// set, else SMTP_FROM: for mail to the public - External candidates, the
+// shortlisting committee. Everyone internal gets SMTP_FROM.
+const senderFor = (from) => (from === 'public' && process.env.SMTP_FROM_PUBLIC) || process.env.SMTP_FROM;
+
+async function sendMail({ to, subject, html: content, attachments, icalEvent, headers, from }) {
   const html = isDocument(content) ? content : renderEmail({ bodyHtml: content });
   const text = toText(html);
   if (!process.env.SMTP_HOST) {
@@ -73,7 +79,7 @@ async function sendMail({ to, subject, html: content, attachments, icalEvent, he
   }
   try {
     const info = await transporter.sendMail({
-      from: process.env.SMTP_FROM, to, subject, html, text,
+      from: senderFor(from), to, subject, html, text,
       ...(attachments ? { attachments } : {}),
       ...(headers ? { headers } : {}),
       ...(icalEvent ? { icalEvent } : {})
@@ -111,4 +117,4 @@ async function verifyMailTransport() {
   }
 }
 
-module.exports = { sendMail, verifyMailTransport };
+module.exports = { sendMail, verifyMailTransport, senderFor };

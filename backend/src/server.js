@@ -1,12 +1,10 @@
 require('dotenv').config();
 
-// Every session and the scheduler's signal are signed with JWT_SECRET; a
-// short or missing one in production is refused outright rather than
-// signing sessions anyone could forge.
-if (process.env.NODE_ENV === 'production' && String(process.env.JWT_SECRET || '').length < 32) {
-  console.error('JWT_SECRET must be set to a random string of at least 32 characters in production. Not starting.');
-  process.exit(1);
-}
+// In production, refuse to start without what it needs - a JWT_SECRET of
+// 32+ characters (every session and the scheduler's signal are signed with
+// it), https FRONTEND_URLs, an UPLOAD_DIR outside the code folder, ... -
+// see config/productionChecks.js.
+require('./config/productionChecks').assertProductionReady('API');
 // Express 4 does not forward a rejected promise from an async route
 // handler to the error middleware below on its own - an uncaught
 // rejection there (e.g. a transient database blip) is a plain unhandled

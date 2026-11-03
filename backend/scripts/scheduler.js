@@ -16,6 +16,7 @@
 // alerted in-app about anything stale or failing - so if this worker stops,
 // the HR home page shows a warning within a few hours.
 require('dotenv').config();
+require('../src/config/productionChecks').assertProductionReady('Scheduler');
 const prisma = require('../src/config/db');
 const { runJob } = require('../src/utils/jobRunner');
 const { signalDashboards } = require('../src/utils/dashboardSignal');

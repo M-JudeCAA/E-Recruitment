@@ -1,10 +1,12 @@
-// Staff sign-in only works from this port (frontend/package.json's
-// "preview:staff" serves the same build on it - see SETUP.md "Staff
-// access on a separate port"). It's a single static bundle served on two
-// ports, so this has to be checked at runtime against window.location
-// rather than baked in at build time.
-export const STAFF_PORT = import.meta.env.VITE_STAFF_PORT || '4174';
+// Staff sign-in only works on the HR site: the build served on this port
+// (frontend/package.json's "preview:staff" - see SETUP.md "Staff access on
+// a separate port"), or, in production, the host VITE_STAFF_HOST names
+// (site.js). One static bundle serves every site, so this is checked at
+// runtime against window.location rather than baked in at build time.
+import { STAFF_PORT, currentSite } from './site';
+
+export { STAFF_PORT };
 
 export function isStaffPort() {
-  return window.location.port === STAFF_PORT;
+  return currentSite() === 'staff';
 }

@@ -64,7 +64,9 @@ committee disagreed on for that applicant. You'll find them under "Disputed item
 Please rate each applicant assigned to you against the job's requirements.${exercise.ratingDeadline ? ` Ratings are due by ${escapeHtml(formatWhen(exercise.ratingDeadline))}.` : ''}
 Your ratings stay private from the other members, and you can change them until you submit.</p>`;
   try {
+    // Committee links go out on the public site, so from careers@ (utils/mailer.js).
     const info = await sendMail({
+      from: 'public',
       to: member.email,
       subject: `Shortlisting committee - ${vacancy.jobRef} ${vacancy.title}`,
       html: `<p>Dear ${escapeHtml(member.name)},</p>${lead}
@@ -494,6 +496,7 @@ async function addAssignment(req, res) {
   const candidateName = (await model.findForResults([applicationId]))[0]?.candidate.fullName;
   try {
     await sendMail({
+      from: 'public',
       to: member.email,
       subject: `Shortlisting committee - one more applicant to rate (${vacancy.jobRef})`,
       html: `<p>Dear ${escapeHtml(member.name)},</p><p>HR has added <strong>${escapeHtml(candidateName || 'an applicant')}</strong> to your list for

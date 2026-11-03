@@ -8,6 +8,7 @@ const accessLog = require('../services/accessLogService');
 const { previewOf } = require('../utils/documentPreview');
 const { allowedOrigins } = require('../config/frontendUrl');
 const { loadCurrentCandidate } = require('../middleware/auth');
+const { sessionRefusal } = require('../middleware/siteStamp');
 
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || './uploads');
 
@@ -17,10 +18,12 @@ function authenticateFromHeaderOrQuery(req, res, next) {
   if (!token) return res.status(401).json({ error: 'Missing token' });
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET);
-    next();
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  const refused = sessionRefusal(req.site, req.user);
+  if (refused) return res.status(401).json({ error: refused, code: 'WRONG_SITE' });
+  next();
 }
 
 // Whether the signed-in caller may open this file (answering 403 when not),

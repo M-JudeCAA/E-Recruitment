@@ -1,5 +1,6 @@
 const { WebSocketServer } = require('ws');
 const jwt = require('jsonwebtoken');
+const { siteOf } = require('../middleware/siteStamp');
 
 // Push-based "something changed, go refetch" channel for the four HR
 // dashboards (HRHome/ExecutiveDashboard/ApprovalsCenter/HRDashboard) - it
@@ -54,7 +55,11 @@ function authenticateSocket(ws, raw) {
 function init(httpServer) {
   wss = new WebSocketServer({ server: httpServer, path: '/ws/dashboard' });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
+    // Behind production's nginx (REQUIRE_SITE_HEADER), only the HR site's
+    // own connections (middleware/siteStamp.js); null means stamps aren't used.
+    const site = siteOf(req);
+    if (site !== null && site !== 'staff') return ws.close(4001, 'Unauthorized');
     const authTimer = setTimeout(() => {
       if (!clients.has(ws)) ws.close(4001, 'Unauthorized'); // never authenticated within the window
     }, AUTH_TIMEOUT_MS);

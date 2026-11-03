@@ -135,6 +135,7 @@ async function register(req, res) {
   const confirmUrl = `${frontendUrl}/confirm-email?token=${token}`
     + (isValidReturnTo(returnTo) ? `&returnTo=${encodeURIComponent(returnTo)}` : '');
   await sendMail({
+    from: 'public',
     to: email,
     subject: 'Confirm your e-Recruitment account',
     html: renderEmail({
@@ -314,6 +315,7 @@ async function forgotPassword(req, res) {
     // Not awaited (sendMail never throws): waiting on the mail server only
     // when the account exists would tell anyone timing it that it does.
     sendMail({
+      from: 'public',
       to: candidate.email,
       subject: 'Reset your e-Recruitment password',
       html: renderEmail({
