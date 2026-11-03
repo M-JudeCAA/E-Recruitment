@@ -10,14 +10,16 @@
 #      CI on the release branch), a tag older than what is live (--tag), or a
 #      code folder with local changes;
 #   2. backs up the database (mysqldump with /etc/erecruitment/backup.cnf) to
-#      /var/lib/erecruitment/predeploy, keeping the last 10, and stops if the
-#      backup fails;
+#      /var/lib/erecruitment/predeploy (root only, 600; the last
+#      ERECRUIT_KEEP_BACKUPS, default 5 - they hold every candidate's personal
+#      data on the internet-facing server), and stops if the backup fails;
 #   3. stops the API and the scheduler (nginx stays up; pages say "Server
 #      offline" for a few minutes), checks the tag out on branch production
 #      as the operator, so files stay theirs;
 #   4. installs packages, updates the database schema and builds the site
 #      beside the live one (dist-next, swapped in; the old one kept as
-#      dist-previous);
+#      dist-previous), all as the operator with group-writable files, so
+#      any member of erecruit-ops can run git and npm there afterwards;
 #   5. starts both services and waits up to 60 seconds for /health. If it
 #      never answers - or any step after the checkout fails - it puts the
 #      previous release back and starts that, and exits with an error.
@@ -25,6 +27,11 @@
 # --rollback-to goes back to an earlier tag. Database migrations are NOT
 # undone: only safe when the release notes say the newer release's
 # migrations are backwards-compatible (deploy/production/README.md).
+#
+# Uploads aren't copied: no release changes them. Their copy is ICT's nightly
+# file backup (plan 2.8). The systemd units are not refreshed either: when a
+# release changes deploy/production/systemd/, it says so at the end, and the
+# operator copies them and runs daemon-reload (README, 4.6).
 #
 # Every step goes to /var/log/erecruitment/deploy-<date>.log, the result to
 # /var/log/erecruitment/deployed.json.
@@ -35,7 +42,7 @@ BACKUP_CNF=/etc/erecruitment/backup.cnf
 BACKUP_DIR=/var/lib/erecruitment/predeploy
 LOG_DIR=/var/log/erecruitment
 DB_NAME=${ERECRUIT_DB_NAME:-erecruitment}
-KEEP_BACKUPS=10
+KEEP_BACKUPS=${ERECRUIT_KEEP_BACKUPS:-5}
 SERVICES=(erecruitment-api erecruitment-jobs)
 HEALTH_URL=http://127.0.0.1:4100/health
 
@@ -63,7 +70,9 @@ log_file="$LOG_DIR/deploy-$(date +%F).log"
 exec > >(tee -a "$log_file") 2>&1
 say() { echo "$(date '+%F %T') $*"; }
 
-as_operator() { sudo -u "$operator" -H "$@"; }
+# As the operator, with umask 002: files npm, git and the build create stay
+# writable for the rest of erecruit-ops (2.5), not only for whoever ran it.
+as_operator() { sudo -u "$operator" -H bash -c 'umask 002 && exec "$@"' bash "$@"; }
 git_op() { as_operator git -C "$APP_DIR" "$@"; }
 
 say "===== $mode $tag, by $operator"
@@ -71,6 +80,7 @@ say "===== $mode $tag, by $operator"
 # --- 1. Checks, before anything is stopped ---------------------------------
 git_op fetch --quiet --tags origin
 git_op rev-parse -q --verify "refs/tags/$tag^{commit}" >/dev/null || { say "No tag $tag on GitHub."; exit 1; }
+# Tracked files only: .env, node_modules and the builds are gitignored.
 if ! git_op diff --quiet HEAD || ! git_op diff --quiet --cached HEAD; then
   say "$APP_DIR has local changes (git status). Production runs only released code; undo them first."
   exit 1
@@ -99,9 +109,14 @@ fi
 [[ -r "$BACKUP_CNF" ]] || { say "$BACKUP_CNF is missing (README, 4.4)."; exit 1; }
 umask 077
 mkdir -p "$BACKUP_DIR"
+chown root:root "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 backup="$BACKUP_DIR/erecruitment_${tag}_$(date +%Y%m%d-%H%M%S).sql.gz"
 say "Backing up the database to $backup"
-if ! mysqldump --defaults-extra-file="$BACKUP_CNF" --single-transaction --no-tablespaces --routines --triggers "$DB_NAME" | gzip > "$backup"; then
+# --single-transaction: a consistent copy without LOCK TABLES; --no-tablespaces:
+# no server-wide PROCESS privilege, which erec_app doesn't have;
+# --set-gtid-purged=OFF: no RELOAD/FLUSH_TABLES privilege if GTIDs are ever on.
+if ! mysqldump --defaults-extra-file="$BACKUP_CNF" --single-transaction --no-tablespaces --set-gtid-purged=OFF     --routines --triggers "$DB_NAME" | gzip > "$backup"; then
   rm -f "$backup"
   say "The database backup failed - nothing has been changed."
   exit 1
@@ -185,6 +200,21 @@ if ! start_and_check; then
   exit 1
 fi
 trap - ERR
+
+# Anything root created in the code folder goes to the operator, so no one
+# is locked out of git or npm next time.
+find "$APP_DIR" -user root -exec chown "$operator:erecruit-ops" {} + \
+  || say "NOTE: could not hand root-owned files in $APP_DIR to $operator - check with: find $APP_DIR -user root"
+
+# The units in /etc/systemd/system were copied by hand (4.6); say when this
+# release brings different ones.
+for unit in "$APP_DIR"/deploy/production/systemd/*.service; do
+  installed="/etc/systemd/system/$(basename "$unit")"
+  if ! cmp -s "$unit" "$installed"; then
+    say "NOTE: $(basename "$unit") in this release differs from $installed. Copy it and run"
+    say "      sudo systemctl daemon-reload && sudo systemctl restart ${SERVICES[*]}"
+  fi
+done
 
 record "$tag" "$([[ $mode == rollback ]] && echo "rolled back" || echo installed)"
 say "Done: $tag is live (backup: $backup)."

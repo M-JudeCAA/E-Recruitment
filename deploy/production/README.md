@@ -54,10 +54,11 @@ The files in this folder are copied onto the server as they are:
    sudo /srv/erecruitment/deploy/production/update-production.sh --tag v1.0.1
    ```
    The script refuses anything that isn't a release tag, a tag older than
-   what is live, or a code folder with local changes. It then backs up the
-   database to `/var/lib/erecruitment/predeploy` (the last 10 are kept; a
-   failed backup stops it before anything changes) and stops the API and the
-   scheduler. nginx stays up, and pages say "Server offline" for a few
+   what is live, or a code folder with local changes to tracked files (the
+   `.env` files, `node_modules` and the builds are gitignored, so they don't
+   count). It then backs up the database to `/var/lib/erecruitment/predeploy`
+   (a failed backup stops it before anything changes) and stops the API and
+   the scheduler. nginx stays up, and pages say "Server offline" for a few
    minutes. It checks the tag out on branch `production`, installs packages,
    updates the schema, builds the site beside the live one and swaps it in,
    then starts the services and waits for `/health`. If the new release
@@ -65,6 +66,23 @@ The files in this folder are copied onto the server as they are:
    puts the previous release back and starts that. Everything is logged in
    `/var/log/erecruitment/deploy-<date>.log`, and the result is kept in
    `/var/log/erecruitment/deployed.json`.
+
+   - **The pre-release dumps** hold every candidate's personal data on the
+     internet-facing server. They are root-only (folder 700, files 600), and
+     only the last 5 are kept (`ERECRUIT_KEEP_BACKUPS` to change it). They
+     need no more database rights than `erec_app` has:
+     `--single-transaction` avoids LOCK TABLES and `--no-tablespaces` avoids
+     the server-wide PROCESS privilege.
+   - **Ownership:** git, npm and the build run as the operator who ran the
+     script, with group-writable files (umask 002), and anything left owned by
+     root is handed to them. Every member of `erecruit-ops` can work in
+     `/srv/erecruitment` afterwards. `dist` is made readable for nginx
+     (`chmod -R o+rX`) after every build.
+   - **Uploads are not copied:** no release changes them. Their copy is ICT's
+     nightly file backup of `/var/lib/erecruitment/uploads` (plan 2.8).
+   - **systemd units are not refreshed.** If a release changes
+     `deploy/production/systemd/`, the script ends with a NOTE. Copy the units
+     and reload them as in 4.6.
 
 **A fix that can't wait for the next release:** branch from `release`
 (`hotfix/...`), open a PR into `release`, install its tag, then merge
@@ -155,6 +173,11 @@ sudo chmod 660 /srv/erecruitment/backend/.env
 - **The password:** encode any `@ : / ? # % &` in it for `DATABASE_URL`:
   `node -e "console.log(encodeURIComponent(process.argv[1]))" '<password>'`
   (start the line with a space to keep it out of bash history).
+- **Placeholders:** replace everything in `<...>`, brackets included.
+  `SMTP_HOST` already shows the real value: `<caa-co-ug.mail.protection.outlook.com>`
+  becomes `caa-co-ug.mail.protection.outlook.com` (confirm it in plan 6.3).
+  The two `SMTP_FROM` lines keep their angle brackets. They're part of the
+  address, which is why the check in 4.4 skips anything containing `@`.
 - **Never** set `DEV_PASSWORD_LOGIN`. `BREAK_GLASS_LOGIN=true` is only for a
   Microsoft outage (12.4), and works from office addresses only.
 
@@ -222,8 +245,10 @@ curl -s http://127.0.0.1:4100/health                                # {"status":
 curl -s http://127.0.0.1:4100/health/ready                          # {"status":"ok","database":"ok"}
 ```
 
-`ProtectSystem=strict` with `ReadWritePaths` lets the API write only to the
-uploads and log folders. `journalctl -u erecruitment-api -n 100 --no-pager`
+The units are copied once. When a release changes them (the release script
+says so), copy them again and run `sudo systemctl daemon-reload && sudo
+systemctl restart erecruitment-api erecruitment-jobs`. `ProtectSystem=strict`
+with `ReadWritePaths` lets the API write only to the uploads and log folders. `journalctl -u erecruitment-api -n 100 --no-pager`
 shows the API listening and `Email: connected to ...`, with no warning that
 Microsoft sign-in is not set up. Keep logs 90 days: in
 `/etc/systemd/journald.conf` set `MaxRetentionSec=90day` and
@@ -240,19 +265,22 @@ Either way it ends as `/etc/nginx/tls/caa-co-ug.fullchain.pem` and `/etc/nginx/t
 
 ```bash
 sudo mkdir -p /etc/nginx/tls
-sudo openssl pkcs12 -in /tmp/caa-co-ug.pfx -nokeys -out /etc/nginx/tls/caa-co-ug.fullchain.pem
+# The site's own certificate first, then the chain - always in that order
+sudo openssl pkcs12 -in /tmp/caa-co-ug.pfx -clcerts -nokeys -out /etc/nginx/tls/caa-co-ug.fullchain.pem
+sudo openssl pkcs12 -in /tmp/caa-co-ug.pfx -cacerts -nokeys | sudo tee -a /etc/nginx/tls/caa-co-ug.fullchain.pem >/dev/null
 sudo openssl pkcs12 -in /tmp/caa-co-ug.pfx -nocerts -nodes -out /etc/nginx/tls/caa-co-ug.key
 sudo chmod 600 /etc/nginx/tls/*
 shred -u /tmp/caa-co-ug.pfx
 ```
 
-(Add `-legacy` if OpenSSL says "unsupported". The site's own certificate
-comes first in the .pem, then the intermediates.)
+(Add `-legacy` to each command if OpenSSL says "unsupported". Each command
+asks for the .pfx password.)
 
 **Let's Encrypt:**
 
 ```bash
 sudo apt install -y certbot
+sudo mkdir -p /var/www/acme
 sudo cp /srv/erecruitment/deploy/production/nginx/acme.conf /etc/nginx/sites-available/
 sudo ln -s /etc/nginx/sites-available/acme.conf /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
@@ -264,9 +292,13 @@ sudo ln -sf /etc/letsencrypt/live/erecruitment/fullchain.pem /etc/nginx/tls/caa-
 sudo ln -sf /etc/letsencrypt/live/erecruitment/privkey.pem /etc/nginx/tls/caa-co-ug.key
 printf '#!/bin/sh\nsystemctl reload nginx\n' | sudo tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 sudo chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
-sudo certbot renew --dry-run          # "Congratulations, all simulated renewals succeeded"
-sudo rm /etc/nginx/sites-enabled/acme.conf
 ```
+
+Leave `acme.conf` in place until 5.7. Renewal (about every 60 days) needs
+`/.well-known/acme-challenge/` answered on port 80 for all three names. From
+5.7 on, the port-80 server in `erecruitment.conf` does that, from
+`/var/www/acme`, before its redirect to https. 5.7 removes `acme.conf` and
+proves renewal still works without it.
 
 Check: `sudo openssl x509 -in /etc/nginx/tls/caa-co-ug.fullchain.pem -noout -subject -ext subjectAltName -enddate`
 lists the three names and the expiry date.
@@ -274,14 +306,22 @@ lists the three names and the expiry date.
 ### 5.2 The OWASP Core Rule Set
 
 ```bash
-CRS=4.7.0                                    # the newest 4.x at github.com/coreruleset/coreruleset/releases
+CRS=<the latest 4.x>                         # from github.com/coreruleset/coreruleset/releases
 cd /tmp
-wget https://github.com/coreruleset/coreruleset/archive/refs/tags/v${CRS}.tar.gz
+wget https://github.com/coreruleset/coreruleset/releases/download/v${CRS}/coreruleset-${CRS}-minimal.tar.gz
+wget https://github.com/coreruleset/coreruleset/releases/download/v${CRS}/coreruleset-${CRS}-minimal.tar.gz.asc
+# The CRS project's signing key. Compare its fingerprint with the one published
+# on coreruleset.org (Installing CRS, verifying a release) before trusting it
+gpg --keyserver hkps://keys.openpgp.org --search-keys security@coreruleset.org
+gpg --verify coreruleset-${CRS}-minimal.tar.gz.asc coreruleset-${CRS}-minimal.tar.gz   # "Good signature"
 sudo mkdir -p /etc/nginx/modsec
-sudo tar -xzf v${CRS}.tar.gz -C /etc/nginx/modsec
+sudo tar -xzf coreruleset-${CRS}-minimal.tar.gz -C /etc/nginx/modsec
 sudo mv /etc/nginx/modsec/coreruleset-${CRS} /etc/nginx/modsec/crs
 sudo cp /etc/nginx/modsec/crs/crs-setup.conf.example /etc/nginx/modsec/crs/crs-setup.conf
 ```
+
+Don't go on unless gpg says "Good signature" from a key whose fingerprint
+matches the published one. Updating CRS later works the same way.
 
 The HR workspace needs PUT, PATCH and DELETE, which CRS refuses by default.
 Add at the end of `/etc/nginx/modsec/crs/crs-setup.conf`:
@@ -293,8 +333,11 @@ SecAction "id:900200,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',setvar:'tx.allowe
 ### 5.3 ModSecurity's own settings
 
 ```bash
-sudo wget -O /etc/nginx/modsec/modsecurity.conf https://raw.githubusercontent.com/owasp-modsecurity/ModSecurity/v3/master/modsecurity.conf-recommended
-sudo wget -O /etc/nginx/modsec/unicode.mapping https://raw.githubusercontent.com/owasp-modsecurity/ModSecurity/v3/master/unicode.mapping
+# The files that match the installed libmodsecurity, not whatever master holds today
+MSV=$(dpkg-query -W -f='${Version}\n' 'libmodsecurity3*' | head -n 1); MSV=${MSV#*:}; MSV=${MSV%%-*}
+echo "libmodsecurity $MSV"                  # e.g. 3.0.12
+sudo wget -O /etc/nginx/modsec/modsecurity.conf https://raw.githubusercontent.com/owasp-modsecurity/ModSecurity/v${MSV}/modsecurity.conf-recommended
+sudo wget -O /etc/nginx/modsec/unicode.mapping https://raw.githubusercontent.com/owasp-modsecurity/ModSecurity/v${MSV}/unicode.mapping
 cd /etc/nginx/modsec
 sudo sed -i 's/^SecRuleEngine .*/SecRuleEngine DetectionOnly/' modsecurity.conf
 sudo sed -i 's/^SecRequestBodyLimit .*/SecRequestBodyLimit 15728640/' modsecurity.conf
@@ -323,6 +366,16 @@ sudo cp $P/nginx/erecruitment.conf /etc/nginx/sites-available/
 sudo nano /etc/nginx/conf.d/erecruit.conf       # the office ranges in the geo block, one line each
 ```
 
+> **The office ranges must not contain the edge firewall's inside address.**
+> If the port forward rewrites internet visitors' addresses to the firewall's
+> own internal address (source NAT), and that address is inside an "office"
+> range, every internet visitor counts as the office. They then skip the rate
+> limits, get past the maintenance page and can reach the emergency password
+> sign-in. List the ranges office PCs actually use, leave out the firewall's
+> inside address (if it falls inside an office range, add a line for it alone,
+> `<firewall inside IP>/32 0;` - geo always takes the most specific match), and
+> treat the audit-log check in 5.8 as a go-live gate.
+
 What `erecruitment.conf` does:
 
 - **The site stamp.** Every request forwarded to the API carries
@@ -346,7 +399,9 @@ What `erecruitment.conf` does:
 
 ```bash
 sudo ln -sf /etc/nginx/sites-available/erecruitment.conf /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/acme.conf      # erecruitment.conf answers the Let's Encrypt checks from now on
 sudo nginx -t && sudo systemctl reload nginx
+sudo certbot renew --dry-run                       # Let's Encrypt only: "Congratulations, all simulated renewals succeeded"
 curl -sI --resolve erecruitment.caa.co.ug:443:127.0.0.1 https://erecruitment.caa.co.ug/ | head -1          # HTTP/2 200
 curl -sI --resolve internal-careers.caa.co.ug:443:127.0.0.1 https://internal-careers.caa.co.ug/ | head -1  # HTTP/2 200
 curl -sI --resolve careers.caa.co.ug:443:127.0.0.1 https://careers.caa.co.ug/ | head -1                    # HTTP/2 200
@@ -360,8 +415,16 @@ sudo ss -tlnp      # only 22, 80, 443, 127.0.0.1:4100, 127.0.0.53:53
 ### 5.8 to 5.9 From outside, then the WAF
 
 Check from the office, from a phone on mobile data, and with SSL Labs, as in
-the plan (5.8). Sign in to the HR workspace from the phone, then check that
-**Setup > Audit log** shows the phone's public address, not the firewall's.
+the plan (5.8).
+
+**Go-live gate: real addresses.** Sign in to the HR workspace from the phone
+on mobile data. Then, as a system administrator in the office, open **Setup >
+Audit log**: the sign-in must show the phone's public address. If it shows the
+firewall's address, the port forward is translating the source (plan 1.4).
+The rate limits and the office-only emergency sign-in don't work until that is
+fixed. Also from the phone, on mobile data:
+`curl -s -o /dev/null -w '%{http_code}' -X POST https://erecruitment.caa.co.ug/api/staff/auth/login`
+(or any outside machine) must print 404.
 
 Run the WAF in `DetectionOnly` for two weeks and exclude only the false alarms
 the log shows, in `/etc/nginx/modsec/exclusions.conf` (plan, 5.9). The HR
@@ -378,14 +441,20 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ### 12.1 Two days before: clean out the test data
 
+First take a database backup, on ERECRUIT-DB01:
+`Start-ScheduledTask 'e-Recruitment DB backup'`, then check the new file in
+`E:\Backups`. Then, on erecruit-app01:
+
 ```bash
 cd /srv/erecruitment/backend
-sudo -u erecruit node scripts/resetDemoData.js          # read what it would delete
-sudo -u erecruit node scripts/resetDemoData.js --yes    # every test vacancy, candidate, application and upload; keeps staff accounts
+sudo -u erecruit node scripts/resetDemoData.js                       # read what it would delete
+sudo -u erecruit node scripts/resetDemoData.js --yes --production    # every test vacancy, candidate, application and upload; keeps staff accounts
 sudo systemctl restart erecruitment-api erecruitment-jobs
 ```
 
-Take a database backup first (on ERECRUIT-DB01: `Start-ScheduledTask 'e-Recruitment DB backup'`).
+On the production server, `--yes` alone is refused (`NODE_ENV=production`):
+the wipe needs `--production` too, so a command copied from the UAT runbook
+can't empty production. The same goes for `clearRecruitmentData.js`.
 Check that the public job list is empty and HR staff can still sign in.
 Conditional Access goes from report-only to On, the WAF goes to blocking, and
 for Let's Encrypt `sudo certbot renew --dry-run` must still succeed.
@@ -407,9 +476,9 @@ journalctl -u erecruitment-api -f                                       # watch 
 |---|---|
 | Something small (a page bug, wrong wording) | Leave it live. The development team fixes it and a new tag is installed after 17:00 with `update-production.sh --tag` |
 | A new release broke it | `sudo /srv/erecruitment/deploy/production/update-production.sh --rollback-to <previous tag>`. Database migrations are **not** undone: a rollback is safe only when the release notes say the newer release's migrations are backwards-compatible |
-| Data damaged (a migration failed half-way, data deleted) | `sudo systemctl stop erecruitment-api erecruitment-jobs`; restore the backup taken before the release (the newest file in `/var/lib/erecruitment/predeploy`, or the DB server's point-in-time recovery); restore the matching uploads; `sudo systemctl start erecruitment-api erecruitment-jobs` |
+| Data damaged (a migration failed half-way, data deleted) | `sudo systemctl stop erecruitment-api erecruitment-jobs`; restore the backup taken before the release (the newest file in `/var/lib/erecruitment/predeploy`, below, or the DB server's point-in-time recovery); restore any damaged uploads from ICT's nightly copy (plan 2.8; releases never change uploads); `sudo systemctl start erecruitment-api erecruitment-jobs` |
 | A security problem in the application | `sudo touch /etc/nginx/maintenance/careers` (public site) or `.../staff` (both staff-facing sites): the internet sees the maintenance page at once, and the office keeps working. `sudo rm` the file to bring the site back |
-| The app server may be compromised | ICT network disables the port forward (all three sites go off the internet). Leave the VM untouched for investigation, change the `erec_app` password and rotate the Entra client secret. Bring the sites back only on a rebuilt server |
+| The app server may be compromised | In this order: (1) ICT network disables the port forward (all three sites go off the internet). (2) Revoke what the server holds: change the `erec_app` password on ERECRUIT-DB01 and rotate the Entra client secret (plan 7.4). This needs nothing from the app server. (3) Only then preserve it: leave the VM running and untouched for investigation. Assume `/var/lib/erecruitment/predeploy` (every candidate's data) and the uploads were read, and tell UCAA Legal and the data protection officer. Bring the sites back only on a rebuilt server |
 | Microsoft sign-in is down | From the office only: add `BREAK_GLASS_LOGIN=true` to `backend/.env` (`sudoedit`), run `sudo systemctl restart erecruitment-api`, and sign in at `https://erecruitment.caa.co.ug/staff/login?password` with the sealed-envelope password. Afterwards remove the line, restart, and issue a new password (`createSystemAdmin.js --break-glass`) |
 
 To restore one of the release script's dumps, with both services stopped:

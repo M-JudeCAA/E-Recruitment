@@ -2,7 +2,7 @@ jest.mock('../src/config/db', () => require('./__mocks__/db'));
 const request = require('supertest');
 const prisma = require('../src/config/db');
 const { productionProblems } = require('../src/config/productionChecks');
-const { refuseInProduction } = require('../scripts/lib/productionGuard');
+const { confirmProduction, refuseInProduction } = require('../scripts/lib/productionGuard');
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -45,7 +45,7 @@ describe('production start-up checks', () => {
   });
 });
 
-describe('scripts that fill a database with demo data', () => {
+describe('scripts that empty or fill a database with demo data', () => {
   let exit;
   beforeEach(() => {
     exit = jest.spyOn(process, 'exit').mockImplementation(() => { throw new Error('exit'); });
@@ -53,7 +53,15 @@ describe('scripts that fill a database with demo data', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
-  test('never run in production', () => {
+  test('a wipe in production needs --production as well as --yes', () => {
+    const prod = { NODE_ENV: 'production' };
+    expect(() => confirmProduction('resetDemoData', ['node', 'x', '--yes'], prod)).toThrow('exit');
+    expect(exit).toHaveBeenCalledWith(1);
+    expect(confirmProduction('resetDemoData', ['node', 'x', '--yes', '--production'], prod)).toBe(true);
+    expect(confirmProduction('resetDemoData', ['node', 'x', '--yes'], { NODE_ENV: 'development' })).toBe(true);
+  });
+
+  test('demo seeders never run in production', () => {
     expect(() => refuseInProduction('seedFullWorkflowDemoData', { NODE_ENV: 'production' })).toThrow('exit');
     expect(exit).toHaveBeenCalledWith(1);
     expect(() => refuseInProduction('seedFullWorkflowDemoData', {})).not.toThrow();
