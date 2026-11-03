@@ -216,5 +216,11 @@ for unit in "$APP_DIR"/deploy/production/systemd/*.service; do
   fi
 done
 
+# Production runs with the public careers site open (README, 4.2).
+if curl -fsS -m 5 -H 'X-ERecruitment-Site: public' "${HEALTH_URL%/health}/api/site-status" | grep -q '"externalSite":false'; then
+  say "WARNING: the public careers site is CLOSED (EXTERNAL_SITE_ENABLED=false in backend/.env)."
+  say "         To open it: set EXTERNAL_SITE_ENABLED=true, then sudo systemctl restart erecruitment-api"
+fi
+
 record "$tag" "$([[ $mode == rollback ]] && echo "rolled back" || echo installed)"
 say "Done: $tag is live (backup: $backup)."

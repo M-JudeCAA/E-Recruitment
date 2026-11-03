@@ -29,6 +29,12 @@ function productionProblems(env = process.env) {
   if (!env.UPLOAD_DIR) problems.push('UPLOAD_DIR is not set - uploads would be kept inside the code folder.');
   if (!env.INTERNAL_EMAIL_DOMAIN) problems.push('INTERNAL_EMAIL_DOMAIN is not set.');
 
+  // Production runs with the public site open; closing it (config/externalSite.js)
+  // is a deliberate, temporary step, so say so every time the API starts.
+  if (String(env.EXTERNAL_SITE_ENABLED ?? 'true').trim().toLowerCase() === 'false') {
+    warnings.push('EXTERNAL_SITE_ENABLED=false - the public careers site is closed to external applicants.');
+  }
+
   if (!env.SMTP_HOST) warnings.push('SMTP_HOST is not set - no email will be sent.');
   else if (env.SMTP_HOST === 'json') warnings.push('SMTP_HOST=json - emails are only logged, never sent.');
   return { problems, warnings };
