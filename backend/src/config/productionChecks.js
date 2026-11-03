@@ -31,12 +31,6 @@ function productionProblems(env = process.env) {
 
   if (!env.SMTP_HOST) warnings.push('SMTP_HOST is not set - no email will be sent.');
   else if (env.SMTP_HOST === 'json') warnings.push('SMTP_HOST=json - emails are only logged, never sent.');
-  // The database is on another server: say so if the connection isn't
-  // encrypted (Prisma's MySQL URL takes sslaccept/sslcert).
-  if (env.DATABASE_URL && !/^mysql:\/\/[^@]*@(localhost|127\.0\.0\.1)[:/]/i.test(env.DATABASE_URL)
-    && !/[?&](sslaccept|sslcert)=/i.test(env.DATABASE_URL)) {
-    warnings.push('DATABASE_URL reaches another server without sslaccept/sslcert - the database connection may not be encrypted.');
-  }
   return { problems, warnings };
 }
 

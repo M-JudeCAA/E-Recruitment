@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
       - run: npm install
       - run: npx prisma generate
       - run: npm test
@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       mysql:
-        image: mysql:8.0
+        image: mysql:8.4
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: erecruitment_test
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
       - run: npm install
       - run: npx prisma generate
       - run: npm run test:e2e
@@ -66,16 +66,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
       - run: npm install
       - run: npm test
       - run: npm run build
 
   # A push to release is a production release: once every check above has
-  # passed, the commit is tagged vYYYY.MM.DD (Kampala date; .2, .3, ... for a
-  # second release that day) and a GitHub Release lists what changed since
-  # the last one. The production server deploys only commits whose whole CI
-  # run passed, so everything it deploys carries a tag (deploy/lan/README.md).
+  # passed, the commit is tagged vMAJOR.MINOR.PATCH and a GitHub Release
+  # lists the pull requests since the previous tag and any new database
+  # migrations. The first release is v1.0.0; after that the patch number
+  # goes up, or the minor or major one when a commit since the last release
+  # says [minor] or [major] (put it in the release PR's title). Production
+  # installs a tag with deploy/production/update-production.sh --tag <tag>.
   tag-release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/release'
     needs: [backend, backend-e2e, frontend]
@@ -95,26 +97,50 @@ jobs:
         run: |
           set -euo pipefail
           git fetch --tags --force
-          existing=$(git tag --points-at HEAD --list 'v*' | tail -n 1)
+          existing=$(git tag --points-at HEAD --list 'v[0-9]*.[0-9]*.[0-9]*' | head -n 1)
           if [ -n "$existing" ]; then
             echo "Already released as $existing (a re-run) - nothing to do."
             exit 0
           fi
-          base="v$(TZ=Africa/Kampala date +%Y.%m.%d)"
-          tag="$base"
-          n=1
-          while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do
-            n=$((n + 1))
-            tag="$base.$n"
-          done
-          previous=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+          previous=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)
+          if [ -z "$previous" ]; then
+            tag="v1.0.0"
+            range="HEAD"
+          else
+            IFS=. read -r major minor patch <<< "${previous#v}"
+            log=$(git log --format=%B "$previous..HEAD")
+            if grep -qiF '[major]' <<< "$log"; then
+              tag="v$((major + 1)).0.0"
+            elif grep -qiF '[minor]' <<< "$log"; then
+              tag="v$major.$((minor + 1)).0"
+            else
+              tag="v$major.$minor.$((patch + 1))"
+            fi
+            range="$previous..HEAD"
+          fi
+          # New migrations run against production when the tag is installed;
+          # the release note says which, so whoever installs it can judge a
+          # rollback (deploy/production/README.md, "If it goes wrong").
+          migrations=$(git diff --name-only --diff-filter=A ${previous:+"$previous"} HEAD -- backend/prisma/migrations             | awk -F/ 'NF >= 4 { print $4 }' | sort -u)
+          if [ -z "$previous" ]; then migrations=""; fi
+          {
+            echo "## Database migrations"
+            if [ -n "$migrations" ]; then
+              echo "This release adds these migrations; they run when it is installed:"
+              sed 's/^/- `/; s/$/`/' <<< "$migrations"
+              echo ""
+              echo "Before installing: say here whether they are backwards-compatible (adding columns or tables only), which decides whether a rollback is safe."
+            else
+              echo "None - rolling back to the previous release is safe for the database."
+            fi
+          } > notes.md
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$tag" -m "Release $tag"
           git push origin "$tag"
           if [ -n "$previous" ]; then
-            gh release create "$tag" --title "$tag" --generate-notes --notes-start-tag "$previous" --verify-tag
+            gh release create "$tag" --title "$tag" --notes-file notes.md --generate-notes --notes-start-tag "$previous" --verify-tag
           else
-            gh release create "$tag" --title "$tag" --generate-notes --verify-tag
+            gh release create "$tag" --title "$tag" --notes-file notes.md --generate-notes --verify-tag
           fi
-          echo "Released $tag" >> "$GITHUB_STEP_SUMMARY"
+          echo "Released $tag (previous: ${previous:-none}, range $range)" >> "$GITHUB_STEP_SUMMARY"

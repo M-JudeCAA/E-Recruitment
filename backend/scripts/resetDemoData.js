@@ -26,7 +26,6 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const prisma = require('../src/config/db');
 const { DEMO_STAFF } = require('./lib/demoStaff');
-const { confirmProduction } = require('./lib/productionGuard');
 
 // Children before parents, so no delete trips a foreign key. StaffUser,
 // SlaPolicy and Setting (the retention settings) are deliberately absent.
@@ -84,7 +83,6 @@ const DEMO_EMAILS = DEMO_STAFF.map((s) => s.email);
 async function main() {
   const host = (process.env.DATABASE_URL || '').replace(/^.*@/, '').replace(/\?.*$/, '');
   const confirmed = process.argv.includes('--yes');
-  if (confirmed) confirmProduction('resetDemoData');
   const removeDemoStaff = process.argv.includes('--remove-demo-staff');
 
   const demoStaff = removeDemoStaff

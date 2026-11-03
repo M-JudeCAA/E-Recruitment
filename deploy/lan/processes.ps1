@@ -11,15 +11,10 @@ $backend = Join-Path $Root 'backend'
 $frontend = Join-Path $Root 'frontend'
 $vite = Join-Path $frontend 'node_modules\vite\bin\vite.js'
 
-. (Join-Path $PSScriptRoot 'environment.ps1')
-$deployEnv = Get-DeployEnvironment
-
-# On UAT the careers site takes 443 on the office network address only:
-# Tailscale serves another app on that server's 443, on its own (100.x)
-# addresses. CareersAddress in environment.json (production: "::", every
-# address) or UAT_CAREERS_ADDRESS overrides the address found.
+# The careers site takes 443 on the office network address only: Tailscale
+# serves another app on this server's 443, on its own (100.x) addresses.
+# UAT_CAREERS_ADDRESS overrides the address found.
 $careersAddress = $env:UAT_CAREERS_ADDRESS
-if (-not $careersAddress) { $careersAddress = $deployEnv.CareersAddress }
 if (-not $careersAddress) {
   $careersAddress = (Get-NetIPAddress -AddressFamily IPv4 |
     Where-Object { $_.InterfaceAlias -notmatch 'Loopback|Tailscale' -and $_.IPAddress -notlike '169.254.*' -and $_.AddressState -eq 'Preferred' } |

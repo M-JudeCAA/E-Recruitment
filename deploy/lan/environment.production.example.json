@@ -1,9 +1,0 @@
-{
-  "Name": "Production",
-  "Branch": "release",
-  "DataDir": "D:\\UCAA-eRecruitment",
-  "CareersAddress": "::",
-  "BackupBeforeDeploy": true,
-  "DailyBackup": true,
-  "BackupKeepDays": 30
-}

@@ -1,0 +1,3 @@
+# Files used on the Ubuntu production server: LF only, whoever commits them.
+*.sh text eol=lf
+deploy/production/** text eol=lf

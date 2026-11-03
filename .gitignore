@@ -27,8 +27,6 @@ backend/prisma/migrations/dev.db
 
 # Logs
 deploy/lan/logs/
-# Which deployment a server is (deploy/lan/environment.ps1) - per server
-deploy/lan/environment.json
 *.log
 npm-debug.log*
 yarn-debug.log*

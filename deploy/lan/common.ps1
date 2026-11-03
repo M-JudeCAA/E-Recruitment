@@ -21,5 +21,3 @@ function Invoke-Git {
   $ErrorActionPreference = 'Continue'
   & (Get-GitExe) -c safe.directory=* -C $script:root @GitArgs
 }
-
-. (Join-Path $PSScriptRoot 'environment.ps1')

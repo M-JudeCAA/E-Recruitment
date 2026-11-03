@@ -200,7 +200,7 @@ describe('committee membership', () => {
     });
     expect(prisma.shortlistAssignment.createMany.mock.calls[0][0].data).toHaveLength(6);
     expect(sendMail).toHaveBeenCalledTimes(3);
-    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ to: 'chair@example.test', html: expect.stringContaining('/shortlist-panel/t1') }));
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ from: 'public', to: 'chair@example.test', html: expect.stringContaining('/shortlist-panel/t1') }));
   });
 
   test('rating waits for the application deadline', async () => {
@@ -275,7 +275,7 @@ describe('covering conflicts', () => {
     const res = mockRes();
     await hr.addAssignment({ ...staff, params, body: { memberId: 4, applicationId: 100 } }, res);
     expect(prisma.shortlistAssignment.createMany).toHaveBeenCalledWith({ data: [{ memberId: 4, applicationId: 100, calibration: false }], skipDuplicates: true });
-    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ to: 'four@example.test', html: expect.stringContaining('Candidate 100') }));
+    expect(sendMail).toHaveBeenCalledWith(expect.objectContaining({ from: 'public', to: 'four@example.test', html: expect.stringContaining('Candidate 100') }));
   });
 
   test('an acting chair is never the chair, nor someone who stood down from the applicant', async () => {

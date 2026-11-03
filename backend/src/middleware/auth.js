@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { externalSiteOpen, refuseClosed } = require('../config/externalSite');
+const { sessionRefusal } = require('./siteStamp');
 
 function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
@@ -8,10 +9,13 @@ function authenticate(req, res, next) {
 
   try {
     req.user = jwt.verify(token, process.env.JWT_SECRET);
-    next();
   } catch (err) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  // A staff session off the HR site, an employee's on the public site (middleware/siteStamp.js).
+  const refused = sessionRefusal(req.site, req.user);
+  if (refused) return res.status(401).json({ error: refused, code: 'WRONG_SITE' });
+  next();
 }
 
 // Cumulative role hierarchy, matching the 5-tier RBAC model:
@@ -138,6 +142,12 @@ async function loadCurrentCandidate(req, res) {
     res.status(401).json({ error: 'Your session has ended - please sign in again' });
     return null;
   }
+  // An account that has become Internal since its token was issued, on the public site.
+  const refused = sessionRefusal(req.site, req.user, current.candidateType);
+  if (refused) {
+    res.status(401).json({ error: refused, code: 'WRONG_SITE' });
+    return null;
+  }
   // The public careers site is closed (config/externalSite.js): External accounts can do nothing meanwhile.
   if (current.candidateType === 'External' && !externalSiteOpen()) {
     refuseClosed(res);
@@ -166,6 +176,13 @@ function optionalAuthenticate(req, res, next) {
   } catch {
     // Invalid/expired token on a public browsing endpoint - fail open to
     // anonymous rather than blocking the request entirely.
+    return next();
+  }
+  // A session the site doesn't accept is refused, not ignored (siteStamp.js).
+  const refused = sessionRefusal(req.site, req.user);
+  if (refused) {
+    req.user = undefined;
+    return res.status(401).json({ error: refused, code: 'WRONG_SITE' });
   }
   next();
 }

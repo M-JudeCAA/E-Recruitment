@@ -87,6 +87,10 @@ app.use(express.json());
 // services/activityLogService.js).
 app.use(require('./utils/requestContext').middleware);
 app.use(require('./services/activityLogService').middleware);
+// Which site the request came through, when production's nginx stamps it
+// (REQUIRE_SITE_HEADER); after the activity log, so its refusals are logged
+// like any other (middleware/siteStamp.js).
+app.use(require('./middleware/siteStamp').middleware);
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 // For a monitor: also asks the database (on its own server in production),
