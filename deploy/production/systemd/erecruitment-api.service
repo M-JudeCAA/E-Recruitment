@@ -1,0 +1,23 @@
+[Unit]
+Description=UCAA e-Recruitment API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=erecruit
+Group=erecruit
+WorkingDirectory=/srv/erecruitment/backend
+ExecStart=/usr/bin/node src/server.js
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/erecruitment /var/log/erecruitment
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

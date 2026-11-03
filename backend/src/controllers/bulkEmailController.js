@@ -140,6 +140,7 @@ async function send(req, res) {
     try {
       const { footer, headers } = emailPreferences.emailExtras(r.candidate);
       const info = await sendMail({
+        ...(r.candidate.candidateType === 'External' ? { from: 'public' } : {}),
         to: r.email,
         subject: fillText(message.subject, ctx),
         html: renderEmail({ audience: 'candidate', title: fillText(message.subject, ctx), bodyHtml: templates.fill(message.key || 'emailGeneral', message.html, ctx), footerHtml: footer }),

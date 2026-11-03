@@ -1,13 +1,16 @@
 // UCAA Internal Careers - the site UCAA employees apply from - is the same
 // build served on its own port (`npm run preview:internal`, 4175 by
-// default), the way staff use 4174 (staffPort.js). On it, sign-in is
-// Microsoft only and only Internal vacancies exist; the public careers
-// site keeps email + password for everyone else. Checked at runtime against
-// window.location, since one static bundle serves every port.
-export const INTERNAL_PORT = import.meta.env.VITE_INTERNAL_PORT || '4175';
+// default), the way staff use 4174 (staffPort.js), or in production on the
+// host VITE_INTERNAL_HOST names (site.js). On it, sign-in is Microsoft only
+// and only Internal vacancies exist; the public careers site keeps email +
+// password for everyone else. Checked at runtime against window.location,
+// since one static bundle serves every site.
+import { INTERNAL_PORT, currentSite } from './site';
+
+export { INTERNAL_PORT };
 
 export function isInternalPort() {
-  return window.location.port === INTERNAL_PORT;
+  return currentSite() === 'internal';
 }
 
 // Where each site lives, for the links between them. Set the VITE_ values

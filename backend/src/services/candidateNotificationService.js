@@ -88,6 +88,8 @@ async function notifyCandidate(candidateId, type, message, options = {}) {
     const icalEvent = options.calendar ? options.calendar(candidate) : null;
     const email = noticeEmail(candidate, type, message, options);
     await sendMail({
+      // External candidates hear from careers@, employees from erecruitment@ (utils/mailer.js).
+      ...(candidate.candidateType === 'External' ? { from: 'public' } : {}),
       to: candidate.email,
       ...email,
       ...(icalEvent ? { icalEvent } : {})

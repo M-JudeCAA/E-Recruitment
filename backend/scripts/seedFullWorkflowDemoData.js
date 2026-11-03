@@ -36,6 +36,7 @@ const { runJob } = require('../src/utils/jobRunner');
 const { frontendUrl } = require('../src/config/frontendUrl');
 const { createVacancyFromRequisition } = require('./lib/demoVacancy');
 const { withEmployment } = require('./lib/demoEmployment');
+const { refuseInProduction } = require('./lib/productionGuard');
 
 const PASSWORD = 'DemoPass123!';
 const STAFF_PASSWORD = 'ChangeMe123!';
@@ -1482,6 +1483,7 @@ async function finish() {
 }
 
 async function main() {
+  refuseInProduction('seedFullWorkflowDemoData');
   const server = app.listen(0, '127.0.0.1');
   await new Promise((resolve) => server.once('listening', resolve));
   BASE = `http://127.0.0.1:${server.address().port}`;

@@ -23,6 +23,7 @@
 const prisma = require('../src/config/db');
 const { createVacancyFromRequisition } = require('./lib/demoVacancy');
 const { withEmployment } = require('./lib/demoEmployment');
+const { refuseInProduction } = require('./lib/productionGuard');
 
 const BASE = process.env.API_BASE || 'http://localhost:4000';
 const STAMP = Date.now();
@@ -132,6 +133,7 @@ async function attachFile(candidateToken, applicationId, fields) {
 }
 
 async function main() {
+  refuseInProduction('seedPreShortlistDemoData');
   console.log(`Seeding demo data (stamp ${STAMP}) against ${BASE} ...`);
 
   const hroToken = await staffLogin('hro@caa.co.ug');
