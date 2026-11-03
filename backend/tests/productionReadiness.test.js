@@ -43,6 +43,13 @@ describe('production start-up checks', () => {
     expect(problems).toEqual([]);
     expect(warnings).toEqual([expect.stringMatching(/SMTP_HOST=json/)]);
   });
+
+  test('warns while the public careers site is closed, and not when it is open', () => {
+    const { problems, warnings } = productionProblems({ ...ready, EXTERNAL_SITE_ENABLED: ' False ' });
+    expect(problems).toEqual([]);
+    expect(warnings).toEqual([expect.stringMatching(/public careers site is closed/)]);
+    expect(productionProblems({ ...ready, EXTERNAL_SITE_ENABLED: 'true' }).warnings).toEqual([]);
+  });
 });
 
 describe('scripts that empty or fill a database with demo data', () => {
