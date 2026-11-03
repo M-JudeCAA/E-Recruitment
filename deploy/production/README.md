@@ -9,7 +9,7 @@ raise (Phase 1), building the Ubuntu app server and the Windows database server
 
 | Machine | Runs |
 |---|---|
-| `erecruit-app01`, Ubuntu Server 24.04 | nginx with the certificate, the WAF (ModSecurity + OWASP CRS) and rate limits for all three sites; the API and the scheduler as systemd services; the built site; uploads |
+| `erecruit-app01`, Ubuntu Server 26.04 LTS | nginx with the certificate, the WAF (ModSecurity + OWASP CRS) and rate limits for all three sites; the API and the scheduler as systemd services; the built site; uploads |
 | `ERECRUIT-DB01`, Windows Server 2022 | MySQL 8.4, reachable from the app server only |
 
 | Site | Host name | Stamp nginx sets |
@@ -334,7 +334,7 @@ SecAction "id:900200,phase:1,pass,t:none,nolog,tag:'OWASP_CRS',setvar:'tx.allowe
 
 ```bash
 # The files that match the installed libmodsecurity, not whatever master holds today
-MSV=$(dpkg-query -W -f='${Version}\n' 'libmodsecurity3*' | head -n 1); MSV=${MSV#*:}; MSV=${MSV%%-*}
+MSV=$(dpkg-query -W -f='${db:Status-Abbrev} ${Version}\n' 'libmodsecurity3*' | awk '/^ii/{print $2; exit}'); MSV=${MSV#*:}; MSV=${MSV%%-*}
 echo "libmodsecurity $MSV"                  # e.g. 3.0.12
 sudo wget -O /etc/nginx/modsec/modsecurity.conf https://raw.githubusercontent.com/owasp-modsecurity/ModSecurity/v${MSV}/modsecurity.conf-recommended
 sudo wget -O /etc/nginx/modsec/unicode.mapping https://raw.githubusercontent.com/owasp-modsecurity/ModSecurity/v${MSV}/unicode.mapping
