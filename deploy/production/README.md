@@ -110,6 +110,7 @@ git ls-remote --tags https://github.com/M-JudeCAA/E-Recruitment.git   # lists v1
 ### 4.1 Get the code
 
 ```bash
+git config --global --add safe.directory /srv/erecruitment   # the folder is root's, so git refuses it otherwise
 git clone https://github.com/M-JudeCAA/E-Recruitment.git /srv/erecruitment
 cd /srv/erecruitment
 git config core.sharedRepository group
@@ -117,7 +118,7 @@ git tag --list "v*"                 # pick the release that passed UAT
 git checkout -B production v1.0.0
 ```
 
-Every other operator runs once: `git config --global --add safe.directory /srv/erecruitment`.
+Every other operator also runs the first line once.
 Check: `git describe --tags` prints the tag, and `git status` prints
 "On branch production" and "nothing to commit".
 
