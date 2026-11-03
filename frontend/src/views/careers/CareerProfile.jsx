@@ -9,12 +9,13 @@ import Skeleton from '../../components/Skeleton';
 import Avatar from '../../components/Avatar';
 import PhotoUploadPanel from '../../components/PhotoUploadPanel';
 import YourDataCard from '../../components/YourDataCard';
+import EmailNotificationsCard from '../../components/EmailNotificationsCard';
 import ProfileStep from '../apply-wizard/ProfileStep';
 import { PageTop, Meta, Panel, Pill, KeyValues, SidePanel } from '../../components/workspace/ui';
 import { candidateFileSrc } from '../../utils/fileSrc';
 import { EmploymentForm, PersonalForm } from './forms';
 import CvImport from './CvImport';
-import { SITE, CareerShell, useCareer, profileGaps, employmentCheck, formatDay } from './careers';
+import { SITE, CareerShell, useCareer, profileGaps, employmentCheck, HrComment, formatDay } from './careers';
 
 // My profile (Internal Careers: /careers/profile; public site:
 // /dashboard/profile): the profile as sections, each with its own Edit in a
@@ -120,6 +121,7 @@ export default function CareerProfile() {
               ['Employee number', p.employeeId || null], ['Job title', p.position || null], ['Department', p.department || null],
               ['Joined UCAA', p.dateJoined ? formatDay(p.dateJoined) : null]
             ]} />
+            <HrComment profile={p} />
             <div className="ws-note" style={{ marginTop: 8 }}>Changing these sends them back to HR to verify.</div>
           </>
         ))}
@@ -162,6 +164,7 @@ export default function CareerProfile() {
           : <Alert type="warning" message="No jobs added yet. Most vacancies ask for years of experience, so add your work history." />, '+ Add', () => addEntry('workExperience'))}
         {section('Certificates', 'certificates', null, list((me.certificates || []).map((c) => [c.id, c.name,
           `${c.issuingOrganization}${c.issueDate ? ` · ${formatDay(c.issueDate)}` : ''}${c.expiryDate ? ` · expires ${formatDay(c.expiryDate)}` : ''}`]), 'None on file. Add any a vacancy asks for.', 'certificates'), '+ Add', () => addEntry('certificates'))}
+        <Panel title="Email notifications"><EmailNotificationsCard /></Panel>
         <Panel title="Your data"><YourDataCard bare /></Panel>
       </div>
 

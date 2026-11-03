@@ -68,6 +68,12 @@ export default function BulkEmailComposer({ applicationIds, candidateIds, count,
           <div style={{ color: 'var(--color-text-muted)', marginBottom: 6 }}>
             Goes to {preview.count}: {preview.recipients.slice(0, 5).map((r) => r.name).join(', ')}{preview.count > 5 ? ', ...' : ''}
           </div>
+          {preview.unsubscribed?.length > 0 && (
+            <div style={{ color: 'var(--color-warning)', marginBottom: 6 }}>
+              Not sent to {preview.unsubscribed.length} who turned off emails from the system: {preview.unsubscribed.slice(0, 5).map((r) => r.name).join(', ')}
+              {preview.unsubscribed.length > 5 ? ', ...' : ''}. They see this only if you contact them another way.
+            </div>
+          )}
           <div><strong>{preview.subject}</strong></div>
           {/* Sanitised on the server (the same rules as job adverts). */}
           <div dangerouslySetInnerHTML={{ __html: preview.html }} />

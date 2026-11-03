@@ -764,6 +764,12 @@ model Candidate {
   // notification exactly once; completeness itself is always computed
   // fresh (see backend/src/utils/profileCompleteness.js), never cached.
   profileCompletedAt DateTime?
+  // Whether notices (candidateNotificationService) are also emailed. Off,
+  // they stay in-app only; account emails (confirming the address, password
+  // reset, erasure done) always go. Changed on My profile or from the
+  // unsubscribe link in every notice email (services/emailPreferenceService.js).
+  emailNotifications          Boolean   @default(true)
+  emailNotificationsChangedAt DateTime?
   // Set when the candidate's personal data was erased - by the retention
   // purge or an erasure request (services/candidatePurgeService.js). The
   // row stays, anonymised, so their applications still count in the
@@ -882,6 +888,11 @@ model InternalProfile {
   // have waited for HR's check (the Employment checks queue,
   // services/internalVerificationService.js).
   detailsUpdatedAt         DateTime?
+  // Daily reminders of a flagged discrepancy still not corrected
+  // (scripts/sendDiscrepancyReminders.js): how many have gone since it was
+  // flagged (at most 7) and when the last one went. Reset by each decision.
+  discrepancyReminders     Int                       @default(0)
+  discrepancyRemindedAt    DateTime?
 }
 
 model Application {

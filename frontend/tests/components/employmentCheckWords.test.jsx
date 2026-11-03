@@ -8,7 +8,7 @@ import staffClient from '../../src/models/staffApiClient';
 // eslint-disable-next-line import/first
 import AuditTrail from '../../src/components/AuditTrail';
 // eslint-disable-next-line import/first
-import { employmentFit } from '../../src/views/careers/careers';
+import { employmentFit, HrComment } from '../../src/views/careers/careers';
 
 describe('employmentFit', () => {
   test("says whose move it is while employment isn't verified", () => {
@@ -31,5 +31,15 @@ describe('AuditTrail labels', () => {
 
     expect(await screen.findByText(/Check: Doesn’t match HR records → Verified/)).toBeInTheDocument();
     expect(screen.getByText(/Salary amount: 1 → 2/)).toBeInTheDocument();
+  });
+});
+
+describe('HrComment', () => {
+  test("shows HR's comment on flagged details, and nothing otherwise", () => {
+    const { rerender, container } = render(<HrComment profile={{ verificationStatus: 'Discrepancy_Flagged', verificationComments: 'Employee number is UCAA1234.' }} />);
+    expect(screen.getByText('Employee number is UCAA1234.')).toBeInTheDocument();
+    expect(screen.getByText('HR’s comment')).toBeInTheDocument();
+    rerender(<HrComment profile={{ verificationStatus: 'HR_Verified', verificationComments: 'Matches.' }} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });

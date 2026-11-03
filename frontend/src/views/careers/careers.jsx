@@ -149,6 +149,20 @@ export function employmentCheck(me, app) {
 }
 
 /**
+ * HR's comment on employment details it found don't match its records -
+ * what the candidate needs to put right. Nothing otherwise.
+ */
+export function HrComment({ profile }) {
+  if (profile?.verificationStatus !== 'Discrepancy_Flagged' || !profile.verificationComments) return null;
+  return (
+    <div style={{ marginTop: 8, padding: '8px 12px', borderLeft: '3px solid var(--color-warning)', background: 'var(--color-warning-light)', color: 'var(--color-text)', fontSize: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.03em', textTransform: 'uppercase', color: 'var(--color-warning)' }}>HR’s comment</div>
+      <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{profile.verificationComments}</div>
+    </div>
+  );
+}
+
+/**
  * "Your fit" while employment isn't verified yet - the eligibility answer's
  * employmentCheck (status Pending, Discrepancy_Flagged or Missing), worded
  * by whose move it is: HR's while waiting, the candidate's otherwise.

@@ -196,7 +196,7 @@ export default function CandidateSearch() {
 
       {composing && (
         <BulkEmailComposer candidateIds={selected} count={selected.length} onClose={() => setComposing(false)}
-          onSent={(r) => { setComposing(false); setSelected([]); setNotice(`Email sent to ${r.sent}${r.failed ? `; ${r.failed} could not be sent (${r.failedTo.join(', ')})` : ''}.`); }} />
+          onSent={(r) => { setComposing(false); setSelected([]); setNotice(`Email sent to ${r.sent}${r.failed ? `; ${r.failed} could not be sent (${r.failedTo.join(', ')})` : ''}${r.unsubscribed?.length ? `; not sent to ${r.unsubscribed.length} who turned off emails` : ''}.`); }} />
       )}
     </div>
   );

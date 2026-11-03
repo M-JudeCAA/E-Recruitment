@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const systemHealthModel = require('../models/systemHealthModel');
+const { renderEmail, isDocument, toText } = require('./emailLayout');
 
 // SMTP_HOST=json swaps in nodemailer's jsonTransport, which "sends" by
 // building the message and discarding it - for local development without a
@@ -56,8 +57,15 @@ async function recordOutcome(ok, error) {
 // attachments is optional (nodemailer's own shape). icalEvent ({ method,
 // content, filename }) sends a calendar invitation the way mail clients
 // expect one - as a text/calendar part of the message, which Outlook and
-// Google show with Accept/Decline - used for interview invitations.
-async function sendMail({ to, subject, html, attachments, icalEvent }) {
+// Google show with Accept/Decline - used for interview invitations. headers
+// adds message headers (a candidate notice's List-Unsubscribe).
+//
+// Every email wears the same design (utils/emailLayout.js): html that is not
+// a whole document already is put into the standard frame, and a plain-text
+// copy goes with it.
+async function sendMail({ to, subject, html: content, attachments, icalEvent, headers }) {
+  const html = isDocument(content) ? content : renderEmail({ bodyHtml: content });
+  const text = toText(html);
   if (!process.env.SMTP_HOST) {
     console.error(`Failed to send email to ${to}: SMTP_HOST is not set`);
     await recordOutcome(false, 'SMTP_HOST is not set');
@@ -65,8 +73,9 @@ async function sendMail({ to, subject, html, attachments, icalEvent }) {
   }
   try {
     const info = await transporter.sendMail({
-      from: process.env.SMTP_FROM, to, subject, html,
+      from: process.env.SMTP_FROM, to, subject, html, text,
       ...(attachments ? { attachments } : {}),
+      ...(headers ? { headers } : {}),
       ...(icalEvent ? { icalEvent } : {})
     });
     await recordOutcome(true);

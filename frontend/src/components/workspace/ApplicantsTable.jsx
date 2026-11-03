@@ -157,7 +157,7 @@ export default function ApplicantsTable({ vacancy, applications, staffRole, onOp
       )}
       {composing && (
         <BulkEmailComposer applicationIds={selected} count={selected.length} onClose={() => setComposing(false)}
-          onSent={(r) => { setComposing(false); setSelected([]); setNotice(`Email sent to ${r.sent}${r.failed ? `; ${r.failed} could not be sent` : ''}.`); }} />
+          onSent={(r) => { setComposing(false); setSelected([]); setNotice(`Email sent to ${r.sent}${r.failed ? `; ${r.failed} could not be sent` : ''}${r.unsubscribed?.length ? `; not sent to ${r.unsubscribed.length} who turned off emails` : ''}.`); }} />
       )}
     </>
   );

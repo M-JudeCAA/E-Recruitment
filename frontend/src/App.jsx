@@ -49,6 +49,7 @@ import ShortlistPanelAccess from "./views/ShortlistPanelAccess";
 import InterviewHub from "./views/InterviewHub";
 import PrivacyNotice from "./views/PrivacyNotice";
 import ExternalSiteClosed from "./views/ExternalSiteClosed";
+import EmailPreferences from "./views/EmailPreferences";
 import { useExternalSiteOpen } from "./models/siteStatus";
 import { RequireCandidate, RequireStaff, RequireSystemAdmin, RequireSystemAdminOrRole, RequireStaffPort, GuestPortGate, InternalPortGate, RequireInternalCandidate } from "./components/ProtectedRoute";
 
@@ -83,9 +84,10 @@ const NO_TABBAR_PATHS = [/^\/apply\//, /^\/shortlist-panel\//];
 const CAREER_PATHS = [/^\/dashboard(\/|$)/, /^\/jobs\//, /^\/apply\//];
 
 // What the public site still shows while it is closed to external applicants
-// (backend config/externalSite.js): the privacy notice, and committee
-// members' links sent before their links moved to Internal Careers.
-const OPEN_WHEN_CLOSED = [/^\/privacy$/, /^\/shortlist-panel\//];
+// (backend config/externalSite.js): the privacy notice, committee members'
+// links sent before their links moved to Internal Careers, and the email
+// settings page every notice email links to.
+const OPEN_WHEN_CLOSED = [/^\/privacy$/, /^\/shortlist-panel\//, /^\/email-preferences\//];
 
 // A job advert: a signed-in applicant gets it in their own area, with "Your
 // fit" and Apply; a guest gets the public page.
@@ -143,6 +145,8 @@ export default function App() {
         <Route element={<PaddedLayout />}>
           {/* Public - candidates consent to it when applying (FR-ATS-038). */}
           <Route path="/privacy" element={<PrivacyNotice />} />
+          {/* The "Stop these emails" link in candidate notices - any site, no sign-in. */}
+          <Route path="/email-preferences/:token" element={<EmailPreferences />} />
           {/* The staff workspace: every role lands on the Inbox; the old
               home, executive overview and approvals pages lead there. */}
           <Route

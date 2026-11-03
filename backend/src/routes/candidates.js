@@ -10,6 +10,7 @@ const asyncHandler = require('../utils/asyncHandler');
 
 const documentController = require('../controllers/documentController');
 const dataProtectionController = require('../controllers/dataProtectionController');
+const emailPreferenceController = require('../controllers/emailPreferenceController');
 const { casing } = require('../utils/textCase');
 const router = express.Router();
 
@@ -50,6 +51,13 @@ router.post('/me/data-requests', authenticate, requireCandidate, asyncHandler(da
 router.get('/me/offers/:offerId/letter', authenticate, requireCandidate, documentController.candidateOfferLetter);
 router.get('/me/interviews/:id/calendar.ics', authenticate, requireCandidate, asyncHandler(candidateInterviewController.calendarFile));
 router.get('/me/notifications', authenticate, requireCandidate, asyncHandler(notificationController.listMine));
+// Whether notices are also emailed - signed in, or from the emailed link
+// (no sign-in: the signed token is the proof).
+router.get('/me/email-preferences', authenticate, requireCandidate, asyncHandler(emailPreferenceController.mine));
+router.put('/me/email-preferences', authenticate, requireCandidate, asyncHandler(emailPreferenceController.updateMine));
+router.get('/email-preferences/:token', asyncHandler(emailPreferenceController.byToken));
+router.put('/email-preferences/:token', asyncHandler(emailPreferenceController.updateByToken));
+router.post('/email-preferences/:token/unsubscribe', asyncHandler(emailPreferenceController.oneClickUnsubscribe));
 router.patch('/me/notifications/:id/read', authenticate, requireCandidate, asyncHandler(notificationController.markRead));
 router.post('/me/parse-cv', authenticate, requireCandidate, uploadMemory.single('cv'), asyncHandler(cvParseController.parseCv));
 

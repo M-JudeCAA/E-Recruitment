@@ -1,9 +1,9 @@
 const notificationModel = require('../models/notificationModel');
 const staffModel = require('../models/staffModel');
 const { sendMail } = require('../utils/mailer'); // existing utility, reused rather than duplicated
-const { escapeHtml } = require('../utils/interviewFormat');
 const { staffFrontendUrl } = require('../config/frontendUrl');
 const { linkFor } = require('../utils/notificationLinks');
+const { renderEmail } = require('../utils/emailLayout');
 
 // Sends both channels for one recipient - in-app and email are always
 // paired, never one without the other, matching the "dual-channel"
@@ -37,12 +37,19 @@ function absoluteLink(link) {
   return staffFrontendUrl ? `${staffFrontendUrl.replace(/\/$/, '')}${link}` : null;
 }
 
-function emailBody(message, link, html) {
+// A staff email in the standard design (utils/emailLayout.js): the subject
+// as its heading, the message (escaped here) or the caller's html, and a
+// button to where it is about.
+function emailBody(message, link, html, title) {
   const url = absoluteLink(link);
-  const button = url
-    ? `<p style="margin:20px 0"><a href="${escapeHtml(url)}" style="background:#1C719D;color:#fff;padding:10px 18px;border-radius:4px;text-decoration:none;display:inline-block">Open in e-Recruitment</a></p>`
-    : '';
-  return `${html || `<p>${escapeHtml(message)}</p>`}${button}<p style="color:#666;font-size:12px">You get this because of your role in UCAA e-Recruitment.</p>`;
+  return renderEmail({
+    audience: 'staff',
+    title,
+    preheader: message ? String(message).slice(0, 120) : undefined,
+    text: html ? undefined : message,
+    bodyHtml: html || undefined,
+    button: url ? { label: 'Open in e-Recruitment', url } : null
+  });
 }
 
 async function notify(recipientId, taskType, taskId, message, { link, subject, emailHtml, email = true } = {}) {
@@ -55,7 +62,7 @@ async function notify(recipientId, taskType, taskId, message, { link, subject, e
     await sendMail({
       to: staff.email,
       subject: subject || subjectFor(taskType),
-      html: emailBody(message, path, emailHtml)
+      html: emailBody(message, path, emailHtml, subject || subjectFor(taskType))
     });
     await notificationModel.create({ recipientId, channel: 'Email', taskType, taskId, message, link: path });
   }

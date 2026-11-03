@@ -2,9 +2,10 @@ const prisma = require('../config/db');
 const templates = require('../services/templateService');
 const conflictOfInterest = require('../services/conflictOfInterestService');
 const audit = require('../services/auditService');
+const emailPreferences = require('../services/emailPreferenceService');
 const { sendMail } = require('../utils/mailer');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
-const { escapeHtml } = require('../utils/interviewFormat');
+const { renderEmail } = require('../utils/emailLayout');
 
 // Bulk email (FR-ATS-050): one message, from an email template, to many
 // candidates at once - picked as applications on a vacancy's board or as
@@ -38,13 +39,14 @@ async function resolveRecipients(body) {
     const apps = await prisma.application.findMany({
       where: { id: { in: applicationIds }, status: { not: 'Draft' } },
       select: {
-        id: true, vacancyId: true, candidate: { select: { id: true, fullName: true, email: true, purgedAt: true } },
+        id: true, vacancyId: true, candidate: { select: { id: true, fullName: true, email: true, purgedAt: true, candidateType: true, emailNotifications: true } },
         vacancy: { select: { jobRef: true, title: true, department: { select: { name: true } } } }
       }
     });
     for (const a of apps) {
       recipients.push({
         candidateId: a.candidate.id, applicationId: a.id, vacancyId: a.vacancyId, email: a.candidate.email, purged: Boolean(a.candidate.purgedAt),
+        candidate: { id: a.candidate.id, candidateType: a.candidate.candidateType }, optedOut: a.candidate.emailNotifications === false,
         ctx: { candidateName: a.candidate.fullName, jobTitle: a.vacancy.title, jobRef: a.vacancy.jobRef, department: a.vacancy.department?.name }
       });
     }
@@ -53,7 +55,7 @@ async function resolveRecipients(body) {
     const people = await prisma.candidate.findMany({
       where: { id: { in: candidateIds } },
       select: {
-        id: true, fullName: true, email: true, purgedAt: true,
+        id: true, fullName: true, email: true, purgedAt: true, candidateType: true, emailNotifications: true,
         applications: {
           where: { status: { not: 'Draft' } }, orderBy: { createdAt: 'desc' },
           select: { id: true, vacancyId: true, vacancy: { select: { jobRef: true, title: true, department: { select: { name: true } } } } }
@@ -66,13 +68,17 @@ async function resolveRecipients(body) {
       recipients.push({
         candidateId: c.id, applicationId: latest?.id || null, vacancyId: null, otherVacancyIds: c.applications.map((x) => x.vacancyId),
         email: c.email, purged: Boolean(c.purgedAt),
+        candidate: { id: c.id, candidateType: c.candidateType }, optedOut: c.emailNotifications === false,
         ctx: { candidateName: c.fullName, jobTitle: latest?.vacancy.title || '', jobRef: latest?.vacancy.jobRef || '', department: latest?.vacancy.department?.name || '' }
       });
     }
   }
-  const usable = recipients.filter((r) => !r.purged);
-  const vacancyIds = [...new Set(usable.flatMap((r) => [r.vacancyId, ...(r.otherVacancyIds || [])]).filter(Boolean))];
-  return { recipients: usable, vacancyIds };
+  // Never an erased candidate; someone who turned notice emails off
+  // (emailPreferenceService) is left out and named back to HR.
+  const usable = recipients.filter((r) => !r.purged && !r.optedOut);
+  const optedOut = recipients.filter((r) => !r.purged && r.optedOut);
+  const vacancyIds = [...new Set([...usable, ...optedOut].flatMap((r) => [r.vacancyId, ...(r.otherVacancyIds || [])]).filter(Boolean))];
+  return { recipients: usable, optedOut, vacancyIds };
 }
 
 async function compose(body) {
@@ -97,12 +103,14 @@ async function listTemplates(req, res) {
 async function preview(req, res) {
   const message = await compose(req.body);
   if (message.error) return res.status(400).json({ error: message.error });
-  const { recipients, error } = await resolveRecipients(req.body);
+  const { recipients, optedOut, error } = await resolveRecipients(req.body);
   if (error) return res.status(400).json({ error });
   const first = recipients[0];
   const ctx = { date: today(), ...(first?.ctx || {}) };
   res.json({
     count: recipients.length,
+    // Turned emails off - not sent to.
+    unsubscribed: optedOut.map((r) => ({ name: r.ctx.candidateName, email: r.email })),
     recipients: recipients.slice(0, 50).map((r) => ({ name: r.ctx.candidateName, email: r.email, job: r.ctx.jobRef || null })),
     subject: fillText(message.subject, ctx),
     html: templates.fill(message.key || 'emailGeneral', message.html, ctx)
@@ -113,9 +121,11 @@ async function preview(req, res) {
 async function send(req, res) {
   const message = await compose(req.body);
   if (message.error) return res.status(400).json({ error: message.error });
-  const { recipients, vacancyIds, error } = await resolveRecipients(req.body);
+  const { recipients, optedOut, vacancyIds, error } = await resolveRecipients(req.body);
   if (error) return res.status(400).json({ error });
-  if (!recipients.length) return res.status(400).json({ error: 'None of the people chosen can be emailed' });
+  if (!recipients.length) {
+    return res.status(400).json({ error: optedOut.length ? 'Everyone chosen has turned off emails from the system' : 'None of the people chosen can be emailed' });
+  }
   for (const vacancyId of vacancyIds) {
     if (await conflictOfInterest.isConflicted(req, vacancyId)) {
       return res.status(409).json({ error: 'Some of these candidates applied for a vacancy you applied for - you cannot email them', code: 'APPLICANT_CONFLICT' });
@@ -128,10 +138,12 @@ async function send(req, res) {
     const ctx = { date: today(), ...r.ctx };
     let sent = false;
     try {
+      const { footer, headers } = emailPreferences.emailExtras(r.candidate);
       const info = await sendMail({
         to: r.email,
         subject: fillText(message.subject, ctx),
-        html: `${templates.fill(message.key || 'emailGeneral', message.html, ctx)}<hr><p style="font-size:12px;color:#666">${escapeHtml('Uganda Civil Aviation Authority - e-Recruitment')}</p>`
+        html: renderEmail({ audience: 'candidate', title: fillText(message.subject, ctx), bodyHtml: templates.fill(message.key || 'emailGeneral', message.html, ctx), footerHtml: footer }),
+        headers
       });
       sent = info !== null;
     } catch (err) {
@@ -151,7 +163,10 @@ async function send(req, res) {
     entityType: singleVacancy ? 'Vacancy' : 'BulkEmail', entityId: singleVacancy || bulk.id, action: 'Bulk email sent', actor: audit.actorFrom(req),
     details: { bulkEmailId: bulk.id, subject: message.subject, template: message.key, recipients: results.length, failed }
   });
-  res.status(201).json({ id: bulk.id, sent: results.length - failed, failed, failedTo: results.filter((r) => !r.sent).map((r) => r.email) });
+  res.status(201).json({
+    id: bulk.id, sent: results.length - failed, failed, failedTo: results.filter((r) => !r.sent).map((r) => r.email),
+    unsubscribed: optedOut.map((r) => r.ctx.candidateName)
+  });
 }
 
 // GET /api/bulk-email?vacancyId= - sends so far (newest first).

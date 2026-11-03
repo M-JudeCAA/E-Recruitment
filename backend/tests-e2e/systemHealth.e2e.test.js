@@ -25,6 +25,7 @@ const JOBS = {
   checkSlaEscalations: () => require('../scripts/checkSlaEscalations').run(),
   checkVacancyDeadlines: () => require('../scripts/checkVacancyDeadlines').run(),
   sendInterviewReminders: () => require('../scripts/sendInterviewReminders').run(),
+  sendDiscrepancyReminders: () => require('../scripts/sendDiscrepancyReminders').run(),
   expireOffers: () => require('../scripts/expireOffers').run(),
   cleanupPendingRegistrations: () => require('../scripts/cleanupPendingRegistrations').run(),
   cleanupVerificationTokens: () => require('../scripts/cleanupVerificationTokens').run(),
