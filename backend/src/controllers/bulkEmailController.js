@@ -5,7 +5,7 @@ const audit = require('../services/auditService');
 const emailPreferences = require('../services/emailPreferenceService');
 const { sendMail } = require('../utils/mailer');
 const { sanitizeJobDescription } = require('../utils/htmlSanitizer');
-const { escapeHtml } = require('../utils/interviewFormat');
+const { renderEmail } = require('../utils/emailLayout');
 
 // Bulk email (FR-ATS-050): one message, from an email template, to many
 // candidates at once - picked as applications on a vacancy's board or as
@@ -142,7 +142,7 @@ async function send(req, res) {
       const info = await sendMail({
         to: r.email,
         subject: fillText(message.subject, ctx),
-        html: `${templates.fill(message.key || 'emailGeneral', message.html, ctx)}<hr><p style="font-size:12px;color:#666">${escapeHtml('Uganda Civil Aviation Authority - e-Recruitment')}</p>${footer}`,
+        html: renderEmail({ audience: 'candidate', title: fillText(message.subject, ctx), bodyHtml: templates.fill(message.key || 'emailGeneral', message.html, ctx), footerHtml: footer }),
         headers
       });
       sent = info !== null;

@@ -12,6 +12,15 @@ const { AppError } = require('../utils/errorResponse');
 // is now done before they apply, not from an application.
 
 const DECISIONS = ['HR_Verified', 'Discrepancy_Flagged'];
+
+// What a candidate is told when their details are flagged (and, with
+// "Reminder:" before it, each day after - scripts/sendDiscrepancyReminders.js),
+// with HR's comment set apart.
+const DISCREPANCY_MESSAGE = 'HR has checked the UCAA employment details on your profile and found that they don’t match HR records.\n\n'
+  + 'Please check them on your profile and correct anything that is wrong - saving them sends them back to HR to check again. '
+  + 'If you believe they are right, contact HR.\n\n'
+  + 'You can submit applications for internal vacancies once your details are verified.';
+const hrComment = (text) => (text ? { label: 'HR’s comment', text } : undefined);
 const AUDIT_FIELDS = ['verificationStatus', 'verificationEvidenceType', 'verificationComments', 'supportingDocumentUrl'];
 
 // Applications still in play - an applicant from before the rule, shown so HR
@@ -182,8 +191,7 @@ async function decide(req, candidateId, { decision, comments, documentUrl }) {
       await notifyCandidate(candidateId, 'EmploymentVerified',
         'HR has verified your UCAA employment details. You can now submit applications for internal vacancies.');
     } else {
-      await notifyCandidate(candidateId, 'EmploymentDiscrepancy',
-        'HR found a problem with your UCAA employment details. Please check them on your profile - changing them sends them back to HR - or contact HR. You can submit applications once they are verified.');
+      await notifyCandidate(candidateId, 'EmploymentDiscrepancy', DISCREPANCY_MESSAGE, { quote: hrComment(text) });
     }
   } catch (err) {
     console.error(`Employment check notice to candidate ${candidateId} failed:`, err.message);
@@ -202,4 +210,4 @@ async function unverifiedApplicants(vacancyId, statuses = ['UnderReview']) {
     .map((a) => ({ applicationId: a.id, candidateId: a.candidate.id, name: a.candidate.fullName, status: a.candidate.internalProfile?.verificationStatus || 'Pending' }));
 }
 
-module.exports = { queue, waitingSummary, decide, unverifiedApplicants, ownCandidateIds, DECISIONS };
+module.exports = { queue, waitingSummary, decide, unverifiedApplicants, ownCandidateIds, DECISIONS, hrComment };

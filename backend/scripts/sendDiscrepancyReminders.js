@@ -13,15 +13,18 @@
 require('dotenv').config();
 const prisma = require('../src/config/db');
 const { notifyCandidate } = require('../src/services/candidateNotificationService');
+const { hrComment } = require('../src/services/internalVerificationService');
 const { localDay, zonedDateTime } = require('../src/utils/interviewFormat');
 
 const MAX_REMINDERS = 7;
 const FROM_TIME = '08:00';
 
 function message(daysOpen, left) {
-  return `Reminder: HR found a problem with your UCAA employment details ${daysOpen === 1 ? 'yesterday' : `${daysOpen} days ago`}, `
-    + 'and it has not been sorted out yet. Please check them on your profile - correcting them sends them back to HR - or contact HR. '
-    + `You can submit applications once they are verified.${left === 0 ? ' This is the last reminder.' : ''}`;
+  return `HR found ${daysOpen === 1 ? 'yesterday' : `${daysOpen} days ago`} that the UCAA employment details on your profile don’t match HR records, `
+    + 'and they have not been corrected yet.\n\n'
+    + 'Please check them on your profile and correct anything that is wrong - saving them sends them back to HR to check again. '
+    + 'If you believe they are right, contact HR.\n\n'
+    + `You can submit applications for internal vacancies once your details are verified.${left === 0 ? ' This is the last reminder.' : ''}`;
 }
 
 // Whole days between two YYYY-MM-DD days.
@@ -38,7 +41,7 @@ async function dueNow(now) {
       discrepancyReminders: { lt: MAX_REMINDERS },
       candidate: { candidateType: 'Internal', purgedAt: null }
     },
-    select: { candidateId: true, verifiedDate: true, discrepancyReminders: true, discrepancyRemindedAt: true }
+    select: { candidateId: true, verifiedDate: true, verificationComments: true, discrepancyReminders: true, discrepancyRemindedAt: true }
   }) || [];
   return flagged.filter((p) => localDay(p.verifiedDate) !== today
     && (!p.discrepancyRemindedAt || localDay(p.discrepancyRemindedAt) !== today));
@@ -59,7 +62,7 @@ async function run(now = new Date()) {
     try {
       await notifyCandidate(profile.candidateId, 'EmploymentDiscrepancy',
         message(daysBetween(localDay(profile.verifiedDate), localDay(now)), MAX_REMINDERS - count),
-        { subject: 'Reminder: your UCAA employment details need correcting' });
+        { subject: 'Reminder: your UCAA employment details need correcting', quote: hrComment(profile.verificationComments) });
       sent += 1;
     } catch (err) {
       console.error(`Discrepancy reminder to candidate ${profile.candidateId} failed:`, err.message);

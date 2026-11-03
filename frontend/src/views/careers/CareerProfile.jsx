@@ -15,7 +15,7 @@ import { PageTop, Meta, Panel, Pill, KeyValues, SidePanel } from '../../componen
 import { candidateFileSrc } from '../../utils/fileSrc';
 import { EmploymentForm, PersonalForm } from './forms';
 import CvImport from './CvImport';
-import { SITE, CareerShell, useCareer, profileGaps, employmentCheck, formatDay } from './careers';
+import { SITE, CareerShell, useCareer, profileGaps, employmentCheck, HrComment, formatDay } from './careers';
 
 // My profile (Internal Careers: /careers/profile; public site:
 // /dashboard/profile): the profile as sections, each with its own Edit in a
@@ -121,6 +121,7 @@ export default function CareerProfile() {
               ['Employee number', p.employeeId || null], ['Job title', p.position || null], ['Department', p.department || null],
               ['Joined UCAA', p.dateJoined ? formatDay(p.dateJoined) : null]
             ]} />
+            <HrComment profile={p} />
             <div className="ws-note" style={{ marginTop: 8 }}>Changing these sends them back to HR to verify.</div>
           </>
         ))}

@@ -7,7 +7,7 @@ import Skeleton from '../../components/Skeleton';
 import ReasonDialog from '../../components/ReasonDialog';
 import { offerAwaitingAnswer, candidateOfferStatus } from '../../components/offers/offerFormat';
 import { PageTop, Meta, Pill } from '../../components/workspace/ui';
-import { SITE, CareerShell, useCareer, profileGaps, employmentCheck, interviewsToConfirm, formatDay, daysLeft } from './careers';
+import { SITE, CareerShell, useCareer, profileGaps, employmentCheck, HrComment, interviewsToConfirm, formatDay, daysLeft } from './careers';
 import { VacancyFitTable, ApplicationsTable } from './tables';
 
 // The candidate's home (Internal Careers: /careers; public site: /dashboard):
@@ -99,7 +99,7 @@ export default function CareerHome() {
         <Alert type="info" message="HR is checking your employment details. You can submit applications once they are verified - we'll email you. You can prepare applications in the meantime." />
       )}
       {SITE.internal && check.tone === 'bad' && (
-        <Alert type="warning" message={<>HR found a problem with your employment details, so you can't submit applications yet. <Link to={SITE.profile}>Check your profile</Link> (changing them sends them back to HR) or contact HR.</>} />
+        <Alert type="warning" message={<>HR found a problem with your employment details, so you can't submit applications yet. <Link to={SITE.profile}>Check your profile</Link> (changing them sends them back to HR) or contact HR.<HrComment profile={me?.internalProfile} /></>} />
       )}
 
       {!me ? <Skeleton height={120} /> : tasks.length > 0 && (

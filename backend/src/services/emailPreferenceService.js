@@ -62,7 +62,7 @@ function emailExtras(candidate) {
   const { page, oneClick } = linksFor(candidate);
   return {
     footer: `<p style="color:#666;font-size:12px">You get these emails about your UCAA applications. `
-      + `<a href="${escapeHtml(page)}">Stop these emails</a> - you will still see every notice when you sign in.</p>`,
+      + `<a href="${escapeHtml(page)}" style="color:#1C719D">Stop these emails</a> - you will still see every notice when you sign in.</p>`,
     headers: { 'List-Unsubscribe': `<${oneClick}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' }
   };
 }

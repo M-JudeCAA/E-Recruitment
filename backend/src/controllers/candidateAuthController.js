@@ -20,6 +20,16 @@ const USE_MICROSOFT = {
 // A bcrypt hash of nothing anyone can type, compared against when no
 // account matches (login).
 const DUMMY_HASH = bcrypt.hashSync(require('crypto').randomBytes(16).toString('hex'), 10);
+const { renderEmail } = require('../utils/emailLayout');
+const { escapeHtml } = require('../utils/interviewFormat');
+
+// Under an account email's button: the address to paste if the button
+// doesn't work, and what to do if they didn't ask for it.
+function linkFallback(url, ignore) {
+  return `<p style="margin:18px 0 0;font-size:13px;color:#5F6B7A">If the button doesn't work, paste this address into your browser:<br>`
+    + `<a href="${escapeHtml(url)}" style="color:#1C719D;word-break:break-all">${escapeHtml(url)}</a></p>`
+    + `<p style="margin:10px 0 0;font-size:13px;color:#5F6B7A">${escapeHtml(ignore)}</p>`;
+}
 
 const isInternalEmail = (email) => internalDomains().includes(String(email).split('@')[1]?.toLowerCase());
 
@@ -127,7 +137,12 @@ async function register(req, res) {
   await sendMail({
     to: email,
     subject: 'Confirm your e-Recruitment account',
-    html: `<p>Hi ${fullName},</p><p>Please confirm your account by clicking the link below:</p><p><a href="${confirmUrl}">${confirmUrl}</a></p>`
+    html: renderEmail({
+      audience: 'candidate', title: 'Confirm your email address', greeting: `Dear ${fullName},`,
+      text: 'Thank you for creating an account on UCAA e-Recruitment. Please confirm your email address to finish setting it up.',
+      button: { label: 'Confirm my email address', url: confirmUrl },
+      bodyHtml: linkFallback(confirmUrl, 'If you did not create this account, you can ignore this email.')
+    })
   });
 
   res.status(201).json({
@@ -301,7 +316,12 @@ async function forgotPassword(req, res) {
     sendMail({
       to: candidate.email,
       subject: 'Reset your e-Recruitment password',
-      html: `<p>Click the link below to reset your password. This link expires in 30 minutes.</p><p><a href="${resetUrl}">${resetUrl}</a></p>`
+      html: renderEmail({
+        audience: 'candidate', title: 'Reset your password', greeting: candidate.fullName ? `Dear ${candidate.fullName},` : 'Hello,',
+        text: 'We received a request to reset the password for your UCAA e-Recruitment account. The link works for 30 minutes.',
+        button: { label: 'Choose a new password', url: resetUrl },
+        bodyHtml: linkFallback(resetUrl, 'If you did not ask for this, you can ignore this email - your password stays the same.')
+      })
     });
   }
   res.json({ message: 'If an account exists for that email, a reset link has been sent.' });

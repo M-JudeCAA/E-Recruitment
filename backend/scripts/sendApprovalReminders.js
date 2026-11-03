@@ -72,7 +72,7 @@ function listHtml(intro, items) {
 
 async function emailList(staff, items, { subject, intro }) {
   if (!staff.email) return;
-  await sendMail({ to: staff.email, subject, html: emailBody('', '/hr/inbox', listHtml(intro, items)) });
+  await sendMail({ to: staff.email, subject, html: emailBody('', '/hr/inbox', listHtml(intro, items), subject) });
 }
 
 async function forPerson(staff, now, remindNow, startOfToday) {
