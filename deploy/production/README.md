@@ -264,6 +264,70 @@ another PC, `Test-NetConnection <app01 IP> -Port 4100` must fail.
 
 ## Phase 5: Certificate, WAF and nginx
 
+### 5.0 The front door: one public address, two systems
+
+UCAA's public address, 41.202.231.76, also carries **AEDMS**
+(`aedms.caa.co.ug`, 192.168.20.150), and a port forward sends a port to one
+server only. So the firewall forwards 80 and 443 to this server, and nginx
+passes each connection on by the name asked for:
+
+| Port | Name | Goes to |
+|---|---|---|
+| 443 | `careers`, `erecruitment`, `internal-careers` | the three sites, `erecruitment.conf` on `127.0.0.1:8443` |
+| 443 | `aedms.caa.co.ug` | `192.168.20.150:443`, untouched: not decrypted, AEDMS's own certificate |
+| 443 | anything else | refused |
+| 80 | our three names | Let's Encrypt checks, else a redirect to https |
+| 80 | `aedms.caa.co.ug` | `192.168.20.150:80`, Host kept: AEDMS redirects, and renews its certificate this way |
+
+On 443 nginx reads only the name the browser sends before encryption starts
+(`ssl_preread`, `erecruit-stream.conf`). It hands our connections over with
+the PROXY protocol, so the sites, rate limits, the office-only emergency
+sign-in and the audit log see the visitor's real address.
+
+```bash
+sudo apt install -y libnginx-mod-stream
+P=/srv/erecruitment/deploy/production
+sudo cp $P/nginx/erecruit-stream.conf /etc/nginx/
+sudo cp $P/nginx/aedms.conf /etc/nginx/sites-available/
+sudo ln -sf /etc/nginx/sites-available/aedms.conf /etc/nginx/sites-enabled/
+# Once, at the top level of nginx.conf (outside http {}):
+printf '\n# The front door on 443 (deploy/production/README.md, 5.0)\ninclude /etc/nginx/erecruit-stream.conf;\n' | sudo tee -a /etc/nginx/nginx.conf
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Check, before ICT moves the forward: AEDMS through this server must look
+exactly as it does direct - same certificate fingerprint, same answers:
+
+```bash
+for via in 192.168.20.150 192.168.0.191; do
+  echo | openssl s_client -connect $via:443 -servername aedms.caa.co.ug 2>/dev/null | openssl x509 -noout -fingerprint -sha256
+  curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' --resolve aedms.caa.co.ug:80:$via http://aedms.caa.co.ug/
+done
+sudo tail /var/log/nginx/stream.access.log     # visitor address, name, where it went
+```
+
+Then ICT moves 80 and 443 of 41.202.231.76 from 192.168.20.150 to
+192.168.0.191 (destination NAT only). **Going back is the same change in
+reverse** - nothing on the AEDMS server is touched.
+
+What the AEDMS team needs to know:
+
+- **AEDMS sees this server (192.168.0.191) as every visitor** on 443. If it
+  limits or bans by address (rate limits, fail2ban), it must never ban
+  192.168.0.191 - that would shut everyone out. On 80, the real address is in
+  `X-Real-IP`/`X-Forwarded-For`.
+- **Real addresses on 443, if they want them:** a second listener on their
+  side that accepts the PROXY protocol, e.g. `listen 8443 ssl proxy_protocol;`
+  with `set_real_ip_from 192.168.0.191; real_ip_header proxy_protocol;`, then
+  `proxy_pass 192.168.20.150:8443; proxy_protocol on;` in the 8444 server of
+  `erecruit-stream.conf`. Their own 443 keeps working for internal users.
+- **AEDMS is briefly unreachable from the internet whenever this server
+  restarts** (security updates reboot it at 03:30 when needed, about a
+  minute). Releases don't restart nginx, and reloads drop nothing.
+- **Another name AEDMS answers** (anything besides `aedms.caa.co.ug`) must be
+  added to the map in `erecruit-stream.conf` and to `aedms.conf`, or it is
+  refused.
+
 ### 5.1 The certificate
 
 Either way it ends as `/etc/nginx/tls/caa-co-ug.fullchain.pem` and `/etc/nginx/tls/caa-co-ug.key`.
@@ -400,7 +464,11 @@ What `erecruitment.conf` does:
 - **The maintenance switch.** While `/etc/nginx/maintenance/careers` or
   `/etc/nginx/maintenance/staff` exists, the internet sees the maintenance
   page and the office keeps working. No reload is needed.
-- **The catch-all** refuses any name that isn't one of the three sites.
+- **The catch-all** refuses any name that isn't one of the three sites (or
+  AEDMS, which the front door and `aedms.conf` pass on, 5.0).
+- **https comes through the front door** (5.0): the three sites listen on
+  `127.0.0.1:8443` with the PROXY protocol, never on 443 themselves, and
+  `snippets/erecruit-tls.conf` reads the visitor's address from it.
 
 ### 5.7 Turn it on and check it from the server
 
@@ -416,7 +484,7 @@ curl -s --resolve careers.caa.co.ug:443:127.0.0.1 https://careers.caa.co.ug/api/
 curl -s -o /dev/null -w '%{http_code}\n' --resolve careers.caa.co.ug:443:127.0.0.1 -X POST https://careers.caa.co.ug/api/staff/auth/login    # 404
 curl -s -o /dev/null -w '%{http_code}\n' --resolve erecruitment.caa.co.ug:443:127.0.0.1 -X POST https://erecruitment.caa.co.ug/api/staff/auth/login   # 404 (not an office address)
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:4100/api/vacancies     # 400: no stamp, the API refuses it
-sudo ss -tlnp      # only 22, 80, 443, 127.0.0.1:4100, 127.0.0.53:53
+sudo ss -tlnp      # only 22, 80, 443, 127.0.0.1:8443, 127.0.0.1:8444, 127.0.0.1:4100, 127.0.0.53:53
 ```
 
 ### 5.8 to 5.9 From outside, then the WAF
@@ -485,7 +553,7 @@ journalctl -u erecruitment-api -f                                       # watch 
 | A new release broke it | `sudo /srv/erecruitment/deploy/production/update-production.sh --rollback-to <previous tag>`. Database migrations are **not** undone: a rollback is safe only when the release notes say the newer release's migrations are backwards-compatible |
 | Data damaged (a migration failed half-way, data deleted) | `sudo systemctl stop erecruitment-api erecruitment-jobs`; restore the backup taken before the release (the newest file in `/var/lib/erecruitment/predeploy`, below, or the DB server's point-in-time recovery); restore any damaged uploads from ICT's nightly copy (plan 2.8; releases never change uploads); `sudo systemctl start erecruitment-api erecruitment-jobs` |
 | A security problem in the application | `sudo touch /etc/nginx/maintenance/careers` (public site) or `.../staff` (both staff-facing sites): the internet sees the maintenance page at once, and the office keeps working. `sudo rm` the file to bring the site back |
-| The app server may be compromised | In this order: (1) ICT network disables the port forward (all three sites go off the internet). (2) Revoke what the server holds: change the `erec_app` password on ERECRUIT-DB01 and rotate the Entra client secret (plan 7.4). This needs nothing from the app server. (3) Only then preserve it: leave the VM running and untouched for investigation. Assume `/var/lib/erecruitment/predeploy` (every candidate's data) and the uploads were read, and tell UCAA Legal and the data protection officer. Bring the sites back only on a rebuilt server |
+| The app server may be compromised | In this order: (1) ICT network points the port forward of 41.202.231.76 back to AEDMS's own server, 192.168.20.150 (all three sites go off the internet; AEDMS keeps working, 5.0). (2) Revoke what the server holds: change the `erec_app` password on ERECRUIT-DB01 and rotate the Entra client secret (plan 7.4). This needs nothing from the app server. (3) Only then preserve it: leave the VM running and untouched for investigation. Assume `/var/lib/erecruitment/predeploy` (every candidate's data) and the uploads were read, and tell UCAA Legal and the data protection officer. Bring the sites back only on a rebuilt server |
 | Microsoft sign-in is down | From the office only: add `BREAK_GLASS_LOGIN=true` to `backend/.env` (`sudoedit`), run `sudo systemctl restart erecruitment-api`, and sign in at `https://erecruitment.caa.co.ug/staff/login?password` with the sealed-envelope password. Afterwards remove the line, restart, and issue a new password (`createSystemAdmin.js --break-glass`) |
 
 To restore one of the release script's dumps, with both services stopped:
