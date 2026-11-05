@@ -23,10 +23,13 @@ const prisma = client.$extends({
     auditLog: {
       async create({ args, query }) {
         const row = await query({ ...args, data: { ...auditFields(), ...args.data } });
-        const { entityType, entityId, action, performedById } = { ...args.data, ...row };
-        setTimeout(() => {
-          require('../services/liveUpdateService').afterAudit({ entityType, entityId, action, performedById });
-        }, LIVE_UPDATE_DELAY_MS).unref?.();
+        // Resolved now, not when the timer fires: under the tests nothing is
+        // wanted, and a timer outliving a test file must not load modules.
+        const live = require('../services/liveUpdateService');
+        if (live.wanted()) {
+          const { entityType, entityId, action, performedById } = { ...args.data, ...row };
+          setTimeout(() => live.afterAudit({ entityType, entityId, action, performedById }), LIVE_UPDATE_DELAY_MS).unref?.();
+        }
         return row;
       }
     }

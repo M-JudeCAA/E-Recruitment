@@ -34,6 +34,8 @@ const CANDIDATE_OF = {
 
 // Unit tests drive the code without the API's sockets; nothing to tell.
 const quiet = () => !socket.isRunning() && process.env.NODE_ENV === 'test';
+/** Whether signals go anywhere in this process (config/db.js asks before scheduling one). */
+const wanted = () => !quiet();
 
 /**
  * Sends one signal: to every staff page (allStaff), some staff (staffIds),
@@ -113,4 +115,4 @@ function noticeForCandidate(candidateId, type) {
   signal({ event: 'NotificationsChanged', payload: { type }, candidateIds: [candidateId] });
 }
 
-module.exports = { signal, deliverRelayed, afterAudit, noticeForStaff, noticeForCandidate };
+module.exports = { signal, deliverRelayed, afterAudit, noticeForStaff, noticeForCandidate, wanted };
