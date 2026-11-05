@@ -9,8 +9,9 @@ raise (Phase 1), building the Ubuntu app server and the Windows database server
 
 | Machine | Runs |
 |---|---|
-| `erecruit-app01`, Ubuntu Server 26.04 LTS | nginx with the certificate, the WAF (ModSecurity + OWASP CRS) and rate limits for all three sites; the API and the scheduler as systemd services; the built site; uploads |
-| `ERECRUIT-DB01`, Windows Server 2022 | MySQL 8.4, reachable from the app server only |
+| `approuter` (192.168.0.191), Ubuntu Server 26.04 LTS | the router: the public address's ports 80 and 443, passed on by name to e-Recruitment, AEDMS and any other application (5.0); no certificates |
+| `erecruit-app01` (erecapp, 192.168.0.193), Ubuntu Server 26.04 LTS | nginx with the certificate, the WAF (ModSecurity + OWASP CRS) and rate limits for all three sites; the API and the scheduler as systemd services; the built site; uploads |
+| `ERECRUIT-DB01` (erecdb, 192.168.0.190), Windows Server 2022 | MySQL 8.4, reachable from the app server only |
 
 | Site | Host name | Stamp nginx sets |
 |---|---|---|
@@ -30,6 +31,8 @@ The files in this folder are copied onto the server as they are:
 | `nginx/acme.conf` | `/etc/nginx/sites-available/` (Let's Encrypt only, temporarily) |
 | `modsec/main.conf` | `/etc/nginx/modsec/` |
 | `maintenance/maintenance.html` | `/var/www/maintenance/` |
+| `router/router-stream.conf` | the router: `/etc/nginx/` (5.0) |
+| `router/router.conf` | the router: `/etc/nginx/sites-available/` (5.0) |
 
 ## Releases
 
@@ -264,68 +267,109 @@ another PC, `Test-NetConnection <app01 IP> -Port 4100` must fail.
 
 ## Phase 5: Certificate, WAF and nginx
 
-### 5.0 The front door: one public address, two systems
+### 5.0 The router: one public address for every application
 
-UCAA's public address, 41.202.231.76, also carries **AEDMS**
-(`aedms.caa.co.ug`, 192.168.20.150), and a port forward sends a port to one
-server only. So the firewall forwards 80 and 443 to this server, and nginx
-passes each connection on by the name asked for:
+UCAA's public address, 41.202.231.76, carries e-Recruitment and **AEDMS**
+(`aedms.caa.co.ug`, 192.168.20.150), and further applications can join it. A
+port forward sends a port to one server only, so the Meraki forwards 80 and
+443 to a small router VM, **approuter (192.168.0.191)**, which does one job:
+it passes each connection to the right server by the name asked for. It holds
+no certificates or keys and decrypts nothing - each application keeps its own
+certificate, firewall and WAF. Internal DNS points the three site names at the
+router too, so the office takes the same path as the internet.
 
 | Port | Name | Goes to |
 |---|---|---|
-| 443 | `careers`, `erecruitment`, `internal-careers` | the three sites, `erecruitment.conf` on `127.0.0.1:8443` |
+| 443 | `careers`, `erecruitment`, `internal-careers` | the app server, `192.168.0.193:9443`, with the PROXY protocol |
 | 443 | `aedms.caa.co.ug` | `192.168.20.150:443`, untouched: not decrypted, AEDMS's own certificate |
-| 443 | anything else | refused |
-| 80 | our three names | Let's Encrypt checks, else a redirect to https |
+| 443 | anything else | the app server's catch-all, which refuses it |
+| 80 | our three names | the app server's port 80: Let's Encrypt checks, else a redirect to https |
 | 80 | `aedms.caa.co.ug` | `192.168.20.150:80`, Host kept: AEDMS redirects, and renews its certificate this way |
+| 80 | anything else | refused |
 
-On 443 nginx reads only the name the browser sends before encryption starts
-(`ssl_preread`, `erecruit-stream.conf`). It hands our connections over with
-the PROXY protocol, so the sites, rate limits, the office-only emergency
-sign-in and the audit log see the visitor's real address.
+On 443 the router reads only the name the browser sends before encryption
+starts (`ssl_preread`, `router/router-stream.conf`). It hands e-Recruitment's
+connections over with the PROXY protocol, so the sites, rate limits, the
+office-only emergency sign-in and the audit log see the visitor's real address;
+on 80 it sends the address in `X-Real-IP` (`router/router.conf`). The app
+server's firewall lets only the router reach 80 and 9443.
+
+Until 5 November 2026 the app server was itself the front door, on
+192.168.0.191. The router took over that address, so neither the Meraki
+forward nor internal DNS changed, and the app server moved to 192.168.0.193 -
+its database account is `erec_app@192.168.0.193`.
+
+**Building the router** (Ubuntu Server 26.04 LTS; 2 vCPU, 2 to 4 GB RAM,
+20 GB; a static address; unattended security updates; SSH from ICT's range
+only). Copy the two files in `router/` onto it, then:
 
 ```bash
-sudo apt install -y libnginx-mod-stream
-P=/srv/erecruitment/deploy/production
-sudo cp $P/nginx/erecruit-stream.conf /etc/nginx/
-sudo cp $P/nginx/aedms.conf /etc/nginx/sites-available/
-sudo ln -sf /etc/nginx/sites-available/aedms.conf /etc/nginx/sites-enabled/
+sudo apt install -y nginx libnginx-mod-stream
+sudo cp router-stream.conf /etc/nginx/
+sudo cp router.conf /etc/nginx/sites-available/
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo ln -sf /etc/nginx/sites-available/router.conf /etc/nginx/sites-enabled/
 # Once, at the top level of nginx.conf (outside http {}):
-printf '\n# The front door on 443 (deploy/production/README.md, 5.0)\ninclude /etc/nginx/erecruit-stream.conf;\n' | sudo tee -a /etc/nginx/nginx.conf
+printf '\n# The front door on 443, by name (deploy/production/README.md, 5.0)\ninclude /etc/nginx/router-stream.conf;\n' | sudo tee -a /etc/nginx/nginx.conf
+sudo sed -i 's/^\(\s*\)server_tokens build;.*/\1server_tokens off;/' /etc/nginx/nginx.conf
 sudo nginx -t && sudo systemctl reload nginx
+sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
+# Built from a template or a clone? cloud-init must not rewrite the address at boot:
+printf 'network: {config: disabled}\n' | sudo tee /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
 ```
 
-Check, before ICT moves the forward: AEDMS through this server must look
-exactly as it does direct - same certificate fingerprint, same answers:
+On the app server, the router's way in:
 
 ```bash
+sudo ufw allow from 192.168.0.191 to any port 9443 proto tcp comment 'router (approuter)'
+sudo ufw allow from 192.168.0.191 to any port 80 proto tcp comment 'router (approuter)'
+```
+
+Check from the office: every name through the router, and AEDMS exactly as it
+looks direct - same certificate fingerprint, same answers:
+
+```bash
+for h in careers erecruitment internal-careers aedms; do
+  curl -s -o /dev/null -w "$h %{http_code} verify=%{ssl_verify_result}\n" --resolve $h.caa.co.ug:443:192.168.0.191 https://$h.caa.co.ug/
+done
 for via in 192.168.20.150 192.168.0.191; do
   echo | openssl s_client -connect $via:443 -servername aedms.caa.co.ug 2>/dev/null | openssl x509 -noout -fingerprint -sha256
   curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' --resolve aedms.caa.co.ug:80:$via http://aedms.caa.co.ug/
 done
-sudo tail /var/log/nginx/stream.access.log     # visitor address, name, where it went
+sudo tail /var/log/nginx/stream.access.log     # on the router: visitor address, name, where it went
 ```
 
-Then ICT moves 80 and 443 of 41.202.231.76 from 192.168.20.150 to
-192.168.0.191 (destination NAT only). **Going back is the same change in
-reverse** - nothing on the AEDMS server is touched.
+**Adding an application:** its DNS name pointing at 41.202.231.76; in
+`router-stream.conf` an upstream and a line in the map (through a hop like
+AEDMS's `127.0.0.1:8444` while it doesn't read the PROXY protocol); a server
+for its name in `router.conf` (port 80); its own certificate on its own
+server; `sudo nginx -t && sudo systemctl reload nginx`. Commit the change here
+first, so the router can always be rebuilt from this folder. A name that is
+not in the map is refused.
+
+**If the router fails:** build a new VM from this folder (minutes) and give it
+192.168.0.191. As a stopgap the app server can be the front door again - the
+files `nginx/erecruit-stream.conf` and `nginx/aedms.conf` are in this folder's
+history before 5 November 2026 - but that puts AEDMS back behind the
+e-Recruitment server.
 
 What the AEDMS team needs to know:
 
-- **AEDMS sees this server (192.168.0.191) as every visitor** on 443. If it
+- **AEDMS sees the router (192.168.0.191) as every visitor** on 443. If it
   limits or bans by address (rate limits, fail2ban), it must never ban
   192.168.0.191 - that would shut everyone out. On 80, the real address is in
   `X-Real-IP`/`X-Forwarded-For`.
 - **Real addresses on 443, if they want them:** a second listener on their
   side that accepts the PROXY protocol, e.g. `listen 8443 ssl proxy_protocol;`
   with `set_real_ip_from 192.168.0.191; real_ip_header proxy_protocol;`, then
-  `proxy_pass 192.168.20.150:8443; proxy_protocol on;` in the 8444 server of
-  `erecruit-stream.conf`. Their own 443 keeps working for internal users.
-- **AEDMS is briefly unreachable from the internet whenever this server
-  restarts** (security updates reboot it at 03:30 when needed, about a
-  minute). Releases don't restart nginx, and reloads drop nothing.
+  in `router-stream.conf` an upstream for `192.168.20.150:8443` in the map in
+  place of the `127.0.0.1:8444` hop. Their own 443 keeps working for internal
+  users.
+- **AEDMS no longer depends on the e-Recruitment server.** It is briefly
+  unreachable from the internet only when the router restarts (security
+  updates reboot it at 03:30 when needed, about a minute).
 - **Another name AEDMS answers** (anything besides `aedms.caa.co.ug`) must be
-  added to the map in `erecruit-stream.conf` and to `aedms.conf`, or it is
+  added to the map in `router-stream.conf` and to `router.conf`, or it is
   refused.
 
 ### 5.1 The certificate
@@ -464,11 +508,12 @@ What `erecruitment.conf` does:
 - **The maintenance switch.** While `/etc/nginx/maintenance/careers` or
   `/etc/nginx/maintenance/staff` exists, the internet sees the maintenance
   page and the office keeps working. No reload is needed.
-- **The catch-all** refuses any name that isn't one of the three sites (or
-  AEDMS, which the front door and `aedms.conf` pass on, 5.0).
-- **https comes through the front door** (5.0): the three sites listen on
-  `127.0.0.1:8443` with the PROXY protocol, never on 443 themselves, and
-  `snippets/erecruit-tls.conf` reads the visitor's address from it.
+- **The catch-all** refuses any name that isn't one of the three sites (AEDMS
+  never reaches this server - the router passes it on, 5.0).
+- **Everything comes through the router** (5.0): the three sites listen on
+  9443 with the PROXY protocol, never on 443 themselves, and
+  `snippets/erecruit-tls.conf` reads the visitor's address from it, believing
+  only the router. Port 80 reads it from `X-Real-IP`, also only from the router.
 
 ### 5.7 Turn it on and check it from the server
 
@@ -477,14 +522,14 @@ sudo ln -sf /etc/nginx/sites-available/erecruitment.conf /etc/nginx/sites-enable
 sudo rm -f /etc/nginx/sites-enabled/acme.conf      # erecruitment.conf answers the Let's Encrypt checks from now on
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot renew --dry-run                       # Let's Encrypt only: "Congratulations, all simulated renewals succeeded"
-curl -sI --resolve erecruitment.caa.co.ug:443:127.0.0.1 https://erecruitment.caa.co.ug/ | head -1          # HTTP/2 200
-curl -sI --resolve internal-careers.caa.co.ug:443:127.0.0.1 https://internal-careers.caa.co.ug/ | head -1  # HTTP/2 200
-curl -sI --resolve careers.caa.co.ug:443:127.0.0.1 https://careers.caa.co.ug/ | head -1                    # HTTP/2 200
-curl -s --resolve careers.caa.co.ug:443:127.0.0.1 https://careers.caa.co.ug/api/site-status                 # {"externalSite":true}
-curl -s -o /dev/null -w '%{http_code}\n' --resolve careers.caa.co.ug:443:127.0.0.1 -X POST https://careers.caa.co.ug/api/staff/auth/login    # 404
-curl -s -o /dev/null -w '%{http_code}\n' --resolve erecruitment.caa.co.ug:443:127.0.0.1 -X POST https://erecruitment.caa.co.ug/api/staff/auth/login   # 404 (not an office address)
+curl -sI --resolve erecruitment.caa.co.ug:443:192.168.0.191 https://erecruitment.caa.co.ug/ | head -1          # HTTP/2 200
+curl -sI --resolve internal-careers.caa.co.ug:443:192.168.0.191 https://internal-careers.caa.co.ug/ | head -1  # HTTP/2 200
+curl -sI --resolve careers.caa.co.ug:443:192.168.0.191 https://careers.caa.co.ug/ | head -1                    # HTTP/2 200
+curl -s --resolve careers.caa.co.ug:443:192.168.0.191 https://careers.caa.co.ug/api/site-status                 # {"externalSite":true}
+curl -s -o /dev/null -w '%{http_code}\n' --resolve careers.caa.co.ug:443:192.168.0.191 -X POST https://careers.caa.co.ug/api/staff/auth/login    # 404
+curl -s -o /dev/null -w '%{http_code}\n' --resolve erecruitment.caa.co.ug:443:192.168.0.191 -X POST https://erecruitment.caa.co.ug/api/staff/auth/login   # 404 (not an office address)
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:4100/api/vacancies     # 400: no stamp, the API refuses it
-sudo ss -tlnp      # only 22, 80, 443, 127.0.0.1:8443, 127.0.0.1:8444, 127.0.0.1:4100, 127.0.0.53:53
+sudo ss -tlnp      # only 22, 80, 9443, 127.0.0.1:4100, 127.0.0.53:53
 ```
 
 ### 5.8 to 5.9 From outside, then the WAF
