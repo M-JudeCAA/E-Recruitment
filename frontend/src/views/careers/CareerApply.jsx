@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import client from '../../models/apiClient';
+import { useCandidateEvents } from '../../models/candidateSocket';
+import { debounce } from '../../utils/debounce';
 import Button from '../../components/Button';
 import Alert from '../../components/Alert';
 import Skeleton from '../../components/Skeleton';
@@ -93,11 +95,25 @@ export default function CareerApply() {
     });
   }, [vacancyId]);
 
+  // Live (models/candidateSocket.js): HR verifying their employment changes
+  // the fit, and sends in an application set to submit when verified - the
+  // status and the check follow without a refresh. The form isn't touched.
+  const [liveTick, setLiveTick] = useState(0);
+  const refreshSoon = useRef(debounce(() => {
+    loadMe();
+    client.get('/api/candidates/me/applications').then((r) => {
+      const current = r.data.find((a) => a.vacancyId === Number(vacancyId));
+      if (current) setApplication((a) => (a ? { ...a, status: current.status, submitWhenVerifiedAt: current.submitWhenVerifiedAt } : current));
+    }).catch(() => {});
+    setLiveTick((t) => t + 1);
+  }, 600));
+  useCandidateEvents(() => refreshSoon.current());
+
   const stepKey = STEPS[step].key;
   useEffect(() => {
     if (!['check', 'submit'].includes(stepKey) || (application && application.status !== 'Draft')) return;
     client.get(`/api/applications/eligibility/${vacancyId}`).then((r) => setEligibility(r.data)).catch(() => setEligibility(null));
-  }, [vacancyId, stepKey, application?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [vacancyId, stepKey, application?.status, liveTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveDraft = async () => {
     const form = new FormData();
@@ -116,11 +132,14 @@ export default function CareerApply() {
 
   const decided = application && application.status !== 'Draft';
   const closed = vacancy.deadline && new Date(vacancy.deadline) < new Date();
+  const queuedInTime = application?.submitWhenVerifiedAt && (!vacancy.deadline || new Date(application.submitWhenVerifiedAt) <= new Date(vacancy.deadline));
   if (closed && !decided) {
     return (
       <CareerShell active="vacancies">
         <PageTop title="Applications closed" subtitle={`${vacancy.title} closed on ${formatDay(vacancy.deadline)}.`} />
-        <div className="ws-panel ws-empty">{application ? 'Your draft is kept under My applications, but it can no longer be sent.' : `This ${SITE.jobWord} no longer accepts applications.`}</div>
+        <div className="ws-panel ws-empty">{queuedInTime
+          ? 'Your application is set to submit when HR verifies your UCAA employment details. You set it before the deadline, so it counts as on time and goes in as soon as they do.'
+          : application ? 'Your draft is kept under My applications, but it can no longer be sent.' : `This ${SITE.jobWord} no longer accepts applications.`}</div>
       </CareerShell>
     );
   }
@@ -231,8 +250,11 @@ export default function CareerApply() {
                 <SubmitStep vacancy={vacancy} applicationId={application?.id} status={application?.status} eligibility={eligibility}
                   goToStep={(k) => setStep(STEP_INDEX[k] ?? STEP_INDEX.documents)}
                   onSubmitted={() => { setApplication({ ...application, status: 'Submitted' }); if (SITE.internal) setSurveyOpen(true); }}
-                  onWithdrawn={() => navigate(SITE.applications)} />
-                {!decided && <div className="ws-note">After you submit, a confirmation is emailed to you. Follow progress under My applications.</div>}
+                  onWithdrawn={() => navigate(SITE.applications)}
+                  queuedAt={application?.submitWhenVerifiedAt || null}
+                  onQueued={(a) => setApplication({ ...application, submitWhenVerifiedAt: a?.submitWhenVerifiedAt || new Date().toISOString() })}
+                  onUnqueued={() => setApplication({ ...application, submitWhenVerifiedAt: null })} />
+                {!decided && !application?.submitWhenVerifiedAt && <div className="ws-note">After you submit, a confirmation is emailed to you. Follow progress under My applications.</div>}
                 {surveyOpen && <ApplicantSurvey applicationId={application.id} onClose={() => setSurveyOpen(false)} />}
               </>
             )}

@@ -26,6 +26,10 @@ router.post('/', authenticate, requireCandidate,
 );
 // The explicit "I'm done, submit this" action.
 router.patch('/:id/submit', authenticate, requireCandidate, draftController.submit);
+// "Submit when verified": an Internal candidate waiting for HR's employment
+// check queues it to go in by itself when verified; DELETE takes it off.
+router.post('/:id/submit-when-verified', authenticate, requireCandidate, draftController.submitWhenVerified);
+router.delete('/:id/submit-when-verified', authenticate, requireCandidate, draftController.cancelSubmitWhenVerified);
 // Candidate withdraws their own Draft or Submitted application.
 router.patch('/:id/withdraw', authenticate, requireCandidate, draftController.withdraw);
 // Screening at the point of application - may this candidate apply to this

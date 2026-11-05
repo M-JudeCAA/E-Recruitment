@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import staffClient from '../../models/staffApiClient';
+import { useLiveRefresh } from '../../models/dashboardSocket';
 import Alert from '../Alert';
 import Skeleton from '../Skeleton';
 import { useServerPagination } from '../Pagination';
@@ -55,6 +56,7 @@ export default function ApplicationQueue({ staffRole }) {
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(load, [status, screening, department, type, sort, needsAction, search, page, pageSize]);
+  useLiveRefresh(load); // live: changes made elsewhere show without a refresh
 
   const set = (fn) => (e) => { fn(e.target.value); setPage(1); };
   const open = result?.data.find((a) => a.id === openId);

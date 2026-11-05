@@ -13,11 +13,24 @@ const client = new PrismaClient({
 // Every audit row says who acted, from which address and browser, and by
 // which request (utils/requestContext.js) - however it is written, and
 // inside transactions too. What the writer sets itself wins.
+//
+// Each row is also a live update (services/liveUpdateService.js): open pages
+// are told what changed, a moment later so a surrounding transaction has
+// normally committed before they re-read.
+const LIVE_UPDATE_DELAY_MS = 300;
 const prisma = client.$extends({
   query: {
     auditLog: {
       async create({ args, query }) {
-        return query({ ...args, data: { ...auditFields(), ...args.data } });
+        const row = await query({ ...args, data: { ...auditFields(), ...args.data } });
+        // Resolved now, not when the timer fires: under the tests nothing is
+        // wanted, and a timer outliving a test file must not load modules.
+        const live = require('../services/liveUpdateService');
+        if (live.wanted()) {
+          const { entityType, entityId, action, performedById } = { ...args.data, ...row };
+          setTimeout(() => live.afterAudit({ entityType, entityId, action, performedById }), LIVE_UPDATE_DELAY_MS).unref?.();
+        }
+        return row;
       }
     }
   }

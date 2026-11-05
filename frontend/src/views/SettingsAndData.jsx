@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Save, ShieldCheck } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
+import { useLiveRefresh } from '../models/dashboardSocket';
 import { useAuth } from '../models/AuthContext';
 import HRSidebar from '../components/HRSidebar';
 import PageHeader from '../components/PageHeader';
@@ -75,6 +76,7 @@ export default function SettingsAndData() {
     }
   }, [isManager]);
   useEffect(() => { load(); }, [load]);
+  useLiveRefresh(load); // live: changes made elsewhere show without a refresh
 
   const complete = async (r) => {
     if (!(await confirm(`Erase ${r.candidate.fullName}'s personal data now? Their profile, documents and application details are removed and their account closed. This can't be undone.`,

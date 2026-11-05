@@ -35,9 +35,11 @@ const PROFILE_SELECT = {
   candidate: {
     select: {
       id: true, fullName: true, email: true, phone: true, createdAt: true, entraObjectId: true,
+      // Their applications in progress, and any drafts queued to go in the
+      // moment HR verifies them (applicationSubmissionService).
       applications: {
-        where: { status: { in: ACTIVE_STATUSES } },
-        select: { id: true, status: true, vacancy: { select: { id: true, jobRef: true, title: true } } }
+        where: { OR: [{ status: { in: ACTIVE_STATUSES } }, { status: 'Draft', submitWhenVerifiedAt: { not: null } }] },
+        select: { id: true, status: true, submitWhenVerifiedAt: true, vacancy: { select: { id: true, jobRef: true, title: true, deadline: true } } }
       }
     }
   }
@@ -64,7 +66,13 @@ function view(profile) {
     supportingDocumentUrl: profile.supportingDocumentUrl,
     checkedBy: profile.verifiedBy?.name || null, checkedAt: profile.verifiedDate,
     waitingSince: profile.detailsUpdatedAt || c.createdAt,
-    applications: c.applications.map((a) => ({ id: a.id, status: a.status, vacancyId: a.vacancy.id, jobRef: a.vacancy.jobRef, title: a.vacancy.title }))
+    applications: c.applications.map((a) => ({
+      id: a.id, status: a.status, vacancyId: a.vacancy.id, jobRef: a.vacancy.jobRef, title: a.vacancy.title,
+      // A draft that goes in by itself once HR verifies them.
+      waitingToSubmit: a.status === 'Draft',
+      ...(a.status === 'Draft' ? { queuedAt: a.submitWhenVerifiedAt, deadline: a.vacancy.deadline } : {})
+    })),
+    waitingToSubmit: c.applications.filter((a) => a.status === 'Draft').length
   };
 }
 
@@ -86,7 +94,9 @@ async function queue(req, { include = 'waiting' } = {}) {
   }) || [];
   const people = rows.map(view);
   await addPreviousChecks(people);
-  return people.sort((a, b) => new Date(a.waitingSince) - new Date(b.waitingSince));
+  // Anyone with an application waiting to go in first, then the oldest wait.
+  return people.sort((a, b) => (Boolean(b.waitingToSubmit) - Boolean(a.waitingToSubmit))
+    || (new Date(a.waitingSince) - new Date(b.waitingSince)));
 }
 
 const DECIDED = { 'Employment verified': 'HR_Verified', 'Employment discrepancy flagged': 'Discrepancy_Flagged' };
@@ -195,6 +205,11 @@ async function decide(req, candidateId, { decision, comments, documentUrl }) {
     }
   } catch (err) {
     console.error(`Employment check notice to candidate ${candidateId} failed:`, err.message);
+  }
+  // Applications they queued to "submit when verified" go in now
+  // (applicationSubmissionService; never throws).
+  if (decision === 'HR_Verified') {
+    await require('./applicationSubmissionService').submitQueued(candidateId);
   }
   return after;
 }

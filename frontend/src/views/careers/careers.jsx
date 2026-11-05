@@ -1,6 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Home, Briefcase, FileText, User } from 'lucide-react';
 import client from '../../models/apiClient';
+import { useCandidateEvents } from '../../models/candidateSocket';
+import { debounce } from '../../utils/debounce';
 import { useAuth } from '../../models/AuthContext';
 import Sidebar from '../../components/Sidebar';
 import { candidateOfferStatus } from '../../components/offers/offerFormat';
@@ -96,6 +98,13 @@ export function useCareer({ fitFor = null } = {}) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Live (models/candidateSocket.js): a change to their application, offer,
+  // interview or employment check, or to the job list, reloads what is shown
+  // - fit included, since a verified employment check changes it.
+  const [liveTick, setLiveTick] = useState(0);
+  const reloadSoon = useRef(debounce(() => { load(); setLiveTick((t) => t + 1); }, 600));
+  useCandidateEvents(() => reloadSoon.current());
+
   const fitKey = fitFor === 'open' ? (vacancies || []).map((v) => v.id).join(',') : (fitFor || []).join(',');
   useEffect(() => {
     if (!fitKey) return;
@@ -104,7 +113,7 @@ export function useCareer({ fitFor = null } = {}) {
       .then((r) => [id, r.data]).catch(() => [id, null])))
       .then((pairs) => { if (!cancelled) setFit(Object.fromEntries(pairs)); });
     return () => { cancelled = true; };
-  }, [fitKey]);
+  }, [fitKey, liveTick]);
 
   return { me, applications, vacancies, closedVacancies, fit, error, reload: load };
 }
@@ -124,6 +133,8 @@ export function profileGaps(me) {
 
 /** What stage an application is at, as the employee sees it. */
 export function stageOf(app) {
+  // Set to go in by itself once HR verifies their employment ("Submit when verified").
+  if (app.status === 'Draft' && app.submitWhenVerifiedAt) return { label: 'Submits when verified', tone: 'info' };
   if (app.status === 'Draft') return { label: 'Draft', tone: 'neutral' };
   if (app.status === 'Withdrawn') return { label: 'Withdrawn', tone: 'neutral' };
   if (app.status === 'Rejected') return { label: 'Not successful', tone: 'neutral' };

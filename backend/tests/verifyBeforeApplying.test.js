@@ -188,7 +188,7 @@ describe('the queue', () => {
 
     expect(prisma.internalProfile.findMany.mock.calls[0][0].where.candidate.id).toEqual({ notIn: [70] });
     expect(list.map((p) => p.candidateId)).toEqual([2, 1]);
-    expect(list[0].applications).toEqual([{ id: 9, status: 'UnderReview', vacancyId: 3, jobRef: 'R3', title: 'T' }]);
+    expect(list[0].applications).toEqual([{ id: 9, status: 'UnderReview', vacancyId: 3, jobRef: 'R3', title: 'T', waitingToSubmit: false }]);
 
     const summary = await verification.waitingSummary(hr);
     expect(summary).toEqual({ count: 2, oldest: new Date('2026-10-10'), withApplications: 1 });

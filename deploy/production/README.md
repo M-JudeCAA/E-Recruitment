@@ -453,9 +453,10 @@ What `erecruitment.conf` does:
   `X-ERecruitment-Site`, set by nginx, never by the visitor.
 - **The public allow-list.** The public site forwards only the API areas the
   candidate pages and committee links use: `candidates`, `applications`,
-  `vacancies`, `shortlist-panel`, `files` and `site-status`. Everything else
-  under `/api`, `/ws` and `/health` answers 404 there. If a change gives the
-  candidate pages a new API area, add it here too.
+  `vacancies`, `shortlist-panel`, `files` and `site-status`, plus the
+  candidates' live updates on `/ws/candidate` (Internal Careers has it too).
+  Everything else under `/api`, `/ws` and `/health` answers 404 there. If a
+  change gives the candidate pages a new API area, add it here too.
 - **The emergency sign-in.** `POST /api/staff/auth/login` on the HR
   workspace answers only office addresses (`$from_office`). From the internet
   it answers 404.

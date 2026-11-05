@@ -26,6 +26,10 @@ function trackOf(app, me) {
   const rounds = (app.interviewRounds || []).filter((r) => r.status !== 'Cancelled');
   const reached = (s) => ['Shortlisted', 'InterviewScheduled', 'Interviewed', 'Offered'].includes(s) || Boolean(app.offer);
   const t = [];
+  if (app.status === 'Draft' && app.submitWhenVerifiedAt) {
+    return [['now', 'Set to submit when verified', `Goes in by itself once HR verifies your employment details · set ${formatDay(app.submitWhenVerifiedAt)}, so it counts as on time`],
+      ['wait', 'Employment details verified by HR'], ['todo', 'Submitted'], ['todo', 'Shortlisting'], ['todo', 'Interview'], ['todo', 'Offer']];
+  }
   if (app.status === 'Draft') {
     return [['now', 'Draft', `Not sent yet${app.vacancy.deadline ? ` · applications close ${formatDay(app.vacancy.deadline)}` : ''}`],
       ['todo', 'Submitted'], ...(SITE.internal ? [['todo', 'Employment details verified by HR']] : []), ['todo', 'Shortlisting'], ['todo', 'Interview'], ['todo', 'Offer']];
@@ -111,7 +115,7 @@ export default function CareerApplications() {
           footer={open.status === 'Draft' ? (
             <>
               <Button variant="ghost" style={{ color: 'var(--color-danger)' }} onClick={() => withdraw(open)}>Delete draft</Button>
-              {(left == null || left >= 0) && <Button onClick={() => navigate(SITE.apply(open.vacancyId))}>Continue</Button>}
+              {(left == null || left >= 0) && <Button onClick={() => navigate(SITE.apply(open.vacancyId))}>{open.submitWhenVerifiedAt ? 'View or change' : 'Continue'}</Button>}
             </>
           ) : ['Submitted', 'UnderReview', 'ShortlistProposed', 'Shortlisted', 'InterviewScheduled', 'Interviewed'].includes(open.status) && !open.offer ? (
             <Button variant="ghost" style={{ color: 'var(--color-danger)' }} onClick={() => withdraw(open)}>Withdraw application</Button>
