@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { clearMicrosoftSession } from './entraAuth';
 import { SESSION_ENDED_EVENT } from './apiClient';
 import { clearInbox } from './useInbox';
+import { closeLiveChannels } from './liveChannel';
 
 const SESSION_ENDED_KEY = 'sessionEndedMessage';
 
@@ -52,6 +53,7 @@ export function AuthProvider({ children }) {
   }
   function logoutCandidate() {
     localStorage.removeItem('candidateToken');
+    closeLiveChannels();
     localStorage.removeItem('candidateType');
     localStorage.removeItem('candidateName');
     localStorage.removeItem('candidatePhotoUrl');
@@ -82,6 +84,7 @@ export function AuthProvider({ children }) {
   }
   function logoutStaff() {
     localStorage.removeItem('staffToken');
+    closeLiveChannels();
     localStorage.removeItem('staffRole');
     localStorage.removeItem('staffName');
     localStorage.removeItem('staffEmail');

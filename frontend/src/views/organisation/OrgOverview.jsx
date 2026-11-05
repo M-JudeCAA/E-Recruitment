@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Building2, Network, BadgeCheck, Hourglass } from 'lucide-react';
 import staffClient from '../../models/staffApiClient';
+import { useLiveRefresh } from '../../models/dashboardSocket';
 import { refreshInbox } from '../../models/useInbox';
 import HRSidebar from '../../components/HRSidebar';
 import Button from '../../components/Button';
@@ -63,6 +64,8 @@ export default function OrgOverview() {
   const reloadAll = () => { loadCounts(); loadPending(); loadHistory(); deadlines.reload(); refreshInbox(); };
   useEffect(() => { loadCounts(); loadHistory(); }, [loadCounts, loadHistory]);
   useEffect(() => { loadPending(); }, [loadPending]);
+  // live: changes made elsewhere show without a refresh
+  useLiveRefresh(() => { loadCounts(); loadPending(); loadHistory(); });
 
   const closeImport = () => {
     setImporting(false);

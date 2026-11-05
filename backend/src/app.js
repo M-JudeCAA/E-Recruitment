@@ -41,7 +41,6 @@ const talentRoutes = require('./routes/talent');
 const bulkEmailRoutes = require('./routes/bulkEmail');
 const { errorHandler } = require('./utils/errorResponse');
 const { verifySignal } = require('./utils/dashboardSignal');
-const { broadcastDashboardEvent } = require('./realtime/dashboardSocket');
 
 const app = express();
 
@@ -140,11 +139,13 @@ app.use('/api/talent', talentRoutes);
 app.use('/api/bulk-email', bulkEmailRoutes);
 app.use('/api/feedback', require('./routes/feedback'));
 
-// The scheduler worker's "something changed" signal for the HR dashboards
+// The scheduler worker's "something changed" signal for open pages
 // (utils/dashboardSignal.js) - signed with the shared secret, no session.
+// A payload with `_to` names who is told (services/liveUpdateService.js);
+// without it every staff page is, as before.
 app.post('/api/internal/dashboard-events', (req, res) => {
   if (!verifySignal(req)) return res.status(401).json({ error: 'Invalid signature' });
-  broadcastDashboardEvent(String(req.body.event).slice(0, 60), req.body.payload && typeof req.body.payload === 'object' ? req.body.payload : {});
+  require('./services/liveUpdateService').deliverRelayed(String(req.body.event).slice(0, 60), req.body.payload && typeof req.body.payload === 'object' ? req.body.payload : {});
   res.status(204).end();
 });
 

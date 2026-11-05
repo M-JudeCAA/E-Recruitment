@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import client from '../../models/apiClient';
+import { useCandidateEvents } from '../../models/candidateSocket';
+import { debounce } from '../../utils/debounce';
 import Button from '../../components/Button';
 import Alert from '../../components/Alert';
 import Skeleton from '../../components/Skeleton';
@@ -44,14 +46,21 @@ export default function CareerJob() {
   const [error, setError] = useState('');
   const pdf = useVacancyPdfDownload();
 
+  // Live: the advert, and the fit (an employment check decided, a profile
+  // change), reload when they change (models/candidateSocket.js).
+  const [liveTick, setLiveTick] = useState(0);
+  const reloadSoon = useRef(debounce(() => setLiveTick((t) => t + 1), 600));
+  useCandidateEvents(() => reloadSoon.current());
+
   useEffect(() => {
-    setVacancy(null); setFit(null); setError('');
+    if (!liveTick) { setVacancy(null); setFit(null); }
+    setError('');
     client.get(`/api/vacancies/${id}`).then((r) => setVacancy(r.data))
       .catch((err) => setError(err.response?.status === 404
         ? (SITE.internal ? 'This vacancy isn’t open to UCAA employees, or is no longer available.' : 'This job is no longer available.')
         : `Could not load this ${SITE.jobWord}.`));
     client.get(`/api/applications/eligibility/${id}`).then((r) => setFit(r.data)).catch(() => setFit(null));
-  }, [id]);
+  }, [id, liveTick]);
 
   const mine = (applications || []).find((a) => a.vacancyId === Number(id));
   const left = daysLeft(vacancy?.deadline);

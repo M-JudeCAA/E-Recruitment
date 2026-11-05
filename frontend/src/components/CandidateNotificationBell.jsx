@@ -5,8 +5,12 @@ import client from '../models/apiClient';
 import Spinner from './Spinner';
 import Skeleton from './Skeleton';
 import { candidateNotificationLink } from '../utils/candidateNotificationLinks';
+import { useCandidateEvents } from '../models/candidateSocket';
+import { debounce } from '../utils/debounce';
 
-const POLL_MS = 30000;
+// A fallback only: notices arrive over the live channel at once
+// (models/candidateSocket.js).
+const POLL_MS = 120000;
 
 // Candidate-facing counterpart to NotificationBell.jsx (staff-only) -
 // same shape, pointed at apiClient (candidate JWT) and the
@@ -28,6 +32,9 @@ export default function CandidateNotificationBell() {
     .then((res) => setNotifications(res.data))
     .catch((err) => setError(err.response?.data?.error || 'Could not load notifications'))
     .finally(() => setLoading(false));
+
+  const loadSoon = useRef(debounce(() => load(), 600));
+  useCandidateEvents((event) => { if (event !== 'JobsChanged') loadSoon.current(); });
 
   useEffect(() => {
     load();

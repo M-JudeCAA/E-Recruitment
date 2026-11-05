@@ -22,7 +22,9 @@ import { formatDeadline } from '../../utils/deadline';
 //   org        a directorate, department or position: approve / reject;
 //              an import: approve all
 // onDone(message) closes the panel and refreshes the Inbox.
-export default function ReviewPanel({ item, staffRole, onClose, onDone }) {
+// gone: set when the item has left the Inbox while open - someone else dealt
+// with it ({ by, action } of the last change, when known). The actions go.
+export default function ReviewPanel({ item, staffRole, onClose, onDone, gone = null }) {
   const { review } = item;
   const confirm = useConfirm();
   const [data, setData] = useState(null);
@@ -196,7 +198,8 @@ export default function ReviewPanel({ item, staffRole, onClose, onDone }) {
   return (
     <>
       <SidePanel title={item.title} eyebrow={<>{item.kind}{item.due && <> · <span className={`ws-due${item.overdue ? ' over' : ''}`}>{item.due}</span></>}</>}
-        onClose={onClose} footer={data ? footer : null}>
+        onClose={onClose} footer={data && !gone ? footer : null}>
+        {gone && <Alert type="info" message={`This is no longer waiting for you${gone.by ? ` - ${gone.by} dealt with it` : ' - someone else dealt with it'}${gone.action ? ` (${gone.action})` : ''}.`} />}
         <Alert type="error" message={error} />
         {!data && !error && <div className="ws-empty"><Spinner size={18} /></div>}
         {body}

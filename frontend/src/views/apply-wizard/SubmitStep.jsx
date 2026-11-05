@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Send } from 'lucide-react';
+import { Check, Clock, Send } from 'lucide-react';
 import client from '../../models/apiClient';
 import { SOURCES, rememberedSource } from '../../utils/applicationSources';
 import { useConfirm } from '../../components/ConfirmDialog';
@@ -36,7 +36,14 @@ function IneligibleNotice({ reasons, onCancelDraft, busy }) {
 // an ineligible candidate gets the reasons instead of a Send button. The
 // backend applies the same rules to the submit itself, so its 422 reasons
 // are shown the same way if they ever disagree.
-export default function SubmitStep({ vacancy, applicationId, status, eligibility, goToStep, onSubmitted, onWithdrawn }) {
+//
+// An Internal candidate whose UCAA employment HR hasn't verified yet can't
+// send it now, but can choose "Submit when verified": every other check runs
+// now and the application goes in by itself once HR verifies them - on time
+// if set before the deadline (backend applicationSubmissionService). queuedAt
+// is when they set it (Application.submitWhenVerifiedAt); onQueued(application)
+// and onUnqueued(application) report the change.
+export default function SubmitStep({ vacancy, applicationId, status, eligibility, goToStep, onSubmitted, onWithdrawn, queuedAt = null, onQueued, onUnqueued }) {
   const confirm = useConfirm();
   const [error, setError] = useState('');
   const [refusal, setRefusal] = useState(null);
@@ -60,6 +67,34 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
     } catch (err) {
       if (err.response?.data?.code === 'NOT_ELIGIBLE') setRefusal(err.response.data.reasons || []);
       else setError(err.response?.data?.error || 'Submission failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleQueue = async () => {
+    if (!applicationId) { setError('Your application draft has not finished saving yet - please go back a step and try again.'); return; }
+    if (!consent) { setError('Please confirm your consent to the processing of your personal data first.'); return; }
+    setError(''); setRefusal(null); setBusy(true);
+    try {
+      const { data } = await client.post(`/api/applications/${applicationId}/submit-when-verified`, { consent: true, source: source || undefined, sourceDetail: sourceDetail || undefined });
+      if (data.submitted) onSubmitted();
+      else onQueued?.(data.application);
+    } catch (err) {
+      if (err.response?.data?.code === 'NOT_ELIGIBLE') setRefusal(err.response.data.reasons || []);
+      else setError(err.response?.data?.error || 'That did not go through');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUnqueue = async () => {
+    setBusy(true); setError('');
+    try {
+      const { data } = await client.delete(`/api/applications/${applicationId}/submit-when-verified`);
+      onUnqueued?.(data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'That did not go through');
     } finally {
       setBusy(false);
     }
@@ -110,6 +145,31 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
     }
   };
 
+  const notVerified = eligibility?.employmentCheck && !eligibility.employmentCheck.verified;
+  if (queuedAt && status === 'Draft') {
+    return (
+      <div className="text-center py-6">
+        <span className="inline-flex items-center justify-center mb-4" style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--color-primary)', color: '#fff' }}>
+          <Clock size={24} />
+        </span>
+        <div style={{ fontSize: 18, color: 'var(--color-text)', fontWeight: 600, marginBottom: 6 }}>Set to submit when verified</div>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', maxWidth: 460, margin: '0 auto 12px' }}>
+          Your application for <strong>{vacancy.title}</strong> will be submitted automatically as soon as HR verifies your UCAA
+          employment details. It counts as on time: you set it on{' '}
+          {new Date(queuedAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', maxWidth: 460, margin: '0 auto 20px' }}>
+          You can still change it until then - it is checked again when it goes in, and you will be told if anything stops it.
+        </p>
+        <button type="button" onClick={handleUnqueue} disabled={busy}
+          style={{ fontSize: 13, color: 'var(--color-primary)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+          Don’t submit it automatically
+        </button>
+        {error && <p style={{ fontSize: 13, color: 'var(--color-danger)', marginTop: 12 }}>{error}</p>}
+      </div>
+    );
+  }
+
   const ineligibleReasons = refusal || (eligibility && !eligibility.eligible ? eligibility.reasons : null);
   if (ineligibleReasons) {
     return (
@@ -123,15 +183,15 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
   const missingAcademic = eligibility && eligibility.academicDocuments === 0;
   const missingEvidence = (eligibility?.evidence || []).filter((e) => !e.provided);
   // An internal candidate submits only once HR has verified their employment
-  // (backend EMPLOYMENT_NOT_VERIFIED) - the draft is kept for then.
-  const notVerified = eligibility?.employmentCheck && !eligibility.employmentCheck.verified;
-  const blocked = missingAcademic || missingEvidence.length > 0 || notVerified;
+  // (backend EMPLOYMENT_NOT_VERIFIED) - or sets it to go in when they are.
+  const blocked = missingAcademic || missingEvidence.length > 0;
 
   return (
     <div className="text-center py-6">
-      {notVerified ? (
-        <p style={{ fontSize: 14, color: 'var(--color-warning)', maxWidth: 460, margin: '0 auto 24px' }}>
-          {eligibility.employmentCheck.message} Your draft is saved.
+      {notVerified && !missingAcademic && missingEvidence.length === 0 ? (
+        <p style={{ fontSize: 14, color: 'var(--color-warning)', maxWidth: 480, margin: '0 auto 24px' }}>
+          {eligibility.employmentCheck.message} Choose <strong>Submit when verified</strong> and it goes in by itself the moment
+          HR verifies you - it counts as on time if you do it before the deadline.
         </p>
       ) : missingAcademic ? (
         <p style={{ fontSize: 14, color: 'var(--color-danger)', maxWidth: 420, margin: '0 auto 24px' }}>
@@ -178,10 +238,12 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
           <a href="/privacy" target="_blank" rel="noopener noreferrer">privacy notice</a>.
         </span>
       </label>
-      <button onClick={handleSubmit} disabled={busy || blocked || !consent}
+      <button onClick={notVerified ? handleQueue : handleSubmit} disabled={busy || blocked || !consent}
         className="inline-flex items-center gap-2"
         style={{ background: 'var(--color-primary)', color: '#fff', padding: '12px 28px', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 600, border: 'none', cursor: (busy || blocked || !consent) ? 'not-allowed' : 'pointer', opacity: (busy || blocked || !consent) ? 0.6 : 1 }}>
-        <Send size={15} /> {busy ? 'Sending...' : 'Send application'}
+        {notVerified
+          ? <><Clock size={15} /> {busy ? 'Saving...' : 'Submit when verified'}</>
+          : <><Send size={15} /> {busy ? 'Sending...' : 'Send application'}</>}
       </button>
       {error && <p style={{ fontSize: 13, color: 'var(--color-danger)', marginTop: 16 }}>{error}</p>}
     </div>

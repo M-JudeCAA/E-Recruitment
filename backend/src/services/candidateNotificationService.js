@@ -39,7 +39,8 @@ const EMAILS = {
   OfferWithdrawn: { title: 'Your offer has been withdrawn' },
   DataRequestRefused: { title: 'About your request to erase your data', page: 'profile' },
   EmploymentVerified: { title: 'Your UCAA employment details are verified', page: 'profile' },
-  EmploymentDiscrepancy: { title: 'Your UCAA employment details need correcting', page: 'profile' }
+  EmploymentDiscrepancy: { title: 'Your UCAA employment details need correcting', page: 'profile' },
+  QueuedApplicationNotSubmitted: { title: 'Your application could not be submitted' }
 };
 
 const PAGES = {
@@ -82,6 +83,8 @@ function noticeEmail(candidate, type, message, { subject, quote } = {}) {
 async function notifyCandidate(candidateId, type, message, options = {}) {
   const inApp = options.quote?.text ? `${message} ${options.quote.label}: “${options.quote.text}”` : message;
   await candidateNotificationModel.create({ candidateId, channel: 'InApp', type, message: inApp });
+  // Their bell and pages update at once (services/liveUpdateService.js).
+  require('./liveUpdateService').noticeForCandidate(candidateId, type);
 
   const candidate = await candidateModel.findById(candidateId);
   if (candidate?.email && candidate.emailNotifications !== false) {

@@ -1057,6 +1057,12 @@ model Application {
   sourceDetail         String?   @db.VarChar(200)
   consentGivenAt       DateTime?
   consentNoticeVersion String?
+  // "Submit when verified" (services/applicationSubmissionService.js): when
+  // an Internal candidate, still waiting for HR to verify their employment,
+  // queued this Draft to be submitted by itself once they are. The deadline
+  // is compared to this, not to when HR verified. Null = not queued; kept
+  // once submitted, as when it was handed in.
+  submitWhenVerifiedAt DateTime?
 
   interviewRounds InterviewRound[]
   offer           Offer?
@@ -1741,6 +1747,9 @@ enum CandidateNotificationType {
   // discrepancy found.
   EmploymentVerified
   EmploymentDiscrepancy
+  // HR verified the employment, but an application the candidate had queued
+  // to submit then could not be (applicationSubmissionService.submitQueued).
+  QueuedApplicationNotSubmitted
 }
 
 // A separate model rather than reusing Notification above: recipientId

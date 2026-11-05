@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
+import { useLiveRefresh } from '../models/dashboardSocket';
 import { useAuth } from '../models/AuthContext';
 import { refreshInbox } from '../models/useInbox';
 import HRSidebar from '../components/HRSidebar';
@@ -131,12 +132,26 @@ function CheckPanel({ person, canDecide, onClose, onDecided }) {
         ['Waiting since', formatDay(person.waitingSince)]
       ]} />
 
-      {person.applications.length > 0 && (
+      {person.applications.some((a) => a.waitingToSubmit) && (
+        <>
+          <h3 style={SECTION}>Waiting to submit</h3>
+          <p className="ws-note" style={{ marginTop: 0 }}>
+            Set to submit when verified: verifying sends these in at once, counted as on time.
+          </p>
+          <ul style={{ margin: '0 0 16px', paddingLeft: 18, fontSize: 14 }}>
+            {person.applications.filter((a) => a.waitingToSubmit).map((a) => (
+              <li key={a.id}>{a.jobRef} · {a.title}{a.deadline ? ` · closes ${formatDay(a.deadline)}` : ''}</li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {person.applications.some((a) => !a.waitingToSubmit) && (
         <>
           <h3 style={SECTION}>Applications in progress</h3>
           <p className="ws-note" style={{ marginTop: 0 }}>Made before checks were required - they can't be shortlisted until this is verified.</p>
           <ul style={{ margin: '0 0 16px', paddingLeft: 18, fontSize: 14 }}>
-            {person.applications.map((a) => (
+            {person.applications.filter((a) => !a.waitingToSubmit).map((a) => (
               <li key={a.id}><Link to={`/hr/vacancy/${a.vacancyId}?tab=applicants`}>{a.jobRef}</Link> · {a.title}</li>
             ))}
           </ul>
@@ -193,6 +208,7 @@ export default function EmploymentChecks() {
     .then((res) => { setRows(res.data); setError(''); })
     .catch((err) => { setRows([]); setError(err.response?.data?.error || 'Could not load the employment checks'); }), [filter]);
   useEffect(() => { load(); }, [load]);
+  useLiveRefresh(load); // live: changes made elsewhere show without a refresh
 
   const openId = Number(params.get('open')) || null;
   const open = (rows || []).find((p) => p.candidateId === openId) || null;
@@ -207,7 +223,17 @@ export default function EmploymentChecks() {
     { key: 'employeeId', label: 'Employee number', render: (p) => <span className="s ws-mono">{p.employeeId || '—'}</span> },
     { key: 'status', label: 'Status', width: 120, render: (p) => { const s = STATUS[p.status] || STATUS.Pending; return <Pill tone={s.tone}>{s.label}</Pill>; } },
     { key: 'waiting', label: 'Waiting', width: 100, render: (p) => (p.status === 'HR_Verified' ? <span className="s">—</span> : waitingFor(p.waitingSince)) },
-    { key: 'apps', label: 'Applications', width: 110, render: (p) => (p.applications.length ? <Pill tone="info">{p.applications.length} in progress</Pill> : <span className="s">None</span>) }
+    { key: 'apps', label: 'Applications', width: 150, render: (p) => {
+      const waiting = p.waitingToSubmit || 0;
+      const inProgress = p.applications.length - waiting;
+      if (!p.applications.length) return <span className="s">None</span>;
+      return (
+        <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+          {waiting > 0 && <Pill tone="warn">{waiting} waiting to submit</Pill>}
+          {inProgress > 0 && <Pill tone="info">{inProgress} in progress</Pill>}
+        </span>
+      );
+    } }
   ];
 
   return (
