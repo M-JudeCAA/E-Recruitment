@@ -55,6 +55,8 @@ function emailBody(message, link, html, title) {
 async function notify(recipientId, taskType, taskId, message, { link, subject, emailHtml, email = true } = {}) {
   const path = link || await linkFor(taskType, taskId).catch(() => null);
   await notificationModel.create({ recipientId, channel: 'InApp', taskType, taskId, message, link: path });
+  // Their bell updates at once (services/liveUpdateService.js).
+  require('./liveUpdateService').noticeForStaff(recipientId);
 
   if (!email) return;
   const staff = await staffModel.findById(recipientId);

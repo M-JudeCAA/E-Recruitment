@@ -3,10 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, ChevronRight } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { INBOX_REFRESHED_EVENT } from '../models/useInbox';
+import { useDashboardEvents } from '../models/dashboardSocket';
+import { debounce } from '../utils/debounce';
 import Spinner from './Spinner';
 import Skeleton from './Skeleton';
 
-const POLL_MS = 30000;
+// A fallback only: a new notice, or one someone else dealt with, arrives
+// over the live channel at once (models/dashboardSocket.js).
+const POLL_MS = 120000;
 
 // The staff bell: unread notices, newest first. Opening one marks it read
 // and goes where it is about (`link` from the API - an approval opens its
@@ -27,6 +31,9 @@ export default function NotificationBell() {
     .then((res) => { setNotifications(res.data); setError(''); })
     .catch((err) => setError(err.response?.data?.error || 'Could not load notifications'))
     .finally(() => setLoading(false));
+
+  const loadSoon = useRef(debounce(() => load(), 600));
+  useDashboardEvents(() => loadSoon.current());
 
   useEffect(() => {
     load();

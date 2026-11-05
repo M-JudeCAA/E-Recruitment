@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import staffClient from '../../models/staffApiClient';
+import { useLiveRefresh } from '../../models/dashboardSocket';
 import { refreshInbox } from '../../models/useInbox';
 import HRSidebar from '../../components/HRSidebar';
 import Button from '../../components/Button';
@@ -116,6 +117,7 @@ export default function DepartmentsPage() {
     staffClient.get('/api/positions/admin').then((res) => setPositions(res.data))
   ]).catch((err) => { setRows((r) => r || []); setError(err.response?.data?.error || 'Could not load departments'); }), []);
   useEffect(() => { load(); }, [load]);
+  useLiveRefresh(load); // live: changes made elsewhere show without a refresh
 
   const done = (text) => {
     setMessage(text); setError(''); setVersion((v) => v + 1);

@@ -1,67 +1,29 @@
-import { useEffect, useRef, useState } from 'react';
-import { API_URL } from './apiClient';
+import { useRef } from 'react';
+import { createLiveChannel, useLiveChannel } from './liveChannel';
+import { debounce } from '../utils/debounce';
 
-// ws(s):// derived from the same API_URL apiClient.js already uses - one
-// place to change if the API host ever changes.
-const WS_URL = `${API_URL.replace(/^http/, 'ws')}/ws/dashboard`;
-const MAX_BACKOFF_MS = 30000;
+// The staff live channel - see backend/src/realtime/dashboardSocket.js for
+// the design and services/liveUpdateService.js for what is sent: `Changed`
+// ({ entityType, entityId, action, by }) after every audited change,
+// `NotificationsChanged` when the viewer gets a notice, and the older named
+// events (VacancyApproved, OfferPendingApproval, ...). It only ever says
+// when to refetch; each page stays the source of truth for its own data.
+export const staffChannel = createLiveChannel({ path: '/ws/dashboard', tokenKey: 'staffToken', messageType: 'dashboard:event' });
 
-// Push channel for the HR dashboards - see backend/src/realtime/dashboardSocket.js
-// for the full design rationale. This hook only ever calls `onEvent(event,
-// payload)`; it never holds dashboard data itself, so a dashboard view stays
-// the single source of truth for its own state (fetched via the normal REST
-// endpoints) and this hook is purely "tell me when to go refetch".
-//
-// Reconnects with capped exponential backoff and degrades silently if the
-// socket can never connect (corporate proxy, etc.) - every dashboard using
-// this already works from its own on-mount fetch with or without a live
-// connection, so a failed socket is a lost "nice to have," not a broken page.
+/** Calls onEvent(event, payload) on every staff signal while the component is mounted. */
 export function useDashboardEvents(onEvent) {
-  const [connected, setConnected] = useState(false);
-  const onEventRef = useRef(onEvent);
-  onEventRef.current = onEvent;
+  return useLiveChannel(staffChannel, onEvent);
+}
 
-  useEffect(() => {
-    const token = localStorage.getItem('staffToken');
-    if (!token) return undefined; // no staff session - nothing to authenticate the socket with
-
-    let ws;
-    let closedByCleanup = false;
-    let backoff = 1000;
-    let reconnectTimer;
-
-    function connect() {
-      ws = new WebSocket(WS_URL);
-      ws.onopen = () => {
-        backoff = 1000; // a successful connection resets the backoff ladder
-        ws.send(JSON.stringify({ type: 'auth', token: localStorage.getItem('staffToken') }));
-      };
-      ws.onmessage = (e) => {
-        let msg;
-        try {
-          msg = JSON.parse(e.data);
-        } catch {
-          return;
-        }
-        if (msg.type === 'auth:ok') setConnected(true);
-        if (msg.type === 'dashboard:event') onEventRef.current?.(msg.event, msg.payload);
-      };
-      ws.onclose = () => {
-        setConnected(false);
-        if (closedByCleanup) return;
-        reconnectTimer = setTimeout(connect, backoff);
-        backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
-      };
-      ws.onerror = () => ws.close();
-    }
-
-    connect();
-    return () => {
-      closedByCleanup = true;
-      clearTimeout(reconnectTimer);
-      ws?.close();
-    };
-  }, []);
-
-  return { connected };
+/**
+ * Re-runs reload() (debounced) whenever something changes, for as long as
+ * the page is open - one line for any staff page that should stay current
+ * without a refresh.
+ */
+export function useLiveRefresh(reload, ms = 600) {
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  const soon = useRef(null);
+  if (!soon.current) soon.current = debounce(() => reloadRef.current?.(), ms);
+  return useDashboardEvents(() => soon.current());
 }

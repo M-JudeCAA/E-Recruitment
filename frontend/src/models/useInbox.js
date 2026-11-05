@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import staffClient from './staffApiClient';
+import { staffChannel } from './dashboardSocket';
+import { debounce } from '../utils/debounce';
 
 // The staff Inbox (GET /api/dashboard/inbox), shared by the Inbox page and
 // the sidebar's count, so moving between staff pages doesn't refetch it each
@@ -34,13 +36,23 @@ export function refreshInbox() {
   return request;
 }
 
+// Live: while anything shows the Inbox (the page, the sidebar count), every
+// staff signal reloads it - a request someone else dealt with leaves at once,
+// a new one arrives at once (models/dashboardSocket.js). One reload for a burst.
+export const refreshInboxSoon = debounce(() => refreshInbox(), 500);
+let unsubscribeLive = null;
+
 export function useInbox({ enabled = true } = {}) {
   const [data, setData] = useState(cache);
   useEffect(() => {
     if (!enabled) return undefined;
     listeners.add(setData);
+    if (!unsubscribeLive) unsubscribeLive = staffChannel.subscribe(() => refreshInboxSoon());
     if (!cache && !inflight) refreshInbox();
-    return () => { listeners.delete(setData); };
+    return () => {
+      listeners.delete(setData);
+      if (listeners.size === 0 && unsubscribeLive) { unsubscribeLive(); unsubscribeLive = null; }
+    };
   }, [enabled]);
   return data;
 }

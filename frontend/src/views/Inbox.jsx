@@ -4,7 +4,7 @@ import { Briefcase, CalendarClock, Send, Users } from 'lucide-react';
 import staffClient from '../models/staffApiClient';
 import { useAuth } from '../models/AuthContext';
 import { useDashboardEvents } from '../models/dashboardSocket';
-import { useInbox, refreshInbox } from '../models/useInbox';
+import { useInbox, refreshInbox, refreshInboxSoon } from '../models/useInbox';
 import HRSidebar from '../components/HRSidebar';
 import Button from '../components/Button';
 import Alert from '../components/Alert';
@@ -17,7 +17,6 @@ import DonutChart from '../components/charts/DonutChart';
 import BarList from '../components/charts/BarList';
 import { STATUS_FILL } from '../theme/chartPalette';
 import { countByStage } from '../utils/vacancyStages';
-import { debounce } from '../utils/debounce';
 
 // The landing page for every staff role: one list of what is waiting for
 // this person, overdue first (backend inboxService), replacing HR Home,
@@ -109,6 +108,15 @@ function ActivityFeed() {
   );
 }
 
+// The audited record a review is about (services/liveUpdateService.js `Changed`).
+const ORG_ENTITY = { directorate: 'Directorate', department: 'Department', position: 'Position', import: 'OrgImport' };
+function reviewKey(review) {
+  if (!review) return '';
+  if (review.type === 'offer') return `Offer:${review.offerId}`;
+  if (review.type === 'org') return `${ORG_ENTITY[review.entity]}:${review.id}`;
+  return `Vacancy:${review.vacancyId}`;
+}
+
 export default function Inbox() {
   const { staff } = useAuth();
   const navigate = useNavigate();
@@ -118,8 +126,14 @@ export default function Inbox() {
   const [params, setParams] = useSearchParams();
   const [gone, setGone] = useState(null); // { fallback } for an item no longer here
 
-  const refetch = useRef(debounce(() => refreshInbox(), 500));
-  const { connected } = useDashboardEvents(refetch.current);
+  // Live: the Inbox reloads itself (useInbox); here the last decision on
+  // each record is kept, so an open review someone else just dealt with can
+  // say who did it.
+  const decisions = useRef({});
+  const { connected } = useDashboardEvents((event, payload) => {
+    if (event === 'Changed' && payload.entityType) decisions.current[`${payload.entityType}:${payload.entityId}`] = payload;
+    refreshInboxSoon();
+  });
   useEffect(() => { refreshInbox(); }, []);
 
   const items = inbox?.items || [];
@@ -215,7 +229,8 @@ export default function Inbox() {
       </div>
 
       {reviewing && (
-        <ReviewPanel item={reviewing} staffRole={staff?.role} onClose={() => setReviewing(null)} onDone={done} />
+        <ReviewPanel item={reviewing} staffRole={staff?.role} onClose={() => setReviewing(null)} onDone={done}
+          gone={inbox && !(inbox.items || []).some((i) => i.key === reviewing.key) ? (decisions.current[reviewKey(reviewing.review)] || {}) : null} />
       )}
     </div>
   );

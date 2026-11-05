@@ -82,6 +82,8 @@ function noticeEmail(candidate, type, message, { subject, quote } = {}) {
 async function notifyCandidate(candidateId, type, message, options = {}) {
   const inApp = options.quote?.text ? `${message} ${options.quote.label}: “${options.quote.text}”` : message;
   await candidateNotificationModel.create({ candidateId, channel: 'InApp', type, message: inApp });
+  // Their bell and pages update at once (services/liveUpdateService.js).
+  require('./liveUpdateService').noticeForCandidate(candidateId, type);
 
   const candidate = await candidateModel.findById(candidateId);
   if (candidate?.email && candidate.emailNotifications !== false) {

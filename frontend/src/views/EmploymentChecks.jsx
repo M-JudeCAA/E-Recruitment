@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import staffClient from '../models/staffApiClient';
+import { useLiveRefresh } from '../models/dashboardSocket';
 import { useAuth } from '../models/AuthContext';
 import { refreshInbox } from '../models/useInbox';
 import HRSidebar from '../components/HRSidebar';
@@ -193,6 +194,7 @@ export default function EmploymentChecks() {
     .then((res) => { setRows(res.data); setError(''); })
     .catch((err) => { setRows([]); setError(err.response?.data?.error || 'Could not load the employment checks'); }), [filter]);
   useEffect(() => { load(); }, [load]);
+  useLiveRefresh(load); // live: changes made elsewhere show without a refresh
 
   const openId = Number(params.get('open')) || null;
   const open = (rows || []).find((p) => p.candidateId === openId) || null;
