@@ -20,7 +20,7 @@ import { HEAD_OFFICE_CONTACTS } from './HowToApplyBlock';
 // assistant can understand any question, which it can't; buttons keep
 // the affordance honest about what this actually is.
 const GREETING = "Hi! I'm the UCAA Careers Assistant. Tap a question below and I'll answer it.";
-const CLOSING = `That's everything I can answer here. For anything else, contact Head Office: ${HEAD_OFFICE_CONTACTS.join(', ')}, or careers@caa.co.ug.`;
+const CLOSING = `That's everything I can answer here. For anything else, contact Head Office: ${HEAD_OFFICE_CONTACTS.join(', ')}, or recruitment@caa.co.ug.`;
 
 function Bubble({ from, children }) {
   const isBot = from === 'bot';
