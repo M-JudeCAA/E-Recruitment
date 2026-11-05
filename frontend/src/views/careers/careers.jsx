@@ -51,7 +51,7 @@ export function CareerSidebar({ active }) {
     <div className="ws-acting" style={{ background: 'transparent', color: 'var(--color-text-muted)', borderTop: '1px solid var(--color-border)', borderRadius: 0 }}>
       <span style={{ overflowWrap: 'anywhere' }}>{candidate?.email}</span><br />
       {signOut}
-      <div style={{ marginTop: 10 }}>Help: careers@caa.co.ug</div>
+      <div style={{ marginTop: 10 }}>Help: recruitment@caa.co.ug</div>
     </div>
   );
   return <Sidebar items={items} active={active} storageKey="careerSidebarCollapsed" width={236} title="Menu" variant="rail" mobileTrigger={false} footer={footer} />;

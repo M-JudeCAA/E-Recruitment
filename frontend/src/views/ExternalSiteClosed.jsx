@@ -20,7 +20,7 @@ export default function ExternalSiteClosed() {
           <a href={internalSiteUrl()}>Internal Careers</a>. Sign in there with your work account.
         </p>
         <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: 14 }}>
-          Questions: <a href="mailto:careers@caa.co.ug">careers@caa.co.ug</a>
+          Questions: <a href="mailto:recruitment@caa.co.ug">recruitment@caa.co.ug</a>
         </p>
       </Card>
     </div>

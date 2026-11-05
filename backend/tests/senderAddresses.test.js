@@ -1,5 +1,5 @@
-// Two sender addresses (production: careers@ for the public, erecruitment@
-// for everyone internal) - utils/mailer.js `from: 'public'`.
+// Two sender settings (SMTP_FROM_PUBLIC for the public, SMTP_FROM
+// for everyone internal; one mailbox in production) - utils/mailer.js `from: 'public'`.
 process.env.FRONTEND_URL = 'https://careers.example,https://staff.example,https://internal.example';
 jest.mock('../src/config/db', () => require('./__mocks__/db'));
 

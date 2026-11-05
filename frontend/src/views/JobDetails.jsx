@@ -127,6 +127,7 @@ export default function JobDetails() {
             generalKnowledge={vacancy.generalKnowledge}
             specialSkills={vacancy.specialSkills}
             desirableQualifications={vacancy.desirableQualifications}
+            postingType={vacancy.postingType}
           />
 
           <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
@@ -163,6 +164,7 @@ export default function JobDetails() {
                 generalKnowledge={vacancy.generalKnowledge}
                 specialSkills={vacancy.specialSkills}
                 desirableQualifications={vacancy.desirableQualifications}
+                postingType={vacancy.postingType}
               />
             </div>
           </div>

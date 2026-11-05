@@ -64,7 +64,7 @@ async function recordOutcome(ok, error) {
 // a whole document already is put into the standard frame, and a plain-text
 // copy goes with it.
 //
-// from: 'public' sends from SMTP_FROM_PUBLIC (careers@ in production), when
+// from: 'public' sends from SMTP_FROM_PUBLIC (in production the same mailbox, recruitment@), when
 // set, else SMTP_FROM: for mail to the public - External candidates, the
 // shortlisting committee. Everyone internal gets SMTP_FROM.
 const senderFor = (from) => (from === 'public' && process.env.SMTP_FROM_PUBLIC) || process.env.SMTP_FROM;

@@ -1,6 +1,7 @@
 import React from 'react';
 import { formatDeadlineDay, formatDeadlineTime } from '../utils/deadline';
 import { EMPLOYMENT_LABELS as EMPLOYMENT_CATEGORY_LABELS } from '../utils/employmentCategories';
+import { howToApply } from '../data/howToApply';
 
 // Matches UCAA's actual printed/PDF job-advertisement layout (plain
 // letterhead, colon-style facts, Person Specification table) as closely
@@ -58,14 +59,14 @@ export default function VacancyAdvertPrintLayout({
   jobPurpose, essentialRequirements,
   minimumEducationLevel, minimumExperienceYears, preferredFieldOfStudy,
   minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
-  desirableRequirements, desirableQualifications, generalKnowledge, specialSkills
+  desirableRequirements, desirableQualifications, generalKnowledge, specialSkills, postingType
 }) {
   // The requisition's own desirable items, then HR's Qualifying questions.
   const desirableItems = [
     ...(desirableQualifications || []).map((text, i) => ({ key: `q${i}`, text })),
     ...(desirableRequirements || []).map((r, i) => ({ key: r.id || `r${i}`, text: r.text }))
   ];
-  const siteUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const { steps: howToApplySteps } = howToApply(postingType);
 
   const ageRequirementText = [minimumAge ? `${minimumAge}+` : null, maximumAge ? `${maximumAge} or under` : null].filter(Boolean).join(', ');
 
@@ -213,15 +214,7 @@ export default function VacancyAdvertPrintLayout({
       )}
 
       <h2 style={{ ...sectionHeadingStyle('#000'), textDecoration: 'underline' }}>HOW TO APPLY:</h2>
-      <NumberedList items={[
-        <>To view the above-mentioned job advertisement and apply, please visit {siteUrl || 'this system'} to create an account and start the application process.</>,
-        <>Sign up to create an account (new users).</>,
-        <>Log in with your username and password.</>,
-        <>Create a CV by filling in all the required information before proceeding.</>,
-        <>Click Home and there you will see the advertised job. To apply, click the <strong>"Apply"</strong> button. Thereafter a confirmation message will appear confirming your application was successful.</>,
-        <>Please note that falsification of information is an offense at UCAA. You are advised to only apply for the jobs where you meet the minimum requirements as indicated in the job description, as well as being very sincere while responding to the application questionnaire.</>,
-        <>Physical/hard copy applications will not be accepted.</>
-      ]} />
+      <NumberedList items={howToApplySteps} />
 
       <p style={{ margin: `${SECTION_GAP}px 0 4px` }}>For any inquiries or assistance, please contact: -</p>
       <p style={{ margin: '0 0 18px' }}>Head Office: {HEAD_OFFICE_CONTACTS.join(', ')}</p>
