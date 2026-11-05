@@ -55,7 +55,7 @@ export default function CareerHome() {
     && Date.now() - new Date(a.offer.responseDeadline) < LAPSED_SHOWN_DAYS * 86400000).forEach((a) => tasks.push(
     <div key={`lapsed-${a.id}`} className="ws-task">
       <div className="kind">Offer lapsed</div>
-      <div className="what"><b>{a.vacancy.title}</b><div>The answer was due by {formatDay(a.offer.responseDeadline)}. Contact HR at careers@caa.co.ug if you still want the role.</div></div>
+      <div className="what"><b>{a.vacancy.title}</b><div>The answer was due by {formatDay(a.offer.responseDeadline)}. Contact HR at recruitment@caa.co.ug if you still want the role.</div></div>
       <span />
       <Button variant="secondary" style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => navigate(`${SITE.applications}?open=${a.id}`)}>View</Button>
     </div>

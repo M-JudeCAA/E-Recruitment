@@ -43,7 +43,7 @@ export default function Footer() {
               handles the actual scrolling once routed there. Fine to show
               everywhere, same as the always-visible email beside it. */}
           <Link to="/#faq" style={linkStyle}>FAQ</Link>
-          <a href="mailto:careers@caa.co.ug" style={linkStyle}>Careers help: careers@caa.co.ug</a>
+          <a href="mailto:recruitment@caa.co.ug" style={linkStyle}>Careers help: recruitment@caa.co.ug</a>
         </span>
       </div>
     </footer>

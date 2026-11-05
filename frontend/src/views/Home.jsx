@@ -1023,7 +1023,7 @@ export default function Home() {
           <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--color-text-muted)', marginTop: 20 }}>
             <ShieldAlert size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
             Still have a question? Contact Head Office: {HEAD_OFFICE_CONTACTS.join(', ')}, or{' '}
-            <a href="mailto:careers@caa.co.ug">careers@caa.co.ug</a>.
+            <a href="mailto:recruitment@caa.co.ug">recruitment@caa.co.ug</a>.
           </p>
         </div>
       </div>
