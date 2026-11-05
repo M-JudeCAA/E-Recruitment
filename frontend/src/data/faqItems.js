@@ -20,15 +20,15 @@ export const FAQ_ITEMS = [
   },
   {
     q: 'Do I need to create an account before I can apply?',
-    a: 'Yes. Create a free candidate account, then apply from the Open Positions list below. Your profile (education, experience) is saved once and reused for every application you submit.'
+    a: 'Yes. Create a free candidate account with your email address, then apply from the Open Positions list below. Your profile (education, experience) is saved once and reused for every application you submit. UCAA employees do not register here: they sign in to Internal Careers with their UCAA Microsoft account.'
   },
   {
     q: "What's the difference between an Internal and External vacancy?",
-    a: 'Internal vacancies are open only to current UCAA staff, verified by your work email address at registration. Everyone else applies to External vacancies. You will only see and be able to apply to the vacancies that match your account type.'
+    a: 'Internal vacancies are open only to current UCAA employees. They are advertised on Internal Careers, where you sign in with your UCAA Microsoft account, and HR verifies your employment before you can submit an application. Everyone else applies to External vacancies on this site with an email account. Each site shows only the vacancies you can apply for.'
   },
   {
     q: 'What documents do I need?',
-    a: 'A CV is required for every application. A cover letter is optional. Some vacancies also ask a few short screening questions as part of the application.'
+    a: 'Every application needs at least one academic document (a certificate, transcript or result slip) and three referees, plus any evidence the vacancy asks for - for example your National ID when there is an age limit. A CV and a cover letter are optional. Some vacancies also ask a few short screening questions.'
   },
   {
     q: 'Can I apply for more than one vacancy?',
@@ -36,7 +36,7 @@ export const FAQ_ITEMS = [
   },
   {
     q: 'Can I edit or withdraw my application after submitting it?',
-    a: 'You can edit a saved draft freely before you submit it. Once submitted, you can no longer edit it, but you can withdraw it from your dashboard at any time before a decision is made.'
+    a: 'You can edit a saved draft freely before you submit it. Once submitted, you can no longer edit it, but you can withdraw it from My applications at any time until you receive an offer. If you no longer want an offer, decline it instead.'
   },
   {
     q: 'What happens after I submit my application?',

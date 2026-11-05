@@ -63,6 +63,7 @@ export function useVacancyPdfDownload() {
           generalKnowledge={target.generalKnowledge}
           specialSkills={target.specialSkills}
           desirableQualifications={target.desirableQualifications}
+          postingType={target.postingType}
         />
       </div>
     </div>

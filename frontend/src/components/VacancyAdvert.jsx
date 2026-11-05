@@ -25,7 +25,7 @@ export default function VacancyAdvert({
   minimumEducationLevel, minimumExperienceYears, preferredFieldOfStudy,
   minimumAge, maximumAge, minimumFlyingHours, minimumCGPA, requiredExamGrades,
   desirableQualifications, generalKnowledge, specialSkills,
-  readvertised, hideTitle = false, howToApply
+  readvertised, hideTitle = false, howToApply, postingType
 }) {
   // The requisition's own desirable items. HR's Qualifying questions
   // (desirableRequirements) are questions asked on the application, not
@@ -134,7 +134,7 @@ export default function VacancyAdvert({
         </div>
       )}
 
-      {howToApply || <HowToApplyBlock deadline={deadline} />}
+      {howToApply || <HowToApplyBlock deadline={deadline} postingType={postingType} />}
     </div>
   );
 }
