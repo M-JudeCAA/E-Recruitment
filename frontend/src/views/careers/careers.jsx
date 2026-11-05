@@ -133,6 +133,8 @@ export function profileGaps(me) {
 
 /** What stage an application is at, as the employee sees it. */
 export function stageOf(app) {
+  // Set to go in by itself once HR verifies their employment ("Submit when verified").
+  if (app.status === 'Draft' && app.submitWhenVerifiedAt) return { label: 'Submits when verified', tone: 'info' };
   if (app.status === 'Draft') return { label: 'Draft', tone: 'neutral' };
   if (app.status === 'Withdrawn') return { label: 'Withdrawn', tone: 'neutral' };
   if (app.status === 'Rejected') return { label: 'Not successful', tone: 'neutral' };

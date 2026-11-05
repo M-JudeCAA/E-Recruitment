@@ -1,5 +1,4 @@
 const conflictOfInterest = require('../services/conflictOfInterestService');
-const { parseSource } = require('../utils/applicationSources');
 const { sendError } = require('../utils/errorResponse');
 const vacancyModel = require('../models/vacancyModel');
 const applicationModel = require('../models/applicationModel');
@@ -9,55 +8,20 @@ const withdrawal = require('../services/applicationWithdrawalService');
 const audit = require('../services/auditService');
 const applicationDocumentModel = require('../models/applicationDocumentModel');
 const evidence = require('../utils/screeningEvidence');
-const {
-  screenApplication, scoreApplication, evaluateEssentialCriteria, assessEligibility
-} = require('../services/screeningService');
+const { assessEligibility } = require('../services/screeningService');
 const { fileUrl } = require('../middleware/upload');
 const { removeUploads } = require('../utils/uploadFiles');
 const {
   assertPostingTypeEligible, assertVacancyAcceptingApplications, assertBeforeDeadline
 } = require('../utils/applicationEligibility');
-const { isProfileComplete } = require('../utils/profileCompleteness');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
-const { countCompleteReferees } = require('../utils/referees');
-const { notifyCandidate } = require('../services/candidateNotificationService');
-const { notify, notifyAllHrStaff } = require('../services/notificationService');
+const { notifyAllHrStaff } = require('../services/notificationService');
 const { escapeHtml } = require('../utils/interviewFormat');
-const { PRIVACY_NOTICE_VERSION } = require('../config/privacyNotice');
 const { formatAs } = require('../utils/textCase');
 const { employmentCheck } = require('../utils/employmentCheck');
 
-// Answers to the vacancy's questions, as [{ id, answer }], snapshotted
-// against its questions as they stand now - server-side, never trusting the
-// `text`/`answerType`/`minValue` a client sent alongside each answer (see the
-// schema comments on Application.desirableResponses/disqualifyingResponses).
-// A 'yesno' question (or one with no answerType, from before 'number'
-// existed) takes a boolean, a 'number' one a finite number; unmatched or
-// malformed answers are dropped. Taken at every draft save and again at
-// submit, so the application is screened against the questions as they are
-// when it is submitted - a question HR changed or removed after the draft
-// was saved is never judged by its old wording or required answer.
-const answerMatchesType = (requirement, answer) =>
-  requirement.answerType === 'number' ? (typeof answer === 'number' && Number.isFinite(answer)) : typeof answer === 'boolean';
-
-function snapshotAnswers(answers, requirements, extra) {
-  const byId = new Map((requirements || []).map((r) => [r.id, r]));
-  return (answers || [])
-    .filter((r) => r && byId.has(r.id) && answerMatchesType(byId.get(r.id), r.answer))
-    .map((r) => {
-      const requirement = byId.get(r.id);
-      return {
-        id: r.id, text: requirement.text, ...extra(requirement), answer: r.answer,
-        ...(requirement.answerType === 'number' ? { answerType: 'number', minValue: requirement.minValue } : {})
-      };
-    });
-}
-
-const snapshotDesirable = (answers, vacancy) => snapshotAnswers(answers, vacancy.desirableRequirements, () => ({}));
-// Also freezes requiredAnswer - what screeningService reads to decide
-// pass/fail.
-const snapshotDisqualifying = (answers, vacancy) =>
-  snapshotAnswers(answers, vacancy.disqualifyingRequirements, (r) => ({ requiredAnswer: r.requiredAnswer }));
+const { snapshotDesirable, snapshotDisqualifying } = require('../utils/applicationAnswers');
+const submission = require('../services/applicationSubmissionService');
 
 // REPLACES the old single-step submit() entirely - having two parallel
 // "create an application" code paths (one direct-to-Submitted, one
@@ -207,171 +171,62 @@ async function saveDraft(req, res) {
   }
 }
 
-// The real gate - all three eligibility checks apply here, plus the one
-// check that's specific to submission itself: a CV must actually be on
-// file. This is the only place ApplicationSnapshot gets captured, matching
-// the principle that it represents "what was true when the candidate
-// committed to applying," not a work in progress. Nobody outside HR hears
-// about a single application: the hiring manager is told at each stage of
-// the vacancy instead (hiringManagerService).
-async function submit(req, res) {
+// The real gate (services/applicationSubmissionService.js): every
+// eligibility check, then the submission. This is the only place
+// ApplicationSnapshot gets captured, matching the principle that it
+// represents "what was true when the candidate committed to applying," not a
+// work in progress. Nobody outside HR hears about a single application: the
+// hiring manager is told at each stage of the vacancy instead.
+async function loadOwnApplication(req, res) {
   const applicationId = Number(req.params.id);
-  if (!Number.isInteger(applicationId)) return res.status(400).json({ error: 'Invalid application id' });
+  if (!Number.isInteger(applicationId)) { res.status(400).json({ error: 'Invalid application id' }); return null; }
   const application = await applicationModel.findById(applicationId);
-  if (!application) return res.status(404).json({ error: 'Application not found' });
-  if (application.candidateId !== req.user.id) {
-    return res.status(403).json({ error: 'This is not your application' });
-  }
-  if (application.status !== 'Draft') {
-    return res.status(422).json({ error: 'Only a draft application can be submitted' });
-  }
-  if (countCompleteReferees(application.referees) < 3) {
-    return res.status(400).json({ error: 'Three referees (with name, phone and email) are required before submitting' });
-  }
-  // FR-ATS-038: the candidate agrees to UCAA processing and retaining their
-  // data, per the privacy notice, as part of submitting - never assumed.
-  if (req.body?.consent !== true) {
-    return res.status(400).json({
-      error: 'Please confirm that you consent to UCAA processing your personal data, as described in the privacy notice',
-      code: 'CONSENT_REQUIRED'
-    });
-  }
+  if (!application) { res.status(404).json({ error: 'Application not found' }); return null; }
+  if (application.candidateId !== req.user.id) { res.status(403).json({ error: 'This is not your application' }); return null; }
+  return application;
+}
 
-  const vacancy = await vacancyModel.findById(application.vacancyId);
+const refused = (res, err) => {
+  if (err instanceof submission.SubmissionRefused) return res.status(err.status).json(err.body);
+  throw err;
+};
+
+async function submit(req, res) {
+  const application = await loadOwnApplication(req, res);
+  if (!application) return undefined;
   try {
-    assertPostingTypeEligible(vacancy, req.user.candidateType);
-    assertVacancyAcceptingApplications(vacancy);
-    assertBeforeDeadline(vacancy); // the one check draft-save deliberately skipped
+    const updated = await submission.submitNow(application, {
+      candidateId: req.user.id, candidateType: req.user.candidateType, body: req.body, actor: audit.actorFrom(req)
+    });
+    return res.json(updated);
   } catch (err) {
-    return sendError(res, err, 422);
+    return refused(res, err);
   }
+}
 
-  // Checked after the vacancy-level eligibility above, deliberately - if
-  // the vacancy itself is closed/filled/past its deadline, that's the
-  // relevant reason submission isn't possible, and it would be a confusing
-  // (and wrong) message to tell the candidate to go complete their profile
-  // when doing so wouldn't help at all. The "complete your profile" prompt
-  // elsewhere in the app (modal on the dashboard/apply wizard) is closable
-  // and reappears rather than blocking anything - this is the one place
-  // that's actually enforced, since HR should never receive a submission
-  // with no education/experience/contact details on file just because the
-  // candidate dismissed a reminder.
-  const candidate = await candidateModel.findByIdWithRecords(req.user.id);
-  if (!isProfileComplete(candidate)) {
-    return res.status(422).json({ error: 'Please complete your profile before submitting an application' });
-  }
-  // An internal candidate applies only once HR has verified their UCAA
-  // employment details (utils/employmentCheck.js) - the draft stays, ready
-  // for when they are.
-  const employment = employmentCheck(candidate);
-  if (!employment.verified) {
-    return res.status(422).json({ error: employment.message, code: 'EMPLOYMENT_NOT_VERIFIED', employmentCheck: employment });
-  }
-
-  // The answers re-snapshotted against the questions as they are now - what
-  // this application is screened on, and stored with it.
-  const answered = {
-    ...application,
-    desirableResponses: snapshotDesirable(application.desirableResponses, vacancy),
-    disqualifyingResponses: snapshotDisqualifying(application.disqualifyingResponses, vacancy)
-  };
-
-  const documents = await applicationDocumentModel.findByApplication(applicationId);
-  if (!documents.some((d) => d.category === 'Academic')) {
-    return res.status(400).json({ error: 'Please upload at least one academic document (certificate or transcript) before submitting' });
-  }
-
-  // Screening starts here, at the point of application: a candidate who
-  // doesn't meet the vacancy's minimums, or who answered a Disqualifying
-  // question the wrong way, never reaches the applicant pool. Their Draft
-  // stays as it is, so a profile that was merely out of date can be fixed
-  // and submitted again.
-  const eligibility = assessEligibility(answered, candidate, vacancy);
-  if (eligibility.unanswered.length > 0) {
-    return res.status(400).json({
-      error: 'Please answer every eligibility question before submitting', unanswered: eligibility.unanswered
+// "Submit when verified" - an Internal candidate whose UCAA employment HR
+// hasn't verified yet: every other check now, and the application goes in by
+// itself when HR verifies them (services/applicationSubmissionService.js).
+// Already verified: it is simply submitted.
+async function submitWhenVerified(req, res) {
+  const application = await loadOwnApplication(req, res);
+  if (!application) return undefined;
+  try {
+    const result = await submission.queue(application, {
+      candidateId: req.user.id, candidateType: req.user.candidateType, body: req.body, actor: audit.actorFrom(req)
     });
+    return res.json(result.submitted ? { submitted: true, application: result.submitted } : { queued: true, application: result.queued });
+  } catch (err) {
+    return refused(res, err);
   }
-  if (!eligibility.eligible) {
-    return res.status(422).json({
-      error: 'You do not meet the requirements for this vacancy, so this application cannot be submitted',
-      code: 'NOT_ELIGIBLE', reasons: eligibility.reasons
-    });
-  }
-  // What screening relied on must be backed by evidence: the National ID
-  // for an age limit, a certificate or licence for a question answered Yes.
-  const missing = evidence.missingEvidence(evidence.evidenceRequirements(vacancy, evidence.answersOf(answered)), documents);
-  if (missing.length > 0) {
-    return res.status(400).json({
-      error: `Please upload the evidence for: ${missing.map((m) => m.label).join('; ')}`,
-      code: 'EVIDENCE_REQUIRED', missing
-    });
-  }
+}
 
-  // Every submitted application carries its screening result from the
-  // start. If HR has already opened this vacancy's review queue
-  // (reviewStartedAt set), a late applicant also joins that queue
-  // immediately rather than sitting at Submitted until someone re-runs
-  // Begin Review.
-  const screening = screenApplication(answered, candidate, vacancy);
-  const score = scoreApplication(answered, candidate, vacancy);
-  const essentialCriteria = evaluateEssentialCriteria(candidate, vacancy);
-  const data = {
-    status: vacancy.reviewStartedAt ? 'UnderReview' : 'Submitted', submittedDate: new Date(),
-    desirableResponses: answered.desirableResponses, disqualifyingResponses: answered.disqualifyingResponses,
-    consentGivenAt: new Date(), consentNoticeVersion: PRIVACY_NOTICE_VERSION,
-    // Where they saw the advert - optional, for the Source of Hire report.
-    ...parseSource(req.body),
-    screeningPassed: screening.passed, screeningReasons: JSON.stringify(screening.reasons), screenedAt: new Date(),
-    fieldOfStudyMatch: screening.fieldOfStudyMatch,
-    shortlistScore: score.score, shortlistScoreReasons: JSON.stringify(score.reasons),
-    essentialCriteriaResults: JSON.stringify(essentialCriteria)
-  };
-
-  // Scoped to status: 'Draft' so a second, near-simultaneous submit call
-  // for the same application (double click reaching the API, a retried
-  // request, two open tabs) can't also pass - see applicationModel.js's
-  // comment on updateIfStatus for why this needs to be atomic rather than
-  // the earlier "read status, then write" check above.
-  const result = await applicationModel.updateIfStatus(applicationId, 'Draft', data);
-  if (result.count === 0) {
-    return res.status(409).json({ error: 'This application has already been submitted' });
-  }
-  const updated = await applicationModel.findById(applicationId);
-  await audit.record({
-    entityType: 'Application', entityId: applicationId, action: 'Application submitted', actor: audit.actorFrom(req),
-    before: application, after: updated, fields: ['status']
-  });
-
-  await workflow.captureSnapshot({
-    entityType: 'ApplicationSnapshot', entityId: applicationId, candidateId: req.user.id
-  });
-  // The candidate's confirmation, and a notice to whoever created the
-  // vacancy - for both posting types.
-  await notifyCandidate(
-    req.user.id, 'ApplicationSubmitted',
-    `Your application for "${vacancy.title}" (${vacancy.jobRef}) has been received. We'll notify you of any updates.`
-  );
-  // To the vacancy's creator - unless they have applied for it themselves,
-  // when it goes to the Principal HR Officers instead.
-  const { ids: toldIds, redirected } = await conflictOfInterest.noticeRecipients(vacancy.id, [vacancy.createdById]);
-  for (const staffId of toldIds) {
-    await notify(
-      staffId, 'NewApplicationSubmitted', applicationId,
-      `${candidate.fullName} applied for "${vacancy.title}" (${vacancy.jobRef}).`
-        + (redirected ? ' (Sent to you because whoever created this vacancy has applied for it.)' : '')
-    );
-  }
-
-  // A UCAA staff member applying - the conflict-of-interest rule shuts them
-  // out of the vacancy; this tells HR so someone else runs it.
-  await conflictOfInterest.flagStaffApplicant(candidate, vacancy, applicationId);
-  // The hiring manager applying for their own vacancy is flagged the same way.
-  await conflictOfInterest.flagHiringManagerApplicant(candidate, vacancy, applicationId)
-    .catch((err) => console.error(`Hiring manager conflict notice for application ${applicationId} failed:`, err));
-
-  broadcastDashboardEvent('ApplicationSubmitted', { applicationId, vacancyId: vacancy.id });
-  res.json(updated);
+// Back to an ordinary draft.
+async function cancelSubmitWhenVerified(req, res) {
+  const application = await loadOwnApplication(req, res);
+  if (!application) return undefined;
+  if (application.status !== 'Draft') return res.status(422).json({ error: 'This application has already been submitted' });
+  return res.json(await submission.cancelQueue(application, { actor: audit.actorFrom(req) }));
 }
 
 // Where the application had got to, for HR's notice.
@@ -572,4 +427,4 @@ async function removeDocument(req, res) {
   res.json({ id: documentId, removed: true });
 }
 
-module.exports = { saveDraft, submit, withdraw, eligibility, addDocument, removeDocument };
+module.exports = { saveDraft, submit, submitWhenVerified, cancelSubmitWhenVerified, withdraw, eligibility, addDocument, removeDocument };

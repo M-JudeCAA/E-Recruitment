@@ -60,7 +60,18 @@ export default function CareerHome() {
       <Button variant="secondary" style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => navigate(`${SITE.applications}?open=${a.id}`)}>View</Button>
     </div>
   ));
-  (applications || []).filter((a) => a.status === 'Draft' && (daysLeft(a.vacancy.deadline) ?? 1) >= 0).forEach((a) => {
+  // Set to submit when verified: nothing for them to do but wait for HR.
+  (applications || []).filter((a) => a.status === 'Draft' && a.submitWhenVerifiedAt).forEach((a) => {
+    tasks.push(
+      <div key={`q-${a.id}`} className="ws-task later">
+        <div className="kind">Waiting for HR</div>
+        <div className="what"><b>{a.vacancy.title}</b><div>Submits by itself once HR verifies your employment details - it counts as on time.</div></div>
+        <span />
+        <Button variant="secondary" style={{ padding: '5px 12px', fontSize: 13 }} onClick={() => navigate(`${SITE.applications}?open=${a.id}`)}>View</Button>
+      </div>
+    );
+  });
+  (applications || []).filter((a) => a.status === 'Draft' && !a.submitWhenVerifiedAt && (daysLeft(a.vacancy.deadline) ?? 1) >= 0).forEach((a) => {
     const left = daysLeft(a.vacancy.deadline);
     tasks.push(
       <div key={`dr-${a.id}`} className="ws-task">

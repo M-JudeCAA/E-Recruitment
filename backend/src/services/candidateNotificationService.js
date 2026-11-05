@@ -39,7 +39,8 @@ const EMAILS = {
   OfferWithdrawn: { title: 'Your offer has been withdrawn' },
   DataRequestRefused: { title: 'About your request to erase your data', page: 'profile' },
   EmploymentVerified: { title: 'Your UCAA employment details are verified', page: 'profile' },
-  EmploymentDiscrepancy: { title: 'Your UCAA employment details need correcting', page: 'profile' }
+  EmploymentDiscrepancy: { title: 'Your UCAA employment details need correcting', page: 'profile' },
+  QueuedApplicationNotSubmitted: { title: 'Your application could not be submitted' }
 };
 
 const PAGES = {

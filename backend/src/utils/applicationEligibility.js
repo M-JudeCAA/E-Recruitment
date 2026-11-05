@@ -31,8 +31,11 @@ function assertVacancyAcceptingApplications(vacancy) {
   }
 }
 
-function assertBeforeDeadline(vacancy) {
-  if (vacancy.deadline && vacancy.deadline < new Date()) {
+// at: when it counts as handed in - now, or for an application queued to
+// submit when the candidate's employment is verified, when it was queued
+// (services/applicationSubmissionService.js).
+function assertBeforeDeadline(vacancy, at = new Date()) {
+  if (vacancy.deadline && vacancy.deadline < at) {
     throw new Error('The application deadline for this vacancy has passed');
   }
 }
