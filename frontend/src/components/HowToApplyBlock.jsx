@@ -1,5 +1,6 @@
 import React from 'react';
 import { formatDeadlineDay, formatDeadlineTime } from '../utils/deadline';
+import { howToApply } from '../data/howToApply';
 
 // UCAA's standard "How to Apply" instructions, matching the wording used
 // on every UCAA job advertisement. Deliberately NOT an HR-editable field
@@ -13,8 +14,8 @@ import { formatDeadlineDay, formatDeadlineTime } from '../utils/deadline';
 // at the same numbers without re-typing them and risking the two drifting.
 export const HEAD_OFFICE_CONTACTS = ['+256 414 352000', '+256 312 352000', '+256 20 0452000'];
 
-export default function HowToApplyBlock({ deadline }) {
-  const siteUrl = typeof window !== 'undefined' ? window.location.origin : '';
+export default function HowToApplyBlock({ deadline, postingType }) {
+  const { steps } = howToApply(postingType);
   const deadlineText = deadline
     ? `Applications must be received not later than ${formatDeadlineTime(deadline)}, ${formatDeadlineDay(deadline)}.`
     : null;
@@ -23,13 +24,7 @@ export default function HowToApplyBlock({ deadline }) {
     <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
       <h4 style={{ marginBottom: 6 }}>How to Apply</h4>
       <ol style={{ paddingLeft: 20, fontSize: 13, marginTop: 0 }}>
-        <li>Visit {siteUrl || 'this system'} to create an account and start your application (new users: sign up; returning users: log in).</li>
-        <li>Complete your candidate profile, including education and work experience, before applying.</li>
-        <li>Find this vacancy from the Home page and click "Apply" to begin your application.</li>
-        <li>Complete every step of the application - profile, documents (a CV is required), and questions - and review it before sending.</li>
-        <li>Submit your application. A confirmation will be shown once it has been received.</li>
-        <li>Falsification of information is an offense at UCAA. Only apply for vacancies where you genuinely meet the minimum requirements, and answer the application questions honestly.</li>
-        <li>Only applications submitted through this system are accepted - physical/hard copy applications will not be entertained.</li>
+        {steps.map((step) => <li key={step}>{step}</li>)}
       </ol>
       <p style={{ fontSize: 13, marginBottom: 4 }}>
         For any inquiries or assistance, please contact: Head Office: {HEAD_OFFICE_CONTACTS.join(', ')}

@@ -60,6 +60,7 @@ const advertFrom = (v, form, extra = {}) => ({
   minimumAge: form.minimumAge, maximumAge: form.maximumAge, minimumFlyingHours: form.minimumFlyingHours,
   minimumCGPA: form.minimumCGPA, requiredExamGrades: form.requiredExamGrades, desirableRequirements: form.desirableRequirements,
   generalKnowledge: form.generalKnowledge, specialSkills: form.specialSkills, desirableQualifications: form.desirableQualifications,
+  postingType: form.postingType,
   ...extra
 });
 
