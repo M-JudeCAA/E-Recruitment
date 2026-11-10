@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const { employmentCheckRequired } = require('../utils/employmentCheck');
 
 // Mirrors applicationController.NOT_SHORTLISTABLE - kept here too (not
 // imported from a controller, which services never depend on) since this
@@ -28,7 +29,8 @@ async function assertCanShortlist(applicationId) {
     throw new Error(`An application at status "${application.status}" cannot be shortlisted here`);
   }
 
-  if (application.candidate.candidateType === 'Internal') {
+  // Unless switched off on a test server (utils/employmentCheck.js).
+  if (application.candidate.candidateType === 'Internal' && employmentCheckRequired()) {
     const profile = application.candidate.internalProfile;
     if (!profile || profile.verificationStatus !== 'HR_Verified') {
       throw new Error('Internal candidate employment must be HR Verified before shortlisting');

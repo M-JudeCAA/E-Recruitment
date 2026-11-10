@@ -2,7 +2,7 @@ const prisma = require('../config/db');
 const audit = require('./auditService');
 const { notifyCandidate } = require('./candidateNotificationService');
 const { removeUploads } = require('../utils/uploadFiles');
-const { isVerified } = require('../utils/employmentCheck');
+const { isVerified, employmentCheckRequired } = require('../utils/employmentCheck');
 const { AppError } = require('../utils/errorResponse');
 
 // HR's check of internal candidates' UCAA employment details
@@ -217,6 +217,7 @@ async function decide(req, candidateId, { decision, comments, documentUrl }) {
 // Applicants from before the rule who are still unverified, on one vacancy -
 // the committee step warns about them, since they can't be shortlisted.
 async function unverifiedApplicants(vacancyId, statuses = ['UnderReview']) {
+  if (!employmentCheckRequired()) return [];
   const rows = await prisma.application.findMany({
     where: { vacancyId, status: { in: statuses }, candidate: { candidateType: 'Internal' } },
     select: { id: true, status: true, candidate: { select: { id: true, fullName: true, internalProfile: { select: { verificationStatus: true, verificationEvidenceType: true } } } } }

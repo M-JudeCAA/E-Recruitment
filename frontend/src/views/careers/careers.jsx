@@ -150,10 +150,15 @@ export function stageOf(app) {
   return { label: 'Being reviewed', tone: 'info' };
 }
 
-/** HR's check of the employee's employment details (one per person, InternalProfile). */
+/**
+ * HR's check of the employee's employment details (one per person,
+ * InternalProfile). Switched off on a test server (`me.employmentCheckRequired`,
+ * backend utils/employmentCheck.js): no tone, so nothing says they wait for HR.
+ */
 export function employmentCheck(me, app) {
   const p = me?.internalProfile;
   if (!p) return { label: '—', tone: null };
+  if (me.employmentCheckRequired === false) return { label: 'Not required', tone: null };
   if (p.verificationStatus === 'HR_Verified') return { label: p.verifiedDate ? `Verified ${formatDay(p.verifiedDate, true)}` : 'Verified', tone: 'ok' };
   if (p.verificationStatus === 'Discrepancy_Flagged') return { label: 'Doesn’t match HR records', tone: 'bad' };
   return { label: 'HR checking', tone: 'warn' };

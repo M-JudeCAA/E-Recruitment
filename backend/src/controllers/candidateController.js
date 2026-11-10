@@ -5,6 +5,7 @@ const audit = require('../services/auditService');
 const applicationModel = require('../models/applicationModel');
 const profileEntriesModel = require('../models/profileEntriesModel');
 const { validateNationalId, normalizeNationalId } = require('../utils/validators');
+const { employmentCheckRequired } = require('../utils/employmentCheck');
 const { checkAndFireCompletionEvent } = require('../services/profileCompletionService');
 const { fileUrl } = require('../middleware/upload');
 const { educationKey, workExperienceKey, certificateKey, examGradeKey } = require('../utils/entryDedup');
@@ -28,7 +29,9 @@ async function me(req, res) {
   const candidate = await candidateModel.findById(req.user.id, {
     workExperience: true, education: true, examGrades: true, certificates: true, internalProfile: true
   });
-  res.json(omitPasswordHash(candidate));
+  // Whether HR's employment check is required here (off on a test server,
+  // utils/employmentCheck.js) - the candidate pages word the check by it.
+  res.json({ ...omitPasswordHash(candidate), employmentCheckRequired: employmentCheckRequired() });
 }
 
 async function addWorkExperience(req, res) {

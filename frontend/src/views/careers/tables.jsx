@@ -83,7 +83,7 @@ export function ApplicationsTable({ applications, me, onOpen }) {
         columns={[
           { key: 'vacancy', label: SITE.jobColumn, render: (a) => <><span className="t">{a.vacancy.title}</span><div className="s ws-mono">{a.vacancy.jobRef.replace('UCAA/ADV/', '')}</div></> },
           { key: 'stage', label: 'Stage', render: (a) => { const s = stageOf(a); return <Pill tone={s.tone}>{s.label}</Pill>; } },
-          SITE.internal && { key: 'check', label: 'Employment check', render: (a) => { const c = employmentCheck(me, a); return c.tone ? <Pill tone={c.tone}>{c.label}</Pill> : <span className="s">{c.label}</span>; } },
+          SITE.internal && me?.employmentCheckRequired !== false && { key: 'check', label: 'Employment check', render: (a) => { const c = employmentCheck(me, a); return c.tone ? <Pill tone={c.tone}>{c.label}</Pill> : <span className="s">{c.label}</span>; } },
           { key: 'next', label: SITE.internal ? 'Next' : 'What happens next', render: (a) => <span className="s">{nextFor(a)}</span> }
         ].filter(Boolean)} />
     </Panel>
