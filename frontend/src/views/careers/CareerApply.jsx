@@ -214,7 +214,7 @@ export default function CareerApply() {
             )}
             {stepKey === 'employment' && (
               <>
-                <Alert type="info" message="HR verifies these details before you can submit - changing them sends them back to HR." />
+                {me?.employmentCheckRequired !== false && <Alert type="info" message="HR verifies these details before you can submit - changing them sends them back to HR." />}
                 <EmploymentForm me={me} bind={(fn) => { saveEmployment.current = fn; }} />
                 <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input type="checkbox" checked={employmentOk} onChange={(e) => setEmploymentOk(e.target.checked)} /> These details are correct

@@ -6,6 +6,7 @@ const vacancyProgress = require('./vacancyProgressService');
 const internalVerification = require('./internalVerificationService');
 const { computeStatus } = require('./slaStatusService');
 const { POSITION_LEVELS } = require('../utils/positionLevels');
+const { employmentCheckRequired } = require('../utils/employmentCheck');
 
 // The staff Inbox (GET /api/dashboard/inbox): everything waiting for the
 // person looking, in one list, oldest due first - the landing page for every
@@ -299,8 +300,9 @@ async function forStaff(req, now = new Date()) {
 
   // Internal candidates can't apply until HR has checked their UCAA
   // employment details - one item for all of them, for every HR role (any of
-  // them may decide), with the count, while any are still waiting.
-  if (rank >= ROLE_RANK.HR_Officer) {
+  // them may decide), with the count, while any are still waiting - unless
+  // the check is switched off on a test server (utils/employmentCheck.js).
+  if (rank >= ROLE_RANK.HR_Officer && employmentCheckRequired()) {
     const waiting = await internalVerification.waitingSummary(req);
     if (waiting.count) {
       items.push({

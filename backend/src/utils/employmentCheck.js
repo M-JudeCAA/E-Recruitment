@@ -5,12 +5,26 @@
 // application only once verified (applicationDraftController.submit), and is
 // shortlisted only once verified (workflowService.assertCanShortlist).
 // External candidates have no such check.
+//
+// It can be switched off for a test server (EMPLOYMENT_CHECK_REQUIRED=false in
+// .env, then restart the API and the scheduler): internal candidates then
+// submit and are shortlisted without it, and nothing tells them they wait for
+// HR. HR can still record checks. Never in production proper: the switch is
+// ignored where nginx stamps the site (REQUIRE_SITE_HEADER=true - production,
+// not UAT, which also runs NODE_ENV=production), and the API refuses to start
+// there with it set (config/productionChecks.js). Read on every call, so tests
+// can change it.
 
 const MESSAGES = {
   Pending: 'HR is checking your UCAA employment details. You can submit applications once they are verified - you can prepare this one in the meantime.',
   Discrepancy_Flagged: 'HR found a problem with your UCAA employment details. Check them on your profile (changing them sends them back to HR) or contact HR. You can submit applications once they are verified.',
   Missing: 'Add your UCAA employment details on your profile - HR checks them before you can submit applications.'
 };
+
+function employmentCheckRequired() {
+  if (String(process.env.REQUIRE_SITE_HEADER || '').trim().toLowerCase() === 'true') return true;
+  return String(process.env.EMPLOYMENT_CHECK_REQUIRED ?? 'true').trim().toLowerCase() !== 'false';
+}
 
 function isVerified(profile) {
   return Boolean(profile && profile.verificationStatus === 'HR_Verified' && profile.verificationEvidenceType);
@@ -25,6 +39,7 @@ function employmentCheck(candidate) {
   if (!candidate || candidate.candidateType !== 'Internal') return { required: false, verified: true, status: null, message: null };
   const profile = candidate.internalProfile;
   const status = !profile || !profile.departmentId ? 'Missing' : profile.verificationStatus;
+  if (!employmentCheckRequired()) return { required: false, verified: true, status, message: null };
   const verified = isVerified(profile);
   return {
     required: true,
@@ -34,4 +49,4 @@ function employmentCheck(candidate) {
   };
 }
 
-module.exports = { employmentCheck, isVerified };
+module.exports = { employmentCheck, isVerified, employmentCheckRequired };

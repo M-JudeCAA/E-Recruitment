@@ -78,6 +78,18 @@ to the careers site.
    `HOST=127.0.0.1`: the API answers only the `vite preview` proxy on this
    machine, never the network directly. No `DEV_PASSWORD_LOGIN`. `FRONTEND_URL` order matters: careers, staff,
    Internal Careers (links in emails are built from it).
+
+   **While UCAA staff test Internal Careers**, HR's employment check can be
+   switched off so they can apply without waiting for it:
+   ```ini
+   EMPLOYMENT_CHECK_REQUIRED=false
+   ```
+   Internal candidates then submit and are shortlisted without it, and the
+   pages stop telling them they wait for HR; the Employment checks page stays
+   for HR to try out. Restart the services after changing it (the API logs a
+   warning while it is off). Remove the line to put the check back. It works
+   only here: production ignores it and refuses to start with it
+   (`config/productionChecks.js`).
 5. **`frontend\.env`** in the deployment folder:
    ```ini
    VITE_API_URL=same-origin
