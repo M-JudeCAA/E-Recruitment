@@ -83,6 +83,9 @@ function view(profile) {
  * Leaves out the viewer's own profile and erased candidates.
  */
 async function queue(req, { include = 'waiting' } = {}) {
+  // Nobody waits for a check that is switched off (a test server,
+  // utils/employmentCheck.js); every profile is still listed with include=all.
+  if (include !== 'all' && !employmentCheckRequired()) return [];
   const own = await ownCandidateIds(req);
   const rows = await prisma.internalProfile.findMany({
     where: {

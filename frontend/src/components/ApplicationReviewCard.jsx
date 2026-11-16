@@ -21,6 +21,7 @@ import { ROUND_LABELS } from './interviews/formStyles';
 import { formatDateTime, venueLabel } from '../utils/interviews';
 import DocumentLink from './DocumentLink';
 import GeneratedCvLink, { uploadedCv } from './GeneratedCvLink';
+import { useEmploymentCheckRequired } from '../models/siteStatus';
 
 // Matches backend/src/middleware/auth.js's 5-tier ROLE_RANK - used so
 // "Recommend for offer" (Principal HR Officer+), "Approve offer"
@@ -52,6 +53,8 @@ export default function ApplicationReviewCard({
   app, vacancy, staffRole, onUpdated, showVacancyContext = false,
   defaultExpanded = true
 }) {
+  // HR's employment check is not shown where it is switched off (a test server).
+  const employmentCheckRequired = useEmploymentCheckRequired();
   const rank = ROLE_RANK[staffRole] || 0;
   // The cross-vacancy queue (ApplicationManagement.jsx's "All vacancies"
   // mode) passes defaultExpanded={false} - up to 20 of these render at once
@@ -339,7 +342,7 @@ export default function ApplicationReviewCard({
             );
           })()}
 
-          {app.candidate.candidateType === 'Internal' && app.candidate.internalProfile && (
+          {app.candidate.candidateType === 'Internal' && app.candidate.internalProfile && employmentCheckRequired !== false && (
             <Card accent="var(--color-border)" style={{ background: 'var(--color-bg-subtle)', marginBottom: 8 }}>
               <strong>Internal verification:</strong> <StatusBadge status={app.candidate.internalProfile.verificationStatus} />
               {app.candidate.internalProfile.verificationStatus === 'Discrepancy_Flagged' && (

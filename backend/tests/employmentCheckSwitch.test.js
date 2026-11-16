@@ -36,6 +36,15 @@ test('off: they can be shortlisted', async () => {
   await expect(workflow.assertCanShortlist(1)).resolves.toBeUndefined();
 });
 
+test('off: nobody is listed as waiting for a check; everyone still is under "all"', async () => {
+  prisma.staffUser.findMany.mockResolvedValue([]);
+  prisma.internalProfile.findMany.mockResolvedValue([]);
+  await expect(verification.queue({ user: { id: 7, type: 'staff', role: 'HR_Officer' } })).resolves.toEqual([]);
+  expect(prisma.internalProfile.findMany).not.toHaveBeenCalled();
+  await verification.queue({ user: { id: 7, type: 'staff', role: 'HR_Officer' } }, { include: 'all' });
+  expect(prisma.internalProfile.findMany).toHaveBeenCalled();
+});
+
 test('off: no committee warning, no Inbox item, no discrepancy reminders', async () => {
   await expect(verification.unverifiedApplicants(3)).resolves.toEqual([]);
   expect(prisma.application.findMany).not.toHaveBeenCalled();
