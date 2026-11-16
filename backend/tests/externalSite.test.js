@@ -103,9 +103,9 @@ describe('password sign-in and registration', () => {
 test('GET /api/site-status says whether the site is open', async () => {
   const app = require('../src/app');
   process.env.EXTERNAL_SITE_ENABLED = 'false';
-  expect((await request(app).get('/api/site-status')).body).toEqual({ externalSite: false });
+  expect((await request(app).get('/api/site-status')).body).toEqual({ externalSite: false, employmentCheckRequired: true });
   process.env.EXTERNAL_SITE_ENABLED = 'true';
-  expect((await request(app).get('/api/site-status')).body).toEqual({ externalSite: true });
+  expect((await request(app).get('/api/site-status')).body).toEqual({ externalSite: true, employmentCheckRequired: true });
 });
 
 test('committee links point at Internal Careers while the site is closed', () => {
