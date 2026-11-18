@@ -30,9 +30,7 @@ function validate(values) {
     errors.email = "Enter a valid email address.";
   }
 
-  if (values.phone.trim() && !/^\+?[0-9\s-]{7,15}$/.test(values.phone.trim())) {
-    errors.phone = "Enter a valid phone number.";
-  }
+  if (phoneError(values.phone)) errors.phone = phoneError(values.phone);
 
   if (!values.password) {
     errors.password = "Password is required.";

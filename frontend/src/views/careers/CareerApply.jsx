@@ -18,6 +18,7 @@ import { EmploymentForm } from './forms';
 import ApplicantSurvey from './ApplicantSurvey';
 import { SITE, CareerShell, WizardRail, profileGaps, formatDay } from './careers';
 import { formatDeadlineTime } from '../../utils/deadline';
+import { refereeProblems } from '../../utils/profileValidation';
 
 // Applying (Internal Careers: /careers/apply/:vacancyId; public site:
 // /apply/:vacancyId) on the draft/submit API (applicationDraftController),
@@ -155,7 +156,8 @@ export default function CareerApply() {
       ...(vacancy.desirableRequirements || []).filter((r) => desirable[r.id] === undefined).map((r) => r.text),
       ...(vacancy.disqualifyingRequirements || []).filter((r) => disqualifying[r.id] === undefined).map((r) => r.text)
     ].filter(Boolean),
-    referees: referees.flatMap((r, i) => (!r.name || !r.phone || !r.email ? [`Referee ${i + 1} (name, phone, email)`] : [])),
+    // Name, a valid phone and email, not the candidate's own (backend utils/referees.js).
+    referees: refereeProblems(referees, me?.email).map((p) => p.replace(/\.$/, '')),
     documents: [
       ...(documents.some((d) => d.category === 'Academic') ? [] : ['At least one academic document']),
       ...missingEvidence(evidence, documents).map((e) => e.label)
@@ -230,13 +232,12 @@ export default function CareerApply() {
                 setDisqualifyingAnswer={(id) => (e) => setDisqualifying({ ...disqualifying, [id]: parseAnswer(vacancy.disqualifyingRequirements, id, e.target.value) })} />
             )}
             {stepKey === 'referees' && (
-              <RefereesStep referees={referees}
+              <RefereesStep referees={referees} ownEmail={me?.email}
                 setReferee={(i, k) => (e) => setReferees(referees.map((r, idx) => (idx === i ? { ...r, [k]: e.target.value } : r)))} />
             )}
             {stepKey === 'documents' && (
               <DocumentsStep coverLetter={coverLetter} setCoverLetter={setCoverLetter} applicationId={application?.id}
-                documents={documents} onDocumentsChange={setDocuments} evidence={evidence}
-                portfolioUrl={me.portfolioUrl || ''} setPortfolioUrl={() => {}} />
+                documents={documents} onDocumentsChange={setDocuments} evidence={evidence} />
             )}
             {stepKey === 'submit' && (
               <>

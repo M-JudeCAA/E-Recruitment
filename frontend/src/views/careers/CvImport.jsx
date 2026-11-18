@@ -4,6 +4,7 @@ import Alert from '../../components/Alert';
 import CvAutofillPanel from '../../components/CvAutofillPanel';
 import ProfileEntriesEditor from '../../components/ProfileEntriesEditor';
 import ExamGradesEditor from '../../components/ExamGradesEditor';
+import { dateOfBirthError, normalizeUrl } from '../../utils/profileValidation';
 
 // "Fill in from your CV" on My profile: the CV is read on the server
 // (POST /api/candidates/me/parse-cv, nothing kept) and everything read goes
@@ -38,7 +39,10 @@ export default function CvImport({ profile, onAdded, entriesRef, links = true })
 
   // Personal details fill only what the profile doesn't have yet.
   const fillPersonal = async (found) => {
-    const missing = Object.fromEntries(Object.entries(found).filter(([k]) => !profile?.[k] && (links || k !== 'portfolioUrl')));
+    // A date of birth or link the profile rules refuse is left out, so it
+    // doesn't stop the rest going in.
+    const acceptable = ([k, v]) => (k === 'dateOfBirth' ? !dateOfBirthError(v) : k === 'portfolioUrl' ? !normalizeUrl(v).error : true);
+    const missing = Object.fromEntries(Object.entries(found).filter(([k, v]) => !profile?.[k] && (links || k !== 'portfolioUrl') && acceptable([k, v])));
     if (!Object.keys(missing).length) return [];
     try {
       await client.put('/api/candidates/me', missing);

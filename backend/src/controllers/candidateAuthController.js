@@ -9,6 +9,7 @@ const { sendMail } = require('../utils/mailer');
 const { createToken, consumeToken } = require('../services/tokenService');
 const { validateEmail, validatePassword, validateNationalId, normalizeNationalId } = require('../utils/validators');
 const { phoneKey } = require('../utils/phoneKey');
+const { phoneError } = require('../utils/profileValidation');
 const { frontendUrl } = require('../config/frontendUrl');
 const { verifyIdToken, internalDomains, EntraAuthError } = require('../services/entraAuthService');
 
@@ -69,6 +70,8 @@ async function register(req, res) {
   if (!validateEmail(email)) {
     return res.status(400).json({ error: 'Enter a valid email address' });
   }
+  const badPhone = phoneError(phone);
+  if (badPhone) return res.status(400).json({ error: badPhone, code: 'INVALID_PHONE' });
   // Internal candidates are exactly the people who can sign in with a UCAA
   // Microsoft account (entraLogin below) - a UCAA address can't also open
   // a password account, or anyone could claim to be internal by typing one.

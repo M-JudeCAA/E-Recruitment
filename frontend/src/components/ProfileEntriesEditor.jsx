@@ -8,6 +8,7 @@ import TextArea from './TextArea';
 import { splitDuties, dutiesToText } from '../utils/dutyList';
 import { useConfirm } from './ConfirmDialog';
 import { educationKey, workExperienceKey, certificateKey } from '../utils/entryDedup';
+import { today, certificateDatesError, workDatesError, yearCompletedError } from '../utils/profileValidation';
 
 // A candidate's education, work experience and certificates. Each saved
 // entry is one summary line with Edit and Delete; Edit opens its fields,
@@ -40,7 +41,7 @@ const day = (v) => (v ? String(v).slice(0, 10) : '');
 const month = (v) => (v ? new Date(v).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '');
 
 const LEVELS = [
-  ['Certificate', 'Certificate'], ['Diploma', 'Diploma'], ['Bachelors', "Bachelor's"],
+  ['Certificate', 'Certificate (college or institute course)'], ['Diploma', 'Diploma'], ['Bachelors', "Bachelor's"],
   ['Postgraduate', 'Postgraduate'], ['Masters', "Master's"], ['PhD', 'PhD']
 ];
 
@@ -48,6 +49,7 @@ export const ENTRY_KINDS = {
   education: {
     path: '/api/candidates/me/education',
     title: 'Education', noun: 'qualification', required: true,
+    guide: 'Qualifications from a school, college, institute or university - including certificate courses. Professional certificates and licences go in their own section.',
     empty: { institution: '', qualificationLevel: '', fieldOfStudy: '', yearCompleted: '', cgpa: '' },
     fromSaved: (e) => ({
       institution: e.institution || '', qualificationLevel: e.qualificationLevel || '', fieldOfStudy: e.fieldOfStudy || '',
@@ -60,6 +62,8 @@ export const ENTRY_KINDS = {
       `${(LEVELS.find(([value]) => value === v.qualificationLevel) || [])[1] || v.qualificationLevel || 'Qualification'}${v.fieldOfStudy ? ` in ${v.fieldOfStudy}` : ''}`,
       [v.institution, v.yearCompleted || 'in progress', v.cgpa && `CGPA ${v.cgpa}`].filter(Boolean).join(' · ')
     ],
+    // A problem with what was entered (backend utils/profileValidation.js), or null.
+    invalid: (v) => yearCompletedError(v.yearCompleted),
     key: educationKey
   },
   workExperience: {
@@ -75,16 +79,19 @@ export const ENTRY_KINDS = {
       return [v.jobTitle || 'Job', [v.employer, v.startDate && `${month(v.startDate)} – ${v.endDate ? month(v.endDate) : 'now'}`,
         duties && `${duties} ${duties === 1 ? 'duty' : 'duties'}`].filter(Boolean).join(' · ')];
     },
+    invalid: (v) => (v.startDate ? workDatesError(v) : null),
     key: workExperienceKey
   },
   certificates: {
     path: '/api/candidates/me/certificates',
-    title: 'Professional certificates', noun: 'certificate', required: false,
+    title: 'Professional certificates and licences', noun: 'certificate', required: false,
+    guide: 'Professional qualifications, licences and short courses - e.g. ACCA, CPA, an ATC licence, first aid. A certificate course from a college or university goes under Education.',
     empty: { name: '', issuingOrganization: '', issueDate: '', expiryDate: '' },
     fromSaved: (c) => ({ name: c.name || '', issuingOrganization: c.issuingOrganization || '', issueDate: day(c.issueDate), expiryDate: day(c.expiryDate) }),
     toPayload: (v) => ({ ...v, issueDate: v.issueDate || null, expiryDate: v.expiryDate || null }),
     missing: (v) => [!v.name.trim() && 'certificate name', !v.issuingOrganization.trim() && 'issuing organisation'].filter(Boolean),
     summary: (v) => [v.name || 'Certificate', [v.issuingOrganization, v.issueDate && month(v.issueDate), v.expiryDate && `expires ${month(v.expiryDate)}`].filter(Boolean).join(' · ')],
+    invalid: certificateDatesError,
     key: certificateKey
   }
 };
@@ -142,6 +149,9 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
     if (!row) return;
     const cfg = ENTRY_KINDS[kind];
     if (cfg.missing(row.values).length) { patchRow(kind, key, { status: 'incomplete', error: '', open: true }); return; }
+    // Dates out of order or in the future: said on the entry, not sent.
+    const invalid = cfg.invalid?.(row.values);
+    if (invalid) { patchRow(kind, key, { status: 'error', error: invalid, open: true }); return; }
     const sent = row.values;
     patchRow(kind, key, { status: 'saving', error: '' });
     try {
@@ -322,7 +332,7 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
           <TextField format="title" label="Field of study" required value={v.fieldOfStudy} onChange={set('fieldOfStudy')} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-          <TextField label="Year completed" type="number" hint="Leave blank if still in progress" value={v.yearCompleted} onChange={set('yearCompleted')} />
+          <TextField label="Year completed" type="number" min="1950" max={today().slice(0, 4)} hint="Leave blank if still in progress" value={v.yearCompleted} onChange={set('yearCompleted')} />
           <TextField label="CGPA" type="number" min="0" max="5" step="0.01" hint="Optional, 0-5 scale" value={v.cgpa} onChange={set('cgpa')} />
         </div>
       </>
@@ -334,8 +344,8 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
           <TextField format="title" label="Job title" required value={v.jobTitle} onChange={set('jobTitle')} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-          <TextField label="Start date" type="date" required value={v.startDate} onChange={set('startDate')} />
-          <TextField label="End date" type="date" hint="Leave blank if this is your current job" value={v.endDate} onChange={set('endDate')} />
+          <TextField label="Start date" type="date" required max={today()} value={v.startDate} onChange={set('startDate')} />
+          <TextField label="End date" type="date" min={v.startDate || undefined} max={today()} hint="Leave blank if this is your current job" value={v.endDate} onChange={set('endDate')} />
         </div>
         {/* Paste a bulleted or numbered list straight in; on leaving the box
             it is tidied to one bullet per duty, as it is saved. */}
@@ -356,8 +366,8 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
           <TextField format="title" label="Issuing organisation" required value={v.issuingOrganization} onChange={set('issuingOrganization')} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
-          <TextField label="Issue date" type="date" value={v.issueDate} onChange={set('issueDate')} />
-          <TextField label="Expiry date" type="date" hint="Leave blank if it does not expire" value={v.expiryDate} onChange={set('expiryDate')} />
+          <TextField label="Issue date" type="date" max={today()} value={v.issueDate} onChange={set('issueDate')} />
+          <TextField label="Expiry date" type="date" min={v.issueDate || undefined} hint="Leave blank if it does not expire" value={v.expiryDate} onChange={set('expiryDate')} />
         </div>
       </>
     );
@@ -388,6 +398,7 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
                 {cfg.title}{cfg.required && <span style={{ color: 'var(--color-primary)', marginLeft: 4 }}>*</span>}
               </h3>
             )}
+            {cfg.guide && <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 0 }}>{cfg.guide}</p>}
             {cfg.required && savedCount === 0 && (
               <p style={{ fontSize: 13, color: showMissing ? 'var(--color-danger)' : 'var(--color-text-muted)', marginTop: 0 }}>
                 At least one {cfg.noun} is required.
