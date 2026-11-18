@@ -41,7 +41,7 @@ const day = (v) => (v ? String(v).slice(0, 10) : '');
 const month = (v) => (v ? new Date(v).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : '');
 
 const LEVELS = [
-  ['Certificate', 'Certificate (college or institute course)'], ['Diploma', 'Diploma'], ['Bachelors', "Bachelor's"],
+  ['Certificate', 'Certificate'], ['Diploma', 'Diploma'], ['Bachelors', "Bachelor's"],
   ['Postgraduate', 'Postgraduate'], ['Masters', "Master's"], ['PhD', 'PhD']
 ];
 
@@ -49,7 +49,6 @@ export const ENTRY_KINDS = {
   education: {
     path: '/api/candidates/me/education',
     title: 'Education', noun: 'qualification', required: true,
-    guide: 'Qualifications from a school, college, institute or university - including certificate courses. Professional certificates and licences go in their own section.',
     empty: { institution: '', qualificationLevel: '', fieldOfStudy: '', yearCompleted: '', cgpa: '' },
     fromSaved: (e) => ({
       institution: e.institution || '', qualificationLevel: e.qualificationLevel || '', fieldOfStudy: e.fieldOfStudy || '',
