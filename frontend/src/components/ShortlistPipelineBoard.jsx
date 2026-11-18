@@ -13,6 +13,7 @@ import ProgressRing from './ProgressRing';
 import StatusBadge from './StatusBadge';
 import ApplicationReviewCard from './ApplicationReviewCard';
 import { safeJsonParse } from '../utils/safeJsonParse';
+import { useEmploymentCheckRequired } from '../models/siteStatus';
 
 // ===========================================================================
 // Step one of selection: the interview shortlist - WHO gets interviewed, in
@@ -72,7 +73,9 @@ function PersistedStatusPill({ status }) {
 }
 
 function VerificationChip({ app }) {
-  if (app.candidate.candidateType !== 'Internal') return null;
+  // Nothing to flag while the check is switched off (a test server).
+  const required = useEmploymentCheckRequired();
+  if (app.candidate.candidateType !== 'Internal' || required === false) return null;
   const status = app.candidate.internalProfile?.verificationStatus;
   const colorMap = { HR_Verified: 'var(--color-accent)', Discrepancy_Flagged: 'var(--color-danger)' };
   const color = colorMap[status] || 'var(--color-warning)';

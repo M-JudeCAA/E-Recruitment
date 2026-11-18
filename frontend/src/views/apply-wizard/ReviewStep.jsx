@@ -44,7 +44,8 @@ export default function ReviewStep({
         }),
         ['Other documents', documentLinks(inCategory('Other')) || 'None attached'],
         ['Cover letter', coverLetter ? coverLetter.name : 'Not attached'],
-        ['Portfolio', profileDetails.portfolioUrl || '—'],
+        // The portfolio is set on My profile (public site only - Internal Careers has none).
+        ...((candidateType || profile?.candidateType) === 'Internal' ? [] : [['Portfolio (from your profile)', profileDetails.portfolioUrl || '—']]),
       ],
     },
     {

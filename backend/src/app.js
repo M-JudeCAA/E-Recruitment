@@ -104,7 +104,12 @@ app.get('/health/ready', async (req, res) => {
   }
 });
 // Public: whether the external careers site is open (config/externalSite.js) - the frontend shows a notice if not.
-app.get('/api/site-status', (req, res) => res.json({ externalSite: require('./config/externalSite').externalSiteOpen() }));
+// Whether the public site is open, and whether HR's employment check is
+// required (off only on a test server, utils/employmentCheck.js).
+app.get('/api/site-status', (req, res) => res.json({
+  externalSite: require('./config/externalSite').externalSiteOpen(),
+  employmentCheckRequired: require('./utils/employmentCheck').employmentCheckRequired()
+}));
 
 app.use('/api/candidates/auth', candidateAuthRoutes);
 app.use('/api/staff/auth', staffAuthRoutes);

@@ -15,6 +15,7 @@ const prisma = require('../src/config/db');
 const { notifyCandidate } = require('../src/services/candidateNotificationService');
 const { hrComment } = require('../src/services/internalVerificationService');
 const { localDay, zonedDateTime } = require('../src/utils/interviewFormat');
+const { employmentCheckRequired } = require('../src/utils/employmentCheck');
 
 const MAX_REMINDERS = 7;
 const FROM_TIME = '08:00';
@@ -48,6 +49,8 @@ async function dueNow(now) {
 }
 
 async function run(now = new Date()) {
+  // Nothing to put right while the check is switched off (a test server).
+  if (!employmentCheckRequired()) return 'Discrepancy reminders skipped - the employment check is switched off (EMPLOYMENT_CHECK_REQUIRED=false).';
   const due = await dueNow(now);
   let sent = 0;
   for (const profile of due) {

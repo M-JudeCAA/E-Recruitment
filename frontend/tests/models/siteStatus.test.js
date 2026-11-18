@@ -4,7 +4,7 @@ vi.mock('../../src/models/apiClient', () => ({ default: { get: vi.fn() } }));
 // eslint-disable-next-line import/first
 import client from '../../src/models/apiClient';
 // eslint-disable-next-line import/first
-import { fetchExternalSiteOpen, resetSiteStatus, useExternalSiteOpen } from '../../src/models/siteStatus';
+import { fetchExternalSiteOpen, resetSiteStatus, useExternalSiteOpen, useEmploymentCheckRequired } from '../../src/models/siteStatus';
 
 // Whether the public careers site is open to external applicants (App.jsx
 // shows views/ExternalSiteClosed.jsx when it isn't).
@@ -46,4 +46,16 @@ test('the hook is unknown until the answer arrives, and never asks off the publi
   const other = renderHook(() => useExternalSiteOpen(false));
   expect(other.result.current).toBe(true);
   expect(client.get).not.toHaveBeenCalled();
+});
+
+test('the employment check is required unless the API says it is switched off (a test server)', async () => {
+  client.get.mockResolvedValue({ data: { externalSite: true, employmentCheckRequired: false } });
+  const { result } = renderHook(() => useEmploymentCheckRequired());
+  expect(result.current).toBeNull();
+  await waitFor(() => expect(result.current).toBe(false));
+
+  resetSiteStatus();
+  client.get.mockResolvedValue({ data: { externalSite: true } }); // an API from before the switch
+  const older = renderHook(() => useEmploymentCheckRequired());
+  await waitFor(() => expect(older.result.current).toBe(true));
 });

@@ -12,6 +12,7 @@ import Skeleton from '../components/Skeleton';
 import DocumentLink from '../components/DocumentLink';
 import AuditTrail from '../components/AuditTrail';
 import { PageTop, Panel, Table, Pill, Chips, SidePanel, KeyValues, formatDay, rankOf, ROLE_RANK } from '../components/workspace/ui';
+import { useEmploymentCheckRequired } from '../models/siteStatus';
 
 // Employment checks (/hr/verification): internal candidates whose UCAA
 // employment details wait for HR's check. They can't submit applications
@@ -203,6 +204,10 @@ export default function EmploymentChecks() {
   const [rows, setRows] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  // Switched off on a test server (backend utils/employmentCheck.js): nobody
+  // waits for a check, so the Waiting and Discrepancies lists are empty; every
+  // internal candidate is still under "All", where HR can record checks.
+  const required = useEmploymentCheckRequired() !== false;
 
   const load = useCallback(() => staffClient.get('/api/verification/pending', { params: filter === 'all' ? { include: 'all' } : {} })
     .then((res) => { setRows(res.data); setError(''); })
@@ -222,7 +227,7 @@ export default function EmploymentChecks() {
     { key: 'job', label: 'Department and job title', render: (p) => <><span>{p.department || '—'}</span><div className="s">{p.position || ''}</div></> },
     { key: 'employeeId', label: 'Employee number', render: (p) => <span className="s ws-mono">{p.employeeId || '—'}</span> },
     { key: 'status', label: 'Status', width: 120, render: (p) => { const s = STATUS[p.status] || STATUS.Pending; return <Pill tone={s.tone}>{s.label}</Pill>; } },
-    { key: 'waiting', label: 'Waiting', width: 100, render: (p) => (p.status === 'HR_Verified' ? <span className="s">—</span> : waitingFor(p.waitingSince)) },
+    required && { key: 'waiting', label: 'Waiting', width: 100, render: (p) => (p.status === 'HR_Verified' ? <span className="s">—</span> : waitingFor(p.waitingSince)) },
     { key: 'apps', label: 'Applications', width: 150, render: (p) => {
       const waiting = p.waitingToSubmit || 0;
       const inProgress = p.applications.length - waiting;
@@ -234,7 +239,7 @@ export default function EmploymentChecks() {
         </span>
       );
     } }
-  ];
+  ].filter(Boolean);
 
   return (
     <div style={{ display: 'flex', gap: 'var(--spacing-lg)', alignItems: 'flex-start' }}>
@@ -242,8 +247,11 @@ export default function EmploymentChecks() {
       <div className="ws-page" style={{ flex: 1, minWidth: 0 }}>
         <PageTop
           title="Employment checks"
-          subtitle="Internal candidates can submit applications only once HR has verified their UCAA employment details."
+          subtitle={required ? 'Internal candidates can submit applications only once HR has verified their UCAA employment details.' : 'Not required on this test server.'}
         />
+        {!required && (
+          <Alert type="info" message="The employment check is switched off on this test server: internal candidates submit applications and are shortlisted without it, so nobody is waiting. You can still record a check from All internal candidates." />
+        )}
         <Alert type="success" message={message} />
         <Alert type="error" message={error} />
         <Chips value={filter} onChange={setFilter} options={[
@@ -256,7 +264,7 @@ export default function EmploymentChecks() {
             <div className="ws-panel-b">{[0, 1, 2].map((i) => <Skeleton key={i} width={`${70 - i * 10}%`} height={14} style={{ marginBottom: 12 }} />)}</div>
           ) : (
             <Table rows={shown} getRowKey={(p) => p.candidateId} columns={columns} onRowClick={(p) => setOpen(p.candidateId)}
-              emptyText={filter === 'waiting' ? 'Nobody is waiting for an employment check.' : 'Nothing to show.'} noun="candidates" />
+              emptyText={!required && filter !== 'all' ? 'Nobody - the employment check is switched off on this test server.' : filter === 'waiting' ? 'Nobody is waiting for an employment check.' : 'Nothing to show.'} noun="candidates" />
           )}
         </Panel>
       </div>

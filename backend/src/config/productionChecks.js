@@ -35,6 +35,18 @@ function productionProblems(env = process.env) {
     warnings.push('EXTERNAL_SITE_ENABLED=false - the public careers site is closed to external applicants.');
   }
 
+  // HR's check of internal candidates' employment can be switched off only on
+  // the test (UAT) server (utils/employmentCheck.js) - never where real people
+  // apply. Production proper is told apart by the nginx site stamp
+  // (REQUIRE_SITE_HEADER=true); UAT runs NODE_ENV=production without it.
+  if (String(env.EMPLOYMENT_CHECK_REQUIRED ?? 'true').trim().toLowerCase() === 'false') {
+    if (String(env.REQUIRE_SITE_HEADER || '').trim().toLowerCase() === 'true') {
+      problems.push('EMPLOYMENT_CHECK_REQUIRED=false - HR’s employment check can be switched off only on the test (UAT) server.');
+    } else {
+      warnings.push('EMPLOYMENT_CHECK_REQUIRED=false - HR’s employment check is switched off (test server only).');
+    }
+  }
+
   if (!env.SMTP_HOST) warnings.push('SMTP_HOST is not set - no email will be sent.');
   else if (env.SMTP_HOST === 'json') warnings.push('SMTP_HOST=json - emails are only logged, never sent.');
   return { problems, warnings };

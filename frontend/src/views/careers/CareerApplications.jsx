@@ -23,6 +23,8 @@ function trackOf(app, me) {
   const p = me?.internalProfile;
   const verified = p?.verificationStatus === 'HR_Verified';
   const flagged = p?.verificationStatus === 'Discrepancy_Flagged';
+  // HR's employment check is a step only where it is required (off on a test server).
+  const checked = SITE.internal && me?.employmentCheckRequired !== false;
   const rounds = (app.interviewRounds || []).filter((r) => r.status !== 'Cancelled');
   const reached = (s) => ['Shortlisted', 'InterviewScheduled', 'Interviewed', 'Offered'].includes(s) || Boolean(app.offer);
   const t = [];
@@ -32,10 +34,10 @@ function trackOf(app, me) {
   }
   if (app.status === 'Draft') {
     return [['now', 'Draft', `Not sent yet${app.vacancy.deadline ? ` · applications close ${formatDay(app.vacancy.deadline)}` : ''}`],
-      ['todo', 'Submitted'], ...(SITE.internal ? [['todo', 'Employment details verified by HR']] : []), ['todo', 'Shortlisting'], ['todo', 'Interview'], ['todo', 'Offer']];
+      ['todo', 'Submitted'], ...(checked ? [['todo', 'Employment details verified by HR']] : []), ['todo', 'Shortlisting'], ['todo', 'Interview'], ['todo', 'Offer']];
   }
   t.push(['done', 'Submitted', formatDay(app.submittedDate)]);
-  if (SITE.internal) {
+  if (checked) {
     t.push(verified ? ['done', 'Employment details verified by HR', formatDay(p.verifiedDate)]
       : flagged ? ['bad', 'Your employment details don’t match HR’s records', 'HR will contact you']
         : ['wait', 'Employment details verified by HR', 'HR is checking']);

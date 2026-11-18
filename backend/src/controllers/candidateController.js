@@ -5,6 +5,7 @@ const audit = require('../services/auditService');
 const applicationModel = require('../models/applicationModel');
 const profileEntriesModel = require('../models/profileEntriesModel');
 const { validateNationalId, normalizeNationalId } = require('../utils/validators');
+const { employmentCheckRequired } = require('../utils/employmentCheck');
 const { checkAndFireCompletionEvent } = require('../services/profileCompletionService');
 const { fileUrl } = require('../middleware/upload');
 const { educationKey, workExperienceKey, certificateKey, examGradeKey } = require('../utils/entryDedup');
@@ -13,6 +14,7 @@ const { toPublicVacancy } = require('../utils/publicVacancy');
 const { toCandidateOffer } = require('../services/offerService');
 const { toCandidateInterview } = require('../utils/candidateInterview');
 const internalEmployment = require('../services/internalEmploymentService');
+const rules = require('../utils/profileValidation');
 
 // Candidate rows carry passwordHash - fine for the internal auth-check
 // reads in candidateAuthController, but every response here goes straight
@@ -28,11 +30,15 @@ async function me(req, res) {
   const candidate = await candidateModel.findById(req.user.id, {
     workExperience: true, education: true, examGrades: true, certificates: true, internalProfile: true
   });
-  res.json(omitPasswordHash(candidate));
+  // Whether HR's employment check is required here (off on a test server,
+  // utils/employmentCheck.js) - the candidate pages word the check by it.
+  res.json({ ...omitPasswordHash(candidate), employmentCheckRequired: employmentCheckRequired() });
 }
 
 async function addWorkExperience(req, res) {
   const { employer, jobTitle, startDate, endDate, duties } = req.body;
+  const datesError = rules.workDatesError({ startDate, endDate });
+  if (datesError) return res.status(400).json({ error: datesError, code: 'INVALID_DATES' });
 
   // Idempotent: re-submitting an entry equivalent to one already on file
   // (a re-uploaded CV suggesting the same role again, a retried or
@@ -85,6 +91,8 @@ async function addEducation(req, res) {
   }
   const parsedCGPA = parseCGPA(cgpa);
   if (parsedCGPA.error) return res.status(400).json({ error: parsedCGPA.error });
+  const yearError = rules.yearCompletedError(yearCompleted);
+  if (yearError) return res.status(400).json({ error: yearError, code: 'INVALID_DATES' });
 
   // Idempotent - see addWorkExperience's comment above; same reasoning.
   const existing = await profileEntriesModel.findEducationForCandidate(req.user.id);
@@ -113,6 +121,8 @@ async function updateEducation(req, res) {
   }
   const parsedCGPA = parseCGPA(cgpa);
   if (parsedCGPA.error) return res.status(400).json({ error: parsedCGPA.error });
+  const yearError = rules.yearCompletedError(yearCompleted);
+  if (yearError) return res.status(400).json({ error: yearError, code: 'INVALID_DATES' });
   const result = await profileEntriesModel.updateEducation(id, req.user.id, {
     institution, qualificationLevelText: qualificationLevel, qualificationLevel, fieldOfStudy,
     yearCompleted: yearCompleted ? Number(yearCompleted) : null,
@@ -135,6 +145,8 @@ async function updateWorkExperience(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid work experience id' });
   const { employer, jobTitle, startDate, endDate, duties } = req.body;
+  const datesError = rules.workDatesError({ startDate, endDate });
+  if (datesError) return res.status(400).json({ error: datesError, code: 'INVALID_DATES' });
   const result = await profileEntriesModel.updateWorkExperience(id, req.user.id, {
     employer, jobTitle,
     startDate: new Date(startDate),
@@ -160,6 +172,8 @@ async function addCertificate(req, res) {
   if (!name || !issuingOrganization) {
     return res.status(400).json({ error: 'Certificate name and issuing organization are required' });
   }
+  const datesError = rules.certificateDatesError({ issueDate, expiryDate });
+  if (datesError) return res.status(400).json({ error: datesError, code: 'INVALID_DATES' });
 
   // Idempotent - see addWorkExperience's comment above; same reasoning.
   // expiryDate is left out of the key so correcting/adding it later
@@ -184,6 +198,8 @@ async function updateCertificate(req, res) {
   if (!name || !issuingOrganization) {
     return res.status(400).json({ error: 'Certificate name and issuing organization are required' });
   }
+  const datesError = rules.certificateDatesError({ issueDate, expiryDate });
+  if (datesError) return res.status(400).json({ error: datesError, code: 'INVALID_DATES' });
   const result = await profileEntriesModel.updateCertificate(id, req.user.id, {
     name, issuingOrganization,
     issueDate: issueDate ? new Date(issueDate) : null,
@@ -282,9 +298,18 @@ async function updateProfile(req, res) {
     if (district.length > 100) return res.status(400).json({ error: 'District of origin is too long' });
     data.districtOfOrigin = district || null;
   }
-  if (linkedinUrl !== undefined) data.linkedinUrl = linkedinUrl || null;
-  if (portfolioUrl !== undefined) data.portfolioUrl = portfolioUrl || null;
-  if (dateOfBirth !== undefined) data.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+  // Links are stored as full web addresses (https:// added when left out).
+  for (const [field, value, label] of [['linkedinUrl', linkedinUrl, 'LinkedIn'], ['portfolioUrl', portfolioUrl, 'Portfolio']]) {
+    if (value === undefined) continue;
+    const link = rules.normalizeUrl(value, label);
+    if (link.error) return res.status(400).json({ error: link.error, code: 'INVALID_LINK' });
+    data[field] = link.value || null;
+  }
+  if (dateOfBirth !== undefined) {
+    const dobError = rules.dateOfBirthError(dateOfBirth);
+    if (dobError) return res.status(400).json({ error: dobError, code: 'INVALID_DATES' });
+    data.dateOfBirth = dateOfBirth ? new Date(rules.dayOf(dateOfBirth)) : null;
+  }
   if (flyingHours !== undefined) data.flyingHours = flyingHours !== '' && flyingHours != null ? Number(flyingHours) : null;
 
   let candidate;
@@ -330,6 +355,11 @@ async function updateInternalProfile(req, res) {
     return res.status(403).json({ error: 'Only internal candidates have an internal profile' });
   }
   const { dateJoined } = req.body;
+  if (dateJoined) {
+    const born = (await candidateModel.findById(req.user.id))?.dateOfBirth;
+    const joinedError = rules.dateJoinedError(dateJoined, born);
+    if (joinedError) return res.status(400).json({ error: joinedError, code: 'INVALID_DATES' });
+  }
   // The employee number is how HR identifies an internal candidate (they give
   // no National ID), so it is required.
   const employeeId = String(req.body.employeeId ?? '').trim();

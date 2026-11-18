@@ -73,7 +73,7 @@ export default function CareerJob() {
       <ol>
         <li>You are signed in with your UCAA account, so there is nothing to register.</li>
         <li>Check your profile is up to date. The application only asks for what this vacancy needs.</li>
-        <li>Confirm your employment details on your profile. HR verifies them before you can submit an application.</li>
+        <li>Confirm your employment details on your profile.{me?.employmentCheckRequired !== false && ' HR verifies them before you can submit an application.'}</li>
         <li>Answer the questions, name three referees, add your academic documents{needed.length ? ` and ${needed.join(', ').toLowerCase()}` : ''}, and submit by {formatDeadlineTime(vacancy.deadline)} on {formatDay(vacancy.deadline)}.</li>
       </ol>
     </div>

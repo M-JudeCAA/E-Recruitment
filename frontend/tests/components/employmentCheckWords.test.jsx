@@ -43,3 +43,12 @@ describe('HrComment', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+describe('employmentCheck where it is switched off (a test server)', () => {
+  test('says it is not required, with no tone, so no page tells them to wait for HR', async () => {
+    const { employmentCheck } = await import('../../src/views/careers/careers');
+    const me = { internalProfile: { verificationStatus: 'Pending' } };
+    expect(employmentCheck(me).tone).toBe('warn');
+    expect(employmentCheck({ ...me, employmentCheckRequired: false })).toEqual({ label: 'Not required', tone: null });
+  });
+});

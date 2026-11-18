@@ -1,20 +1,25 @@
 import { useEffect, useState } from 'react';
 import client from './apiClient';
 
-// Whether the public careers site is open (backend config/externalSite.js,
-// GET /api/site-status). Asked once per page load and shared. Until the
-// answer arrives the value is null; if the API can't be reached the site is
-// treated as open, as it was before this switch existed - the API still
-// refuses what a closed site doesn't allow.
+// GET /api/site-status, asked once per page load and shared: whether the
+// public careers site is open (backend config/externalSite.js), and whether
+// HR's employment check of internal candidates is required (off only on a
+// test server, backend utils/employmentCheck.js). Until the answer arrives the
+// values are null; if the API can't be reached both are taken as before these
+// switches existed (open, required) - the API still enforces what it allows.
 let pending = null;
 
-export function fetchExternalSiteOpen() {
+function fetchSiteStatus() {
   if (!pending) {
     pending = client.get('/api/site-status')
-      .then((r) => r.data?.externalSite !== false)
-      .catch(() => true);
+      .then((r) => ({ externalSite: r.data?.externalSite !== false, employmentCheckRequired: r.data?.employmentCheckRequired !== false }))
+      .catch(() => ({ externalSite: true, employmentCheckRequired: true }));
   }
   return pending;
+}
+
+export function fetchExternalSiteOpen() {
+  return fetchSiteStatus().then((s) => s.externalSite);
 }
 
 export function useExternalSiteOpen(enabled = true) {
@@ -26,6 +31,17 @@ export function useExternalSiteOpen(enabled = true) {
     return () => { live = false; };
   }, [enabled]);
   return open;
+}
+
+/** Whether HR's employment check is required here: true, false, or null until known. */
+export function useEmploymentCheckRequired() {
+  const [required, setRequired] = useState(null);
+  useEffect(() => {
+    let live = true;
+    fetchSiteStatus().then((s) => { if (live) setRequired(s.employmentCheckRequired); });
+    return () => { live = false; };
+  }, []);
+  return required;
 }
 
 // For tests: forget the cached answer.
