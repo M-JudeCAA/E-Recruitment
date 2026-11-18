@@ -16,6 +16,14 @@ import { candidateFileSrc } from '../../utils/fileSrc';
 import { EmploymentForm, PersonalForm } from './forms';
 import CvImport from './CvImport';
 import { SITE, CareerShell, useCareer, profileGaps, employmentCheck, HrComment, formatDay } from './careers';
+import { safeHref } from '../../utils/profileValidation';
+
+// A link the candidate gave, opened in a new tab - only an http(s) address;
+// anything else (an older entry) is shown as plain text.
+function ExternalLink({ url }) {
+  const href = safeHref(url);
+  return href ? <a href={href} target="_blank" rel="noopener noreferrer">{url}</a> : url;
+}
 
 // My profile (Internal Careers: /careers/profile; public site:
 // /dashboard/profile): the profile as sections, each with its own Edit in a
@@ -28,7 +36,7 @@ import { SITE, CareerShell, useCareer, profileGaps, employmentCheck, HrComment, 
 // removes it after a confirmation.
 const TITLES = {
   employment: 'UCAA employment', personal: 'Personal details', photo: 'Profile photo', cv: 'Fill in from your CV',
-  education: 'Education', workExperience: 'Work experience', certificates: 'Certificates'
+  education: 'Education', workExperience: 'Work experience', certificates: 'Professional certificates and licences'
 };
 const ENTRY_PANELS = ['education', 'workExperience', 'certificates'];
 const levelName = (level) => (level === 'ALevel' ? 'A-Level' : level === 'OLevel' ? 'O-Level' : level);
@@ -139,13 +147,14 @@ export default function CareerProfile() {
               ['District of origin', me.districtOfOrigin || null], ['Place of residence', me.location || null],
               ['Date of birth', me.dateOfBirth ? formatDay(me.dateOfBirth) : null],
               me.flyingHours != null && ['Flying hours', me.flyingHours],
-              !SITE.internal && me.linkedinUrl && ['LinkedIn', me.linkedinUrl],
-              !SITE.internal && me.portfolioUrl && ['Portfolio', me.portfolioUrl]
+              !SITE.internal && me.linkedinUrl && ['LinkedIn', <ExternalLink url={me.linkedinUrl} />],
+              !SITE.internal && me.portfolioUrl && ['Portfolio', <ExternalLink url={me.portfolioUrl} />]
             ].filter(Boolean)} />
           </>
         ))}
         {section('Education', 'education', null, (
           <>
+            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '0 0 8px' }}>Qualifications from a school, college, institute or university - certificate courses included.</p>
             {list((me.education || []).map((e) => [e.id,
               `${e.qualificationLevelText || e.qualificationLevel}${e.fieldOfStudy ? ` in ${e.fieldOfStudy}` : ''}`,
               `${e.institution}${e.yearCompleted ? ` · ${e.yearCompleted}` : ''}${e.cgpa ? ` · CGPA ${e.cgpa}` : ''}`]), 'No qualifications yet.', 'education')}
@@ -162,8 +171,8 @@ export default function CareerProfile() {
               <div className={`ws-duties${duties ? '' : ' none'}`}>{duties ? `${duties} ${duties === 1 ? 'duty' : 'duties'} listed` : 'No duties listed - add them with Edit'}</div>];
           }), '', 'workExperience')
           : <Alert type="warning" message="No jobs added yet. Most vacancies ask for years of experience, so add your work history." />, '+ Add', () => addEntry('workExperience'))}
-        {section('Certificates', 'certificates', null, list((me.certificates || []).map((c) => [c.id, c.name,
-          `${c.issuingOrganization}${c.issueDate ? ` · ${formatDay(c.issueDate)}` : ''}${c.expiryDate ? ` · expires ${formatDay(c.expiryDate)}` : ''}`]), 'None on file. Add any a vacancy asks for.', 'certificates'), '+ Add', () => addEntry('certificates'))}
+        {section(TITLES.certificates, 'certificates', null, list((me.certificates || []).map((c) => [c.id, c.name,
+          `${c.issuingOrganization}${c.issueDate ? ` · ${formatDay(c.issueDate)}` : ''}${c.expiryDate ? ` · expires ${formatDay(c.expiryDate)}` : ''}`]), 'None on file. Professional qualifications, licences and short courses (e.g. ACCA, CPA, an ATC licence) go here - a certificate course from a college goes under Education.', 'certificates'), '+ Add', () => addEntry('certificates'))}
         <Panel title="Email notifications"><EmailNotificationsCard /></Panel>
         <Panel title="Your data"><YourDataCard bare /></Panel>
       </div>

@@ -5,6 +5,7 @@ import TextField from '../../components/TextField';
 import SuggestField from '../../components/SuggestField';
 import Alert from '../../components/Alert';
 import { validateNationalId } from '../../utils/validators';
+import { today, dateOfBirthError, dateJoinedError, normalizeUrl } from '../../utils/profileValidation';
 
 // The short forms the candidate pages ask for - a UCAA employee's employment
 // (what HR verifies; Internal Careers only) and personal details - shared by
@@ -70,9 +71,11 @@ export function EmploymentForm({ me, bind, onSaved }) {
     !form.dateJoined && 'Date joined UCAA'
   ].filter(Boolean);
 
+  const joinedError = form.dateJoined ? dateJoinedError(form.dateJoined, me?.dateOfBirth) : null;
   const save = async () => {
     setError('');
     if (missing.length) { setError(`Still needed: ${missing.join(', ')}.`); return false; }
+    if (joinedError) { setError(joinedError); return false; }
     try {
       await client.put('/api/candidates/me/internal-profile', form);
       onSaved?.();
@@ -106,7 +109,7 @@ export function EmploymentForm({ me, bind, onSaved }) {
           hint={form.positionId ? (hint('position') || undefined) : form.position && form.departmentId ? 'Pick your job title from the list.' : undefined} />
         <TextField label="Employee number" required value={form.employeeId} onChange={set('employeeId')}
           hint={hint('employeeId') || 'Your UCAA employee number - HR identifies you by it'} />
-        <TextField label="Date joined UCAA" type="date" required value={form.dateJoined} onChange={set('dateJoined')} />
+        <TextField label="Date joined UCAA" type="date" required max={today()} value={form.dateJoined} onChange={set('dateJoined')} error={joinedError || undefined} />
       </div>
       <Alert type="error" message={error} />
     </div>
@@ -131,11 +134,16 @@ export function PersonalForm({ me, bind, onSaved, links = false }) {
     !form.districtOfOrigin.trim() && 'District of origin', !form.location.trim() && 'Place of residence'
   ].filter(Boolean);
 
+  // Checked as typed (backend utils/profileValidation.js); links get https:// added.
+  const dobError = dateOfBirthError(form.dateOfBirth);
+  const linkChecks = links ? { linkedinUrl: normalizeUrl(form.linkedinUrl, 'LinkedIn'), portfolioUrl: normalizeUrl(form.portfolioUrl, 'Portfolio') } : {};
   const save = async () => {
     setError('');
     if (missing.length) { setError(`Still needed: ${missing.join(', ')}.`); return false; }
+    const problem = dobError || linkChecks.linkedinUrl?.error || linkChecks.portfolioUrl?.error;
+    if (problem) { setError(problem); return false; }
     try {
-      await client.put('/api/candidates/me', form);
+      await client.put('/api/candidates/me', links ? { ...form, linkedinUrl: linkChecks.linkedinUrl.value, portfolioUrl: linkChecks.portfolioUrl.value } : form);
       onSaved?.();
       return true;
     } catch (err) {
@@ -151,10 +159,10 @@ export function PersonalForm({ me, bind, onSaved, links = false }) {
         {!internal && <TextField label="National ID number (NIN)" required maxLength={14} value={form.nationalId} onChange={set('nationalId')} hint="As it appears on your National ID card" />}
         <TextField label="District of origin" required maxLength={100} value={form.districtOfOrigin} onChange={set('districtOfOrigin')} hint="The Ugandan district you come from" />
         <TextField label="Place of residence" required value={form.location} onChange={set('location')} hint="Town or district" />
-        <TextField label="Date of birth" type="date" value={form.dateOfBirth} onChange={set('dateOfBirth')} hint="Only needed when a vacancy has an age limit" />
+        <TextField label="Date of birth" type="date" max={today()} value={form.dateOfBirth} onChange={set('dateOfBirth')} error={dobError || undefined} hint="Only needed when a vacancy has an age limit" />
         <TextField label="Flying hours" type="number" min="0" value={form.flyingHours} onChange={set('flyingHours')} hint="Only for flight crew roles" />
-        {links && <TextField label="LinkedIn" value={form.linkedinUrl} onChange={set('linkedinUrl')} placeholder="linkedin.com/in/..." hint="Optional" />}
-        {links && <TextField label="Portfolio or personal website" value={form.portfolioUrl} onChange={set('portfolioUrl')} hint="Optional" />}
+        {links && <TextField label="LinkedIn" value={form.linkedinUrl} onChange={set('linkedinUrl')} placeholder="linkedin.com/in/..." hint="Optional" error={linkChecks.linkedinUrl?.error} />}
+        {links && <TextField label="Portfolio or personal website" value={form.portfolioUrl} onChange={set('portfolioUrl')} placeholder="https://..." hint="Optional" error={linkChecks.portfolioUrl?.error} />}
       </div>
       <Alert type="error" message={error} />
     </div>

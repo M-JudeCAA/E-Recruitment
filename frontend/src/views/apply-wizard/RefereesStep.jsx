@@ -1,4 +1,5 @@
 import TextField from '../../components/TextField';
+import { phoneError, refereeEmailError } from '../../utils/profileValidation';
 
 // Application-level, like the Questions step (not candidate-level like
 // Education/WorkExperience on the Profile step) - who a candidate names as
@@ -7,7 +8,8 @@ import TextField from '../../components/TextField';
 // slots (not a repeatable add-list like Education) since UCAA's
 // application form asks for a set number of referees, not an open-ended
 // list.
-export default function RefereesStep({ referees, setReferee }) {
+// ownEmail: the candidate's own, which can't be a referee's.
+export default function RefereesStep({ referees, setReferee, ownEmail }) {
   return (
     <div>
       <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 20 }}>
@@ -23,9 +25,11 @@ export default function RefereesStep({ referees, setReferee }) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4" style={{ maxWidth: 640 }}>
             <TextField label="Organization" hint="Optional" value={referees[i]?.organization || ''} onChange={setReferee(i, 'organization')} />
-            <TextField label="Phone" required value={referees[i]?.phone || ''} onChange={setReferee(i, 'phone')} />
+            <TextField label="Phone" required type="tel" inputMode="tel" placeholder="0772 123456" value={referees[i]?.phone || ''} onChange={setReferee(i, 'phone')}
+              error={phoneError(referees[i]?.phone) || undefined} />
           </div>
-          <TextField label="Email" required type="email" value={referees[i]?.email || ''} onChange={setReferee(i, 'email')} />
+          <TextField label="Email" required type="email" value={referees[i]?.email || ''} onChange={setReferee(i, 'email')}
+            error={refereeEmailError(referees[i]?.email, ownEmail) || undefined} />
         </div>
       ))}
     </div>

@@ -17,7 +17,7 @@ const {
 } = require('../utils/applicationEligibility');
 const { isProfileComplete } = require('../utils/profileCompleteness');
 const { broadcastDashboardEvent } = require('../realtime/dashboardSocket');
-const { countCompleteReferees } = require('../utils/referees');
+const { refereeProblems } = require('../utils/referees');
 const { notifyCandidate } = require('./candidateNotificationService');
 const { notify } = require('./notificationService');
 const { PRIVACY_NOTICE_VERSION } = require('../config/privacyNotice');
@@ -56,8 +56,9 @@ const refuse = (status, body) => { throw new SubmissionRefused(status, body); };
  */
 async function check(application, { candidateId, candidateType, consent, mode }) {
   if (application.status !== 'Draft') refuse(422, { error: 'Only a draft application can be submitted' });
-  if (countCompleteReferees(application.referees) < 3) {
-    refuse(400, { error: 'Three referees (with name, phone and email) are required before submitting' });
+  const refereeIssues = refereeProblems(application.referees);
+  if (refereeIssues.length) {
+    refuse(400, { error: `Three referees with a valid name, phone number and email address are required before submitting. ${refereeIssues.join(' ')}`, code: 'REFEREES_INVALID', problems: refereeIssues });
   }
   // FR-ATS-038: the candidate agrees to UCAA processing and retaining their
   // data, per the privacy notice, as part of submitting - never assumed. A
@@ -86,6 +87,9 @@ async function check(application, { candidateId, candidateType, consent, mode })
   // relevant reason submission isn't possible. HR should never receive a
   // submission with no education/experience/contact details on file.
   const candidate = await candidateModel.findByIdWithRecords(candidateId);
+  // A referee is someone else: their email can't be the candidate's own.
+  const ownEmailIssues = refereeProblems(application.referees, candidate?.email).filter((p) => p.includes('not your own'));
+  if (ownEmailIssues.length) refuse(400, { error: ownEmailIssues.join(' '), code: 'REFEREES_INVALID', problems: ownEmailIssues });
   if (!isProfileComplete(candidate)) {
     refuse(422, { error: 'Please complete your profile before submitting an application' });
   }

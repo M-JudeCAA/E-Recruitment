@@ -144,7 +144,7 @@ function SupportingDocumentsSection({ title, description, category, required, la
 // documents are required (submit refuses an application without one); other
 // documents are optional.
 export default function DocumentsStep({
-  coverLetter, setCoverLetter, portfolioUrl, setPortfolioUrl, applicationId, documents, onDocumentsChange, evidence = []
+  coverLetter, setCoverLetter, applicationId, documents, onDocumentsChange, evidence = []
 }) {
   return (
     <div>
@@ -176,8 +176,6 @@ export default function DocumentsStep({
         labelPlaceholder="e.g. ATC licence" applicationId={applicationId} documents={documents} onDocumentsChange={onDocumentsChange} />
       <AttachmentField label="Cover letter" hint="Optional" name="cover letter"
         file={coverLetter} onChange={setCoverLetter} onClear={() => setCoverLetter(null)} />
-      <TextField label="Portfolio link" hint="Optional - certifications, work samples, personal site"
-        placeholder="https://..." value={portfolioUrl} onChange={setPortfolioUrl} />
     </div>
   );
 }
