@@ -49,6 +49,8 @@ export const ENTRY_KINDS = {
   education: {
     path: '/api/candidates/me/education',
     title: 'Education', noun: 'qualification', required: true,
+    // A small subtitle under the section's heading.
+    guide: 'Qualifications from a school, college, institute or university - certificate courses included.',
     empty: { institution: '', qualificationLevel: '', fieldOfStudy: '', yearCompleted: '', cgpa: '' },
     fromSaved: (e) => ({
       institution: e.institution || '', qualificationLevel: e.qualificationLevel || '', fieldOfStudy: e.fieldOfStudy || '',

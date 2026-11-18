@@ -154,6 +154,7 @@ export default function CareerProfile() {
         ))}
         {section('Education', 'education', null, (
           <>
+            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: '0 0 8px' }}>Qualifications from a school, college, institute or university - certificate courses included.</p>
             {list((me.education || []).map((e) => [e.id,
               `${e.qualificationLevelText || e.qualificationLevel}${e.fieldOfStudy ? ` in ${e.fieldOfStudy}` : ''}`,
               `${e.institution}${e.yearCompleted ? ` · ${e.yearCompleted}` : ''}${e.cgpa ? ` · CGPA ${e.cgpa}` : ''}`]), 'No qualifications yet.', 'education')}
