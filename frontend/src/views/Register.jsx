@@ -7,6 +7,7 @@ import TextField from "../components/TextField";
 import Button from "../components/Button";
 import Alert from "../components/Alert";
 import Modal from "../components/Modal";
+import { phoneError } from "../utils/profileValidation";
 import { validateEmail, validatePassword, validateNationalId, PASSWORD_HINT, NATIONAL_ID_ERROR } from "../utils/validators";
 
 // Uganda Civil Aviation Authority brand palette
