@@ -435,6 +435,19 @@ describe('submit', () => {
       expect(prisma.application.updateMany).not.toHaveBeenCalled();
     });
 
+    test('academic evidence asked by a question is covered by the academic documents (UAT-031)', async () => {
+      const degree = { ...licenceQuestion, text: 'Do you hold a degree in IT?', evidenceRequired: true, evidenceLabel: 'Degree certificate or academic transcript' };
+      arrange({
+        vacancy: { disqualifyingRequirements: [degree] },
+        application: { disqualifyingResponses: [{ ...degree, answer: true }] },
+        documents: [{ category: 'Academic', label: 'BSc IT degree certificate', evidenceKey: null }]
+      });
+      const res = mockRes();
+      await applicationDraftController.submit({ params: { id: '1' }, body: { consent: true }, user: { id: 5, candidateType: 'External' } }, res);
+      expect(res.json.mock.calls[0]?.[0]?.code).not.toBe('EVIDENCE_REQUIRED');
+      expect(prisma.application.updateMany).toHaveBeenCalled();
+    });
+
     test('refuses a candidate who answered a Disqualifying question the wrong way', async () => {
       arrange({
         vacancy: { disqualifyingRequirements: [licenceQuestion] },
@@ -575,6 +588,26 @@ describe('supporting documents', () => {
     res = mockRes();
     await applicationDraftController.addDocument({ params: { id: '1' }, user: { id: 5 }, file, body: { category: 'Evidence', evidenceKey: 'flyingHours' } }, res);
     expect(res.status).toHaveBeenCalledWith(400);
+  });
+
+  test('an academic document needs a description, saying which requirement it covers (UAT-031)', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, status: 'Draft' });
+    const res = mockRes();
+    await applicationDraftController.addDocument({ params: { id: '1' }, user: { id: 5 }, file, body: { category: 'Academic', label: '  ' } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'DESCRIPTION_REQUIRED' }));
+    expect(prisma.applicationDocument.create).not.toHaveBeenCalled();
+  });
+
+  test('academic evidence is uploaded with the academic documents, not as separate evidence (UAT-031)', async () => {
+    prisma.application.findUnique.mockResolvedValue({ id: 1, candidateId: 5, status: 'Draft', vacancyId: 10 });
+    prisma.vacancy.findUnique.mockResolvedValue({ id: 10, minimumCGPA: 3 });
+    prisma.applicationDocument.findMany.mockResolvedValue([]);
+    const res = mockRes();
+    await applicationDraftController.addDocument({ params: { id: '1' }, user: { id: 5 }, file, body: { category: 'Evidence', evidenceKey: 'transcript' } }, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'USE_ACADEMIC_DOCUMENTS' }));
+    expect(prisma.applicationDocument.create).not.toHaveBeenCalled();
   });
 
   test('keeps one CV per application - a new one replaces the one before', async () => {

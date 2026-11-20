@@ -181,7 +181,8 @@ export default function SubmitStep({ vacancy, applicationId, status, eligibility
   }
 
   const missingAcademic = eligibility && eligibility.academicDocuments === 0;
-  const missingEvidence = (eligibility?.evidence || []).filter((e) => !e.provided);
+  // Academic evidence is covered by the academic documents (missingAcademic).
+  const missingEvidence = (eligibility?.evidence || []).filter((e) => !e.provided && !e.academic);
   // An internal candidate submits only once HR has verified their employment
   // (backend EMPLOYMENT_NOT_VERIFIED) - or sets it to go in when they are.
   const blocked = missingAcademic || missingEvidence.length > 0;

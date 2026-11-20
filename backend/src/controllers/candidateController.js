@@ -15,6 +15,7 @@ const { toCandidateOffer } = require('../services/offerService');
 const { toCandidateInterview } = require('../utils/candidateInterview');
 const internalEmployment = require('../services/internalEmploymentService');
 const rules = require('../utils/profileValidation');
+const { RECORD_ORDER } = require('../utils/recordOrder');
 
 // Candidate rows carry passwordHash - fine for the internal auth-check
 // reads in candidateAuthController, but every response here goes straight
@@ -28,7 +29,7 @@ function omitPasswordHash(candidate) {
 
 async function me(req, res) {
   const candidate = await candidateModel.findById(req.user.id, {
-    workExperience: true, education: true, examGrades: true, certificates: true, internalProfile: true
+    workExperience: RECORD_ORDER.workExperience, education: RECORD_ORDER.education, examGrades: true, certificates: RECORD_ORDER.certificates, internalProfile: true
   });
   // Whether HR's employment check is required here (off on a test server,
   // utils/employmentCheck.js) - the candidate pages word the check by it.

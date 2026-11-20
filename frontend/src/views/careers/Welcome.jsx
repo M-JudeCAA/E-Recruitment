@@ -61,7 +61,8 @@ export default function Welcome() {
     setBusy(true);
     try {
       if (entries.current && !(await entries.current.finish())) {
-        setError('An entry is missing something it needs - fill it in or remove it.');
+        // Names the entry and the field (UAT-028).
+        setError(entries.current.problem?.() || 'An entry is missing something it needs - fill it in or remove it.');
         return false;
       }
       const missing = entriesMissing((await client.get('/api/candidates/me')).data);

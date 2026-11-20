@@ -25,6 +25,10 @@ export default function CvImport({ profile, onAdded, entriesRef, links = true })
   const ownEditor = useRef(null);
   const editor = entriesRef || ownEditor;
   const [error, setError] = useState('');
+  // What the latest import added, so it can be undone in one go (UAT-025):
+  // { batch, personal: [field...], linkedin, gradeIds: [id...] }.
+  const lastImport = useRef(null);
+  const begin = () => { lastImport.current = { batch: `cv-${Date.now()}`, personal: [], linkedin: false, gradeIds: [] }; };
 
   // An internal candidate's current UCAA job is already on the profile, from
   // their employment details; their CV's line for it rarely matches word for
@@ -34,7 +38,8 @@ export default function CvImport({ profile, onAdded, entriesRef, links = true })
   const hasCurrentUcaaJob = profile?.candidateType === 'Internal' && (profile.workExperience || []).some(currentUcaaJob);
   const take = (kind) => (values) => {
     if (kind === 'workExperience' && hasCurrentUcaaJob && currentUcaaJob(values)) return false;
-    return editor.current?.addFromCv(kind, values) || false;
+    if (!lastImport.current) begin();
+    return editor.current?.addFromCv(kind, values, lastImport.current.batch) || false;
   };
 
   // Personal details fill only what the profile doesn't have yet.
@@ -46,6 +51,7 @@ export default function CvImport({ profile, onAdded, entriesRef, links = true })
     if (!Object.keys(missing).length) return [];
     try {
       await client.put('/api/candidates/me', missing);
+      lastImport.current?.personal.push(...Object.keys(missing));
       onAdded?.();
       return Object.keys(missing).map((k) => LABELS[k]);
     } catch (err) {
@@ -57,6 +63,7 @@ export default function CvImport({ profile, onAdded, entriesRef, links = true })
     if (profile?.linkedinUrl) return false;
     try {
       await client.put('/api/candidates/me', { linkedinUrl: url });
+      if (lastImport.current) lastImport.current.linkedin = true;
       onAdded?.();
       return true;
     } catch (err) {
@@ -68,15 +75,37 @@ export default function CvImport({ profile, onAdded, entriesRef, links = true })
   const addGrades = async (grades) => {
     let added = 0;
     for (const g of grades) {
-      try { if ((await client.post('/api/candidates/me/exam-grades', g)).status === 201) added += 1; } catch { /* one bad grade doesn't stop the rest */ }
+      try {
+        const res = await client.post('/api/candidates/me/exam-grades', g);
+        if (res.status === 201) { added += 1; if (res.data?.id) lastImport.current?.gradeIds.push(res.data.id); }
+      } catch { /* one bad grade doesn't stop the rest */ }
     }
     if (added) onAdded?.();
     return added;
   };
 
+  // Takes back everything the latest import added: its entries, the personal
+  // details and LinkedIn it filled in (empty again, as they were) and its
+  // O-Level / A-Level results. Resolves to an error message, or ''.
+  const undo = async () => {
+    const last = lastImport.current;
+    if (!last) return '';
+    setError('');
+    let failed = false;
+    await editor.current?.undoCv(last.batch);
+    const cleared = Object.fromEntries([...last.personal, ...(last.linkedin ? ['linkedinUrl'] : [])].map((k) => [k, '']));
+    try { if (Object.keys(cleared).length) await client.put('/api/candidates/me', cleared); } catch { failed = true; }
+    for (const id of last.gradeIds) {
+      try { await client.delete(`/api/candidates/me/exam-grades/${id}`); } catch { failed = true; }
+    }
+    lastImport.current = null;
+    onAdded?.();
+    return failed ? 'Some of what your CV added could not be removed - delete it below by hand.' : '';
+  };
+
   return (
     <div>
-      <CvAutofillPanel withNationalId={profile?.candidateType !== 'Internal'}
+      <CvAutofillPanel onStart={begin} onUndo={undo} withNationalId={profile?.candidateType !== 'Internal'}
         onPersonalSuggested={fillPersonal} onExamGradesSuggested={addGrades} onLinkedinSuggested={links ? addLinkedin : undefined}
         onEducationSuggested={take('education')}
         onWorkExperienceSuggested={take('workExperience')}

@@ -1,5 +1,6 @@
 import React from 'react';
 import Button from './Button';
+import { questionIsAcademic } from '../utils/screeningEvidence';
 
 const rowInputStyle = { flex: 1, padding: '11px 14px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 'inherit', fontFamily: 'inherit', background: 'var(--color-bg-input)' };
 const selectStyle = { padding: '8px 6px', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)', fontSize: 'inherit', fontFamily: 'inherit', background: 'var(--color-bg-input)' };
@@ -75,7 +76,12 @@ export default function ScreeningQuestionsEditor({ desirableItems, disqualifying
   };
   // "Needs evidence": a candidate who answers Yes (or a number above 0)
   // must upload it (backend utils/screeningEvidence.js).
-  const evidenceOf = (row) => (row.evidenceRequired ? { evidenceRequired: true, evidenceLabel: row.evidenceLabel || '' } : {});
+  // evidenceAcademic: it's an academic document, which the candidate covers
+  // with their Academic documents instead of a second upload.
+  const evidenceOf = (row) => (row.evidenceRequired ? {
+    evidenceRequired: true, evidenceLabel: row.evidenceLabel || '',
+    ...(typeof row.evidenceAcademic === 'boolean' ? { evidenceAcademic: row.evidenceAcademic } : {})
+  } : {});
   const changeAnswerType = (row, answerType) => {
     if (answerType === row.answerType) return;
     updateRow(row, answerType === 'number' ? { answerType: 'number', minValue: '' } : { answerType: 'yesno', minValue: undefined });
@@ -131,13 +137,20 @@ export default function ScreeningQuestionsEditor({ desirableItems, disqualifying
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
               <input type="checkbox" checked={!!row.evidenceRequired}
-                onChange={(e) => updateRow(row, e.target.checked ? { evidenceRequired: true, evidenceLabel: row.evidenceLabel || '' } : { evidenceRequired: undefined, evidenceLabel: undefined })} />
+                onChange={(e) => updateRow(row, e.target.checked ? { evidenceRequired: true, evidenceLabel: row.evidenceLabel || '' } : { evidenceRequired: undefined, evidenceLabel: undefined, evidenceAcademic: undefined })} />
               Needs evidence if answered Yes
             </label>
             {row.evidenceRequired && (
               <input value={row.evidenceLabel || ''} maxLength={150} placeholder="What to upload, e.g. A copy of your ATC licence"
                 aria-label="Evidence to upload" onChange={(e) => updateRow(row, { evidenceLabel: e.target.value })}
                 style={{ ...rowInputStyle, flex: '1 1 260px' }} />
+            )}
+            {row.evidenceRequired && (
+              <label title="Candidates cover it with the academic documents they upload, described against it, instead of a separate upload"
+                style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                <input type="checkbox" checked={questionIsAcademic(row)} onChange={(e) => updateRow(row, { evidenceAcademic: e.target.checked })} />
+                Academic document
+              </label>
             )}
           </div>
           {row.text.trim() && (row.answerType !== 'number' || row.minValue !== '') && (

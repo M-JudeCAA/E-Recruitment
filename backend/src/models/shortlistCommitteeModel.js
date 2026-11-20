@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const { RECORD_ORDER } = require('../utils/recordOrder');
 
 // The shortlisting committee's tables - ShortlistExercise, ShortlistMember,
 // ShortlistAssignment, ShortlistRating and ShortlistDecision - in one model
@@ -119,7 +120,7 @@ module.exports = {
       candidate: {
         select: {
           fullName: true, candidateType: true, location: true, flyingHours: true,
-          education: true, workExperience: true, examGrades: true, certificates: true
+          education: RECORD_ORDER.education, workExperience: RECORD_ORDER.workExperience, examGrades: true, certificates: RECORD_ORDER.certificates
         }
       }
     }

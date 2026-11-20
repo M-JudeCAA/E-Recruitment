@@ -2,6 +2,7 @@ const prisma = require('../config/db');
 const conflictOfInterest = require('../services/conflictOfInterestService');
 const accessLog = require('../services/accessLogService');
 const audit = require('../services/auditService');
+const { RECORD_ORDER } = require('../utils/recordOrder');
 
 // The candidate database (FR-ATS-051/052): HR's tags on candidates, and a
 // keyword search over everyone who has applied - past applicants included.
@@ -169,7 +170,7 @@ async function profile(req, res) {
     select: {
       id: true, fullName: true, email: true, phone: true, candidateType: true, location: true, districtOfOrigin: true,
       linkedinUrl: true, portfolioUrl: true, nationalId: true, dateOfBirth: true, flyingHours: true,
-      education: true, workExperience: true, examGrades: true, certificates: true,
+      education: RECORD_ORDER.education, workExperience: RECORD_ORDER.workExperience, examGrades: true, certificates: RECORD_ORDER.certificates,
       internalProfile: { select: { employeeId: true, department: true, position: true, dateJoined: true } },
       applications: {
         where: { submittedDate: { not: null } }, orderBy: { submittedDate: 'desc' },

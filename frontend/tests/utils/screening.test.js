@@ -1,4 +1,4 @@
-import { evidenceRequirements, missingEvidence } from '../../src/utils/screeningEvidence';
+import { evidenceRequirements, missingEvidence, academicDocuments, questionIsAcademic } from '../../src/utils/screeningEvidence';
 import { disqualifyingMet, failedDisqualifyingRequirements } from '../../src/utils/screeningQuestions';
 
 // Mirrors of backend rules (utils/screeningEvidence.js,
@@ -27,7 +27,7 @@ describe('evidence a vacancy asks for', () => {
 
   test('every requirement comes with a label and a hint for the candidate', () => {
     const [requirement] = evidenceRequirements({ minimumAge: 18 });
-    expect(requirement).toEqual({ key: 'nationalId', label: expect.any(String), hint: expect.any(String) });
+    expect(requirement).toEqual({ key: 'nationalId', label: expect.any(String), hint: expect.any(String), academic: false });
   });
 
   describe('questions HR marked as needing evidence', () => {
@@ -60,6 +60,39 @@ describe('evidence a vacancy asks for', () => {
     ];
     expect(missingEvidence(requirements, documents).map((r) => r.key)).toEqual(['experience']);
     expect(missingEvidence(requirements).map((r) => r.key)).toEqual(['nationalId', 'experience']);
+  });
+
+  // Academic evidence is uploaded once, with the academic documents (UAT-031).
+  describe('academic evidence', () => {
+    const vacancy = {
+      minimumCGPA: 3, requiredExamGrades: [{ subject: 'Maths' }], minimumAge: 21,
+      disqualifyingRequirements: [
+        { id: 'd1', text: 'Degree in IT?', evidenceRequired: true, evidenceLabel: 'Degree certificate or academic transcript' },
+        { id: 'd2', text: 'ATC licence?', evidenceRequired: true, evidenceLabel: 'Copy of your ATC licence' },
+        { id: 'd3', text: 'Course?', evidenceRequired: true, evidenceLabel: 'Course certificate', evidenceAcademic: true },
+        { id: 'd4', text: 'Diploma?', evidenceRequired: true, evidenceLabel: 'Diploma certificate', evidenceAcademic: false }
+      ]
+    };
+    const answers = { d1: true, d2: true, d3: true, d4: true };
+
+    test('the transcript, result slips and academic questions are marked academic', () => {
+      const marked = Object.fromEntries(evidenceRequirements(vacancy, answers).map((r) => [r.key, r.academic]));
+      expect(marked).toEqual({
+        nationalId: false, examResults: true, transcript: true,
+        'question:d1': true, 'question:d2': false, 'question:d3': true, 'question:d4': false
+      });
+      expect(questionIsAcademic({ evidenceLabel: 'UCE result slip or certificate' })).toBe(true);
+      expect(questionIsAcademic({ evidenceLabel: 'Certificate of service' })).toBe(false);
+    });
+
+    test('is never missing - the academic documents cover it', () => {
+      expect(missingEvidence(evidenceRequirements(vacancy, answers), []).map((r) => r.key)).toEqual(['nationalId', 'question:d2', 'question:d4']);
+    });
+
+    test('academic documents include academic evidence uploaded separately before', () => {
+      const docs = [{ id: 1, category: 'Academic' }, { id: 2, category: 'Evidence', evidenceKey: 'transcript' }, { id: 3, category: 'Evidence', evidenceKey: 'nationalId' }];
+      expect(academicDocuments(evidenceRequirements(vacancy, answers), docs).map((d) => d.id)).toEqual([1, 2]);
+    });
   });
 });
 

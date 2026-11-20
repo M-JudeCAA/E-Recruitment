@@ -9,6 +9,15 @@ import { splitDuties, dutiesToText } from '../utils/dutyList';
 import { useConfirm } from './ConfirmDialog';
 import { educationKey, workExperienceKey, certificateKey } from '../utils/entryDedup';
 import { today, certificateDatesError, workDatesError, yearCompletedError } from '../utils/profileValidation';
+import { workOverlaps } from '../utils/workOverlaps';
+
+// Overlapping jobs among the editor's rows, and a pair's signature - the
+// keys and dates, so a confirmed overlap is asked about again if the dates change.
+const overlapsOf = (jobs) => workOverlaps(jobs.map((r) => ({ key: r.key, startDate: r.values.startDate, endDate: r.values.endDate })));
+const overlapSignature = (jobs, { a, b }) => [a, b].map((k) => {
+  const v = jobs.find((r) => r.key === k)?.values || {};
+  return `${k}:${v.startDate}:${v.endDate}`;
+}).join('|');
 
 // A candidate's education, work experience and certificates. Each saved
 // entry is one summary line with Edit and Delete; Edit opens its fields,
@@ -70,6 +79,8 @@ export const ENTRY_KINDS = {
   workExperience: {
     path: '/api/candidates/me/work-experience',
     title: 'Work experience', noun: 'job', required: true,
+    // The order entered means nothing - jobs are listed newest first, by their dates (UAT-034).
+    guide: 'Add your jobs in any order - they are listed newest first, by their dates.',
     // duties: the text box's text; saved as a list, one duty per line or bullet.
     empty: { employer: '', jobTitle: '', startDate: '', endDate: '', duties: '' },
     fromSaved: (w) => ({ employer: w.employer || '', jobTitle: w.jobTitle || '', startDate: day(w.startDate), endDate: day(w.endDate), duties: dutiesToText(w.duties) }),
@@ -256,30 +267,83 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
     });
   };
 
+  // What stops the Done, in words naming the entry and the field (UAT-028):
+  // "Education - Bachelor's in IT (qualification 2): fill in the institution."
+  const [problem, setProblemState] = useState(null); // { kind, key, text }
+  const problemRef = useRef(null); // read by problem() straight after finish()
+  const confirmedOverlaps = useRef(new Set());
+  const setProblem = (p) => { problemRef.current = p; setProblemState(p); };
+  const nameOf = (kind, row) => {
+    const cfg = ENTRY_KINDS[kind];
+    const i = rowsRef.current[kind].findIndex((r) => r.key === row.key);
+    const [title] = cfg.summary(row.values);
+    const generic = ['Qualification', 'Job', 'Certificate'].includes(title);
+    return `${cfg.title} - ${generic ? `${cfg.noun} ${i + 1}` : `“${title}” (${cfg.noun} ${i + 1})`}`;
+  };
+  const listOf = (words) => (words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}` : words[0]);
+  const showEntry = (key, block = 'center') => setTimeout(() => {
+    const el = document.querySelector(`[data-entry="${key}"]`);
+    el?.scrollIntoView({ block, behavior: 'smooth' });
+    el?.querySelector('input:not([type=hidden]), select, textarea')?.focus({ preventScroll: true });
+  }, 50);
+
   // The panel's Done (there is none per entry - each saves itself): new
   // entries nobody started are dropped, everything waiting is saved, and the
   // answer is false - with the first entry still missing a required field
-  // marked and brought into view - while one someone started can't be saved.
+  // (or refused) marked, named above the list and brought into view - while
+  // one someone started can't be saved.
   const finish = async () => {
+    setProblem(null);
+    // Dropped here, and left out below whether or not React has re-rendered yet.
+    const dropped = new Set();
     for (const kind of KIND_NAMES) {
       for (const row of rowsRef.current[kind]) {
         if (!row.id && isBlank(row.values) && !chains.current[row.key]) {
           clearTimeout(timers.current[row.key]);
           delete timers.current[row.key];
           dropRow(kind, row.key);
+          dropped.add(row.key);
         }
       }
     }
     await flush();
     for (const kind of KIND_NAMES) {
-      const row = rowsRef.current[kind].find((r) => ENTRY_KINDS[kind].missing(r.values).length);
+      const row = rowsRef.current[kind].find((r) => !dropped.has(r.key) && ENTRY_KINDS[kind].missing(r.values).length);
       if (row) {
         patchRow(kind, row.key, { status: 'incomplete', open: true });
-        setTimeout(() => document.querySelector(`[data-entry="${row.key}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 50);
+        setProblem({ kind, key: row.key, text: `${nameOf(kind, row)}: fill in the ${listOf(ENTRY_KINDS[kind].missing(row.values))}, or delete the entry.` });
+        showEntry(row.key);
         return false;
       }
     }
-    return !KIND_NAMES.some((kind) => rowsRef.current[kind].some((r) => r.status === 'error'));
+    for (const kind of KIND_NAMES) {
+      const row = rowsRef.current[kind].find((r) => !dropped.has(r.key) && r.status === 'error');
+      if (row) {
+        patchRow(kind, row.key, { open: true });
+        setProblem({ kind, key: row.key, text: `${nameOf(kind, row)}: ${row.error}` });
+        showEntry(row.key);
+        return false;
+      }
+    }
+    // Jobs with overlapping dates: asked once (per set of dates), never refused (UAT-007).
+    const jobs = rowsRef.current.workExperience.filter((r) => !dropped.has(r.key));
+    const pending = overlapsOf(jobs).filter((o) => !confirmedOverlaps.current.has(overlapSignature(jobs, o)));
+    if (pending.length && kinds.includes('workExperience')) {
+      const titleOf = (key) => `“${ENTRY_KINDS.workExperience.summary(jobs.find((r) => r.key === key).values)[0]}”`;
+      const pairs = pending.map((o) => `${titleOf(o.a)} and ${titleOf(o.b)}${o.identical ? ' (the same dates)' : ''}`);
+      const ok = await confirm(
+        `The dates of ${listOf(pairs)} overlap. That is fine if you held these jobs at the same time - your experience counts the overlapping time once. Otherwise, correct the dates.`,
+        { title: 'Jobs with overlapping dates', confirmLabel: 'Yes, I held them at the same time', cancelLabel: 'Let me correct the dates' }
+      );
+      if (!ok) {
+        setProblem({ kind: 'workExperience', key: pending[0].a, text: `Correct the dates of ${pairs[0]}, which overlap.` });
+        patchRow('workExperience', pending[0].a, { open: true });
+        showEntry(pending[0].a);
+        return false;
+      }
+      for (const o of pending) confirmedOverlaps.current.add(overlapSignature(jobs, o));
+    }
+    return true;
   };
 
   // My profile's "+ Add": a blank entry of that kind, open and in view (the
@@ -305,18 +369,47 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useImperativeHandle(ref, () => ({
-    addFromCv(kind, values) {
+    // batch: which CV import added it, so undoCv(batch) can take it back.
+    addFromCv(kind, values, batch = null) {
       const cfg = ENTRY_KINDS[kind];
       const filled = { ...cfg.empty, ...Object.fromEntries(Object.entries(values).map(([k, v]) => [k, Array.isArray(v) ? dutiesToText(v) : v == null ? '' : String(v)])) };
       if (kind !== 'education') for (const f of ['startDate', 'endDate', 'issueDate', 'expiryDate']) if (f in filled) filled[f] = day(filled[f]);
       const k = cfg.key(filled);
       if (rowsRef.current[kind].some((r) => cfg.key(r.values) === k)) return false;
-      const row = add(kind, filled, { fromCv: true, open: false });
+      const row = add(kind, filled, { fromCv: true, open: false, cvBatch: batch });
       schedule(kind, row.key, 0);
       return cfg.missing(filled).length ? 'incomplete' : true;
     },
+    // Removes every entry one CV import added (UAT-025) - once its save has
+    // finished, so nothing is left behind. Resolves to how many were removed.
+    async undoCv(batch) {
+      let removed = 0;
+      for (const kind of KIND_NAMES) {
+        for (const row of rowsRef.current[kind].filter((r) => r.cvBatch === batch)) {
+          clearTimeout(timers.current[row.key]);
+          delete timers.current[row.key];
+          await enqueue(row.key, async () => {
+            const current = findRow(kind, row.key);
+            try {
+              if (current?.id) {
+                await client.delete(`${ENTRY_KINDS[kind].path}/${current.id}`);
+                removedIds.current.add(`${kind}-${current.id}`);
+              }
+              dropRow(kind, row.key);
+              removed += 1;
+            } catch (err) {
+              patchRow(kind, row.key, { status: 'error', error: err.response?.data?.error || `Could not remove this ${ENTRY_KINDS[kind].noun}`, open: true });
+            }
+          });
+        }
+      }
+      if (removed) onSavedRef.current?.();
+      return removed;
+    },
     flush,
-    finish
+    finish,
+    // What stopped the last finish(), in words - for a message beside the Done.
+    problem: () => problemRef.current?.text || null
   }));
 
   const fieldsFor = (kind, row) => {
@@ -385,8 +478,32 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
     return null;
   };
 
+  // The problem named by the last Done, while it still stands.
+  const problemRow = problem && rows[problem.kind]?.find((r) => r.key === problem.key);
+  const problemStands = problemRow && (ENTRY_KINDS[problem.kind].missing(problemRow.values).length > 0 || problemRow.status === 'error');
+  // Each job's overlaps with others, said on the entry (UAT-007).
+  const overlaps = overlapsOf(rows.workExperience);
+  const overlapNote = (row) => {
+    const mine = overlaps.filter((o) => o.a === row.key || o.b === row.key);
+    if (!mine.length) return null;
+    const others = mine.map((o) => {
+      const other = rows.workExperience.find((r) => r.key === (o.a === row.key ? o.b : o.a));
+      return `“${ENTRY_KINDS.workExperience.summary(other.values)[0]}”${o.identical ? ' (same dates)' : ''}`;
+    });
+    return `Dates overlap with ${listOf(others)} - fine if you held both at the same time; otherwise correct the dates.`;
+  };
+
   return (
     <div>
+      {problemStands && (
+        <div role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 12, border: '1px solid var(--color-danger)', borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--color-danger)' }}>
+          <span>{problem.text}</span>
+          <button type="button" onClick={() => { patchRow(problem.kind, problem.key, { open: true }); showEntry(problem.key); }}
+            style={{ flex: 'none', fontSize: 13, color: 'var(--color-primary)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}>
+            Show me
+          </button>
+        </div>
+      )}
       {KIND_NAMES.filter((kind) => kinds.includes(kind)).map((kind) => {
         const cfg = ENTRY_KINDS[kind];
         const list = rows[kind];
@@ -411,6 +528,8 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
             {list.map((row, i) => {
               const [title, details] = cfg.summary(row.values);
               const status = statusLine(kind, row);
+              const overlap = kind === 'workExperience' ? overlapNote(row) : null;
+              const overlapLine = overlap && <div style={{ fontSize: 12, color: 'var(--color-warning)', marginTop: 4 }}>{overlap}</div>;
               const actions = (
                 <span style={{ display: 'flex', gap: 2, flex: 'none' }}>
                   {!row.open && (
@@ -429,10 +548,12 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
                   {row.open ? (
                     <>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>
-                        <span>{cfg.noun[0].toUpperCase() + cfg.noun.slice(1)} {i + 1}{row.fromCv ? ' · from your CV' : ''} {status && <>· {status}</>}</span>
+                        {/* Named by what it is, not "Job 1", which read as the first job (UAT-034). */}
+                        <span>{['Qualification', 'Job', 'Certificate'].includes(title) ? `New ${cfg.noun}` : title}{row.fromCv ? ' · from your CV' : ''} {status && <>· {status}</>}</span>
                         {actions}
                       </div>
                       {fieldsFor(kind, row)}
+                      {overlapLine}
                     </>
                   ) : (
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
@@ -445,6 +566,7 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
                             {row.status !== 'saved' && status && <>{row.fromCv && ' · '}{status}</>}
                           </div>
                         )}
+                        {overlapLine}
                       </div>
                       {actions}
                     </div>

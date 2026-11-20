@@ -66,7 +66,14 @@ function normalizeAnswerType(row) {
 function evidenceFields(row) {
   if (!row?.evidenceRequired) return {};
   const label = String(row.evidenceLabel ?? '').trim().slice(0, 150);
-  return { evidenceRequired: true, ...(label ? { evidenceLabel: label } : {}) };
+  // evidenceAcademic: the evidence is an academic document, so the candidate
+  // covers it with their Academic documents rather than a second upload
+  // (utils/screeningEvidence.js). Left out = decided from the label.
+  return {
+    evidenceRequired: true,
+    ...(label ? { evidenceLabel: label } : {}),
+    ...(typeof row.evidenceAcademic === 'boolean' ? { evidenceAcademic: row.evidenceAcademic } : {})
+  };
 }
 
 // Number(null) and Number('') both coerce to 0, not "absent" - read the

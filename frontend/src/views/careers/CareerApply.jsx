@@ -11,9 +11,11 @@ import RefereesStep from '../apply-wizard/RefereesStep';
 import DocumentsStep from '../apply-wizard/DocumentsStep';
 import ReviewStep from '../apply-wizard/ReviewStep';
 import SubmitStep from '../apply-wizard/SubmitStep';
-import { PageTop, Meta } from '../../components/workspace/ui';
+import { PageTop, Meta, SidePanel } from '../../components/workspace/ui';
+import VacancyAdvert from '../../components/VacancyAdvert';
+import { orgLabel } from '../../utils/orgNames';
 import { failedDisqualifyingRequirements } from '../../utils/screeningQuestions';
-import { evidenceRequirements, missingEvidence } from '../../utils/screeningEvidence';
+import { evidenceRequirements, missingEvidence, academicDocuments } from '../../utils/screeningEvidence';
 import { EmploymentForm } from './forms';
 import ApplicantSurvey from './ApplicantSurvey';
 import { SITE, CareerShell, WizardRail, profileGaps, formatDay } from './careers';
@@ -55,6 +57,8 @@ export default function CareerApply() {
   const [me, setMe] = useState(null);
   const [application, setApplication] = useState(null);
   const [loaded, setLoaded] = useState(false);
+  // The full advert, open beside any step without leaving the draft (UAT-030).
+  const [advertOpen, setAdvertOpen] = useState(false);
   // Internal Careers: the applicant survey pops up once, as the application is submitted.
   const [surveyOpen, setSurveyOpen] = useState(false);
   const [eligibility, setEligibility] = useState(null);
@@ -159,7 +163,7 @@ export default function CareerApply() {
     // Name, a valid phone and email, not the candidate's own (backend utils/referees.js).
     referees: refereeProblems(referees, me?.email).map((p) => p.replace(/\.$/, '')),
     documents: [
-      ...(documents.some((d) => d.category === 'Academic') ? [] : ['At least one academic document']),
+      ...(academicDocuments(evidence, documents).length ? [] : ['At least one academic document']),
       ...missingEvidence(evidence, documents).map((e) => e.label)
     ],
     submit: []
@@ -193,7 +197,13 @@ export default function CareerApply() {
       <div className="ws-wizard">
         <WizardRail steps={STEPS} index={step} onGo={decided ? null : (i) => setStep(i)} />
         <div className="ws-panel">
-          <div className="ws-panel-h"><h2>{STEPS[step].label}</h2><span className="ws-note">Step {step + 1} of {STEPS.length}</span></div>
+          <div className="ws-panel-h">
+            <h2>{STEPS[step].label}</h2>
+            <span style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <Button variant="ghost" style={{ padding: '2px 8px', fontSize: 13 }} onClick={() => setAdvertOpen(true)}>View the advert</Button>
+              <span className="ws-note">Step {step + 1} of {STEPS.length}</span>
+            </span>
+          </div>
           <div className="ws-panel-b" style={{ display: 'grid', gap: 14 }}>
             {stepKey === 'check' && (
               <>
@@ -209,7 +219,9 @@ export default function CareerApply() {
                 {eligibility?.eligible && gaps.personal.length === 0 && eligibility.employmentCheck?.verified !== false && <Alert type="success" message={`Your profile meets this ${SITE.jobWord}’s minimum requirements.`} />}
                 <div>
                   {evidence.length > 0 ? evidence.map((e) => (
-                    <div key={e.key} className="ws-check"><span className="mark miss">!</span><div><b>{e.label}</b><div className="d">This {SITE.jobWord} asks for it. You add it on the Documents step.</div></div></div>
+                    <div key={e.key} className="ws-check"><span className="mark miss">!</span><div><b>{e.label}</b><div className="d">{e.academic
+                      ? 'This ' + SITE.jobWord + ' asks for it. Upload it with your academic documents on the Documents step, describing what it is.'
+                      : 'This ' + SITE.jobWord + ' asks for it. You add it on the Documents step.'}</div></div></div>
                   )) : <div className="ws-note">Besides your academic documents, this {SITE.jobWord} asks for no extra evidence so far.</div>}
                 </div>
               </>
@@ -278,6 +290,13 @@ export default function CareerApply() {
           )}
         </div>
       </div>
+      {advertOpen && (
+        <SidePanel wide title={vacancy.title} eyebrow={<span className="ws-mono">{vacancy.jobRef}</span>} onClose={() => setAdvertOpen(false)}
+          footer={<Button variant="secondary" onClick={() => setAdvertOpen(false)}>Back to your application</Button>}>
+          <VacancyAdvert {...vacancy} hideTitle reportsToName={vacancy.reportsToPosition?.name}
+            departmentLabel={orgLabel(vacancy.department, ', ') || null} />
+        </SidePanel>
+      )}
     </CareerShell>
   );
 }

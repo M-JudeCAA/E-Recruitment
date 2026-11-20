@@ -15,7 +15,9 @@ describe('suggestScreening', () => {
         id: expect.any(String),
         // Word's curly apostrophe comes out straight.
         text: 'Do you hold an honors bachelor\'s degree in Computer Science, Information Technology or equivalent?',
-        requiredAnswer: 'Yes', evidenceRequired: true, evidenceLabel: 'Degree certificate or academic transcript'
+        requiredAnswer: 'Yes', evidenceRequired: true, evidenceLabel: 'Degree certificate or academic transcript',
+        // An academic document: covered by the Academic documents (UAT-031).
+        evidenceAcademic: true
       }
     }));
     expect(s.sources).toEqual({
@@ -141,11 +143,11 @@ describe('backfillFor (vacancies created before suggestions)', () => {
   });
 
   test('HR\'s own Qualifying question about the degree becomes Disqualifying, in their words', () => {
-    const asked = { id: 'q1', text: 'Do you have a Bachelor\'s degree in IT or its equivalent?', evidenceRequired: true, evidenceLabel: 'A copy of the transcript' };
+    const asked = { id: 'q1', text: 'Do you have a Bachelor\'s degree in IT or its equivalent?', evidenceRequired: true, evidenceLabel: 'A copy of the transcript', evidenceAcademic: true };
     const others = [2, 3, 4, 5].map((n) => ({ id: `q${n}`, text: `Do you have experience with tool ${n}?` }));
     const { changes } = backfillFor({ ...open, desirableRequirements: [asked, ...others] }, now);
     expect(changes.disqualifyingRequirements).toEqual([{
-      id: 'q1', text: asked.text, requiredAnswer: 'Yes', evidenceRequired: true, evidenceLabel: 'A copy of the transcript'
+      id: 'q1', text: asked.text, requiredAnswer: 'Yes', evidenceRequired: true, evidenceLabel: 'A copy of the transcript', evidenceAcademic: true
     }]);
     expect(changes.desirableRequirements).toEqual(others);
   });
