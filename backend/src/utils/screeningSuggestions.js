@@ -122,7 +122,8 @@ function suggestScreening(essential) {
         text: questionFrom(education.text),
         requiredAnswer: 'Yes',
         evidenceRequired: true,
-        evidenceLabel: EVIDENCE_LABEL[education.level]
+        evidenceLabel: EVIDENCE_LABEL[education.level],
+        evidenceAcademic: true
       };
     }
   }
@@ -182,7 +183,7 @@ function backfillFor(vacancy, now = new Date()) {
       changes.desirableRequirements = qualifying.filter((q) => q.id !== asked.id);
       changes.disqualifyingRequirements = [{
         id: asked.id, text: asked.text, requiredAnswer: 'Yes', evidenceRequired: true,
-        evidenceLabel: asked.evidenceLabel || s.disqualifyingQuestion.evidenceLabel
+        evidenceLabel: asked.evidenceLabel || s.disqualifyingQuestion.evidenceLabel, evidenceAcademic: true
       }];
       notes.push(`moved HR's question "${asked.text}" from Qualifying to Disqualifying`);
     } else if (qualifying.length >= MAX_QUESTIONS) {

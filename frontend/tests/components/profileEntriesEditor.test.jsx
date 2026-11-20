@@ -201,3 +201,57 @@ test('educationExtra sits inside the Education section, before work experience',
   const work = screen.getByText('Work experience');
   expect(extra.compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 });
+
+// UAT-028: what stops the Done is named - the entry and the field.
+test('finish() names the entry and the missing field, above the list', async () => {
+  const user = userEvent.setup();
+  const { ref } = renderEditor({ education: [], certificates: [], workExperience: [SAVED_JOB] });
+  await user.click(screen.getByRole('button', { name: 'Edit job 1' }));
+  await user.clear(screen.getByDisplayValue('UCAA'));
+  await act(async () => { await ref.current.finish(); });
+  expect(ref.current.problem()).toMatch(/^Work experience - .*\(job 1\): fill in the employer, or delete the entry\.$/);
+  expect(screen.getByRole('alert')).toHaveTextContent(/fill in the employer/);
+  expect(screen.getByRole('button', { name: 'Show me' })).toBeInTheDocument();
+});
+
+// UAT-007: overlapping jobs are pointed out and confirmed, never refused.
+test('jobs with overlapping dates are flagged, and finish() asks once before going on', async () => {
+  const user = userEvent.setup();
+  const jobs = [
+    { id: 7, employer: 'UCAA', jobTitle: 'Clerk', startDate: '2018-01-01T00:00:00.000Z', endDate: null, duties: [] },
+    { id: 8, employer: 'Entebbe Handling', jobTitle: 'Agent', startDate: '2017-01-01T00:00:00.000Z', endDate: '2019-06-30T00:00:00.000Z', duties: [] }
+  ];
+  const { ref } = renderEditor({ education: [], certificates: [], workExperience: jobs });
+  expect(screen.getByText(/Dates overlap with “Agent”/)).toBeInTheDocument();
+  let ok;
+  let pending;
+  act(() => { pending = ref.current.finish(); });
+  await user.click(await screen.findByRole('button', { name: 'Yes, I held them at the same time' }));
+  await act(async () => { ok = await pending; });
+  expect(ok).toBe(true);
+  // Asked once: the same dates don't ask again.
+  await act(async () => { ok = await ref.current.finish(); });
+  expect(ok).toBe(true);
+});
+
+// UAT-034: an entry is named by what it is, not "Job 1".
+test('an open entry is headed by its title, and jobs carry the newest-first note', async () => {
+  const user = userEvent.setup();
+  renderEditor({ education: [], certificates: [], workExperience: [SAVED_JOB] });
+  expect(screen.getByText(/listed newest first, by their dates/)).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Edit job 1' }));
+  expect(screen.queryByText(/^Job 1/)).not.toBeInTheDocument();
+});
+
+// UAT-025: one CV import can be taken back in one go.
+test('undoCv removes every entry that import added, and only those', async () => {
+  const { ref } = renderEditor({ education: [], certificates: [], workExperience: [SAVED_JOB] });
+  act(() => { ref.current.addFromCv('workExperience', { employer: 'Entebbe Handling', jobTitle: 'Agent', startDate: '2015-03-01' }, 'cv-1'); });
+  await waitFor(() => expect(sent.filter((s) => s.method === 'post')).toHaveLength(1));
+  let removed;
+  await act(async () => { removed = await ref.current.undoCv('cv-1'); });
+  expect(removed).toBe(1);
+  expect(sent).toContainEqual(expect.objectContaining({ method: 'delete', url: '/api/candidates/me/work-experience/100' }));
+  expect(screen.queryByText('Agent')).not.toBeInTheDocument();
+  expect(sent.filter((s) => s.method === 'delete')).toHaveLength(1);
+});

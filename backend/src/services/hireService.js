@@ -4,6 +4,7 @@ const prisma = require('../config/db');
 const { uploadPath, removeUploads } = require('../utils/uploadFiles');
 const { refYear } = require('../utils/jobRefGenerator');
 const { AppError } = require('../utils/errorResponse');
+const { RECORD_ORDER } = require('../utils/recordOrder');
 
 // "Mark as Hired" (FR-ATS-067 to 069, BR-ATS-11): turns an accepted offer
 // into exactly one onboarding case, with the signed appointing instrument
@@ -40,7 +41,7 @@ async function buildPackage(offerId, signed) {
           vacancy: { include: { department: { include: { directorate: true } }, position: true, reportsToPosition: true } },
           candidate: {
             include: {
-              education: true, workExperience: true, certificates: true,
+              education: RECORD_ORDER.education, workExperience: RECORD_ORDER.workExperience, certificates: RECORD_ORDER.certificates,
               internalProfile: { select: { employeeId: true, position: true, department: true } }
             }
           }

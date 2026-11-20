@@ -14,10 +14,21 @@ const FIXED = {
 
 const affirmative = (answer) => answer === true || (typeof answer === 'number' && answer > 0);
 
+// Academic evidence (transcript, result slips, a question's academic
+// document) is covered by the Academic documents, not uploaded twice
+// (UAT-031); such requirements carry academic: true.
+const ACADEMIC_KEYS = new Set(['examResults', 'transcript']);
+const ACADEMIC_LABEL_RE = /\b(?:degree|diploma|transcripts?|academic|uce|uace|result\s+slips?|[oa][\s'-]?level|masters?|bachelor'?s?|phd)\b|^certificate$/i;
+
+export function questionIsAcademic(row) {
+  if (typeof row?.evidenceAcademic === 'boolean') return row.evidenceAcademic;
+  return ACADEMIC_LABEL_RE.test(String(row?.evidenceLabel || '').trim());
+}
+
 export function evidenceRequirements(vacancy, answers = {}) {
   if (!vacancy) return [];
   const out = [];
-  const add = (key) => out.push({ key, ...FIXED[key] });
+  const add = (key) => out.push({ key, ...FIXED[key], academic: ACADEMIC_KEYS.has(key) });
   if (vacancy.minimumAge != null || vacancy.maximumAge != null) add('nationalId');
   if (Number(vacancy.minimumFlyingHours) > 0) add('flyingHours');
   if (Array.isArray(vacancy.requiredExamGrades) && vacancy.requiredExamGrades.length > 0) add('examResults');
@@ -25,7 +36,7 @@ export function evidenceRequirements(vacancy, answers = {}) {
   if (Number(vacancy.minimumCGPA) > 0) add('transcript');
   for (const row of [...(vacancy.disqualifyingRequirements || []), ...(vacancy.desirableRequirements || [])]) {
     if (row?.evidenceRequired && affirmative(answers[row.id])) {
-      out.push({ key: `question:${row.id}`, label: row.evidenceLabel || `Evidence for: "${row.text}"`, hint: `You answered "${row.text}".` });
+      out.push({ key: `question:${row.id}`, label: row.evidenceLabel || `Evidence for: "${row.text}"`, hint: `You answered "${row.text}".`, academic: questionIsAcademic(row) });
     }
   }
   return out;
@@ -33,5 +44,12 @@ export function evidenceRequirements(vacancy, answers = {}) {
 
 export function missingEvidence(requirements, documents = []) {
   const have = new Set(documents.filter((d) => d.category === 'Evidence').map((d) => d.evidenceKey));
-  return requirements.filter((r) => !have.has(r.key));
+  return requirements.filter((r) => !r.academic && !have.has(r.key));
+}
+
+// Academic documents: the Academic uploads, plus evidence filed under an
+// academic requirement on drafts from before it moved there.
+export function academicDocuments(requirements, documents = []) {
+  const academicKeys = new Set(requirements.filter((r) => r.academic).map((r) => r.key));
+  return documents.filter((d) => d.category === 'Academic' || (d.category === 'Evidence' && academicKeys.has(d.evidenceKey)));
 }

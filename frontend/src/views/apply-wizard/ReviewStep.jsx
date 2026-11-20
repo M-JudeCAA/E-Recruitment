@@ -1,6 +1,7 @@
 import GeneratedCvLink from '../../components/GeneratedCvLink';
 import { disqualifyingMet } from '../../utils/screeningQuestions';
 import DocumentLink from '../../components/DocumentLink';
+import { academicDocuments } from '../../utils/screeningEvidence';
 
 export default function ReviewStep({
   profile, coverLetter, documents, referees, profileDetails, questions, internalProfile, candidateType, goTo, stepIndexes,
@@ -18,6 +19,9 @@ export default function ReviewStep({
     <span key={d.id}>{i > 0 && ', '}<DocumentLink url={d.fileUrl} audience="candidate" name={d.category === 'CV' ? d.originalName : d.label || d.originalName} /></span>
   )) : null);
   const inCategory = (category) => (documents || []).filter((d) => d.category === category);
+  // Academic evidence is covered by the academic documents (UAT-031).
+  const academic = academicDocuments(evidence, documents || []);
+  const academicAsked = evidence.filter((e) => e.academic);
 
   const sections = [
     {
@@ -37,8 +41,9 @@ export default function ReviewStep({
       rows: [
         ['Your CV', documentLinks(inCategory('CV')) || 'None attached (optional)'],
         ['Generated CV', <GeneratedCvLink candidate={cvCandidate} application={cvApplication} vacancyTitle={vacancy?.title} vacancyJobRef={vacancy?.jobRef}>View or download</GeneratedCvLink>],
-        ['Academic documents', documentLinks(inCategory('Academic')) || 'None attached', inCategory('Academic').length === 0],
-        ...evidence.map((e) => {
+        ['Academic documents', documentLinks(academic) || 'None attached', academic.length === 0],
+        ...(academicAsked.length ? [['Academic evidence asked for', `${academicAsked.map((e) => e.label).join('; ')} - covered by your academic documents above`]] : []),
+        ...evidence.filter((e) => !e.academic).map((e) => {
           const attached = (documents || []).filter((d) => d.category === 'Evidence' && d.evidenceKey === e.key);
           return [e.label, documentLinks(attached) || 'Not attached - required', attached.length === 0];
         }),

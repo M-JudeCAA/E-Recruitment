@@ -45,12 +45,15 @@ function trackOf(app, me) {
   if (app.status === 'Withdrawn') return [...t, ['done', 'You withdrew this application', '']];
   if (app.status === 'Rejected' && !reached(app.status)) return [...t, ['done', 'Not taken forward', app.rejectionReason || '']];
   t.push(reached(app.status) ? ['done', 'Shortlisted for interview', ''] : ['now', 'Shortlisting', 'HR and the committee are reviewing applications']);
-  if (rounds.length) {
-    const upcoming = rounds.find((r) => r.status === 'Scheduled' && new Date(r.scheduledDate) > new Date());
-    const held = rounds.some((r) => r.status === 'Held');
-    t.push(upcoming ? ['now', 'Interview', new Date(upcoming.scheduledDate).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })]
-      : held ? ['done', 'Interviewed', ''] : ['todo', 'Interview']);
-  } else if (reached(app.status)) t.push(['todo', 'Interview', 'HR will invite you']);
+  // Every application shows the same steps - Submitted, Shortlisting,
+  // Interview, Offer - those not reached yet greyed out (UAT-019); only a
+  // withdrawal or "not taken forward" ends the line early.
+  const upcoming = rounds.find((r) => r.status === 'Scheduled' && new Date(r.scheduledDate) > new Date());
+  // Held: results recorded (Completed), or the time has passed and results are on their way.
+  const held = rounds.some((r) => r.status === 'Completed' || (r.status === 'Scheduled' && new Date(r.scheduledDate) <= new Date()));
+  t.push(upcoming ? ['now', 'Interview', new Date(upcoming.scheduledDate).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })]
+    : held || app.status === 'Interviewed' || app.offer ? ['done', 'Interviewed', '']
+      : reached(app.status) ? ['todo', 'Interview', 'HR will invite you'] : ['todo', 'Interview']);
   if (app.status === 'Rejected') return [...t, ['done', 'Not taken forward', app.rejectionReason || '']];
   if (app.offer) {
     const s = candidateOfferStatus(app.offer);
