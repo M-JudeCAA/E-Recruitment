@@ -285,7 +285,7 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
   const listOf = (words) => (words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}` : words[0]);
   const showEntry = (key, block = 'center') => setTimeout(() => {
     const el = document.querySelector(`[data-entry="${key}"]`);
-    el?.scrollIntoView({ block, behavior: 'smooth' });
+    el?.scrollIntoView?.({ block, behavior: 'smooth' });
     el?.querySelector('input:not([type=hidden]), select, textarea')?.focus({ preventScroll: true });
   }, 50);
 
@@ -358,7 +358,7 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
     const blank = rowsRef.current[startNew].find((r) => !r.id && isBlank(r.values));
     const row = blank || add(startNew);
     if (blank) patchRow(startNew, blank.key, { open: true });
-    setTimeout(() => document.querySelector(`[data-entry="${row.key}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 50);
+    setTimeout(() => document.querySelector(`[data-entry="${row.key}"]`)?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }), 50);
   }, [startNew]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // My profile's Edit on one entry opens it here.
@@ -367,7 +367,7 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
     const row = rowsRef.current[focus.kind]?.find((r) => r.id === focus.id);
     if (!row) return;
     patchRow(focus.kind, row.key, { open: true });
-    setTimeout(() => document.querySelector(`[data-entry="${row.key}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 50);
+    setTimeout(() => document.querySelector(`[data-entry="${row.key}"]`)?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }), 50);
   }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useImperativeHandle(ref, () => ({
