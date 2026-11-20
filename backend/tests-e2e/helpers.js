@@ -87,11 +87,13 @@ const REFEREES = JSON.stringify([
   { name: 'Referee Three', phone: '0700000003', email: 'ref3@example.com' }
 ]);
 
-// submit() requires at least one academic document on the draft.
+// submit() requires at least one academic document on the draft, with a
+// description saying what it is (DESCRIPTION_REQUIRED otherwise).
 async function attachAcademicDocument(token, applicationId) {
   const res = await request(app).post(`/api/applications/${applicationId}/documents`)
     .set('Authorization', `Bearer ${token}`)
     .field('category', 'Academic')
+    .field('label', 'BSc degree certificate')
     .attach('file', Buffer.from('%PDF-1.4 test certificate'), { filename: 'certificate.pdf', contentType: 'application/pdf' });
   return expectStatus(res, 201).body;
 }
