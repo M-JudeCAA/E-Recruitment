@@ -276,9 +276,11 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
   const nameOf = (kind, row) => {
     const cfg = ENTRY_KINDS[kind];
     const i = rowsRef.current[kind].findIndex((r) => r.key === row.key);
-    const [title] = cfg.summary(row.values);
+    const [title, details] = cfg.summary(row.values);
     const generic = ['Qualification', 'Job', 'Certificate'].includes(title);
-    return `${cfg.title} - ${generic ? `${cfg.noun} ${i + 1}` : `“${title}” (${cfg.noun} ${i + 1})`}`;
+    // No title yet: the employer, institution or issuer, where there is one.
+    const known = generic ? String(details || '').split(' · ')[0].trim() : title;
+    return `${cfg.title} - ${known && known !== 'in progress' ? `“${known}” (${cfg.noun} ${i + 1})` : `${cfg.noun} ${i + 1}`}`;
   };
   const listOf = (words) => (words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}` : words[0]);
   const showEntry = (key, block = 'center') => setTimeout(() => {
@@ -496,7 +498,8 @@ const ProfileEntriesEditor = forwardRef(function ProfileEntriesEditor({
   return (
     <div>
       {problemStands && (
-        <div role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 12, border: '1px solid var(--color-danger)', borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--color-danger)' }}>
+        // Sticky: it stays in sight while the panel scrolls to the entry.
+        <div role="alert" style={{ position: 'sticky', top: 0, zIndex: 2, background: 'var(--color-bg)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '8px 12px', marginBottom: 12, border: '1px solid var(--color-danger)', borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--color-danger)' }}>
           <span>{problem.text}</span>
           <button type="button" onClick={() => { patchRow(problem.kind, problem.key, { open: true }); showEntry(problem.key); }}
             style={{ flex: 'none', fontSize: 13, color: 'var(--color-primary)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline' }}>
