@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import client from '../models/apiClient';
 import Alert from './Alert';
+import Button from './Button';
 
 // A CV upload (views/careers/CvImport.jsx: My profile's "Fill in from your
 // CV" and the first sign-in setup's Education and experience step). The file
@@ -20,6 +21,9 @@ import Alert from './Alert';
 //   onLinkedinSuggested(url) -> true when added (only when there was none);
 //   onExamGradesSuggested(grades) -> how many O-Level / A-Level results it added.
 // Any of them may answer with a promise.
+// onStart() is called as each CV is read, before anything is added, and
+// onUndo() takes back everything that import added (UAT-025), answering an
+// error message or '' - the summary offers it as Undo.
 const PERSONAL = [
   ['location', 'Place of residence'], ['districtOfOrigin', 'District of origin'], ['dateOfBirth', 'Date of birth'],
   ['nationalId', 'NIN'], ['portfolioUrl', 'Website']
@@ -33,7 +37,8 @@ const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 const sentence = (parts) => (parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0]);
 
 export default function CvAutofillPanel(props) {
-  const { onLinkedinSuggested, onPersonalSuggested, onExamGradesSuggested, withNationalId = true } = props;
+  const { onLinkedinSuggested, onPersonalSuggested, onExamGradesSuggested, onStart, onUndo, withNationalId = true } = props;
+  const [undoing, setUndoing] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [summary, setSummary] = useState(null); // { added, skipped, incomplete, warnings, nothing }
   const [error, setError] = useState('');
@@ -83,6 +88,7 @@ export default function CvAutofillPanel(props) {
       const res = await client.post('/api/candidates/me/parse-cv', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
+      onStart?.();
       await apply(res.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Could not read this file');
@@ -95,7 +101,7 @@ export default function CvAutofillPanel(props) {
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 24 }}>
       <div>
-          <Alert type="info" message="Your CV is read and its details are added to your profile straight away. Reading a CV is best-effort and may misread your layout - check every entry, especially the dates. The file itself is not kept." />
+          <Alert type="info" message="Your CV is read and its details are added to your profile straight away. Reading a CV is best-effort and may misread your layout - check every entry, especially the dates. Your CV file is only read, never stored, so there is nothing to delete afterwards; if what it added is wrong, use Undo." />
           <input type="file" accept=".pdf,.docx" onChange={handleFile} disabled={uploading} aria-label="Upload your CV" />
           {uploading && <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Reading your CV and filling in your profile...</p>}
           <Alert type="error" message={error} />
@@ -105,7 +111,7 @@ export default function CvAutofillPanel(props) {
               {summary.nothing ? (
                 <Alert type="error" message="Nothing could be read from this file with confidence - please fill in your details by hand." />
               ) : (
-                <Alert type={summary.added.length ? 'success' : 'info'} message={[
+                <Alert type={summary.added.length ? 'success' : 'info'} message={summary.undone ? 'Removed everything your CV added. You can upload another CV or fill in your details by hand.' : [
                   summary.added.length ? `Added from your CV: ${sentence(summary.added)}.` : 'Nothing new was added.',
                   summary.skipped.length ? `Skipped ${sentence(summary.skipped)} already on your profile.` : '',
                   summary.incomplete.length ? `${sentence(summary.incomplete)} still ${summary.incomplete.length === 1 && summary.incomplete[0].startsWith('1 ') ? 'needs' : 'need'} a detail the CV did not give - open below for you to fill in.` : '',
@@ -113,6 +119,20 @@ export default function CvAutofillPanel(props) {
                 ].filter(Boolean).join(' ')} />
               )}
               {summary.warnings.length > 0 && <Alert type="info" message={summary.warnings.join(' ')} />}
+              {summary.added.length > 0 && onUndo && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13, color: 'var(--color-text-muted)' }}>
+                  <Button variant="secondary" loading={undoing} loadingText="Removing..." style={{ padding: '4px 12px', fontSize: 13 }}
+                    onClick={async () => {
+                      setUndoing(true);
+                      const problem = await onUndo();
+                      setUndoing(false);
+                      setError(problem || '');
+                      setSummary(problem ? null : { added: [], skipped: [], incomplete: [], warnings: [], nothing: false, undone: true });
+                    }}>
+                    Undo - remove everything this CV added
+                  </Button>
+                </div>
+              )}
             </div>
           )}
       </div>

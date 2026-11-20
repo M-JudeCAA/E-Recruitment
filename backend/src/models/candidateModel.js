@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const { RECORD_ORDER } = require('../utils/recordOrder');
 
 module.exports = {
   findByEmail: (email) => prisma.candidate.findUnique({ where: { email } }),
@@ -24,7 +25,7 @@ module.exports = {
   // flyingHours need no include, they're plain scalars on Candidate itself.
   findByIdWithRecords: (id) => prisma.candidate.findUnique({
     where: { id },
-    include: { education: true, workExperience: true, internalProfile: true, examGrades: true }
+    include: { education: RECORD_ORDER.education, workExperience: RECORD_ORDER.workExperience, internalProfile: true, examGrades: true }
   }),
   // Mirrors applicationModel.findOwnedByCandidate's role in
   // fileController.serve - lets a candidate be authorized to view their

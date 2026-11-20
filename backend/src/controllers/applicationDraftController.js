@@ -337,13 +337,15 @@ async function eligibility(req, res) {
   const documents = application ? await applicationDocumentModel.findByApplication(application.id) : [];
   const requirements = evidence.evidenceRequirements(vacancy, evidence.answersOf(application));
   const missing = new Set(evidence.missingEvidence(requirements, documents).map((r) => r.key));
+  const academicCount = evidence.academicDocuments(vacancy, documents).length;
   res.json({
     ...result,
-    academicDocuments: documents.filter((d) => d.category === 'Academic').length,
+    academicDocuments: academicCount,
     // Whether HR has verified an internal candidate's employment - submitting
     // waits for it (submit, EMPLOYMENT_NOT_VERIFIED).
     employmentCheck: employmentCheck(candidate),
-    evidence: requirements.map((r) => ({ ...r, provided: !missing.has(r.key) }))
+    // Academic evidence is covered by the Academic documents (academic: true).
+    evidence: requirements.map((r) => ({ ...r, provided: r.academic ? academicCount > 0 : !missing.has(r.key) }))
   });
 }
 
@@ -392,6 +394,10 @@ async function addDocument(req, res) {
     const vacancy = await vacancyModel.findById(application.vacancyId);
     const requirement = evidence.KEY_RE.test(evidenceKey) ? evidence.requirementFor(vacancy, evidenceKey) : null;
     if (!requirement) return refuse(400, { error: 'Say which requirement this document is evidence for' });
+    // Academic evidence is uploaded once, with the Academic documents.
+    if (requirement.academic) {
+      return refuse(400, { error: 'Upload academic documents under Academic documents, describing what each one is', code: 'USE_ACADEMIC_DOCUMENTS' });
+    }
     const mine = await applicationDocumentModel.findByApplication(application.id);
     if (mine.filter((d) => d.evidenceKey === evidenceKey).length >= MAX_DOCUMENTS_PER_EVIDENCE) {
       return refuse(422, { error: `You can attach at most ${MAX_DOCUMENTS_PER_EVIDENCE} documents for one requirement` });
@@ -399,6 +405,10 @@ async function addDocument(req, res) {
     label = requirement.label.slice(0, evidence.MAX_LABEL);
   } else if (category === 'CV') {
     label = 'CV';
+  } else if (category === 'Academic' && !label) {
+    // The description is what tells HR and the committee which of the
+    // vacancy's academic requirements the document answers.
+    return refuse(400, { error: 'Describe the document, e.g. "BSc Computer Science degree certificate"', code: 'DESCRIPTION_REQUIRED' });
   } else if (await applicationDocumentModel.countByApplication(application.id, category) >= MAX_DOCUMENTS_PER_CATEGORY) {
     return refuse(422, { error: `You can attach at most ${MAX_DOCUMENTS_PER_CATEGORY} documents of this kind` });
   }

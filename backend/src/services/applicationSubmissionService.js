@@ -110,7 +110,7 @@ async function check(application, { candidateId, candidateType, consent, mode })
   };
 
   const documents = await applicationDocumentModel.findByApplication(application.id);
-  if (!documents.some((d) => d.category === 'Academic')) {
+  if (evidence.academicDocuments(vacancy, documents).length === 0) {
     refuse(400, { error: 'Please upload at least one academic document (certificate or transcript) before submitting' });
   }
 

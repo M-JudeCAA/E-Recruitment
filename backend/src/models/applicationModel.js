@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const { RECORD_ORDER } = require('../utils/recordOrder');
 
 // Shared with findByVacancy and findManyForHr below - whitelisting only what
 // an applicant list actually reads rather than the full Candidate row, which
@@ -11,7 +12,7 @@ const CANDIDATE_SELECT = {
   id: true, fullName: true, email: true, phone: true, phoneKey: true, candidateType: true,
   location: true, districtOfOrigin: true, linkedinUrl: true, portfolioUrl: true,
   nationalId: true, dateOfBirth: true, flyingHours: true,
-  education: true, workExperience: true, examGrades: true, certificates: true,
+  education: RECORD_ORDER.education, workExperience: RECORD_ORDER.workExperience, examGrades: true, certificates: RECORD_ORDER.certificates,
   internalProfile: true,
   // HR's tags on the candidate (talentController).
   tags: { select: { tag: { select: { id: true, name: true } } } }
